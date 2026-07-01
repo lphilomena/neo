@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck disable=SC1091
+source "$ROOT/conf/tools.env.sh"
+
+# Prefer this checkout over any previously installed neoag-v03 console script.
+export PYTHONPATH="$ROOT/src:${PYTHONPATH:-}"
+export PATH="$ROOT/bin:$PATH"
+
+# Keep Nextflow metadata out of the repository root. This also avoids stale
+# root-owned .nextflow/history.lock files left by earlier privileged runs.
+export NXF_HOME="${NXF_HOME:-$ROOT/work/.nextflow_home}"
+mkdir -p "$NXF_HOME"
+
+exec "$ROOT/bin/nextflow" "$@"

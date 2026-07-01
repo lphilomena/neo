@@ -1,0 +1,18 @@
+# Stub upstream run: uses fixture outputs instead of real binaries.
+# Use for CI/demo when NetMHCpan, pVACtools, etc. are not installed.
+
+[sample]
+id = "DEMO_V03"
+profile = "leukemia"
+outdir = "results/full_stub"
+
+[tools]
+stub = true
+enabled = ["pvacseq", "pvacfuse", "netmhcpan", "mhcflurry", "netmhcstabpan", "vep", "lohhla", "facets"]
+
+[inputs]
+hla_alleles = ["HLA-A*02:01", "HLA-A*11:01", "HLA-DRB1*04:01"]
+expression = "data/fixtures/gene_expression.tsv"
+cnv = "data/fixtures/cnv_segments.tsv"
+normal_expression = "resources/normal_expression.example.tsv"
+normal_hla_ligands = "resources/normal_hla_ligands.example.tsv"

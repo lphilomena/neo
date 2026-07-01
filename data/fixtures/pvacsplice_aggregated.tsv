@@ -1,0 +1,4 @@
+Gene	Splice Junction	Event Type	Chromosome	Position	Reference	Variant	Transcript	Consequence	MT Epitope Seq	WT Epitope Seq	HLA Allele	MHC Class	Best MT Score	EL Rank	Crosses Junction	RNA Junction Reads	presentation_score	immunogenicity_score	Best WT Score	self_similarity_score	Transcript Expression	driver_relevance	clonality	persistence	tumor_specificity
+ADAR	JUNC00000017	Splice	chr1	154589928	G	A	ENST00000368471	splice_junction	SLDEFLKCL		HLA-C*06:02	I	0.50	1.20	yes	5919	0.82	0.68	99	0.05	100.0	0.0	0.5	0.5	0.7
+CCDC18	JUNC00000003	Splice	chr1	93221743	G	A	ENST00000343253	splice_junction	MAEEPKREL		HLA-A*29:02	I	1.10	2.50	yes	8	0.71	0.60	99	0.10	50.0	0.0	0.5	0.5	0.7
+TIPRL	JUNC00000026	Splice	chr1	168179181	G	A	ENST00000367830	splice_junction	GVFLVPLRR		HLA-B*45:01	I	0.85	1.80	yes	3015	0.75	0.62	99	0.08	80.0	0.0	0.5	0.5	0.7

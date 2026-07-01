@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# PyClone-VI wrapper (registry executable name: pyclone).
+set -euo pipefail
+
+CONDA_BASE="${NEOAG_CONDA_BASE:-/home/na/miniforge3}"
+PYCLONE_ENV="${NEOAG_PYCLONE_ENV:-neoag-pyclone}"
+PYCLONE_VI="${NEOAG_PYCLONE_BIN:-${CONDA_BASE}/envs/${PYCLONE_ENV}/bin/pyclone-vi}"
+
+if [[ ! -x "${PYCLONE_VI}" ]]; then
+  PYCLONE_VI="$(command -v pyclone-vi 2>/dev/null || true)"
+fi
+
+if [[ -z "${PYCLONE_VI}" || ! -x "${PYCLONE_VI}" ]]; then
+  echo "pyclone-vi not found. Run: bash scripts/install_ascat_pyclone.sh" >&2
+  exit 127
+fi
+
+if [[ "${1:-}" == "--version" ]]; then
+  exec "${PYCLONE_VI}" --version
+fi
+
+exec "${PYCLONE_VI}" "$@"

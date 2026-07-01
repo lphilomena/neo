@@ -1,0 +1,36 @@
+# WES SNV Phase 1 production example (real Mutect2 + pVAC; requires GATK on PATH).
+
+[sample]
+id = "P001"
+profile = "default"
+outdir = "results/P001_snv_wes"
+
+[tools]
+stub = false
+enabled = ["pvacseq", "netmhcpan", "mhcflurry", "vep"]
+
+[tools.executables]
+# gatk = "gatk"
+
+[inputs]
+hla_alleles = ["HLA-A*02:01", "HLA-B*07:02", "HLA-DRB1*04:01"]
+
+# Set after Mutect2 FilterMutectCalls (or point neoag-v03 snv-call-wes output here)
+tumor_vcf = "/path/P001.mutect2.filtered.vcf.gz"
+tumor_sample_name = "P001_TUMOR"
+normal_sample_name = "P001_NORMAL"
+variants_vcf = "/path/P001.mutect2.filtered.vcf.gz"
+extract_appm_from_vcf = true
+
+expression = "/path/gene_expression.tsv"
+cnv = "/path/cnv_segments.tsv"
+normal_expression = "resources/normal_expression.example.tsv"
+normal_hla_ligands = "resources/normal_hla_ligands.example.tsv"
+
+[snv_wes]
+tumor_bam = "/path/P001.tumor.bam"
+normal_bam = "/path/P001.normal.bam"
+reference_fasta = "/ref/GRCh38.fa"
+intervals_bed = "/ref/wes_capture.bed"
+# gnomad_vcf = "/ref/af-only-gnomad.hg38.vcf.gz"
+# panel_of_normals = "/ref/mutect2-exome-panel.vcf.gz"

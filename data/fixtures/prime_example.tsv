@@ -1,0 +1,4 @@
+sample_id	peptide	hla_allele	prime_score	prime_rank	source_file
+DEMO	SPQKQWTRV	HLA-A*02:01	0.748200	27.30	stub
+DEMO	YMDGTMSQV	HLA-A*02:01	0.514900	56.00	stub
+DEMO	VVVGADGVGK	HLA-A*11:01	0.821300	47.40	stub

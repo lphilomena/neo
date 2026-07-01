@@ -1,0 +1,5 @@
+BPID	FTID	Fusion_Gene	Breakpoint1	Breakpoint2	type	frame	bp1_frame	bp2_frame	exon_boundary	neo_peptide_sequence	neo_peptide_sequence_bp	fusion_protein_sequence	prediction_prob	prediction_class	tool_frac	ft_junc_cnt	ft_span_cnt	ft_anch_cnt	star-fusion_detected	arriba_detected	fusioncatcher_detected	star-fusion_junc	arriba_junc
+chr22:23625647:+_chr9:133738352:+	FT_EWSR1_EWSR1::FLI1	EWSR1_FLI1	chr22:23625647:+	chr9:133738352:+	trans	in_frame	0	0	both	MATNPLSEEA	13	MATNPLSEEAFLI1PROT	0.92	positive	0.67	12	8	15	1	1	0	10	2
+chr16:67000000:+_chr16:67100000:+	FT_CBFB_CBFB::MYH11	CBFB_MYH11	chr16:67000000:+	chr16:67100000:+	cis_near	in_frame	1	1	both	SMKTEAAEL	10	SMKTEAAELMYH11	0.88	positive	0.33	5	3	12	1	0	0	5	0
+chr1:1000000:+_chr2:2000000:+	FT_NCF1_NCF1::NCF1	NCF1_NCF1	chr1:1000000:+	chr2:2000000:+	trans	no_frame	-1	0	no_match		0		0.45	negative	0.33	1	0	5	0	1	0	0	1
+chr3:5000000:+_chr7:8000000:-	FT_BCR_BCR::ABL1	BCR_ABL1	chr3:5000000:+	chr7:8000000:-	trans	neo_frame	2	-1	5prime	KALQRPVASDF	11	KALQRPVASDFABL1	0.81	positive	1.0	20	14	22	1	1	1	15	5

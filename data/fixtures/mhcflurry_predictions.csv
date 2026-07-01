@@ -1,0 +1,6 @@
+peptide,allele,affinity,affinity_percentile,processing_score,presentation_score
+VVVGADGVGK,HLA-A*11:01,120,0.40,0.70,0.78
+ALWGFFPVL,HLA-A*02:01,90,0.25,0.80,0.86
+PRRGRHRSV,HLA-DRB1*04:01,500,2.00,0.45,0.40
+SPQKQWTRV,HLA-A*02:01,60,0.12,0.88,0.91
+GILGFVFTL,HLA-A*02:01,70,0.14,0.86,0.90

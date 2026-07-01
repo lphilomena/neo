@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export PYTHONPATH="$ROOT/src:${PYTHONPATH:-}"
+export NEOAG_TOOLS_ROOT="${NEOAG_TOOLS_ROOT:-$ROOT}"
+
+CONDA_BASE="$(conda info --base 2>/dev/null || echo /root/miniconda3)"
+PY="${NEOAG_PYTHON:-${CONDA_BASE}/envs/${NEOAG_CONDA_ENV:-neoag-tools}/bin/python}"
+if [[ ! -x "${PY}" && -x "$ROOT/.venv/bin/python" ]]; then
+  PY="$ROOT/.venv/bin/python"
+fi
+if [[ ! -x "${PY}" ]]; then
+  PY="$(command -v python3 || command -v python)"
+fi
+
+exec "${PY}" -m neoag_v03.cli "$@"

@@ -1,0 +1,34 @@
+[sample]
+id = "P001"
+profile = "sv_wgs_phase1"
+outdir = "results/P001_sv_phase1"
+
+[inputs]
+tumor_bam = "/path/P001.tumor.wgs.bam"
+normal_bam = "/path/P001.normal.wgs.bam"
+reference_fasta = "/ref/GRCh38.fa"
+gencode_gtf = "/ref/gencode.v44.annotation.gtf"
+hla = "HLA-A*02:01,HLA-A*24:02,HLA-B*07:02,HLA-B*40:01,HLA-C*03:04,HLA-C*07:02"
+
+# Optional RNA and safety evidence
+expression_tsv = "/path/gene_expression.tsv"
+rna_junction_tsv = "/path/sv_rna_junction_reads.tsv"
+normal_expression = "resources/normal_expression.example.tsv"
+normal_hla_ligands = "resources/normal_hla_ligands.example.tsv"
+
+[sv]
+merge_distance_bp = 200
+callers = ["Manta", "SvABA", "GRIDSS2"]
+
+[tools]
+stub = false
+threads = 32
+
+[tools.executables]
+manta_config = "configManta.py"
+svaba = "svaba"
+gridss = "gridss"
+samtools = "samtools"
+bcftools = "bcftools"
+netmhcpan = "netMHCpan"
+mhcflurry = "mhcflurry-predict"

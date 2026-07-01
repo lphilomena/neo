@@ -1,0 +1,4 @@
+sample_id	peptide	hla_allele	bigmhc_im_score	source_file
+DEMO	SPQKQWTRV	HLA-A*02:01	0.407500	stub
+DEMO	YMDGTMSQV	HLA-A*02:01	0.865500	stub
+DEMO	VVVGADGVGK	HLA-A*11:01	0.427200	stub

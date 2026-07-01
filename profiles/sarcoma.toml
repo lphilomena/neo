@@ -1,0 +1,77 @@
+[enabled_sources]
+types = ["SNV", "InDel", "Fusion", "Splice", "TAA"]
+[source_priority]
+SNV = 1.00
+InDel = 1.10
+Fusion = 1.55
+Splice = 1.00
+TAA = 0.35
+Other = 1.00
+[event_weights]
+event_confidence = 0.22
+event_expression = 0.20
+driver_relevance = 0.18
+clonality = 0.15
+persistence = 0.15
+tumor_specificity = 0.10
+[presentation_weights]
+netmhcpan_ba = 0.25
+netmhcpan_el = 0.35
+mhcflurry_presentation = 0.30
+mhcflurry_processing = 0.10
+[v03_score_weights]
+event_score = 0.35
+binding_evidence = 0.20
+presentation_evidence = 0.25
+immunogenicity = 0.15
+evidence_completeness = 0.05
+[safety]
+hard_exclusion_critical_tissue_tpm = 10.0
+caution_critical_tissue_tpm = 1.0
+normal_hspc_fail_tpm = 8.0
+normal_hspc_caution_tpm = 2.0
+normal_hla_ligand_overlap_action = "CAUTION"
+wildtype_strong_binding_rank = 0.5
+self_similarity_caution = 0.85
+[appm]
+low_expression_tpm = 1.0
+[appm_penalty]
+b2m_damaging = 0.60
+tap1_tap2_damaging = 0.35
+hla_allele_loh = 0.50
+nlrc5_low_expression = 0.25
+ciita_low_expression = 0.35
+ifng_pathway_damaging = 0.25
+[ccf_lite]
+enabled = true
+clonal_threshold = 0.80
+subclonal_threshold = 0.30
+missing_ccf_multiplier = 0.65
+subclonal_multiplier = 0.75
+low_frequency_multiplier = 0.45
+[scoring]
+high_expression_tpm = 15.0
+
+[gates]
+enabled = true
+require_presentation_grades = ["A", "B"]
+max_el_rank = 2.0
+min_stabpan_score = 1.4
+min_event_expression_tpm = 0.0
+min_tumor_vaf = 0.0
+failure_mode = "multiply"
+failure_multiplier = 0.25
+
+[immunogenicity]
+enabled = true
+sources = ["prime", "bigmhc_im"]
+composite = "mean"
+use_iedb_fallback = false
+
+[immunogenicity.weights]
+prime = 0.5
+bigmhc_im = 0.5
+
+[immune_escape]
+therapy_context = "vaccine"
+hla_loh_policy = "exclude_lost_hla_for_vaccine"

@@ -1,0 +1,16 @@
+NeoAg Event Pipeline
+Copyright (c) 2026 NeoAg Event Pipeline contributors
+
+This repository is a research software prototype for neoantigen candidate
+prioritization and validation planning. It is not a clinical decision system.
+
+The lightweight release does not bundle external bioinformatics tools,
+licensed databases, patient data, large references, virtual environments, or
+workflow work directories. External tools such as pVACtools, NetMHCpan,
+MHCflurry, PRIME, BigMHC, DeepImmuno, STAR-Fusion, FusionCatcher, Arriba,
+EasyFuse, GATK, FACETS, ASCAT, and related resources remain governed by their
+own licenses, terms, and citation requirements.
+
+Users are responsible for validating installed tool versions, licenses,
+reference data provenance, sample consent, and local clinical/research
+governance before using real data.

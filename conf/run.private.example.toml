@@ -1,0 +1,25 @@
+# Private run configuration template.
+#
+# Copy to conf/private/<project>.toml or conf/<project>.private.toml for real
+# samples. Do not commit copied private files: they may contain patient/sample
+# identifiers, absolute paths, and controlled-access data locations.
+
+[sample]
+id = "SAMPLE_PRIVATE"
+profile = "default"
+outdir = "results/private_sample"
+
+[inputs]
+entry_mode = "raw"
+raw_events = "/path/to/private/raw_events.tsv"
+raw_peptides = "/path/to/private/raw_peptides.tsv"
+normal_expression = "/path/to/private/normal_expression.tsv"
+normal_hla_ligands = "/path/to/private/normal_hla_ligands.tsv"
+
+[tools]
+immunogenicity_stub = false
+
+[tools.executables]
+netmhcpan = "/path/to/netMHCpan"
+prime = "/path/to/PRIME"
+bigmhc_dir = "/path/to/bigmhc"

@@ -1,0 +1,6 @@
+gene	normal_tissue_max_tpm	normal_hspc_tpm	critical_tissue_hit	note
+EWSR1::WT1	0.0	0.0	no	fusion absent
+CBFB::MYH11	0.0	0.0	no	fusion absent
+KRAS	7.0	0.3	yes	critical tissue caution
+WT1	4.5	2.8	yes	TAA/HSPC caution
+DNMT3A	3.0	1.3	no	normal hematopoietic expression caution

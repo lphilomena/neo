@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "neoag-event-pipeline-v03-rc"
+version = "0.4.3"
+description = "Neoantigen event prioritization pipeline with APPM 2.0, CCF 2.0, safety, immune-escape, and validation evidence layers"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{name = "OpenAI generated prototype"}]
+dependencies = []
+
+[project.optional-dependencies]
+test = ["pytest>=7", "pytest-timeout>=2.3"]
+
+[project.scripts]
+neoag-v03 = "neoag_v03.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+markers = [
+  "unit: fast tests that do not run workflow engines, benchmarks, or external tools",
+  "integration: cross-module, CLI, or workflow-style tests; split into focused fixture smokes with explicit opt-in",
+  "benchmark: benchmark and sensitivity tests",
+  "external: tests that require external tools, network, licensed resources, or local installations",
+  "timeout(seconds): optional pytest-timeout marker; enforced only when pytest-timeout is installed",
+]
+addopts = "--strict-markers"
+norecursedirs = [
+  ".git",
+  ".venv",
+  ".venv.local",
+  "tools",
+  "vendor",
+  "work",
+  "results",
+  "dist",
+  "conda_packs",
+]
+

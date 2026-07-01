@@ -1,0 +1,53 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+.venv.local/
+*.swp
+.DS_Store
+._*
+*.bak_*
+*.backup_*
+*.tmp
+*.log
+*.log.*
+
+# Local run outputs and workflow caches
+work/
+results/
+dist/
+.nextflow/
+.nextflow_user/
+.nextflow.root_owned_backup_*/
+.nextflow.log*
+FusionInspector.log
+0
+
+# External tools and local environment bundles
+tools/
+conda_packs/
+
+# Large or controlled external data; keep only lightweight fixtures in Git
+data/examples/
+data/external/
+data/ref/
+data/vep/
+
+# Local downloads/logs
+human_v102.tar.gz.ad
+neoantigen2-main.zip
+migrate_export.log
+wget_ad.log
+conf/tools.env.local.sh
+conf/run.*.local.toml
+conf/run.*.patient.toml
+
+# Regeneratable benchmark/tool caches
+results/*/tools/
+results/benchmark_cedar/tools/
+
+conf/site.config
+conf/private/
+conf/*.private.toml
+conf/*.local.toml
