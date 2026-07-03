@@ -46,18 +46,146 @@ ROOT = Path(__file__).resolve().parents[2]
 def fixture(x): return ROOT/"data"/"fixtures"/x
 def resource(x): return ROOT/"resources"/x
 
+FIXTURES_SV = ROOT / "data" / "fixtures_sv"
+
+# Tools each entry-mode demo relies on. Used to print a scoped readiness
+# check instead of the removed global `check-tools` command.
+DEMO_ENTRY_TOOLS = {
+    "snv_indel": ["neoag-v03 CLI (pip install -e .)", "NetMHCpan/MHCflurry (optional; demo uses bundled fixtures)"],
+    "fusion": ["neoag-v03 CLI (pip install -e .)"],
+    "splice_junction": ["neoag-v03 CLI (pip install -e .)"],
+    "sv_wgs": ["neoag-v03 CLI (pip install -e .)"],
+    "sv_wes": ["neoag-v03 CLI (pip install -e .)"],
+    "peptide_only": ["neoag-v03 CLI (pip install -e .)"],
+}
+
+
+def _demo_env_precheck(entry_mode):
+    print(f"[run-demo] entry-mode={entry_mode}: checking tools needed for this demo only")
+    for tool in DEMO_ENTRY_TOOLS.get(entry_mode, []):
+        print(f"  - {tool}")
+    print()
+
+
+def _print_demo_summary(entry_mode, out):
+    print(f"NeoAg v0.4.3 demo completed for entry-mode={entry_mode}.")
+    print("Outputs retain .v03.tsv names for schema compatibility.")
+    for k, v in out.items():
+        print(f"  {k}: {v}")
+
+
 def cmd_run_demo(args):
-    out = run_v03(
-        outdir=args.outdir, profile_name_or_path=args.profile, sample_id=args.sample_id,
-        pvac_paths=[fixture("pvacseq_aggregated.tsv"), fixture("pvacfuse_aggregated.tsv")],
-        netmhcpan=fixture("netmhcpan_example.xls"), mhcflurry=fixture("mhcflurry_predictions.csv"),
-        vep_appm=fixture("vep_appm.tsv"), expression=fixture("gene_expression.tsv"),
-        hla_loh=fixture("hla_loh.tsv"), purity=fixture("purity.tsv"), cnv=fixture("cnv_segments.tsv"),
-        normal_expression=resource("normal_expression.example.tsv"), normal_hla_ligands=resource("normal_hla_ligands.example.tsv"),
-        immunogenicity_stub=True,
+    entry_mode = getattr(args, "entry_mode", None) or "snv_indel"
+    outdir = Path(args.outdir)
+    profile = args.profile
+    sample_id = args.sample_id
+    _demo_env_precheck(entry_mode)
+
+    if entry_mode == "snv_indel":
+        out = run_v03(
+            outdir=outdir, profile_name_or_path=profile, sample_id=sample_id,
+            pvac_paths=[fixture("pvacseq_aggregated.tsv")],
+            netmhcpan=fixture("netmhcpan_example.xls"), mhcflurry=fixture("mhcflurry_predictions.csv"),
+            vep_appm=fixture("vep_appm.tsv"), expression=fixture("gene_expression.tsv"),
+            hla_loh=fixture("hla_loh.tsv"), purity=fixture("purity.tsv"), cnv=fixture("cnv_segments.tsv"),
+            normal_expression=resource("normal_expression.example.tsv"), normal_hla_ligands=resource("normal_hla_ligands.example.tsv"),
+            immunogenicity_stub=True, entry_mode="snv_indel",
+        )
+        _print_demo_summary(entry_mode, out)
+        return
+
+    if entry_mode == "fusion":
+        inter = build_raw_intermediates(
+            {
+                "sample": {"id": sample_id, "profile": profile},
+                "inputs": {"entry_mode": "fusion", "pvac_files": [str(fixture("pvacfuse_aggregated.tsv"))]},
+            },
+            outdir, root=ROOT,
+        )
+        out = run_v03(
+            outdir=outdir, profile_name_or_path=profile, sample_id=sample_id,
+            raw_events=inter["raw_events"], raw_peptides=inter["raw_peptides"],
+            netmhcpan=fixture("netmhcpan_example.xls"), mhcflurry=fixture("mhcflurry_predictions.csv"),
+            expression=fixture("gene_expression.tsv"), hla_loh=fixture("hla_loh.tsv"),
+            purity=fixture("purity.tsv"), cnv=fixture("cnv_segments.tsv"),
+            normal_expression=resource("normal_expression.example.tsv"), normal_hla_ligands=resource("normal_hla_ligands.example.tsv"),
+            immunogenicity_stub=True, entry_mode="fusion",
+        )
+        _print_demo_summary(entry_mode, out)
+        return
+
+    if entry_mode == "splice_junction":
+        inter = build_raw_intermediates(
+            {
+                "sample": {"id": sample_id, "profile": profile},
+                "inputs": {"entry_mode": "splice_junction", "pvac_files": [str(fixture("pvacsplice_aggregated.tsv"))]},
+            },
+            outdir, root=ROOT,
+        )
+        out = run_v03(
+            outdir=outdir, profile_name_or_path=profile, sample_id=sample_id,
+            raw_events=inter["raw_events"], raw_peptides=inter["raw_peptides"],
+            netmhcpan=fixture("netmhcpan_example.xls"), mhcflurry=fixture("mhcflurry_predictions.csv"),
+            expression=fixture("gene_expression.tsv"), hla_loh=fixture("hla_loh.tsv"),
+            purity=fixture("purity.tsv"), cnv=fixture("cnv_segments.tsv"),
+            normal_expression=resource("normal_expression.example.tsv"), normal_hla_ligands=resource("normal_hla_ligands.example.tsv"),
+            immunogenicity_stub=True, entry_mode="splice_junction",
+        )
+        _print_demo_summary(entry_mode, out)
+        return
+
+    if entry_mode in ("sv_wgs", "sv_wes"):
+        builder = build_sv_phase1_raw if entry_mode == "sv_wgs" else build_sv_wes_phase1_5_raw
+        sv_kwargs = dict(
+            sample_id=sample_id,
+            sv_vcfs=[FIXTURES_SV / "mini_sv.vcf"],
+            callers=["GRIDSS2"],
+            reference_fasta=FIXTURES_SV / "mini_ref.fa",
+            gencode_gtf=FIXTURES_SV / "mini.gtf",
+            hla=FIXTURES_SV / "hla.txt",
+            outdir=outdir / "upstream",
+            expression_tsv=FIXTURES_SV / "expression.tsv",
+            rna_junction_tsv=FIXTURES_SV / "rna_junctions.tsv",
+            normal_expression_tsv=FIXTURES_SV / "normal_expression.tsv",
+            normal_hla_ligands_tsv=FIXTURES_SV / "normal_hla_ligands.tsv",
+        )
+        if entry_mode == "sv_wgs":
+            sv_kwargs["profile_name"] = load_profile(profile)["_profile_name"]
+        sv_out = builder(**sv_kwargs)
+        out = run_v03(
+            outdir=outdir, profile_name_or_path=profile, sample_id=sample_id,
+            raw_events=sv_out["raw_events"], raw_peptides=sv_out["raw_peptides"],
+            expression=FIXTURES_SV / "expression.tsv",
+            normal_expression=FIXTURES_SV / "normal_expression.tsv",
+            normal_hla_ligands=FIXTURES_SV / "normal_hla_ligands.tsv",
+            immunogenicity_stub=True, entry_mode="sv",
+        )
+        out["sv_raw_events"] = sv_out["raw_events"]
+        out["sv_raw_peptides"] = sv_out["raw_peptides"]
+        _print_demo_summary(entry_mode, out)
+        return
+
+    if entry_mode == "peptide_only":
+        inter = build_raw_intermediates(
+            {
+                "sample": {"id": sample_id, "profile": profile},
+                "inputs": {"entry_mode": "peptide_only", "peptide_table": str(fixture("peptide_only_example.csv"))},
+            },
+            outdir, root=ROOT,
+        )
+        out = run_v03(
+            outdir=outdir, profile_name_or_path=profile, sample_id=sample_id,
+            raw_events=inter["raw_events"], raw_peptides=inter["raw_peptides"],
+            netmhcpan=fixture("netmhcpan_example.xls"), mhcflurry=fixture("mhcflurry_predictions.csv"),
+            immunogenicity_stub=True, entry_mode="peptide_only",
+        )
+        _print_demo_summary(entry_mode, out)
+        return
+
+    raise SystemExit(
+        f"Unknown --entry-mode '{entry_mode}'. Choose one of: "
+        "snv_indel, fusion, splice_junction, sv_wgs, sv_wes, peptide_only."
     )
-    print("NeoAg v0.4.3 demo completed. Outputs retain .v03.tsv names for schema compatibility.")
-    for k,v in out.items(): print(f"  {k}: {v}")
 
 def cmd_run_v03(args):
     kwargs = {}
@@ -881,7 +1009,13 @@ def build_parser():
     p = argparse.ArgumentParser(prog="neoag-v03")
     sub = p.add_subparsers(dest="cmd", required=True)
     d = sub.add_parser("run-demo")
-    d.add_argument("--profile", default="default"); d.add_argument("--sample-id", default="DEMO_V03"); d.add_argument("--outdir", required=True); d.set_defaults(func=cmd_run_demo)
+    d.add_argument("--profile", default="default"); d.add_argument("--sample-id", default="DEMO_V03"); d.add_argument("--outdir", required=True)
+    d.add_argument(
+        "--entry-mode", default="snv_indel",
+        choices=["snv_indel", "fusion", "splice_junction", "sv_wgs", "sv_wes", "peptide_only"],
+        help="Which entry's fixture demo to run (default: snv_indel). Also prints the tool checks relevant to that entry only.",
+    )
+    d.set_defaults(func=cmd_run_demo)
     r = sub.add_parser("run-v03")
     r.add_argument("--profile", default="default"); r.add_argument("--sample-id", default="SAMPLE001"); r.add_argument("--outdir", required=True)
     r.add_argument("--pvac", nargs="*"); r.add_argument("--raw-events"); r.add_argument("--raw-peptides")

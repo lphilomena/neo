@@ -72,8 +72,12 @@ def run_v03(
     raw_peptides_path = parsed / "raw_peptides.tsv"
 
     if raw_events and raw_peptides:
-        shutil.copy2(raw_events, raw_events_path)
-        shutil.copy2(raw_peptides, raw_peptides_path)
+        raw_events = Path(raw_events)
+        raw_peptides = Path(raw_peptides)
+        if raw_events.resolve() != raw_events_path.resolve():
+            shutil.copy2(raw_events, raw_events_path)
+        if raw_peptides.resolve() != raw_peptides_path.resolve():
+            shutil.copy2(raw_peptides, raw_peptides_path)
     elif pvac_paths:
         parse_pvactools_outputs(pvac_paths, sample_id, profile["_profile_name"], raw_events_path, raw_peptides_path)
     else:
