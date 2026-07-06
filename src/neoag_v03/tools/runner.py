@@ -737,7 +737,7 @@ def run_vep_appm(ctx: RunContext, out_tsv: Path) -> Path:
         "-o", str(raw),
     ]
     if os.environ.get("NEOAG_VEP_ONLINE", "").lower() in {"1", "true", "yes"}:
-        cmd.extend(["--species", "homo_sapiens"])
+        cmd.extend(["--database", "--species", "homo_sapiens"])
     else:
         cmd.extend(["--cache", "--offline"])
         cache_dir = os.environ.get("NEOAG_VEP_CACHE", "").strip()

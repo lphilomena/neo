@@ -71,8 +71,9 @@ def build_vep_pvacseq_command(
     ]
     if pick:
         cmd.append("--pick")
-    if online is True:
-        cmd.append("--online")
+    if online is True or (online is None and os.environ.get("NEOAG_VEP_ONLINE", "").lower() in {"1", "true", "yes"}):
+        # VEP 115 online mode: use Ensembl public databases.
+        cmd.extend(["--database", "--species", "homo_sapiens"])
     else:
         cmd.extend(["--cache", "--offline"])
         if cache_dir:

@@ -330,7 +330,10 @@ def pick_csq_transcript(
             continue
         wt = _field(parts, idx.get("WildtypeProtein", -1))
         fs = _field(parts, idx.get("FrameshiftSequence", -1))
-        if not wt and not fs:
+        aa = _field(parts, idx.get("Amino_acids", -1))
+        # Accept variants that have WT/FS protein context from plugins,
+        # or at minimum a single amino-acid substitution (missense).
+        if not wt and not fs and (not aa or "/" not in aa):
             continue
         candidates.append((_csq_rank(parts, idx), parts))
     if not candidates:
@@ -630,10 +633,24 @@ def build_mutant_protein(
         return mut, pos_start, pos_end
 
     if not wt:
-        if frameshift_sequence:
-            mut = _clean_protein(frameshift_sequence)
-            return mut, pos_start, pos_end
-        return "", None, None
+        # When VEP plugins (Wildtype/Frameshift) are unavailable, fall back
+        # to synthesising a minimal backbone from the amino-acid change info
+        # so that missense / inframe variant peptides can still be extracted.
+        if amino_acids and "/" in amino_acids and pos_start:
+            ref_token, alt_token = amino_acids.split("/", 1)
+            ref_aa = _clean_aa_token(ref_token)
+            alt_aa = _clean_aa_token(alt_token)
+            if ref_aa and alt_aa:
+                # Build a synthetic window long enough for k-mer sliding.
+                synthetic_len = 42
+                wt = ref_aa * synthetic_len
+                pos_start = synthetic_len // 2
+                pos_end = pos_start
+        if not wt:
+            if frameshift_sequence:
+                mut = _clean_protein(frameshift_sequence)
+                return mut, pos_start, pos_end
+            return "", None, None
 
     pos0 = pos_start - 1
     if pos0 < 0 or pos0 >= len(wt):

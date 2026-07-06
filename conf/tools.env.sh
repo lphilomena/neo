@@ -25,6 +25,8 @@ fi
 
 # MHCflurry + TensorFlow 2.21: legacy tf.keras via tf_keras (pip install tf_keras)
 export TF_USE_LEGACY_KERAS=1
+# MHCflurry 模型存储路径（避免每次部署重复下载 ~200MB）
+export MHCFLURRY_DOWNLOADS_DIR="${NEOAG_TOOLS_ROOT}/../tool_data/mhcflurry"
 # GPU default on when nvidia libs present; force CPU: export NEOAG_FORCE_CPU=1
 if [[ "${NEOAG_FORCE_CPU:-}" == "1" ]]; then
   export CUDA_VISIBLE_DEVICES=""
@@ -41,7 +43,9 @@ else
   export NEOAG_VEP_BIN="${NEOAG_TOOLS_ROOT}/bin/vep-neoag"
 fi
 export NEOAG_VEP_CACHE="${NEOAG_TOOLS_ROOT}/data/vep"
-if [[ ! -d "${NEOAG_VEP_CACHE}/homo_sapiens" && -d "${NEOAG_TOOLS_ROOT}/../neoag_event_pipeline_v03_rc_artifact_quarantine_20260622_091158/data/vep/homo_sapiens" ]]; then
+if [[ ! -d "${NEOAG_VEP_CACHE}/homo_sapiens" && -d "/mnt/zjl-bgi-zzb/peixunban/gl/data/reference/homo_sapiens" ]]; then
+  export NEOAG_VEP_CACHE="/mnt/zjl-bgi-zzb/peixunban/gl/data/reference"
+elif [[ ! -d "${NEOAG_VEP_CACHE}/homo_sapiens" && -d "${NEOAG_TOOLS_ROOT}/../neoag_event_pipeline_v03_rc_artifact_quarantine_20260622_091158/data/vep/homo_sapiens" ]]; then
   export NEOAG_VEP_CACHE="${NEOAG_TOOLS_ROOT}/../neoag_event_pipeline_v03_rc_artifact_quarantine_20260622_091158/data/vep"
 fi
 export NEOAG_VEP_CACHE_VERSION="105"
@@ -183,3 +187,10 @@ if [[ -f "${NEOAG_PROJECT_ROOT}/conf/tools.env.local.sh" ]]; then
   # shellcheck source=/dev/null
   source "${NEOAG_PROJECT_ROOT}/conf/tools.env.local.sh"
 fi
+
+# NetMHCpan — installed via scripts/install_netmhcpan.sh
+export NETMHCPAN_HOME="/home/na/project/neo/tools/netMHCpan"
+export NETMHCpan="/home/na/project/neo/tools/netMHCpan"
+export NEOAG_NETMHCPAN_BIN="/home/na/project/neo/tools/netMHCpan/netMHCpan"
+export NEOAG_NETMHCPAN_TMPDIR="/home/na/project/neo/tools/netMHCpan/tmp"
+export PATH="/home/na/project/neo/tools/netMHCpan:/home/na/project/neo/tools/netMHCpan/bin:${PATH}"
