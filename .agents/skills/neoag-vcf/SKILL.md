@@ -2,7 +2,6 @@
 name: neoag-vcf
 description: 从体细胞VCF（SNV/InDel）出发，运行滑窗产肽、结合/免疫原性预测、APPM/CCF/安全性/免疫逃逸证据构建、打分排序与报告生成。在以下情况自动调用本skill：1. 用户提供或提到.vcf/.vcf.gz体细胞变异文件，或提到Mutect2/VEP/pVACseq；2. 用户想跑SNV/InDel新抗原分析、滑动窗口产肽、或NetMHCpan/MHCflurry打分排序。
 ---
-
 # NeoAg VCF（SNV/InDel）新抗原分析
 
 ## 使用场景
@@ -28,7 +27,7 @@ description: 从体细胞VCF（SNV/InDel）出发，运行滑窗产肽、结合/
 
 不要臆造真实患者路径或HLA分型，缺失就直接问用户。
 
-## 运行前检查（替代原先的全局check-tools）
+## 运行前检查
 
 本入口只需要检查这条链路用到的工具，用带 `--entry-mode` 的demo先验证代码链路是否可用：
 
@@ -48,7 +47,7 @@ test -f "$NEOAG_VEP_PLUGINS/Wildtype.pm" && test -f "$NEOAG_VEP_PLUGINS/Frameshi
 test -f "$NEOAG_REFERENCE_FASTA" || echo "MISSING: 参考FASTA"
 ```
 
-若要跑本地NetMHCpan（而不是`--stub`/`--immunogenicity-stub`桩模式），检查：
+若要跑本地NetMHCpan（而不是 `--stub`/`--immunogenicity-stub`桩模式），检查：
 
 ```bash
 command -v netMHCpan >/dev/null || echo "MISSING: NetMHCpan（可用 --stub 跳过，或用户已有预计算结果）"
@@ -170,6 +169,4 @@ neoag-v03 run-full --config conf/run.<sample_id>.private.toml --outdir results/<
 
 ## 参考
 
-- 已有更详细的原型文档：`.cursor/skills/neoag-sliding-run/`（`staged-workflow.md`、`workflow-breakdown.md`），
-  可作为本skill的补充参考，其中 `check-tools` 相关表述已过时，以本文件为准。
 - 公共段（presentation之后的全部步骤）：`../neoag-shared/SKILL.md`
