@@ -247,6 +247,15 @@ bash scripts/check_tools_env.sh
 
 `check-tools` may report optional tools as missing if your selected workflow does not need them. For production runs, every tool required by the selected workflow should be `OK`.
 
+For day-to-day development on a single entry, prefer the scoped check instead of the full inventory:
+
+```bash
+neoag-v03 run-demo --entry-mode snv_indel --outdir /tmp/demo --sample-id DEMO
+```
+
+This prints only the tools relevant to that entry mode and runs a bundled-fixture smoke test end to end.
+See [`USAGE_GUIDE.md`](USAGE_GUIDE.md) for the full per-entry command reference.
+
 ### 7.3 Nextflow Acceptance
 
 ```bash

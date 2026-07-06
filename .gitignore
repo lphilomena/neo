@@ -25,7 +25,7 @@ FusionInspector.log
 0
 
 # External tools and local environment bundles
-tools/
+/tools/
 conda_packs/
 
 # Large or controlled external data; keep only lightweight fixtures in Git
