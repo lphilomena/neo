@@ -70,15 +70,20 @@ VEP cache may be slow to download. Either run:
 
 ```bash
 bash scripts/install_vep_cache.sh
+export NEOAG_VEP_CACHE="${HOME}/.vep"
+export NEOAG_VEP_CACHE_VERSION=105
 ```
 
-or set an existing cache:
+or set an existing cache root:
 
 ```bash
-export NEOAG_VEP_CACHE=/path/to/vep_cache
+export NEOAG_VEP_CACHE=/path/to/data/vep
 export NEOAG_VEP_CACHE_VERSION=105
 source conf/tools.env.sh
+test -f "$NEOAG_VEP_CACHE/homo_sapiens/105_GRCh38/info.txt"
 ```
+
+`NEOAG_VEP_CACHE` must be the cache root directory. The release subdirectory is `$NEOAG_VEP_CACHE/homo_sapiens/105_GRCh38/`.
 
 The migration test found that VEP could be installed but not detected until the VEP env was added to `PATH`. The updated script writes `NEOAG_VEP_BIN` and the env `bin` path into `conf/tools.env.sh`.
 

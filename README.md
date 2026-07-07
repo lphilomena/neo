@@ -286,7 +286,8 @@ Important variables commonly set by `conf/tools.env.sh` or local overrides:
 | `NEOAG_CONDA_ENV` | Main Python CLI environment. |
 | `NEOAG_VEP_ENV` | VEP conda environment name/path. |
 | `NEOAG_VEP_BIN` | VEP executable or wrapper path. |
-| `NEOAG_VEP_CACHE` | VEP offline cache root, expected to contain `homo_sapiens/105_GRCh38` or equivalent. |
+| `NEOAG_VEP_CACHE` | VEP offline cache **root** directory. Must contain `homo_sapiens/<version>_GRCh38/` (this project uses `105_GRCh38`). Do **not** point this variable at the `105_GRCh38` subdirectory itself. |
+| `NEOAG_VEP_CACHE_VERSION` | Ensembl cache release passed to VEP as `--cache_version` (default `105`). |
 | `NEOAG_VEP_PLUGINS` | VEP plugin directory containing `Wildtype.pm` and `Frameshift.pm`. |
 | `NEOAG_REFERENCE_FASTA` | GRCh38 FASTA used by VEP/GATK/SV peptide workflows. |
 | `NEOAG_NORMAL_PROTEOME_FASTA` | Normal/reference proteome FASTA used by peptide safety filtering. |
@@ -396,16 +397,71 @@ source conf/tools.env.sh
 neoag-v03 check-tools
 ```
 
-Install or point to a VEP cache:
+#### VEP cache layout
+
+`NEOAG_VEP_CACHE` is the **cache root**, not the release subdirectory. VEP is invoked with:
 
 ```bash
-# Online cache install. This can be slow and large.
-bash scripts/install_vep_cache.sh
+vep --cache --offline \
+  --dir_cache "$NEOAG_VEP_CACHE" \
+  --cache_version "$NEOAG_VEP_CACHE_VERSION"
+```
 
-# Or use an existing cache.
-export NEOAG_VEP_CACHE=/path/to/vep_cache
+Expected directory layout:
+
+```text
+$NEOAG_VEP_CACHE/
+└── homo_sapiens/
+    └── 105_GRCh38/
+        ├── info.txt
+        ├── 1/ 2/ ... 22/          # per-chromosome indexed cache files
+        └── ...                     # optional FASTA / auxiliary files from vep_install
+```
+
+For this project:
+
+| Item | Value |
+| --- | --- |
+| Species | `homo_sapiens` |
+| Assembly | `GRCh38` |
+| Cache release | `105` (`NEOAG_VEP_CACHE_VERSION=105`) |
+| Data package | Ensembl indexed cache `homo_sapiens_vep_105_GRCh38.tar.gz` |
+| Typical size | about 12–16 GB after extraction |
+| Download source | `https://ftp.ensembl.org/pub/release-105/variation/indexed_vep_cache/homo_sapiens_vep_105_GRCh38.tar.gz` |
+
+Install a new cache, or point to an existing one:
+
+```bash
+# Fresh install (downloads to ~/.vep by default).
+bash scripts/install_vep_cache.sh
+export NEOAG_VEP_CACHE="${HOME}/.vep"
+export NEOAG_VEP_CACHE_VERSION=105
+
+# Or reuse a site-managed cache root.
+export NEOAG_VEP_CACHE=/path/to/data/vep
 export NEOAG_VEP_CACHE_VERSION=105
 source conf/tools.env.sh
+```
+
+Verify:
+
+```bash
+test -f "$NEOAG_VEP_CACHE/homo_sapiens/105_GRCh38/info.txt"
+```
+
+On this server, `conf/tools.env.sh` resolves cache in this order:
+
+1. `$NEOAG_TOOLS_ROOT/data/vep` when `homo_sapiens/` exists there
+2. otherwise the sibling quarantine bundle:
+   `/home/na/project/neoantigen/neoag_event_pipeline_v03_rc_artifact_quarantine_20260622_091158/data/vep`
+3. the staged NAS bundle reuses the same cache via:
+   `/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata/data/vep`
+
+To use the staged bundle explicitly:
+
+```bash
+source /mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata/neodata.env.sh
+# sets NEOAG_VEP_CACHE=/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata/data/vep
 ```
 
 `NEOAG_VEP_PLUGINS` should point to a directory containing `Wildtype.pm` and `Frameshift.pm`. Plain VEP can run without these plugins, but this project uses them for pVACseq-compatible WT/frameshift information and more complete peptide extraction.
@@ -416,7 +472,7 @@ Large data should live under `NEOAG_TOOLS_ROOT`, `NEOAG_SHARED_REF_DIR`, or anot
 
 | Data/reference | Needed for | Download/setup command | Expected variable/path | Verify |
 | --- | --- | --- | --- | --- |
-| VEP cache, GRCh38 release 105 | Offline VEP annotation | `bash scripts/install_vep_cache.sh` | `NEOAG_VEP_CACHE=/path/to/data/vep`, contains `homo_sapiens/105_GRCh38` or equivalent | `test -d "$NEOAG_VEP_CACHE/homo_sapiens"` |
+| VEP cache, GRCh38 release 105 | Offline VEP annotation | `bash scripts/install_vep_cache.sh` or reuse site cache | `NEOAG_VEP_CACHE=/path/to/data/vep` (cache root); release dir is `$NEOAG_VEP_CACHE/homo_sapiens/105_GRCh38/`; `NEOAG_VEP_CACHE_VERSION=105` | `test -f "$NEOAG_VEP_CACHE/homo_sapiens/105_GRCh38/info.txt"` |
 | VEP plugins | WT and frameshift plugin annotations | Installed by VEP/pVAC tooling or copied from a site bundle | `NEOAG_VEP_PLUGINS=/path/to/work/vep_plugins` | `test -f "$NEOAG_VEP_PLUGINS/Wildtype.pm"` |
 | GRCh38 FASTA and indices | VEP peptide extraction, GATK, SV peptide building | `bash scripts/download_ref_hg38.sh /path/to/ref/hg38` | `NEOAG_REFERENCE_FASTA=/path/to/Homo_sapiens_assembly38.fasta` | `test -f "$NEOAG_REFERENCE_FASTA"` |
 | dbSNP/common SNP VCF | FACETS `snp-pileup`, some CNV workflows | Included in site reference bundle or downloaded with hg38 bundle where available | `NEOAG_DBSNP_VCF=/path/to/dbsnp_chr.vcf.gz` | `test -f "$NEOAG_DBSNP_VCF"` |
@@ -554,7 +610,7 @@ Expected outputs include:
 
 ```bash
 test -f "$NEOAG_REFERENCE_FASTA"
-test -d "$NEOAG_VEP_CACHE/homo_sapiens"
+test -f "$NEOAG_VEP_CACHE/homo_sapiens/105_GRCh38/info.txt"
 test -f "$NEOAG_VEP_PLUGINS/Wildtype.pm"
 test -f "$NEOAG_NORMAL_PROTEOME_FASTA"
 ```
@@ -576,7 +632,7 @@ Run only the checks relevant to your selected workflow and configured paths.
 | `NetMHCpan MISSING` | Licensed tarball not installed or `NETMHCPAN_HOME` wrong | Install with `bash scripts/install_netmhcpan.sh /path/to/tar.gz`, then `source conf/tools.env.sh`. |
 | NetMHCpan wrapper looks for a stale conda path | Wrapper was created with an old conda base | Set `NEOAG_CONDA_BASE="$(conda info --base)"` and run `bash scripts/install_netmhcpan.sh --repair`. |
 | NetMHCpan reports missing `ld-linux-x86-64.so.2` | Conda sysroot was removed from `neoag-tools` | Install `sysroot_linux-64` and `patchelf` in `neoag-tools`; the lite env file now keeps them. |
-| `VEP cache not found` | Offline cache missing or wrong `NEOAG_VEP_CACHE` | Run `bash scripts/install_vep_cache.sh` or set `NEOAG_VEP_CACHE` in `conf/tools.env.local.sh`. |
+| `VEP cache not found` | Offline cache missing, `NEOAG_VEP_CACHE` points at the wrong directory, or release `105_GRCh38` is absent | Set `NEOAG_VEP_CACHE` to the cache root (not `.../105_GRCh38`), run `bash scripts/install_vep_cache.sh`, or verify `test -f "$NEOAG_VEP_CACHE/homo_sapiens/105_GRCh38/info.txt"`. |
 | `vep MISSING` but VEP is installed | VEP env/wrapper not on configured path | Run `bash scripts/install_vep.sh`, source `conf/tools.env.sh`, and verify `NEOAG_VEP_BIN`. |
 | `Can't locate DBI.pm` during VEP | Perl environment from another conda env polluted VEP | Use `bin/vep-neoag`, which clears conflicting Perl environment variables. |
 | `No CSQ annotations` | Input VCF was not VEP-annotated | Use `run-full` with VEP configured for auto-annotation, or run `neoag-v03 vep-annotate` first. |

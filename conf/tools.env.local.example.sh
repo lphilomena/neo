@@ -17,6 +17,10 @@
 # export NEOAG_NORMAL_PROTEOME_FASTA="/path/to/Homo_sapiens.GRCh38.pep.all.fa"
 # export NEOAG_DBSNP_VCF="/path/to/dbsnp_chr.vcf.gz"
 # export NEOAG_SHARED_REF_DIR="/path/to/shared_refs"
+#
+# VEP cache root (must contain homo_sapiens/105_GRCh38/, not the 105_GRCh38 dir itself)
+# export NEOAG_VEP_CACHE="/path/to/data/vep"
+# export NEOAG_VEP_CACHE_VERSION="105"
 
 # Patient / cohort data (example: chenxiaoliang)
 # export CHENXIAOLIANG_DATA_ROOT="/path/to/chenxiaoliang_data"

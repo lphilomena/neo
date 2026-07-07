@@ -12,6 +12,46 @@ Staging manifest:
 
 `/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata/manifests/data_staging_manifest.md`
 
+## VEP cache
+
+`NEOAG_VEP_CACHE` is the **cache root directory**, not the release subdirectory. VEP is called with `--dir_cache "$NEOAG_VEP_CACHE"` and `--cache_version 105`.
+
+Expected layout:
+
+```text
+$NEOAG_VEP_CACHE/
+└── homo_sapiens/
+    └── 105_GRCh38/
+        ├── info.txt
+        └── 1/ 2/ ... 22/
+```
+
+| Field | Value |
+| --- | --- |
+| Species | `homo_sapiens` |
+| Assembly | `GRCh38` |
+| Release | `105` (`NEOAG_VEP_CACHE_VERSION`) |
+| Package | `homo_sapiens_vep_105_GRCh38.tar.gz` |
+| Typical size | about 12–16 GB |
+| Source URL | `https://ftp.ensembl.org/pub/release-105/variation/indexed_vep_cache/homo_sapiens_vep_105_GRCh38.tar.gz` |
+
+On this server:
+
+| Role | Path |
+| --- | --- |
+| Canonical physical cache root | `/home/na/project/neoantigen/neoag_event_pipeline_v03_rc_artifact_quarantine_20260622_091158/data/vep` |
+| Release directory | `/home/na/project/neoantigen/neoag_event_pipeline_v03_rc_artifact_quarantine_20260622_091158/data/vep/homo_sapiens/105_GRCh38` |
+| Staged bundle cache root | `/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata/data/vep` |
+| Staged symlink | `/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata/data/vep/homo_sapiens` → quarantine `data/vep/homo_sapiens` |
+| Default in `conf/tools.env.sh` | `$NEOAG_TOOLS_ROOT/data/vep`, with automatic fallback to the quarantine cache root when `homo_sapiens/` is missing there |
+| Fresh install target from `scripts/install_vep_cache.sh` | `~/.vep` (set `NEOAG_VEP_CACHE=$HOME/.vep` after install) |
+
+Verify:
+
+```bash
+test -f "$NEOAG_VEP_CACHE/homo_sapiens/105_GRCh38/info.txt"
+```
+
 | Category | Path used in project | Data / reference | Used for | Bundled in lightweight repo |
 | --- | --- | --- | --- | --- |
 | Current staged bundle | `/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata` | NeoAg artifact/reference bundle root | Source `neodata.env.sh` before real-data runs | No |
@@ -23,7 +63,10 @@ Staging manifest:
 | Current staged reference | `/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata/data/ref/hg38/GRCh38.fa.fai` | GRCh38 chr-prefixed FASTA index | SV/fusion real-data scripts | No |
 | Current staged reference | `/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata/data/ref/hg38/Homo_sapiens.GRCh38.pep.all.fa` | Ensembl protein FASTA | Peptide safety normal/reference proteome screen | No |
 | Current staged reference | `/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata/data/ref/hg38/Homo_sapiens.GRCh38.110.gtf` | GENCODE/Ensembl GTF annotation, linked from EasyFuse reference | SV/fusion peptide generation and gene CNV/LOH helpers | No |
-| Current staged VEP cache | `/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata/data/vep/homo_sapiens/105_GRCh38` | VEP GRCh38 release 105 cache, linked from quarantine cache | Offline VEP annotation | No |
+| Current staged VEP cache root | `/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata/data/vep` | VEP cache root for staged bundle; `homo_sapiens` symlinked to quarantine cache | Sets `NEOAG_VEP_CACHE` in `neodata.env.sh` | No |
+| Current staged VEP cache release | `/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata/data/vep/homo_sapiens/105_GRCh38` | Ensembl indexed VEP cache, GRCh38 release 105 | Offline VEP annotation (`--dir_cache` + `--cache_version 105`) | No |
+| Canonical VEP cache root | `/home/na/project/neoantigen/neoag_event_pipeline_v03_rc_artifact_quarantine_20260622_091158/data/vep` | Physical cache root used by local fallback and staged symlink | Offline VEP annotation | No |
+| Canonical VEP cache release | `/home/na/project/neoantigen/neoag_event_pipeline_v03_rc_artifact_quarantine_20260622_091158/data/vep/homo_sapiens/105_GRCh38` | Ensembl indexed VEP cache files (`info.txt`, per-chromosome dirs) | Offline VEP annotation | No |
 | Current staged CTAT | `/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata/data/ref/ctat/current` | CTAT genome library, linked from `/mnt/zjl-bgi-zzb/peixunban/gl/data/reference/GRCh38_gencode_v37_CTAT_lib_Mar012021.plug-n-play` | STAR-Fusion workflows | No |
 | Current staged EasyFuse | `/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata/data/ref/easyfuse_ref_v4` | EasyFuse v4 reference, linked from `/mnt/zjl-bgi-zzb/peixunban/gl/data/reference/easyfuse_ref_v4` | EasyFuse workflows | No |
 | Current staged private data | `/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata/data/external/chenxiaoliang_data` | Chenxiaoliang private data root, linked from `/mnt/zjl-bgi-zzb/peixunban/gl/data/chenxiaoliang_data` | Local patient scripts only | No |
@@ -45,7 +88,7 @@ Staging manifest:
 | Large reference | `data/ref/hg38/Homo_sapiens.GRCh38.110.gtf` | GENCODE/Ensembl GTF annotation | SV/fusion peptide generation | No |
 | Large reference | `data/ref/hg38/capture.bed` | WES/panel capture BED | WES SV Phase 1.5 and interval-restricted workflows | No |
 | Large reference | `data/ref/hg38/hla.txt` | HLA allele file, one allele per line | Peptide prediction and SV workflows | No |
-| Large reference | `data/vep/` | VEP cache directory | Offline VEP annotation | No |
+| Large reference | `data/vep/` | VEP cache root (`homo_sapiens/105_GRCh38/` underneath) | Offline VEP annotation | No |
 | Large reference | `data/external/` | Site-managed external inputs | Private/local deployments | No |
 | Site evidence | `/path/to/normal_expression.tsv` | Site-generated normal tissue expression table | Peptide safety evidence | No |
 | Site evidence | `/path/to/normal_hla_ligands.tsv` | Site-generated normal HLA ligand table | Peptide safety evidence | No |
@@ -61,7 +104,7 @@ Staging manifest:
 | External artifact root | `${NEOAG_TOOLS_ROOT}/data/ref/hg38/Homo_sapiens.GRCh38.110.gtf` | Site GENCODE/Ensembl GTF annotation | SV/fusion peptide generation | No |
 | External artifact root | `${NEOAG_TOOLS_ROOT}/data/ref/hg38/capture.bed` | Site WES/panel capture BED | WES SV Phase 1.5 and interval-restricted workflows | No |
 | External artifact root | `${NEOAG_TOOLS_ROOT}/data/ref/hg38/hla.txt` | Site HLA allele file, one allele per line | Peptide prediction and SV workflows | No |
-| External artifact root | `${NEOAG_TOOLS_ROOT}/data/vep` | Site VEP cache configured by env | Production VEP workflows | No |
+| External artifact root | `${NEOAG_TOOLS_ROOT}/data/vep` | Site VEP cache root configured by env; release dir is `${NEOAG_TOOLS_ROOT}/data/vep/homo_sapiens/105_GRCh38` | Production VEP workflows | No |
 | External artifact root | `${NEOAG_TOOLS_ROOT}/data/ref/ctat` | CTAT genome library path | STAR-Fusion/fusion workflows | No |
 | External artifact root | `${CTAT_GENOME_LIB}` | Active CTAT genome library directory | STAR-Fusion workflows | No |
 | External path | `${NEOAG_DBSNP_VCF}` | Configured dbSNP/common SNP VCF | FACETS `snp-pileup` and CNV/LOH workflows | No |

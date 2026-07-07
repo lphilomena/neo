@@ -40,6 +40,7 @@ if [[ -x "${NEOAG_CONDA_BASE}/envs/${NEOAG_VEP_ENV}/bin/vep" ]]; then
 else
   export NEOAG_VEP_BIN="${NEOAG_TOOLS_ROOT}/bin/vep-neoag"
 fi
+# VEP cache root (must contain homo_sapiens/<version>_GRCh38/, not the release dir itself).
 export NEOAG_VEP_CACHE="${NEOAG_TOOLS_ROOT}/data/vep"
 if [[ ! -d "${NEOAG_VEP_CACHE}/homo_sapiens" && -d "${NEOAG_TOOLS_ROOT}/../neoag_event_pipeline_v03_rc_artifact_quarantine_20260622_091158/data/vep/homo_sapiens" ]]; then
   export NEOAG_VEP_CACHE="${NEOAG_TOOLS_ROOT}/../neoag_event_pipeline_v03_rc_artifact_quarantine_20260622_091158/data/vep"

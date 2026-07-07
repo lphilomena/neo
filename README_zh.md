@@ -286,7 +286,8 @@ neoag-v03 run-full --config conf/run.sample.private.toml --outdir results/sample
 | `NEOAG_CONDA_ENV` | 主 Python CLI 环境。 |
 | `NEOAG_VEP_ENV` | VEP conda 环境名称/路径。 |
 | `NEOAG_VEP_BIN` | VEP 可执行文件或 wrapper 路径。 |
-| `NEOAG_VEP_CACHE` | VEP offline cache 根目录，预期包含 `homo_sapiens/105_GRCh38` 或等价目录。 |
+| `NEOAG_VEP_CACHE` | VEP offline cache **根目录**。必须包含 `homo_sapiens/<version>_GRCh38/`（本项目为 `105_GRCh38`）。**不要**把这个变量直接指向 `105_GRCh38` 子目录。 |
+| `NEOAG_VEP_CACHE_VERSION` | 传给 VEP 的 Ensembl cache release（`--cache_version`，默认 `105`）。 |
 | `NEOAG_VEP_PLUGINS` | VEP plugin 目录，包含 `Wildtype.pm` 和 `Frameshift.pm`。 |
 | `NEOAG_REFERENCE_FASTA` | VEP/GATK/SV peptide workflow 使用的 GRCh38 FASTA。 |
 | `NEOAG_NORMAL_PROTEOME_FASTA` | peptide safety filtering 使用的 normal/reference proteome FASTA。 |
@@ -396,16 +397,71 @@ source conf/tools.env.sh
 neoag-v03 check-tools
 ```
 
-安装或指定 VEP cache：
+#### VEP cache 目录结构
+
+`NEOAG_VEP_CACHE` 是 **cache 根目录**，不是 release 子目录本身。VEP 实际调用方式为：
 
 ```bash
-# 在线安装 cache，可能较慢且占用空间大。
-bash scripts/install_vep_cache.sh
+vep --cache --offline \
+  --dir_cache "$NEOAG_VEP_CACHE" \
+  --cache_version "$NEOAG_VEP_CACHE_VERSION"
+```
 
-# 或使用已有 cache。
-export NEOAG_VEP_CACHE=/path/to/vep_cache
+预期目录结构：
+
+```text
+$NEOAG_VEP_CACHE/
+└── homo_sapiens/
+    └── 105_GRCh38/
+        ├── info.txt
+        ├── 1/ 2/ ... 22/          # 按染色体切分的 indexed cache
+        └── ...                     # vep_install 可能补充的 FASTA / 辅助文件
+```
+
+本项目使用的 cache 信息：
+
+| 项目 | 值 |
+| --- | --- |
+| 物种 | `homo_sapiens` |
+| 参考基因组 | `GRCh38` |
+| Cache release | `105`（`NEOAG_VEP_CACHE_VERSION=105`） |
+| 数据包 | Ensembl indexed cache `homo_sapiens_vep_105_GRCh38.tar.gz` |
+| 典型大小 | 解压后约 12–16 GB |
+| 下载地址 | `https://ftp.ensembl.org/pub/release-105/variation/indexed_vep_cache/homo_sapiens_vep_105_GRCh38.tar.gz` |
+
+安装新 cache，或指向已有 cache：
+
+```bash
+# 全新安装（默认下载到 ~/.vep）
+bash scripts/install_vep_cache.sh
+export NEOAG_VEP_CACHE="${HOME}/.vep"
+export NEOAG_VEP_CACHE_VERSION=105
+
+# 或复用站点已有 cache 根目录
+export NEOAG_VEP_CACHE=/path/to/data/vep
 export NEOAG_VEP_CACHE_VERSION=105
 source conf/tools.env.sh
+```
+
+验证：
+
+```bash
+test -f "$NEOAG_VEP_CACHE/homo_sapiens/105_GRCh38/info.txt"
+```
+
+本机 `conf/tools.env.sh` 的解析顺序为：
+
+1. 若存在 `$NEOAG_TOOLS_ROOT/data/vep/homo_sapiens/`，使用该目录
+2. 否则回退到同级 quarantine 数据包：
+   `/home/na/project/neoantigen/neoag_event_pipeline_v03_rc_artifact_quarantine_20260622_091158/data/vep`
+3. NAS 上的 staged bundle 通过软链接复用同一份 cache：
+   `/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata/data/vep`
+
+显式使用 staged bundle：
+
+```bash
+source /mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata/neodata.env.sh
+# 会设置 NEOAG_VEP_CACHE=/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata/data/vep
 ```
 
 `NEOAG_VEP_PLUGINS` 应指向包含 `Wildtype.pm` 和 `Frameshift.pm` 的目录。普通 VEP 可以不使用这些 plugins，但本项目会用它们生成 pVACseq-compatible WT/frameshift 信息，并让 peptide extraction 更完整。
@@ -416,7 +472,7 @@ source conf/tools.env.sh
 
 | 数据/参考库 | 用途 | 下载/设置命令 | 期望变量/路径 | 验证 |
 | --- | --- | --- | --- | --- |
-| VEP cache, GRCh38 release 105 | Offline VEP annotation | `bash scripts/install_vep_cache.sh` | `NEOAG_VEP_CACHE=/path/to/data/vep`，包含 `homo_sapiens/105_GRCh38` 或等价目录 | `test -d "$NEOAG_VEP_CACHE/homo_sapiens"` |
+| VEP cache, GRCh38 release 105 | Offline VEP annotation | `bash scripts/install_vep_cache.sh` 或复用站点 cache | `NEOAG_VEP_CACHE=/path/to/data/vep`（cache 根目录）；release 目录为 `$NEOAG_VEP_CACHE/homo_sapiens/105_GRCh38/`；`NEOAG_VEP_CACHE_VERSION=105` | `test -f "$NEOAG_VEP_CACHE/homo_sapiens/105_GRCh38/info.txt"` |
 | VEP plugins | WT 和 frameshift plugin annotation | 由 VEP/pVAC tooling 安装，或从站点 bundle 复制 | `NEOAG_VEP_PLUGINS=/path/to/work/vep_plugins` | `test -f "$NEOAG_VEP_PLUGINS/Wildtype.pm"` |
 | GRCh38 FASTA 和索引 | VEP peptide extraction、GATK、SV peptide building | `bash scripts/download_ref_hg38.sh /path/to/ref/hg38` | `NEOAG_REFERENCE_FASTA=/path/to/Homo_sapiens_assembly38.fasta` | `test -f "$NEOAG_REFERENCE_FASTA"` |
 | dbSNP/common SNP VCF | FACETS `snp-pileup` 和部分 CNV workflow | 站点 reference bundle 或 hg38 bundle 下载 | `NEOAG_DBSNP_VCF=/path/to/dbsnp_chr.vcf.gz` | `test -f "$NEOAG_DBSNP_VCF"` |
@@ -554,7 +610,7 @@ bin/neoag-nextflow run workflows/main.nf \
 
 ```bash
 test -f "$NEOAG_REFERENCE_FASTA"
-test -d "$NEOAG_VEP_CACHE/homo_sapiens"
+test -f "$NEOAG_VEP_CACHE/homo_sapiens/105_GRCh38/info.txt"
 test -f "$NEOAG_VEP_PLUGINS/Wildtype.pm"
 test -f "$NEOAG_NORMAL_PROTEOME_FASTA"
 ```
@@ -576,7 +632,7 @@ test -f "$NEOAG_NORMAL_PROTEOME_FASTA"
 | `NetMHCpan MISSING` | 授权 tarball 未安装或 `NETMHCPAN_HOME` 错误 | 用 `bash scripts/install_netmhcpan.sh /path/to/tar.gz` 安装，然后 `source conf/tools.env.sh`。 |
 | NetMHCpan wrapper 指向旧 conda 路径 | wrapper 用旧 conda base 创建 | 设置 `NEOAG_CONDA_BASE="$(conda info --base)"`，然后运行 `bash scripts/install_netmhcpan.sh --repair`。 |
 | NetMHCpan 报缺少 `ld-linux-x86-64.so.2` | `neoag-tools` 中 conda sysroot 被移除 | 在 `neoag-tools` 中安装 `sysroot_linux-64` 和 `patchelf`；lite env 文件已保留这些依赖。 |
-| `VEP cache not found` | Offline cache 缺失或 `NEOAG_VEP_CACHE` 错误 | 运行 `bash scripts/install_vep_cache.sh`，或在 `conf/tools.env.local.sh` 中设置 `NEOAG_VEP_CACHE`。 |
+| `VEP cache not found` | Offline cache 缺失、`NEOAG_VEP_CACHE` 指向错误目录，或缺少 `105_GRCh38` release | 将 `NEOAG_VEP_CACHE` 设为 cache 根目录（不要直接指向 `.../105_GRCh38`），运行 `bash scripts/install_vep_cache.sh`，或验证 `test -f "$NEOAG_VEP_CACHE/homo_sapiens/105_GRCh38/info.txt"`。 |
 | `vep MISSING` 但 VEP 已安装 | VEP env/wrapper 未配置到路径 | 运行 `bash scripts/install_vep.sh`，source `conf/tools.env.sh`，并检查 `NEOAG_VEP_BIN`。 |
 | VEP 运行时 `Can't locate DBI.pm` | 其他 conda env 的 Perl 环境污染 VEP | 使用 `bin/vep-neoag`，该 wrapper 会清理冲突 Perl 环境变量。 |
 | `No CSQ annotations` | 输入 VCF 未经过 VEP 注释 | 配置 VEP 后使用 `run-full` 自动注释，或先运行 `neoag-v03 vep-annotate`。 |

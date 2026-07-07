@@ -59,4 +59,9 @@ echo "==> Installing/refining with vep_install (plugins, FASTA if needed) ..."
 vep_install -a cf -s homo_sapiens -y GRCh38 -n 2>&1 || true
 
 echo "==> Done $(date -Is). Cache dir: ${VEP_DIR}"
+echo "Set in your environment:"
+echo "  export NEOAG_VEP_CACHE=${VEP_DIR}"
+echo "  export NEOAG_VEP_CACHE_VERSION=105"
+echo "Verify:"
+echo "  test -f \"\${NEOAG_VEP_CACHE}/homo_sapiens/105_GRCh38/info.txt\""
 echo "Test: bash ${ROOT}/bin/vep-neoag --offline --cache -help 2>&1 | head -5"

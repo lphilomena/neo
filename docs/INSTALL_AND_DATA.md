@@ -149,7 +149,7 @@ Large data should live under `NEOAG_TOOLS_ROOT` or another site-managed referenc
 
 | Data/reference | Needed for | Download/setup command | Expected variable/path | Verify |
 | --- | --- | --- | --- | --- |
-| VEP cache, GRCh38 release 105 | Offline VEP annotation | `bash scripts/install_vep_cache.sh` | `NEOAG_VEP_CACHE=/path/to/data/vep`, contains `homo_sapiens/105_GRCh38` or equivalent | `test -d "$NEOAG_VEP_CACHE/homo_sapiens"` |
+| VEP cache, GRCh38 release 105 | Offline VEP annotation | `bash scripts/install_vep_cache.sh` or reuse site cache | `NEOAG_VEP_CACHE=/path/to/data/vep` (cache root); release dir is `$NEOAG_VEP_CACHE/homo_sapiens/105_GRCh38/`; `NEOAG_VEP_CACHE_VERSION=105` | `test -f "$NEOAG_VEP_CACHE/homo_sapiens/105_GRCh38/info.txt"` |
 | GRCh38 FASTA and indices | VEP peptide extraction, GATK, SV peptide building | `bash scripts/download_ref_hg38.sh /path/to/ref/hg38` | `NEOAG_REFERENCE_FASTA=/path/to/Homo_sapiens_assembly38.fasta` | `test -f "$NEOAG_REFERENCE_FASTA"` |
 | dbSNP/common SNP VCF | FACETS `snp-pileup`, some CNV workflows | Included in site reference bundle or downloaded with hg38 bundle where available | `NEOAG_DBSNP_VCF=/path/to/dbsnp_chr.vcf.gz` | `test -f "$NEOAG_DBSNP_VCF"` |
 | gnomAD AF VCF and PoN | GATK Mutect2 filtering | `bash scripts/download_ref_hg38.sh /path/to/ref/hg38` | Paths inside selected run config | `test -f /path/to/af-only-gnomad.hg38.vcf.gz` |
@@ -266,7 +266,7 @@ Expected outputs include:
 
 ```bash
 test -f "$NEOAG_REFERENCE_FASTA"
-test -d "$NEOAG_VEP_CACHE/homo_sapiens"
+test -f "$NEOAG_VEP_CACHE/homo_sapiens/105_GRCh38/info.txt"
 test -f "$NEOAG_NORMAL_PROTEOME_FASTA"
 ```
 
@@ -282,7 +282,7 @@ Run only the checks relevant to your selected workflow and configured paths.
 | `conda not found` | Miniforge/Mambaforge not installed or not initialized | Install Miniforge and open a new shell, or source its `etc/profile.d/conda.sh`. |
 | `mhcflurry-downloads fetch failed` | Network/model download issue | Activate the env and rerun `mhcflurry-downloads fetch`; for offline deploys, pre-stage model data. |
 | `NetMHCpan MISSING` | Licensed tarball not installed or `NETMHCPAN_HOME` wrong | Install with `bash scripts/install_netmhcpan.sh /path/to/tar.gz`, then `source conf/tools.env.sh`. |
-| `VEP cache not found` | Offline cache missing or wrong `NEOAG_VEP_CACHE` | Run `bash scripts/install_vep_cache.sh` or set `NEOAG_VEP_CACHE` in `conf/tools.env.local.sh`. |
+| `VEP cache not found` | Offline cache missing, `NEOAG_VEP_CACHE` points at the wrong directory, or release `105_GRCh38` is absent | Set `NEOAG_VEP_CACHE` to the cache root (not `.../105_GRCh38`), run `bash scripts/install_vep_cache.sh`, or verify `test -f "$NEOAG_VEP_CACHE/homo_sapiens/105_GRCh38/info.txt"`. |
 | `.nextflow/history.lock (Permission denied)` | Root-owned `.nextflow` metadata | Use `export NXF_HOME=/path/to/writable/cache` and run `bin/neoag-nextflow`. |
 | `Downloading nextflow dependencies` hangs | First launch without cache or blocked network | Pre-populate `NXF_HOME`, use a shared cache, or allow network until download completes. |
 | `Java not found` or unsupported Java | Java missing/old | Install OpenJDK 11+; verify with `java -version`. |
