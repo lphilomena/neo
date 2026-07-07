@@ -36,14 +36,14 @@ neoag-v03 build-intermediates \
   --sample-id <sample_id> \
   --profile <profile> \
   --entry-mode splice_junction \
+  --pvac <pvacsplice_aggregated_tsv> \
   --splice-junction-tsv <splice_junction_tsv> \
-  --variants-vcf <vep_annotated_vcf> \
   --hla <hla_allele_1> <hla_allele_2> ...
 ```
 
-`--variants-vcf` 和 `--hla` 都是**必需参数**：`--variants-vcf` 必须是已含VEP `CSQ`注释的VCF
-（未注释先跑`vep-annotate`），`--hla` 缺失会导致肽段生成静默产出0条。
-有pVACsplice结果时追加 `--pvac <pvacsplice_aggregated.tsv>`。
+`--pvac`（pVACsplice聚合表）是**真正产生肽段的来源**——`--splice-junction-tsv`只是给已有肽段做
+junction支持度富集，本身不产肽，缺了`--pvac`肽段生成会静默产出0条。`--variants-vcf`是可选的富集上下文，
+同样不会独立产肽。
 
 check：
 

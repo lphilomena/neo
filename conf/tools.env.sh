@@ -183,3 +183,10 @@ if [[ -f "${NEOAG_PROJECT_ROOT}/conf/tools.env.local.sh" ]]; then
   # shellcheck source=/dev/null
   source "${NEOAG_PROJECT_ROOT}/conf/tools.env.local.sh"
 fi
+
+# VEP — installed via scripts/install_vep.sh
+export NEOAG_VEP_ENV="neoag-vep"
+export NEOAG_VEP_BIN="/root/miniconda3/envs/neoag-vep/bin/vep"
+if [[ -d "/root/miniconda3/envs/neoag-vep/bin" ]]; then
+  export PATH="/root/miniconda3/envs/neoag-vep/bin:${PATH}"
+fi

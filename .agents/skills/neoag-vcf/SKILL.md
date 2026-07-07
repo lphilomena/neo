@@ -22,10 +22,11 @@ description: 从体细胞VCF（SNV/InDel）出发，运行滑窗产肽、结合/
 - `outdir`
 - `profile`（不指定则用 `default`）
 - VCF是否已有VEP的 `CSQ` 注释
-- 是否要用真实工具（NetMHCpan/MHCflurry本地预测）还是stub/fixture模式做冒烟测试
-- 可选：`normal_expression`、`normal_hla_ligands`、`normal_proteome_fasta`（安全过滤用）
+- 可选：`normal_expression`、`normal_hla_ligands`、`normal_proteome_fasta`（安全过滤用，）
 
 不要臆造真实患者路径或HLA分型，缺失就直接问用户。
+
+每一个分步执行前检查参数，有任何参数模糊或缺失，直接问用户，不要自己推测参数。
 
 ## 运行前检查
 
@@ -47,11 +48,13 @@ test -f "$NEOAG_VEP_PLUGINS/Wildtype.pm" && test -f "$NEOAG_VEP_PLUGINS/Frameshi
 test -f "$NEOAG_REFERENCE_FASTA" || echo "MISSING: 参考FASTA"
 ```
 
-若要跑本地NetMHCpan（而不是 `--stub`/`--immunogenicity-stub`桩模式），检查：
+若要跑本地NetMHCpan，检查：
 
 ```bash
 command -v netMHCpan >/dev/null || echo "MISSING: NetMHCpan（可用 --stub 跳过，或用户已有预计算结果）"
 ```
+
+环境变量或工具检查不存在时，向用户说明缺失的工具/数据，询问是否需要进行工具安装或配置。
 
 ## 分步执行路径
 
@@ -74,7 +77,7 @@ check：
 test -s <outdir>/upstream/tools/<sample_id>.vep.annotated.vcf.gz
 ```
 
-不合格（文件为空/命令失败）→ 停止，只重跑这一步；检查 `NEOAG_VEP_BIN`/`NEOAG_VEP_CACHE`/`NEOAG_VEP_PLUGINS`/`NEOAG_REFERENCE_FASTA` 后再试。
+不合格（文件为空/命令失败）→ 停止，只重跑这一步；检查 `NEOAG_VEP_BIN`/`NEOAG_VEP_CACHE`/`NEOAG_VEP_PLUGINS`/`NEOAG_REFERENCE_FASTA` 并向用户确认后再试。
 
 ### 2. 滑窗产肽
 
@@ -91,8 +94,7 @@ neoag-v03 extract-variant-peptides \
   --filter-normal-proteome
 ```
 
-没有normal proteome FASTA就省略 `--normal-proteome-fasta`/`--filter-normal-proteome`，并向用户说明
-"本次未启用normal proteome安全过滤"。
+normal_proteome-fasta为安全过滤，真实数据下必须开启，向用户确认可参考的normal proteome文件。
 
 check：
 
@@ -102,20 +104,21 @@ test -s <outdir>/upstream/tools/variant_peptides.tsv
 
 不合格 → 只重跑这一步，检查CSQ注释是否存在、`tumor_sample_name`是否与VCF列名一致、HLA格式是否正确。
 
-### 3. 结合/免疫原性预测（公共段第一步）
+### 3. 
+
+### 4. 结合/免疫原性预测（公共段第一步）
 
 ```bash
 neoag-v03 peptide-predict \
   -i <outdir>/upstream/tools/variant_peptides.tsv \
   -o <outdir>/presentation \
-  --sample-id <sample_id> \
-  # 无本地工具时先用 --stub 冒烟测试
-  # --stub
+  --sample-id <sample_id> 
+
 ```
 
 check：`presentation/` 目录下应有 `netmhcpan_evidence.tsv`/`mhcflurry_evidence.tsv` 等文件非空。
 
-### 4. 打分排序（公共段第二步，见 `neoag-shared/SKILL.md` 完整说明）
+### 5. 打分排序（公共段第二步，见 `neoag-shared/SKILL.md` 完整说明）
 
 依次调用 `appm-2`/`ccf-2`/`peptide-safety`/`immune-escape`（可并行）→ `score-v03` →
 `validation-plan-v03` → `report-v03`。参数和check标准见 `../neoag-shared/SKILL.md`，
