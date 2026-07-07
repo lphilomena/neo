@@ -36,9 +36,13 @@ neoag-v03 build-intermediates \
   --sample-id <sample_id> \
   --profile <profile> \
   --entry-mode splice_junction \
-  --splice-junction-tsv <splice_junction_tsv>
+  --splice-junction-tsv <splice_junction_tsv> \
+  --variants-vcf <vep_annotated_vcf> \
+  --hla <hla_allele_1> <hla_allele_2> ...
 ```
 
+`--variants-vcf` 和 `--hla` 都是**必需参数**：`--variants-vcf` 必须是已含VEP `CSQ`注释的VCF
+（未注释先跑`vep-annotate`），`--hla` 缺失会导致肽段生成静默产出0条。
 有pVACsplice结果时追加 `--pvac <pvacsplice_aggregated.tsv>`。
 
 check：
@@ -46,6 +50,7 @@ check：
 ```bash
 test -s <outdir>/parsed/raw_events.tsv
 test -s <outdir>/parsed/raw_peptides.tsv
+wc -l <outdir>/parsed/raw_peptides.tsv   # 确认>1行，不只是表头
 ```
 
 不合格 → 检查junction TSV的列格式是否符合RegTools标准输出。

@@ -55,7 +55,7 @@
 
 ## Skills 化重构（本轮）
 
-- 新增 `.agent/skills/`：`pipeline-get`（入口路由/环境自检）+ 6个入口skill
+- 新增 `.agents/skills/`：`pipeline-get`（入口路由/环境自检）+ 6个入口skill
   （`neoag-vcf`/`neoag-fusion`/`neoag-splice`/`neoag-sv-wgs`/`neoag-sv-wes`/`neoag-peptide-csv`）+
   `neoag-shared`（presentation之后的公共段说明）。
 - `run-demo` 新增 `--entry-mode {snv_indel,fusion,splice_junction,sv_wgs,sv_wes,peptide_only}`，

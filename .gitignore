@@ -51,3 +51,5 @@ conf/site.config
 conf/private/
 conf/*.private.toml
 conf/*.local.toml
+
+.agents/skills/skill-creator

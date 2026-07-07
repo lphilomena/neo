@@ -16,7 +16,7 @@
 - Markdown文档（`docs/`）、license、notice、citation、release notes、manifest
 - `scripts/` 下的打包/复现脚本
 - conda环境manifest（如`conda/env.neoag-ascat-v3.yml`）
-- `.agent/skills/`（AI可路由的skill定义）
+- `.agents/skills/`（AI可路由的skill定义）
 
 **排除在轻量在线发布包外：**
 

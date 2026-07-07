@@ -897,6 +897,8 @@ def cmd_build_intermediates(args):
             "raw_peptides": args.raw_peptides,
             "sv_raw_events": args.sv_raw_events,
             "sv_raw_peptides": args.sv_raw_peptides,
+            "hla_alleles": getattr(args, "hla", None) or [],
+            "variants_vcf": getattr(args, "variants_vcf", None),
         },
     }
     paths = build_raw_intermediates(cfg, args.outdir, root=ROOT)
@@ -1273,6 +1275,8 @@ def build_parser():
     bi.add_argument("--raw-peptides")
     bi.add_argument("--sv-raw-events")
     bi.add_argument("--sv-raw-peptides")
+    bi.add_argument("--hla", nargs="*", help="HLA alleles, e.g. HLA-A*02:01 HLA-B*07:02 (required for fusion/splice_junction peptide expansion)")
+    bi.add_argument("--variants-vcf", help="Somatic VCF providing variant context for splice_junction peptide building")
     bi.set_defaults(func=cmd_build_intermediates)
 
     be = sub.add_parser("build-evidence-layer", help="Write expression/RNA junction/safety evidence TSVs")

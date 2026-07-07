@@ -47,9 +47,11 @@ neoag-v03 build-intermediates \
   --sample-id <sample_id> \
   --profile <profile> \
   --entry-mode fusion \
-  --easyfuse-pass-csv <easyfuse_pass_csv>
+  --easyfuse-pass-csv <easyfuse_pass_csv> \
+  --hla <hla_allele_1> <hla_allele_2> ...
 ```
 
+`--hla` 是**必需参数**，不是可选项——缺了它肽段生成会静默产出0条（只有事件表，没有肽段表，不会报错）。
 若同时有pVACfuse结果，追加 `--pvac <pvacfuse_aggregated.tsv>` 补充表位信息。
 
 check：
@@ -57,6 +59,8 @@ check：
 ```bash
 test -s <outdir>/parsed/raw_events.tsv
 test -s <outdir>/parsed/raw_peptides.tsv
+# 关键：确认raw_peptides.tsv行数>1，不只是文件存在
+wc -l <outdir>/parsed/raw_peptides.tsv
 ```
 
 不合格 → 检查 `fusions.pass.csv` 是否包含 `FTID`/`Fusion_Gene` 等EasyFuse标准列。

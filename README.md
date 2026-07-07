@@ -25,7 +25,7 @@ The pipeline is organized around 6 independent input entries. Each one runs from
 a shared scoring/report tail. See **[`docs/USAGE_GUIDE.md`](docs/USAGE_GUIDE.md)** for the full command-by-command
 tutorial (module chains, intermediate files, final outputs, parameters, and required environment per module).
 
-| Entry | Input | AI skill (`.agent/skills/`) |
+| Entry | Input | AI skill (`.agents/skills/`) |
 |---|---|---|
 | SNV/InDel | Somatic VCF (+ optional pVACseq) | `neoag-vcf` |
 | Fusion | EasyFuse `fusions.pass.csv` (+ optional pVACfuse) | `neoag-fusion` |
@@ -34,7 +34,7 @@ tutorial (module chains, intermediate files, final outputs, parameters, and requ
 | SV (WES) | Same, + capture BED | `neoag-sv-wes` |
 | Peptide-only | Peptide + HLA CSV/TSV | `neoag-peptide-csv` |
 
-If you're using an AI coding/agent tool that supports `.agent/skills/`, start with `pipeline-get` — it checks
+If you're using an AI coding/agent tool that supports `.agents/skills/`, start with `pipeline-get` — it checks
 the environment, lists the 6 entries above, and routes to the right one based on your input file. Each entry
 skill and `docs/USAGE_GUIDE.md` describe the exact same commands; keep both in sync when either changes.
 

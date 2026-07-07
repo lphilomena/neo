@@ -5,7 +5,7 @@
 1. **第一部分**：6类输入各自需要运行的流程示例（模块命令组合），列出每步的中间文件和check标准。
 2. **第二部分**：每个模块的参数说明、输出文件说明、所需环境说明。
 
-配套的AI可路由skill定义在 `.agent/skills/`（`pipeline-get` 做入口判定，6个 `neoag-*` skill 对应下面6类入口，
+配套的AI可路由skill定义在 `.agents/skills/`（`pipeline-get` 做入口判定，6个 `neoag-*` skill 对应下面6类入口，
 `neoag-shared` 是被它们共用的公共段说明）。本文档面向人工阅读，skill文档面向AI agent执行，两者内容一致，
 不需要重复维护——skill文档改动时请同步更新本文档对应章节，反之亦然。
 
@@ -42,7 +42,7 @@ python -m pip install -e '.[test]' -q
 | E Peptide-only CSV | `neoag-peptide-csv` | `build-intermediates --entry-mode peptide_only` | 无专用一键命令，用`run-full` | `peptide_table` |
 
 > 原先规划中的"Entry F / e2e 全自动"入口已从用户可见流程中去掉：`entry_mode="e2e"`仍存在于
-> 底层路由代码里（供多来源混合场景内部使用），但不作为独立入口对外暴露，本教程和`.agent/skills/`都不会引导到它。
+> 底层路由代码里（供多来源混合场景内部使用），但不作为独立入口对外暴露，本教程和`.agents/skills/`都不会引导到它。
 
 ## Entry A｜SNV/InDel（体细胞VCF） → skill: `neoag-vcf`
 
@@ -68,7 +68,7 @@ python -m pip install -e '.[test]' -q
 | 步骤 | 命令 | 中间文件 | check |
 |---|---|---|---|
 | 0 | `neoag-v03 run-demo --entry-mode fusion --outdir /tmp/demo --sample-id DEMO` | 全套fixture跑通 | 退出码0 |
-| 1 | `neoag-v03 build-intermediates --outdir <outdir> --entry-mode fusion --easyfuse-pass-csv <fusions.pass.csv> --pvac <pvacfuse_aggregated.tsv>`（`--pvac`可选，无pVACfuse结果时省略） | `parsed/raw_events.tsv`、`parsed/raw_peptides.tsv`、`parsed/fusion_evidence.tsv` | 三者非空 |
+| 1 | `neoag-v03 build-intermediates --outdir <outdir> --entry-mode fusion --easyfuse-pass-csv <fusions.pass.csv> --hla <HLA-A*02:01> <HLA-B*07:02> --pvac <pvacfuse_aggregated.tsv>`（`--hla` **必需**，否则肽段生成为0条；`--pvac`可选，无pVACfuse结果时省略） | `parsed/raw_events.tsv`、`parsed/raw_peptides.tsv`、`parsed/fusion_evidence.tsv` | 三者非空，尤其确认`raw_peptides.tsv`行数>1（不只是表头） |
 | 2 | `neoag-v03 peptide-predict -i <outdir>/parsed/raw_peptides.tsv -o <outdir>/presentation` | `presentation/presentation_evidence.tsv` | 非空 |
 | 3-6 | 同Entry A的步骤4-7（公共段） | 同上 | 同上 |
 
@@ -76,10 +76,17 @@ python -m pip install -e '.[test]' -q
 
 ## Entry C｜Splice Junction（可变剪接） → skill: `neoag-splice`
 
+`--variants-vcf` 必须是已含VEP `CSQ`注释的VCF；如果原始VCF还没注释，先跑：
+
+```bash
+neoag-v03 vep-annotate --input-vcf <raw_vcf> --output-vcf <outdir>/upstream/tools/<id>.vep.annotated.vcf.gz \
+  --fasta $NEOAG_REFERENCE_FASTA --cache-dir $NEOAG_VEP_CACHE --plugins-dir $NEOAG_VEP_PLUGINS
+```
+
 | 步骤 | 命令 | 中间文件 | check |
 |---|---|---|---|
 | 0 | `neoag-v03 run-demo --entry-mode splice_junction --outdir /tmp/demo --sample-id DEMO` | 全套fixture跑通 | 退出码0 |
-| 1 | `neoag-v03 build-intermediates --outdir <outdir> --entry-mode splice_junction --splice-junction-tsv <regtools_junctions.tsv> --pvac <pvacsplice_aggregated.tsv>`（`--pvac`可选，无pVACsplice结果时省略） | `parsed/raw_events.tsv`、`parsed/raw_peptides.tsv` | 非空 |
+| 1 | `neoag-v03 build-intermediates --outdir <outdir> --entry-mode splice_junction --splice-junction-tsv <regtools_junctions.tsv> --variants-vcf <vep_annotated_vcf> --hla <HLA-A*02:01> <HLA-B*07:02> --pvac <pvacsplice_aggregated.tsv>`（`--variants-vcf`**必需且必须已含VEP CSQ注释**，`--hla`**必需**，否则肽段生成为0条；`--pvac`可选） | `parsed/raw_events.tsv`、`parsed/raw_peptides.tsv` | 非空，尤其确认`raw_peptides.tsv`行数>1 |
 | 2 | `neoag-v03 peptide-predict -i <outdir>/parsed/raw_peptides.tsv -o <outdir>/presentation` | `presentation/presentation_evidence.tsv` | 非空 |
 | 3-6 | 同Entry A的步骤4-7（公共段） | 同上 | 同上 |
 
@@ -220,10 +227,17 @@ VEP CSQ滑动窗口全枚举产肽（不经pVACseq）。
 | `--easyfuse-pass-csv` / `--easyfuse-tsv` | Fusion入口用 |
 | `--splice-junction-tsv` | Splice入口用 |
 | `--peptide-table` | Peptide-only入口用 |
+| `--hla` | **Fusion/Splice入口必需**，一个或多个HLA分型（如`HLA-A*02:01 HLA-B*07:02`）；不传则肽段生成为0条（只有事件表，没有肽段表），这是最容易踩的坑 |
+| `--variants-vcf` | **Splice入口必需**，且必须是已含VEP CSQ注释的VCF（未注释时先跑`vep-annotate`），提供变异上下文用于构建剪接肽段 |
 | `--pvac` | 可选，补充pVACfuse/pVACsplice表位 |
 | `--raw-events` / `--raw-peptides` | 已有raw表时直接透传 |
 
-环境：纯Python，无外部工具依赖。输出：`parsed/raw_events.tsv` + `parsed/raw_peptides.tsv`（+入口专属sidecar，如`fusion_evidence.tsv`）。
+环境：纯Python，无外部工具依赖（`--variants-vcf`若未注释则需要先跑VEP）。输出：`parsed/raw_events.tsv` + `parsed/raw_peptides.tsv`（+入口专属sidecar，如`fusion_evidence.tsv`）。
+
+> **验证提示**：`build-intermediates`跑完之后，务必检查`raw_peptides.tsv`的**行数**而不只是"文件是否存在"——
+> 该命令在缺少`--hla`（fusion/splice）或`--variants-vcf`（splice）时会**静默**只产出事件表、肽段表为空
+> （不会报错，容易被忽略）。`neoag-v03 run-demo --entry-mode fusion`目前走的是预处理过的
+> pVACfuse聚合表fixture路径，不会暴露这个问题，所以demo跑通不等于这条命令组合本身没问题。
 
 ### `sv-build-raw` / `sv-build-raw-wes`
 
