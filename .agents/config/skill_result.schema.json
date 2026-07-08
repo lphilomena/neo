@@ -1,0 +1,12 @@
+{
+  "type": "object",
+  "required": ["skill_name", "status", "outputs"],
+  "properties": {
+    "skill_name": {"type": "string"},
+    "status": {"type": "string", "enum": ["PASS", "FAIL", "PLANNED", "SKIPPED", "INCOMPLETE"]},
+    "outputs": {"type": "object"},
+    "summary": {"type": "string"},
+    "warnings": {"type": "array"},
+    "next_recommended_skills": {"type": "array"}
+  }
+}

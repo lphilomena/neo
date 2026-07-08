@@ -1,0 +1,17 @@
+{
+  "release_name": "neoag_event_pipeline_v043_agent_skills_p0_p1_20260707",
+  "base": "neoag_event_pipeline_v043_dna_sv_p0_20260701",
+  "created_at": "2026-07-07T00:00:00Z",
+  "features": [
+    "P0 8 repo-scoped skills",
+    "P1 coordinator agent",
+    "skill registry and schemas",
+    "ranking compare/appm/ccf/patient report scripts"
+  ],
+  "tests": {
+    "compileall": "passed",
+    "pytest": "183 passed, 95 skipped",
+    "new_agent_skill_tests": "3 passed"
+  },
+  "file_count": 382
+}

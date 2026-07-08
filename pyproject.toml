@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "neoag-event-pipeline-v03-rc"
 version = "0.4.3"
-description = "Neoantigen event prioritization pipeline with APPM 2.0, CCF 2.0, safety, immune-escape, and validation evidence layers"
+description = "Neoantigen event prioritization pipeline with APPM 2.0, CCF 2.1, safety, immune-escape, and DNA SV-derived neoantigen P0 evidence layers"
 readme = "README.md"
 requires-python = ">=3.11"
 authors = [{name = "OpenAI generated prototype"}]
@@ -16,6 +16,7 @@ test = ["pytest>=7", "pytest-timeout>=2.3"]
 
 [project.scripts]
 neoag-v03 = "neoag_v03.cli:main"
+neoag-agent = "neoag_v03.agents.coordinator:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -23,6 +23,16 @@ The pipeline can:
 
 The `.v03.tsv` suffix in ranked outputs is a schema-compatibility label. It is not the software version. The current release is v0.4.3 and writes v03-compatible tables so older downstream scripts can keep reading the same filenames.
 
+## Agent Skills And Coordinator
+
+This release includes a repo-scoped agent skills pack under `.agents/skills/` and a lightweight coordinator CLI:
+
+```bash
+neoag-agent --message "compare recommendation and NetMHCpan42 rankings" --result-dir results/sample --outdir work/agent_plan
+```
+
+Default mode is dry-run planning. Add `--execute` for supported low-impact skills. See `docs/AGENT_SKILLS_P0_P1.md` for the skill list, expected inputs, outputs, and interpretation boundaries.
+
 ## Quick Start
 
 Run these commands from the project root:
