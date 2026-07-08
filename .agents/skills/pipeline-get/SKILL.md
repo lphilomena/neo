@@ -33,7 +33,7 @@ bin/neoag-nextflow -version
 ## 第二步：告诉用户有哪些子 pipeline 可用
 
 本仓库把新抗原分析流程按输入文件类型拆成 6 个独立入口 skill，每个入口从各自的原始输入
-一路跑到 `ranked_peptides.v03.tsv` / `evidence_report.v03.html`：
+一路跑到 `ranked_peptides.v03.tsv` / `evidence_report.v03.html`, 详细流程可参考`reference/USAGE_GUIDE.md`：
 
 | Skill 名称            | 适用输入                                            | 典型触发场景                                              |
 | --------------------- | --------------------------------------------------- | --------------------------------------------------------- |

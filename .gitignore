@@ -33,6 +33,7 @@ data/examples/
 data/external/
 data/ref/
 data/vep/
+data/test/
 
 # Local downloads/logs
 human_v102.tar.gz.ad

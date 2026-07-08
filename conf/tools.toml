@@ -1,22 +1,31 @@
 # Tool environment configuration, organized by tool (one section per tool).
 #
+# This file is generated to match docs/INSTALL_AND_DATA.md's "External Tool
+# Installation Table" and the actual environment variables each scripts/install_*.sh
+# exports -- do not add a tool here without a corresponding row in that table, and
+# keep both in sync when either changes.
+#
 # Each section may declare:
-#   check   = "bin" | "dir" | "env"   (how to verify availability)
-#   bin     = executable name or absolute path (for check = "bin")
-#   dir     = directory path (for check = "dir")
-#   env_var = name of an environment variable that must be set (for check = "env")
-#   entries = which entry_mode values need this tool
-#   optional = true if the entry can still run in degraded/stub mode without it
+#   check    = "bin" | "dir" | "file" | "env" | "bin_or_env"
+#   bin      = executable name or absolute path (for check = "bin" / "bin_or_env")
+#   dir      = directory path (for check = "dir")
+#   file     = file path (for check = "file")
+#   env_var  = environment variable name (for check = "env" / "bin_or_env")
+#   entries  = which entry_mode values need this tool
+#   optional = true if the entry can still run in degraded/stub/API-fallback mode without it
 #
 # Values may reference environment variables with ${VAR} or ${VAR:-default} syntax;
-# these are resolved at load time by src/neoag_v03/tools_config.py.
+# resolved at load time by src/neoag_v03/tools_config.py.
 #
-# This file replaces the flat NEOAG_* variable list as the single place to look up
-# "what does entry X need, and how do I check it's installed". conf/tools.env.sh is
-# still used to actually export NEOAG_TOOLS_ROOT and any legacy variables other
-# scripts may still read, but this file is the source of truth for run-demo checks.
+# conf/tools.env.sh still does the actual PATH/conda-env resolution (real shell
+# conditionals: quarantine fallback, conda base detection, GPU/CPU switching).
+# This file does not replace that -- it is the structured "what does entry X need,
+# and how do I check it's installed" lookup that run-demo/check-tools read.
+
+
 
 [vep]
+# docs table: "VEP | Required for vep-annotate / extract-variant-peptides"
 check = "bin"
 bin = "${NEOAG_VEP_BIN:-vep}"
 cache_dir = "${NEOAG_VEP_CACHE:-}"
@@ -24,27 +33,80 @@ plugins_dir = "${NEOAG_VEP_PLUGINS:-}"
 entries = ["snv_indel", "splice_junction"]
 optional = false
 
+[gatk]
+# docs table: "GATK4/Mutect2 | Required for snv-call-wes if not providing a somatic VCF"
+check = "env"
+env_var = "NEOAG_GATK_ENV"
+entries = ["snv_indel"]
+optional = true
+
+# ---- Upstream candidate generation (pVACtools family) ----------------------
+
+[pvactools]
+# docs table: pvacseq/pvacfuse/pvacsplice. Either a local binary, or the
+# Docker path (scripts/pull_docker_tools.sh + scripts/run_pvac_docker.sh,
+# which reads NEOAG_PVAC_DOCKER / NEOAG_PVAC_WORKDIR).
+check = "bin_or_env"
+bin = "pvacseq"
+env_var = "NEOAG_PVAC_DOCKER"
+entries = ["snv_indel", "fusion", "splice_junction"]
+optional = true
+
+# ---- Presentation / binding prediction -------------------------------------
+
 [netmhcpan]
+# docs table: required for real binding runs unless using stub/IEDB API fallback.
 check = "bin"
 bin = "${NEOAG_NETMHCPAN_BIN:-netMHCpan}"
 backend = "${NEOAG_NETMHCPAN_BACKEND:-local}"
 entries = ["snv_indel", "fusion", "splice_junction", "sv_wgs", "sv_wes", "peptide_only"]
-optional = true
+optional = false
 
 [mhcflurry]
 check = "env"
 env_var = "NEOAG_CONDA_ENV"
 entries = ["snv_indel", "fusion", "splice_junction", "sv_wgs", "sv_wes", "peptide_only"]
+optional = false
+
+[netmhcstabpan]
+# scripts/install_netmhcstabpan.sh writes an IEDB-shim binary into NETMHCSTABPAN_HOME.
+check = "dir"
+dir = "${NETMHCSTABPAN_HOME:-}"
+entries = ["snv_indel", "fusion", "splice_junction", "sv_wgs", "sv_wes", "peptide_only"]
 optional = true
 
-[bigmhc-im]
-check = 
+# ---- Immunogenicity evidence ------------------------------------------------
 
-[gatk]
-check = "env"
-env_var = "NEOAG_GATK_ENV"
-entries = ["snv_indel"]
+[prime]
+check = "bin"
+bin = "${NEOAG_PRIME_BIN:-PRIME}"
+home_dir = "${PRIME_HOME:-}"
+entries = ["snv_indel", "fusion", "splice_junction", "sv_wgs", "sv_wes", "peptide_only"]
+optional = false
+
+[mixmhcpred]
+check = "bin"
+bin = "${MIXMHCPRED_BIN:-MixMHCpred}"
+home_dir = "${MIXMHCPRED_HOME:-}"
+entries = ["snv_indel", "fusion", "splice_junction", "sv_wgs", "sv_wes", "peptide_only"]
 optional = true
+
+[bigmhc]
+# scripts/install_immunogenicity_tools.sh sets BIGMHC_DIR (no dedicated binary var).
+check = "dir"
+dir = "${BIGMHC_DIR:-}"
+entries = ["snv_indel", "fusion", "splice_junction", "sv_wgs", "sv_wes", "peptide_only"]
+optional = false
+
+[deepimmuno]
+# scripts/install_deepimmuno.sh clones into DEEPIMMUNO_DIR and requires
+# deepimmuno-cnn.py to already be present there.
+check = "dir"
+dir = "${DEEPIMMUNO_DIR:-}"
+entries = ["snv_indel", "fusion", "splice_junction", "sv_wgs", "sv_wes", "peptide_only"]
+optional = true
+
+# ---- Fusion discovery (Entry B upstream, not run by run-demo itself) -------
 
 [easyfuse]
 check = "dir"
@@ -64,26 +126,81 @@ bin = "${NEOAG_FUSIONCATCHER_BIN:-fusioncatcher}"
 entries = ["fusion"]
 optional = true
 
+# ---- SV discovery (Entry D upstream, not run by run-demo itself) ----------
+
 [manta]
+# docs table row covers Manta/GRIDSS/SvABA together under NEOAG_SV_ENV /
+# NEOAG_MANTA_ENV; NEOAG_MANTA_ENV is used as the representative check.
 check = "env"
 env_var = "NEOAG_MANTA_ENV"
 entries = ["sv_wgs", "sv_wes"]
 optional = true
 
+# ---- HLA typing / LOH ------------------------------------------------------
+
 [lohhla]
-check = "env"
-env_var = "NEOAG_CONDA_ENV"
+check = "dir"
+dir = "${LOHHLA_HOME:-}"
 entries = ["snv_indel", "fusion", "splice_junction", "sv_wgs", "sv_wes", "peptide_only"]
 optional = true
 
+[polysolver]
+# LOHHLA's HLA-typing prerequisite; scripts/install_lohhla.sh also exports
+# POLYSOLVER_HOME (may be blank if the site provides HLA types another way).
+check = "dir"
+dir = "${POLYSOLVER_HOME:-}"
+entries = ["snv_indel", "fusion", "splice_junction", "sv_wgs", "sv_wes", "peptide_only"]
+optional = true
+
+[spechla]
+# Site-specific install (docs table: "Install externally; provide output to
+# convert-spechla"); no dedicated NEOAG_* variable exists in this repo, so
+# there is nothing generic to check here. Verified directly by running
+# `neoag-v03 convert-spechla ...` / `neoag-v03 crosscheck-hla-loh ...`.
+
+# ---- Clonality / CNV / purity ----------------------------------------------
+
 [facets]
+check = "dir"
+dir = "${FACETS_HOME:-}"
+entries = ["snv_indel", "fusion", "splice_junction", "sv_wgs", "sv_wes", "peptide_only"]
+optional = true
+
+[ascat]
 check = "env"
 env_var = "NEOAG_ASCAT_ENV"
 entries = ["snv_indel", "fusion", "splice_junction", "sv_wgs", "sv_wes", "peptide_only"]
 optional = true
 
+[ascat_v3]
+check = "env"
+env_var = "NEOAG_ASCAT_V3_ENV"
+entries = ["snv_indel", "fusion", "splice_junction", "sv_wgs", "sv_wes", "peptide_only"]
+optional = true
+
+[pyclone]
+check = "env"
+env_var = "NEOAG_PYCLONE_ENV"
+entries = ["snv_indel", "fusion", "splice_junction", "sv_wgs", "sv_wes", "peptide_only"]
+optional = true
+
+# ---- Reference data ---------------------------------------------------------
+
 [reference]
 check = "dir"
 dir = "${NEOAG_SHARED_REF_DIR:-}"
 entries = ["snv_indel", "fusion", "splice_junction", "sv_wgs", "sv_wes", "peptide_only"]
+optional = true
+
+[reference_fasta]
+check = "file"
+file = "${NEOAG_REFERENCE_FASTA:-}"
+entries = ["snv_indel", "splice_junction", "sv_wgs", "sv_wes"]
+optional = true
+
+[dbsnp]
+# used by GATK Mutect2 (snv-call-wes) and by FACETS.
+check = "file"
+file = "${NEOAG_DBSNP_VCF:-}"
+entries = ["snv_indel"]
 optional = true

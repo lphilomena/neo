@@ -30,15 +30,23 @@ description: 从体细胞VCF（SNV/InDel）出发，运行滑窗产肽、结合/
 
 ## 运行前检查
 
-本入口只需要检查这条链路用到的工具，用带 `--entry-mode` 的demo先验证代码链路是否可用：
+参考 `../pipeline-get/SKILL.md`检查neoag-v03是否已有虚拟环境可用。
+
+在所有命令前需要激活工具的path：
+
+```bash
+source conf/tools.env.sh
+```
+
+本入口只需要检查这条链路用到的工具，用带 `--entry-mode` 的demo先验证流程链路是否可用：
 
 ```bash
 neoag-v03 run-demo --entry-mode snv_indel --outdir /tmp/neoag_demo_snv --sample-id DEMO_SNV
 ```
 
-该命令会先打印这条链路需要的工具清单。
+该命令会先打印这条链路需要的工具清单，并按真实需要的工具跑一个demo。
 
-若要跑真实VCF且VCF没有CSQ注释，额外需要本地VEP，此时检查这几个环境变量：
+若用户提供的VCF没有CSQ注释，额外需要本地VEP, 注意版本为vep105，此时检查这几个环境变量：
 
 ```bash
 test -n "$NEOAG_VEP_BIN" && test -x "$NEOAG_VEP_BIN" || echo "MISSING: VEP可执行文件"
@@ -47,13 +55,13 @@ test -f "$NEOAG_VEP_PLUGINS/Wildtype.pm" && test -f "$NEOAG_VEP_PLUGINS/Frameshi
 test -f "$NEOAG_REFERENCE_FASTA" || echo "MISSING: 参考FASTA"
 ```
 
-若要跑本地NetMHCpan，检查：
+环境变量不存在或错误时，让用户提供准确的环境变量，并将用户的环境变量写入 `conf/tools.env.local.sh`复用。
 
-```bash
-command -v netMHCpan >/dev/null || echo "MISSING: NetMHCpan"
-```
+结合/免疫原性预测需要netmhcpan, mhcflurry, bigmhc-im, prime，检查工具是否已安装可用。
 
-环境变量或工具检查不存在时，向用户说明缺失的工具/数据，询问是否需要进行工具安装或配置。
+工具检查不存在时，向用户说明缺失的工具，询问是否需要进行工具安装或配置。
+
+工具安装严格参考 `../pipeline-get/reference/INSTALL_AND_DATA.md`，不要自行写命令安装，没有安装命令的工具警告用户。
 
 ## 分步执行路径
 
@@ -63,10 +71,9 @@ command -v netMHCpan >/dev/null || echo "MISSING: NetMHCpan"
 neoag-v03 vep-annotate \
   --input-vcf <variants_vcf> \
   --output-vcf <outdir>/upstream/tools/<sample_id>.vep.annotated.vcf.gz \
-  --sample-id <sample_id> \
-  --fasta "$NEOAG_REFERENCE_FASTA" \
-  --cache-dir "$NEOAG_VEP_CACHE" \
-  --plugins-dir "$NEOAG_VEP_PLUGINS" \
+  --fasta $NEOAG_REFERENCE_FASTA \
+  --cache-dir $NEOAG_VEP_CACHE \
+  --plugins-dir $NEOAG_VEP_PLUGINS \
   --fork 4
 ```
 
@@ -114,15 +121,17 @@ neoag-v03 peptide-predict \
   -o <outdir>/presentation \
   --sample-id <sample_id>
 ```
+
 对应工具中netmhcpan, mhcflurry, bigmhc-im, prime必须运行。
-|工具      |输入文件  |    输出文件
-|----------|----------|-------------------------
-|netmhcpan |raw_peptides.tsv |tools/netmhcpan.xls → presentation/netmhcpan_evidence.tsv
-|mhcflurry |raw_peptides.tsv |tools/mhcflurry.csv → mhcflurry_evidence.tsv
-|bigmhc-im |raw_peptides.tsv |bigmhc_im_evidence.tsv
-|prime      |raw_peptides.tsv |presentation/prime_evidence.tsv
-|netmhcstabpan |raw_peptides.tsv |tools/netmhcstabpan.tsv
-|deepimmuno |raw_peptides.tsv |deepimmuno_evidence.tsv
+
+| 工具          | 输入文件         | 输出文件                                                   |
+| ------------- | ---------------- | ---------------------------------------------------------- |
+| netmhcpan     | raw_peptides.tsv | tools/netmhcpan.xls → presentation/netmhcpan_evidence.tsv |
+| mhcflurry     | raw_peptides.tsv | tools/mhcflurry.csv → mhcflurry_evidence.tsv              |
+| bigmhc-im     | raw_peptides.tsv | bigmhc_im_evidence.tsv                                     |
+| prime         | raw_peptides.tsv | presentation/prime_evidence.tsv                            |
+| netmhcstabpan | raw_peptides.tsv | tools/netmhcstabpan.tsv                                    |
+| deepimmuno    | raw_peptides.tsv | deepimmuno_evidence.tsv                                    |
 
 check：各输出文件非空。
 

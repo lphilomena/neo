@@ -64,12 +64,32 @@ def check_tool(name: str, section: dict) -> tuple[bool, str]:
             return True, f"{name} ({tag}): OK ({dir_value})"
         return False, f"{name} ({tag}): MISSING (dir '{dir_value or '<unset>'}' not found)"
 
+    if check == "file":
+        file_value = (section.get("file") or "").strip()
+        if file_value and Path(file_value).is_file():
+            return True, f"{name} ({tag}): OK ({file_value})"
+        return False, f"{name} ({tag}): MISSING (file '{file_value or '<unset>'}' not found)"
+
     if check == "env":
         env_var = section.get("env_var", "")
         val = os.environ.get(env_var, "") if env_var else ""
         if val:
             return True, f"{name} ({tag}): OK ({env_var}={val})"
         return False, f"{name} ({tag}): MISSING ({env_var or '<unset>'} not set)"
+
+    if check == "bin_or_env":
+        # Available either via a local executable, or via an environment
+        # variable that signals a non-local backend (e.g. a Docker image
+        # tag, or an IEDB API fallback flag) is configured instead.
+        bin_ok, bin_msg = check_tool(name, {**section, "check": "bin", "optional": optional})
+        if bin_ok:
+            return True, bin_msg
+        env_var = section.get("env_var", "")
+        val = os.environ.get(env_var, "") if env_var else ""
+        if val:
+            return True, f"{name} ({tag}): OK (via {env_var}={val})"
+        bin_value = (section.get("bin") or "").strip()
+        return False, f"{name} ({tag}): MISSING (bin '{bin_value}' not on PATH, {env_var or '<unset>'} not set)"
 
     return False, f"{name} ({tag}): MISSING (unknown check type {check!r})"
 
