@@ -12,7 +12,7 @@ export PATH="/home/na/miniforge3/envs/neoag-vep/bin:$PATH"
 # VEP offline cache is available on the shared mount;
 # tools.env.sh auto-detects it via NEOAG_VEP_CACHE.
 
-neoag-v03 run-full \
+NEOAG_RUNNER_MODE=docker neoag-v03 run-full \
   --config run.sliding.private.toml \
   --outdir $WORK_DIR/SAMPLE001_sliding
 
