@@ -1,0 +1,4 @@
+sample_id	peptide	hla_allele	deepimmuno_score	source_file
+DEMO	YMDGTMSQV	HLA-A*02:01	0.812400	stub
+DEMO	SPQKQWTRV	HLA-A*02:01	0.451200	stub
+DEMO	VVVGADGVGK	HLA-A*11:01	0.623800	stub

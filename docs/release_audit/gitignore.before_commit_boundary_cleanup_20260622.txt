@@ -1,0 +1,19 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+*.swp
+.DS_Store
+
+# Large tool clones — restore via scripts/install_*.sh (included in full tarball)
+tools/bigmhc/
+tools/bigmhc_clone.log
+tools/mixMHCpred_install/
+tools/prime/
+tools/lohhla/.git/
+tools/facets/.git/
+
+# Regeneratable benchmark caches (reports/metrics kept)
+results/*/tools/
+results/benchmark_cedar/tools/

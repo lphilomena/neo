@@ -1,0 +1,28 @@
+# Score-only: reuse pVAC + binding; real PRIME/BigMHC; VEP/APPM from annotated VCF (CSQ + GX).
+#   source conf/tools.env.sh
+#   neoag-v03 run-full --config conf/run.hcc1395.score.toml --outdir results/HCC1395
+
+[sample]
+id = "HCC1395"
+profile = "default"
+outdir = "results/HCC1395"
+
+[tools]
+stub = false
+enabled = []
+
+[inputs]
+pvac_files = [
+    "results/HCC1395/upstream/tools/pvacseq_aggregated.tsv",
+    "results/HCC1395/upstream/tools/pvacfuse_aggregated.tsv",
+]
+netmhcpan = "results/HCC1395/upstream/tools/netmhcpan.xls"
+mhcflurry = "results/HCC1395/upstream/tools/mhcflurry.csv"
+
+variants_vcf = "data/examples/HCC1395/HCC1395_inputs/annotated.expression.vcf.gz"
+tumor_sample_name = "HCC1395_TUMOR_DNA"
+extract_appm_from_vcf = true
+
+cnv = "data/fixtures/cnv_segments.tsv"
+normal_expression = "resources/normal_expression.example.tsv"
+normal_hla_ligands = "resources/normal_hla_ligands.example.tsv"

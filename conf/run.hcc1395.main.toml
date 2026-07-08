@@ -1,0 +1,37 @@
+# HCC1395 neoantigen main flow (pVAC → binding → v0.3 scoring)
+# Skips VEP/APPM/CCF extras; uses placeholder cnv/normal_expression for safety gates.
+#
+#   source conf/tools.env.sh
+#   neoag-v03 run-full --config conf/run.hcc1395.main.toml --outdir results/HCC1395
+
+[sample]
+id = "HCC1395"
+profile = "default"
+outdir = "results/HCC1395"
+
+[tools]
+stub = false
+enabled = ["pvacseq", "pvacfuse", "netmhcpan", "mhcflurry"]
+
+[inputs]
+hla_alleles = [
+    "HLA-A*29:02",
+    "HLA-B*45:01",
+    "HLA-B*82:02",
+    "HLA-C*06:02",
+]
+
+tumor_vcf = "data/examples/HCC1395/HCC1395_inputs/annotated.expression.vcf.gz"
+tumor_sample_name = "HCC1395_TUMOR_DNA"
+normal_sample_name = "HCC1395_NORMAL_DNA"
+phased_vcf = "data/examples/HCC1395/HCC1395_inputs/phased.vcf.gz"
+
+# MHCflurry + NetMHCpan (requires TF 2.15 + TF_USE_LEGACY_KERAS=1 in tools.env.sh)
+prediction_algorithms = "MHCflurry,NetMHCpan"
+
+# AGFusion output directory (pVACfuse native input)
+fusion_tsv = "data/examples/HCC1395/HCC1395_inputs/agfusion_results"
+
+cnv = "data/fixtures/cnv_segments.tsv"
+normal_expression = "resources/normal_expression.example.tsv"
+normal_hla_ligands = "resources/normal_hla_ligands.example.tsv"

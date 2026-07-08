@@ -1,0 +1,37 @@
+# HCC1395 — Mode C splice junction (RegTools + pVACsplice or VCF splice peptides)
+# Prerequisite: source conf/tools.env.sh
+#
+# Quick start (stub upstream + full scoring):
+#   neoag-v03 run-full --config conf/run.hcc1395.splice.toml --outdir results/HCC1395_splice
+
+[sample]
+id = "HCC1395"
+profile = "default"
+outdir = "results/HCC1395_splice"
+
+[tools]
+stub = true
+enabled = ["pvacsplice", "netmhcpan", "mhcflurry"]
+
+[inputs]
+entry_mode = "splice_junction"
+
+hla_alleles = [
+    "HLA-A*29:02",
+    "HLA-B*45:01",
+    "HLA-B*82:02",
+    "HLA-C*06:02",
+]
+
+splice_junction_tsv = "data/examples/HCC1395/HCC1395_inputs/HCC1395.splice_junctions.tsv"
+variants_vcf = "data/examples/HCC1395/HCC1395_inputs/annotated.expression.vcf.gz"
+tumor_vcf = "data/examples/HCC1395/HCC1395_inputs/annotated.expression.vcf.gz"
+tumor_sample_name = "HCC1395_TUMOR_DNA"
+normal_sample_name = "HCC1395_NORMAL_DNA"
+
+cnv = "data/fixtures/cnv_segments.tsv"
+normal_expression = "resources/normal_expression.example.tsv"
+normal_hla_ligands = "resources/normal_hla_ligands.example.tsv"
+
+# Optional: use pre-run pVACsplice instead of stub
+# pvac_files = ["results/HCC1395_splice/upstream/tools/pvacsplice_aggregated.tsv"]

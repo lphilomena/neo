@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+EASYFUSE_HOME="${NEOAG_EASYFUSE_HOME:-${ROOT}/tools/EasyFuse}"
+NF="${EASYFUSE_HOME}/main.nf"
+if [[ ! -f "${NF}" ]]; then
+  echo "EasyFuse not installed. Run: bash scripts/install_fusion_tools.sh" >&2
+  exit 1
+fi
+NEXTFLOW="${NEOAG_NEXTFLOW:-${ROOT}/bin/nextflow}"
+if [[ ! -x "${NEXTFLOW}" ]]; then
+  NEXTFLOW="$(command -v nextflow || true)"
+fi
+if [[ -z "${NEXTFLOW}" ]]; then
+  echo "nextflow not found. Install neoag-fusion env or set PATH." >&2
+  exit 1
+fi
+exec "${NEXTFLOW}" run "${NF}" "$@"

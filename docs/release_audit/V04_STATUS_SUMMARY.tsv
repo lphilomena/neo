@@ -1,0 +1,10 @@
+group	count
+config	11
+docs_release	9
+fixtures	9
+other	18
+scripts_bin	24
+source	43
+tests	11
+tracked_deletions_review_separately	1
+workflow	5

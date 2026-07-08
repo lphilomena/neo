@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+CONDA_BASE="${NEOAG_CONDA_BASE:-/home/na/miniforge3}"
+ASCAT_V3_ENV="${NEOAG_ASCAT_V3_ENV:-neoag-ascat-v3}"
+RSCRIPT="${CONDA_BASE}/envs/${ASCAT_V3_ENV}/bin/Rscript"
+
+if [[ ! -x "${RSCRIPT}" ]]; then
+  echo "Rscript not found for ASCAT v3 env: ${RSCRIPT}" >&2
+  echo "Install with: conda env create -f conda/env.neoag-ascat-v3.yml" >&2
+  exit 127
+fi
+
+if [[ $# -eq 0 || "${1:-}" == "--version" || "${1:-}" == "-v" ]]; then
+  exec "${RSCRIPT}" -e 'suppressPackageStartupMessages(library(ASCAT)); cat(as.character(packageVersion("ASCAT")), "\n")'
+fi
+
+if [[ "${1:-}" == "--check" ]]; then
+  exec "${RSCRIPT}" -e 'suppressPackageStartupMessages(library(ASCAT)); cat("ASCAT ", as.character(packageVersion("ASCAT")), "\n", sep=""); cat("GenomeInfoDbData=", requireNamespace("GenomeInfoDbData", quietly=TRUE), "\n", sep="")'
+fi
+
+exec "${RSCRIPT}" "$@"

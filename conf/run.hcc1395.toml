@@ -1,0 +1,58 @@
+# HCC1395 — pVACtools tutorial dataset (breast cancer cell line, PDX pair)
+# Source: https://github.com/griffithlab/pVACtools_Intro_Course
+# Data dir: data/examples/HCC1395/HCC1395_inputs/  (from HCC1395_inputs.zip)
+#
+# Prerequisite: source conf/tools.env.sh  (neoag-tools + NetMHCpan on PATH)
+#
+# Quick start:
+#   neoag-v03 run-full --config conf/run.hcc1395.toml --outdir results/HCC1395
+#   neoag-v03 run-upstream --config conf/run.hcc1395.toml --outdir results/HCC1395/upstream
+
+[sample]
+id = "HCC1395"
+profile = "default"
+outdir = "results/HCC1395"
+
+[tools]
+stub = false
+# LOHHLA / FACETS omitted — not included in the HCC1395 bundle
+enabled = ["pvacseq", "pvacfuse", "netmhcpan", "mhcflurry", "vep"]
+
+# Executables resolve from PATH after sourcing conf/tools.env.sh
+[tools.executables]
+# pvacseq = "/root/miniconda3/envs/neoag-tools/bin/pvacseq"
+# netmhcpan = "tools/netMHCpan/netMHCpan"
+
+[inputs]
+# OptiType (optitype_normal_result.tsv): A*29:02 hom, B*45:01 + B*82:02, C*06:02 hom
+hla_alleles = [
+    "HLA-A*29:02",
+    "HLA-B*45:01",
+    "HLA-B*82:02",
+    "HLA-C*06:02",
+]
+
+# Combined tumor/normal VCF — columns HCC1395_NORMAL_DNA, HCC1395_TUMOR_DNA
+tumor_vcf = "data/examples/HCC1395/HCC1395_inputs/annotated.expression.vcf.gz"
+tumor_sample_name = "HCC1395_TUMOR_DNA"
+normal_sample_name = "HCC1395_NORMAL_DNA"
+
+# Optional phased proximal variants (recommended for pVACseq)
+phased_vcf = "data/examples/HCC1395/HCC1395_inputs/phased.vcf.gz"
+
+# pVACfuse input — STAR-Fusion table (or use agfusion_results/ directory instead)
+fusion_tsv = "data/examples/HCC1395/HCC1395_inputs/star-fusion.fusion_predictions.tsv"
+
+# VEP / APPM-lite (already VEP-annotated; re-runs subset annotation for MHC pathway genes)
+variants_vcf = "data/examples/HCC1395/HCC1395_inputs/annotated.expression.vcf.gz"
+
+# Not in HCC1395 bundle — use project placeholders for downstream v0.3 scoring
+cnv = "data/fixtures/cnv_segments.tsv"
+normal_expression = "resources/normal_expression.example.tsv"
+normal_hla_ligands = "resources/normal_hla_ligands.example.tsv"
+
+# Optional: skip pvacseq/pvacfuse upstream if you already ran them manually
+# pvac_files = [
+#   "results/HCC1395/upstream/tools/pvacseq_aggregated.tsv",
+#   "results/HCC1395/upstream/tools/pvacfuse_aggregated.tsv",
+# ]

@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+STAR_FUSION_HOME="${NEOAG_STAR_FUSION_HOME:-${ROOT}/tools/STAR-Fusion}"
+STAR_FUSION="${STAR_FUSION_HOME}/STAR-Fusion"
+if [[ ! -x "${STAR_FUSION}" ]]; then
+  STAR_FUSION="$(command -v STAR-Fusion 2>/dev/null || true)"
+fi
+if [[ -z "${STAR_FUSION}" || ! -x "${STAR_FUSION}" ]]; then
+  echo "STAR-Fusion not found. Run: bash scripts/install_fusion_tools.sh" >&2
+  exit 127
+fi
+exec "${STAR_FUSION}" "$@"

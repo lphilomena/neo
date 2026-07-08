@@ -1,0 +1,6 @@
+chr1	mini	gene	1	150	.	+	.	gene_id "GENE1"; gene_name "GENE1";
+chr1	mini	exon	1	150	.	+	.	gene_id "GENE1"; gene_name "GENE1"; transcript_id "TX1"; exon_number "1";
+chr1	mini	CDS	1	150	.	+	0	gene_id "GENE1"; gene_name "GENE1"; transcript_id "TX1"; exon_number "1";
+chr2	mini	gene	1	150	.	+	.	gene_id "GENE2"; gene_name "GENE2";
+chr2	mini	exon	1	150	.	+	.	gene_id "GENE2"; gene_name "GENE2"; transcript_id "TX2"; exon_number "1";
+chr2	mini	CDS	1	150	.	+	0	gene_id "GENE2"; gene_name "GENE2"; transcript_id "TX2"; exon_number "1";

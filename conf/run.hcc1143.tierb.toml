@@ -1,0 +1,42 @@
+# HCC1143 Tier B — real FACETS purity/CNV + LOHHLA HLA LOH
+#
+# FACETS from: bash scripts/run_facets_hcc1143.sh
+# pVAC/binding reuses cached HCC1395 upstream (cross-sample smoke test for scoring only).
+#
+#   source conf/tools.env.sh
+#   neoag-v03 run-full --config conf/run.hcc1143.tierb.toml --outdir results/hcc1143_tierb
+
+[sample]
+id = "hcc1143"
+profile = "default"
+outdir = "results/hcc1143_tierb"
+
+[tools]
+stub = false
+immunogenicity_stub = true
+enabled = ["lohhla", "facets"]
+
+[tools.executables]
+facets = "tools/facets/runFACETS.R"
+
+[inputs]
+pvac_files = [
+    "results/HCC1395/upstream/tools/pvacseq_aggregated.tsv",
+    "results/HCC1395/upstream/tools/pvacfuse_aggregated.tsv",
+]
+netmhcpan = "results/HCC1395/upstream/tools/netmhcpan.xls"
+mhcflurry = "results/HCC1395/upstream/tools/mhcflurry.csv"
+
+variants_vcf = "data/examples/HCC1395/HCC1395_inputs/annotated.expression.vcf.gz"
+tumor_sample_name = "HCC1395_TUMOR_DNA"
+extract_appm_from_vcf = true
+
+# LOHHLA example (replace with hcc1143 LOHHLA output when available)
+lohhla_prediction = "tools/lohhla/example-file/correct-example-out/example.10.DNA.HLAlossPrediction_CI.xls"
+
+# FACETS — from work/facets_hcc1143 (HCC1143 50K subset smoke test)
+facets_rds = "work/facets_hcc1143/hcc1143.facets.rds"
+facets_cncf = "work/facets_hcc1143/facets_cncf.tsv"
+
+normal_expression = "resources/normal_expression.example.tsv"
+normal_hla_ligands = "resources/normal_hla_ligands.example.tsv"

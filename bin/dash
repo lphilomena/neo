@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+DASH_ROOT="${ROOT}/tools/DASH"
+DASH_ENV="${DASH_ROOT}/.conda"
+
+export SAMTOOLS="${DASH_ENV}/bin"
+export BWA="${DASH_ENV}/bin"
+
+exec mamba run -p "${DASH_ENV}" python "${DASH_ROOT}/Algorithm/DASH.manuscript.py" "$@"

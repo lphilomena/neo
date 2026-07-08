@@ -1,0 +1,9 @@
+##fileformat=VCFv4.2
+##INFO=<ID=SVTYPE,Number=1,Type=String,Description="SV type">
+##INFO=<ID=CIPOS,Number=2,Type=Integer,Description="CI POS">
+##INFO=<ID=CIEND,Number=2,Type=Integer,Description="CI END">
+##FORMAT=<ID=PR,Number=2,Type=Integer,Description="Paired read ref,alt support">
+##FORMAT=<ID=SR,Number=2,Type=Integer,Description="Split read ref,alt support">
+##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Depth">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	NORMAL	TUMOR
+chr1	60	bnd1	N	N]chr2:31]	.	PASS	SVTYPE=BND;CIPOS=-5,5;CIEND=-5,5	PR:SR:DP	10,0:5,0:50	12,6:8,4:60

@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck source=/dev/null
+source "${ROOT}/conf/tools.env.sh"
+PSHOME="${POLYSOLVER_HOME:-${NEOAG_TOOLS_ROOT:-${ROOT}}/tools/polysolver}"
+if [[ ! -f "${PSHOME}/scripts/config.local.bash" || ! -x "${PSHOME}/scripts/shell_call_hla_type" ]]; then
+  echo "ERROR: set POLYSOLVER_HOME to a PolySolver installation with scripts/config.local.bash and scripts/shell_call_hla_type" >&2
+  exit 2
+fi
+# shellcheck source=/dev/null
+source "${PSHOME}/scripts/config.local.bash"
+export PATH="${NEOAG_CONDA_BASE}/envs/${NEOAG_TOOLS_ENV:-neoag-tools}/bin:${PSHOME}/binaries:${PSHOME}/scripts:${PATH}"
+exec bash "${PSHOME}/scripts/shell_call_hla_type" "$@"

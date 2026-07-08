@@ -1,0 +1,4 @@
+Gene	Mutation	Event Type	Chromosome	Position	Reference	Variant	Transcript	Consequence	MT Epitope Seq	WT Epitope Seq	HLA Allele	MHC Class	Best MT Score	EL Rank	presentation_score	immunogenicity_score	Best WT Score	self_similarity_score	Transcript Expression	driver_relevance	clonality	persistence	tumor_specificity	DNA VAF	Tumor DNA Depth	Tumor DNA Alt Count
+KRAS	G12D	SNV	chr12	25398284	G	A	ENST00000256078	missense_variant	VVVGADGVGK	VVVGAGGVGK	HLA-A*11:01	I	0.35	0.50	0.77	0.72	4.20	0.45	15.0	0.90	0.85	0.80	0.90	0.42	110	46
+WT1	R394W	TAA	chr11	32417911	C	T	ENST00000332351	missense_variant	ALWGFFPVL	ALRGFFPVL	HLA-A*02:01	I	0.20	0.30	0.81	0.75	0.45	0.91	12.0	0.30	0.50	0.45	0.35	0.20	80	16
+DNMT3A	R882H	SNV	chr2	25234373	G	A	ENST00000321117	missense_variant	PRRGRHRSV	PRRGRRRSV	HLA-DRB1*04:01	II	1.20	1.00	0.66	0.62	7.50	0.35	9.0	0.80	0.70	0.75	0.85	0.31	90	28

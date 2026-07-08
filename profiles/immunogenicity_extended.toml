@@ -1,0 +1,37 @@
+# Extended immunogenicity: PRIME + BigMHC_IM + DeepImmuno (BigMHC-heavy weighted composite)
+[presentation_weights]
+netmhcpan_ba = 0.25
+netmhcpan_el = 0.35
+mhcflurry_presentation = 0.30
+mhcflurry_processing = 0.10
+
+[v03_score_weights]
+event_score = 0.35
+binding_evidence = 0.20
+presentation_evidence = 0.25
+immunogenicity = 0.15
+evidence_completeness = 0.05
+
+[gates]
+enabled = true
+require_presentation_grades = ["A", "B"]
+max_el_rank = 2.0
+min_stabpan_score = 1.4
+min_event_expression_tpm = 0.0
+min_tumor_vaf = 0.0
+failure_mode = "multiply"
+failure_multiplier = 0.25
+
+[immunogenicity]
+enabled = true
+sources = ["prime", "bigmhc_im", "deepimmuno"]
+composite = "weighted"
+use_iedb_fallback = false
+
+[immunogenicity.weights]
+bigmhc_im = 0.55
+prime = 0.35
+deepimmuno = 0.10
+
+# HLA-stratified source multipliers disabled (CEDAR ablation: hurts gated composite AUROC).
+# Re-enable under [immunogenicity.hla_source_multipliers."HLA-..."] when retuned.

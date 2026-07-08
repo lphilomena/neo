@@ -1,0 +1,34 @@
+# Production run config — use after: source conf/tools.env.sh
+# Requires: conda env neoag-tools + optional NetMHCpan at NETMHCPAN_HOME
+
+[sample]
+id = "P001"
+profile = "leukemia"
+outdir = "results/P001"
+
+[tools]
+stub = false
+enabled = ["pvacseq", "pvacfuse", "netmhcpan", "mhcflurry", "vep"]
+
+# Executables resolve from PATH after sourcing conf/tools.env.sh
+[tools.executables]
+# netmhcpan = "/opt/netMHCpan/netMHCpan"
+# pvacseq = "/root/miniconda3/envs/neoag-tools/bin/pvacseq"
+
+[inputs]
+hla_alleles = ["HLA-A*02:01", "HLA-B*07:02", "HLA-DRB1*04:01"]
+
+tumor_vcf = "/path/to/tumor.annotated.vcf"
+normal_vcf = "/path/to/normal.annotated.vcf"
+fusion_tsv = "/path/to/star-fusion.fusion_predictions.tsv"
+expression = "/path/to/rnaseq_tpm.tsv"
+variants_vcf = "/path/to/somatic.vcf.gz"
+cnv = "/path/to/cnv_segments.tsv"
+
+normal_expression = "resources/normal_expression.example.tsv"
+normal_hla_ligands = "resources/normal_hla_ligands.example.tsv"
+
+# LOHHLA / FACETS: install separately or provide pre-computed TSV
+# inputs.purity = "path/to/purity.tsv"
+# inputs.hla_loh = "path/to/hla_loh.tsv"
+# inputs.spechla_merge = "path/to/merge.hla.copy.txt"

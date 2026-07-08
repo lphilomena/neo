@@ -1,0 +1,46 @@
+# HCC1395 Tier B — real FACETS purity/CNV + LOHHLA HLA LOH (when external outputs exist)
+#
+# HCC1395 bundle has VCF/OptiType only (no BAM). Provide one of:
+#   inputs.lohhla_prediction  — LOHHLA *HLAlossPrediction_CI* (converted automatically)
+#   inputs.hla_loh            — pre-converted hla_loh.tsv
+#   inputs.facets_rds         — FACETS RDS (purity + cncf extracted via runFACETS.R)
+#   inputs.purity / inputs.facets_cncf — pre-extracted FACETS tables
+#
+# Quick start (LOHHLA example + cached upstream + FACETS from hcc1143 smoke test):
+#   source conf/tools.env.sh
+#   neoag-v03 run-full --config conf/run.hcc1395.tierb.toml --outdir results/HCC1395_tierb
+
+[sample]
+id = "HCC1395"
+profile = "default"
+outdir = "results/HCC1395_tierb"
+
+[tools]
+stub = false
+immunogenicity_stub = true
+enabled = ["lohhla", "facets"]
+
+[tools.executables]
+facets = "tools/facets/runFACETS.R"
+
+[inputs]
+pvac_files = [
+    "results/HCC1395/upstream/tools/pvacseq_aggregated.tsv",
+    "results/HCC1395/upstream/tools/pvacfuse_aggregated.tsv",
+]
+netmhcpan = "results/HCC1395/upstream/tools/netmhcpan.xls"
+mhcflurry = "results/HCC1395/upstream/tools/mhcflurry.csv"
+
+variants_vcf = "data/examples/HCC1395/HCC1395_inputs/annotated.expression.vcf.gz"
+tumor_sample_name = "HCC1395_TUMOR_DNA"
+extract_appm_from_vcf = true
+
+# LOHHLA — replace with sample-specific output when BAM-based run is available
+lohhla_prediction = "tools/lohhla/example-file/correct-example-out/example.10.DNA.HLAlossPrediction_CI.xls"
+
+# FACETS — from work/facets_hcc1143 (HCC1143 50K subset smoke test; purity ~0.85)
+facets_rds = "work/facets_hcc1143/hcc1143.facets.rds"
+facets_cncf = "work/facets_hcc1143/facets_cncf.tsv"
+
+normal_expression = "resources/normal_expression.example.tsv"
+normal_hla_ligands = "resources/normal_hla_ligands.example.tsv"

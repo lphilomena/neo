@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# Run VEP in isolated neoag-vep env (avoids Perl path clash with neoag-tools).
+set -euo pipefail
+
+CONDA_BASE="${NEOAG_CONDA_BASE:-$(conda info --base 2>/dev/null || echo /home/na/miniforge3)}"
+VEP_ENV_NAME="${NEOAG_VEP_ENV:-neoag-vep}"
+if [[ -x "${VEP_ENV_NAME}/bin/perl" ]]; then
+  VEP_ENV="${VEP_ENV_NAME}"
+else
+  VEP_ENV="${CONDA_BASE}/envs/${VEP_ENV_NAME}"
+fi
+PERL_BIN="${VEP_ENV}/bin/perl"
+VEP_SCRIPT="$(readlink -f "${VEP_ENV}/bin/vep" 2>/dev/null || echo "${VEP_ENV}/share/ensembl-vep-105.0-0/vep")"
+
+if [[ ! -x "${PERL_BIN}" ]]; then
+  echo "ERROR: neoag-vep perl not found at ${PERL_BIN}" >&2
+  echo "Run: bash scripts/install_vep.sh" >&2
+  exit 1
+fi
+
+# VEP uses #!/usr/bin/env perl; neoag-tools perl 5.32 breaks module resolution.
+unset PERL5LIB PERLLIB
+export PATH="${VEP_ENV}/bin:/usr/bin:/bin"
+
+exec "${PERL_BIN}" "${VEP_SCRIPT}" "$@"

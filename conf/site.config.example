@@ -1,0 +1,20 @@
+/*
+ * Site-local Nextflow settings example.
+ *
+ * Copy to conf/site.config for a real deployment. Do not commit the copied file:
+ * it may contain cluster queues, absolute paths, mounted references, or licensed
+ * tool locations.
+ */
+
+params {
+  outdir = "results/site_demo"
+  tools_root = "/path/to/site/neoag_tools"
+  reference_root = "/path/to/site/references"
+}
+
+process {
+  executor = "local"
+  cpus = 2
+  memory = "4 GB"
+  time = "2h"
+}

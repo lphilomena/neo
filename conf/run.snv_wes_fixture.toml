@@ -1,0 +1,22 @@
+# WES SNV Phase 1 fixture — Mutect2 output substituted by mini_somatic.vcf, upstream stub on.
+
+[sample]
+id = "SNVMINI"
+profile = "default"
+outdir = "results/SNVMINI_snv_wes_e2e"
+
+[tools]
+stub = true
+enabled = ["pvacseq", "netmhcpan", "mhcflurry", "vep"]
+
+[inputs]
+hla_alleles = ["HLA-A*02:01", "HLA-B*07:02"]
+tumor_vcf = "data/fixtures_snv/mini_somatic.vcf"
+tumor_sample_name = "SNVMINI_TUMOR"
+normal_sample_name = "SNVMINI_NORMAL"
+variants_vcf = "data/fixtures_snv/mini_somatic.vcf"
+extract_appm_from_vcf = true
+expression = "data/fixtures/gene_expression.tsv"
+cnv = "data/fixtures/cnv_segments.tsv"
+normal_expression = "resources/normal_expression.example.tsv"
+normal_hla_ligands = "resources/normal_hla_ligands.example.tsv"

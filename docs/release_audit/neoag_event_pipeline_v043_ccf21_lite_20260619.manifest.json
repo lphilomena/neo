@@ -1,0 +1,31 @@
+{
+  "created_at": "2026-06-19T05:10:37.159367Z",
+  "integrated_features": [
+    "CCF 2.1 input QC sidecar ccf_input_qc.tsv",
+    "CCF multiplicity candidates/confidence/ambiguity fields",
+    "event-type-aware CCF semantics for SNV/InDel, SV, WES-SV, RNA-only and CNV-derived events",
+    "optional external clonality and SVclone adapters",
+    "CCF conflict and cluster sidecars",
+    "CLI ccf-2 extended options while preserving v0.4.1 APPM peptide modifier scoring input",
+    "run-demo and pipeline return CCF 2.1 sidecar paths",
+    "Nextflow CCF_2 module emits CCF 2.1 sidecars"
+  ],
+  "notes": [
+    "A --run-all attempt without sourcing conf/tools.env.sh failed only because external tools were absent from PATH; rerun after sourcing conf/tools.env.sh passed.",
+    "Project worktree contains many pre-existing unrelated modified/untracked files; this integration touched only v0.4.3 patch-related code, docs, tests and release packaging."
+  ],
+  "release_name": "neoag_event_pipeline_v043_ccf21_lite_20260619.tar.gz",
+  "sha256": "3aac0e68b60db611ff961aa9807abebfde97d9f6fa05adf653f1fa3667f8c537",
+  "size_bytes": 511423,
+  "source_patch": "neoag_v043_ccf21_p0_p1_patch_only_20260619.tar",
+  "validation": {
+    "default_pytest_source_tree": "74 passed, 93 skipped",
+    "lite_package_default_pytest": "74 passed, 93 skipped",
+    "lite_package_run_demo": "passed; CCF 2.1 sidecars present",
+    "pytest_run_all_with_tools_env": "167 passed",
+    "run_demo_source_tree": "passed; ccf_input_qc/ccf_conflicts/ccf_cluster present",
+    "tests/test_v043_ccf21.py": "4 passed",
+    "v041_v042_v043_targeted": "20 passed"
+  },
+  "version": "0.4.3"
+}

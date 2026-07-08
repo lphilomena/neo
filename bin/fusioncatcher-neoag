@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+FC_HOME="${NEOAG_FUSIONCATCHER_HOME:-${ROOT}/tools/fusioncatcher}"
+FC_BIN="${FC_HOME}/bin/fusioncatcher"
+if [[ ! -x "${FC_BIN}" ]]; then
+  FC_BIN="$(command -v fusioncatcher 2>/dev/null || true)"
+fi
+if [[ -z "${FC_BIN}" || ! -x "${FC_BIN}" ]]; then
+  echo "FusionCatcher not found. Run: bash scripts/install_fusion_tools.sh" >&2
+  exit 127
+fi
+exec "${FC_BIN}" "$@"

@@ -1,0 +1,36 @@
+# Resume HCC1395 after pVACseq completed (skip re-running pvacseq).
+#   source conf/tools.env.sh
+#   neoag-v03 run-full --config conf/run.hcc1395.resume.toml --outdir results/HCC1395
+
+[sample]
+id = "HCC1395"
+profile = "default"
+outdir = "results/HCC1395"
+
+[tools]
+stub = false
+enabled = ["netmhcpan", "mhcflurry"]
+
+[inputs]
+hla_alleles = [
+    "HLA-A*29:02",
+    "HLA-B*45:01",
+    "HLA-B*82:02",
+    "HLA-C*06:02",
+]
+
+pvac_files = [
+    "results/HCC1395/upstream/tools/pvacseq_aggregated.tsv",
+    "results/HCC1395/upstream/tools/pvacfuse_aggregated.tsv",
+]
+
+tumor_vcf = "data/examples/HCC1395/HCC1395_inputs/annotated.expression.vcf.gz"
+tumor_sample_name = "HCC1395_TUMOR_DNA"
+normal_sample_name = "HCC1395_NORMAL_DNA"
+phased_vcf = "data/examples/HCC1395/HCC1395_inputs/phased.vcf.gz"
+prediction_algorithms = "MHCflurry,NetMHCpan"
+fusion_tsv = "data/examples/HCC1395/HCC1395_inputs/agfusion_results"
+
+cnv = "data/fixtures/cnv_segments.tsv"
+normal_expression = "resources/normal_expression.example.tsv"
+normal_hla_ligands = "resources/normal_hla_ligands.example.tsv"
