@@ -1,3 +1,4 @@
 #!/usr/bin/env bash
 set -euo pipefail
-python -m neoag_v03.agent_skills.patient_report "$@"
+: "${NEOAG_PYTHON:=python3}"
+"${NEOAG_PYTHON}" -m neoag_v03.agent_skills.patient_report "$@"
