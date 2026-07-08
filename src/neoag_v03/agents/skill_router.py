@@ -7,6 +7,8 @@ from .intent_schema import INTENT_TO_SKILLS
 
 def classify_intent(message: str) -> str:
     m = message.lower()
+    if any(x in m for x in ["sliding", "run-full", "snv_indel", "vep", "extract-variant-peptides", "variant peptide", "variant peptides", "短肽", "滑窗", "somatic vcf"]):
+        return "sliding_run"
     if any(x in m for x in ["比较", "差异", "netmhc", "netmhcpan", "排序"]):
         return "ranking_compare"
     if any(x in m for x in ["患者", "沟通", "word", "报告", "docx", "ppt"]):

@@ -74,3 +74,13 @@ def test_coordinator_plans_ranking_compare(tmp_path: Path):
     assert state["intent"] == "ranking_compare"
     assert "neoag-ranking-compare" in state["planned_skills"]
     assert (out / "neoag-ranking-compare" / "ranking_compare_report.md").exists()
+
+
+def test_coordinator_plans_sliding_run(tmp_path: Path):
+    out = tmp_path / "agent_sliding"
+    rc = subprocess.run([sys.executable, "-m", "neoag_v03.agents.coordinator", "--message", "run sliding-window SNV/InDel VEP workflow from somatic VCF", "--outdir", str(out)], text=True, capture_output=True)
+    assert rc.returncode == 0, rc.stderr
+    state = json.loads((out / "case_state.json").read_text(encoding="utf-8"))
+    assert state["intent"] == "sliding_run"
+    assert "neoag-sliding-run" in state["planned_skills"]
+    assert any(call["skill"] == "neoag-sliding-run" and call["status"] == "SKIPPED" for call in state["calls"])

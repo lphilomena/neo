@@ -1,42 +1,113 @@
 {
   "neoag-input-qc": {
-    "intents": ["input_check", "patient_report_update", "run_scoring"],
+    "intents": [
+      "input_check",
+      "patient_report_update",
+      "run_scoring"
+    ],
     "module": "neoag_v03.agent_skills.input_qc",
-    "outputs": ["input_status.json", "input_qc_report.tsv", "missing_inputs.tsv", "recommended_workflow.md"]
+    "outputs": [
+      "input_status.json",
+      "input_qc_report.tsv",
+      "missing_inputs.tsv",
+      "recommended_workflow.md"
+    ]
   },
   "neoag-tool-and-reference-qc": {
-    "intents": ["tool_check"],
+    "intents": [
+      "tool_check"
+    ],
     "module": "neoag_v03.agent_skills.tool_reference_qc",
-    "outputs": ["tool_qc_report.tsv", "reference_qc_report.tsv", "tool_reference_qc.md"]
+    "outputs": [
+      "tool_qc_report.tsv",
+      "reference_qc_report.tsv",
+      "tool_reference_qc.md"
+    ]
   },
   "neoag-run-demo-and-smoke": {
-    "intents": ["demo_smoke", "tool_check"],
+    "intents": [
+      "demo_smoke",
+      "tool_check"
+    ],
     "module": "neoag_v03.agent_skills.run_demo_smoke",
-    "outputs": ["smoke_test_report.md"]
+    "outputs": [
+      "smoke_test_report.md"
+    ]
   },
   "neoag-evidence-scoring": {
-    "intents": ["run_scoring"],
+    "intents": [
+      "run_scoring"
+    ],
     "module": "neoag_v03.agent_skills.evidence_scoring",
-    "outputs": ["evidence_scoring_plan.md", "scoring/ranked_peptides.v03.tsv"]
+    "outputs": [
+      "evidence_scoring_plan.md",
+      "scoring/ranked_peptides.v03.tsv"
+    ]
   },
   "neoag-hla-loh-appm-review": {
-    "intents": ["appm_escape_review", "patient_report_update"],
+    "intents": [
+      "appm_escape_review",
+      "patient_report_update"
+    ],
     "module": "neoag_v03.agent_skills.appm_review",
-    "outputs": ["appm_escape_review.md", "hla_loh_consensus.tsv", "appm_driver_defects_summary.tsv"]
+    "outputs": [
+      "appm_escape_review.md",
+      "hla_loh_consensus.tsv",
+      "appm_driver_defects_summary.tsv"
+    ]
   },
   "neoag-ccf-clonality-review": {
-    "intents": ["ccf_review", "patient_report_update"],
+    "intents": [
+      "ccf_review",
+      "patient_report_update"
+    ],
     "module": "neoag_v03.agent_skills.ccf_review",
-    "outputs": ["ccf_clonality_review.md", "ccf_confidence_flags.tsv", "ccf_modifier_summary.tsv"]
+    "outputs": [
+      "ccf_clonality_review.md",
+      "ccf_confidence_flags.tsv",
+      "ccf_modifier_summary.tsv"
+    ]
   },
   "neoag-ranking-compare": {
-    "intents": ["ranking_compare", "patient_report_update", "experiment_design"],
+    "intents": [
+      "ranking_compare",
+      "patient_report_update",
+      "experiment_design"
+    ],
     "module": "neoag_v03.agent_skills.ranking_compare",
-    "outputs": ["ranking_compare_report.md", "topn_overlap.tsv", "rank_shift.tsv", "shared_top20_candidates.tsv"]
+    "outputs": [
+      "ranking_compare_report.md",
+      "topn_overlap.tsv",
+      "rank_shift.tsv",
+      "shared_top20_candidates.tsv"
+    ]
   },
   "neoag-patient-report": {
-    "intents": ["patient_report_update"],
+    "intents": [
+      "patient_report_update"
+    ],
     "module": "neoag_v03.agent_skills.patient_report",
-    "outputs": ["patient_report.md", "patient_report.html", "patient_report.docx"]
+    "outputs": [
+      "patient_report.md",
+      "patient_report.html",
+      "patient_report.docx"
+    ]
+  },
+  "neoag-sliding-run": {
+    "intents": [
+      "sliding_run",
+      "run_scoring"
+    ],
+    "type": "documented_workflow",
+    "path": ".agents/skills/neoag-sliding-run/SKILL.md",
+    "outputs": [
+      "upstream/tools/variant_peptides.tsv",
+      "upstream/tools/variant_peptides.annotated.tsv",
+      "upstream/parsed/raw_events.tsv",
+      "upstream/parsed/raw_peptides.tsv",
+      "scoring/ranked_events.v03.tsv",
+      "scoring/ranked_peptides.v03.tsv",
+      "reports/evidence_report.technical.html"
+    ]
   }
 }

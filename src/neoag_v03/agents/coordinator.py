@@ -23,6 +23,8 @@ SKILL_TO_MODULE = {
 
 
 def build_skill_command(skill: str, files: dict[str, str], result_dir: str | None, outdir: Path, project_root: str, execute: bool) -> list[str] | None:
+    if skill not in SKILL_TO_MODULE:
+        return None
     module = SKILL_TO_MODULE[skill]
     skill_out = outdir / skill
     base = [sys.executable, "-m", module]
@@ -105,7 +107,8 @@ def main(argv: list[str] | None = None) -> int:
     for skill in skills:
         cmd = build_skill_command(skill, files, args.result_dir, outdir, args.project_root, execute=args.execute)
         if cmd is None:
-            calls.append({"skill": skill, "status": "SKIPPED", "reason": "required inputs not found", "known_files": files})
+            reason = "documented workflow; follow .agents/skills/neoag-sliding-run/SKILL.md" if skill == "neoag-sliding-run" else "required inputs not found"
+            calls.append({"skill": skill, "status": "SKIPPED", "reason": reason, "known_files": files})
             continue
         rec = run_skill(cmd, dry_run=dry_run)
         rec["skill"] = skill
