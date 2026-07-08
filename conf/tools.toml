@@ -37,6 +37,9 @@ env_var = "NEOAG_CONDA_ENV"
 entries = ["snv_indel", "fusion", "splice_junction", "sv_wgs", "sv_wes", "peptide_only"]
 optional = true
 
+[bigmhc-im]
+check = 
+
 [gatk]
 check = "env"
 env_var = "NEOAG_GATK_ENV"
