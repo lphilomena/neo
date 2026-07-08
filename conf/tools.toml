@@ -1,0 +1,86 @@
+# Tool environment configuration, organized by tool (one section per tool).
+#
+# Each section may declare:
+#   check   = "bin" | "dir" | "env"   (how to verify availability)
+#   bin     = executable name or absolute path (for check = "bin")
+#   dir     = directory path (for check = "dir")
+#   env_var = name of an environment variable that must be set (for check = "env")
+#   entries = which entry_mode values need this tool
+#   optional = true if the entry can still run in degraded/stub mode without it
+#
+# Values may reference environment variables with ${VAR} or ${VAR:-default} syntax;
+# these are resolved at load time by src/neoag_v03/tools_config.py.
+#
+# This file replaces the flat NEOAG_* variable list as the single place to look up
+# "what does entry X need, and how do I check it's installed". conf/tools.env.sh is
+# still used to actually export NEOAG_TOOLS_ROOT and any legacy variables other
+# scripts may still read, but this file is the source of truth for run-demo checks.
+
+[vep]
+check = "bin"
+bin = "${NEOAG_VEP_BIN:-vep}"
+cache_dir = "${NEOAG_VEP_CACHE:-}"
+plugins_dir = "${NEOAG_VEP_PLUGINS:-}"
+entries = ["snv_indel", "splice_junction"]
+optional = false
+
+[netmhcpan]
+check = "bin"
+bin = "${NEOAG_NETMHCPAN_BIN:-netMHCpan}"
+backend = "${NEOAG_NETMHCPAN_BACKEND:-local}"
+entries = ["snv_indel", "fusion", "splice_junction", "sv_wgs", "sv_wes", "peptide_only"]
+optional = true
+
+[mhcflurry]
+check = "env"
+env_var = "NEOAG_CONDA_ENV"
+entries = ["snv_indel", "fusion", "splice_junction", "sv_wgs", "sv_wes", "peptide_only"]
+optional = true
+
+[gatk]
+check = "env"
+env_var = "NEOAG_GATK_ENV"
+entries = ["snv_indel"]
+optional = true
+
+[easyfuse]
+check = "dir"
+dir = "${NEOAG_EASYFUSE_HOME:-}"
+entries = ["fusion"]
+optional = true
+
+[star_fusion]
+check = "bin"
+bin = "${NEOAG_STAR_FUSION_BIN:-STAR-Fusion}"
+entries = ["fusion"]
+optional = true
+
+[fusioncatcher]
+check = "bin"
+bin = "${NEOAG_FUSIONCATCHER_BIN:-fusioncatcher}"
+entries = ["fusion"]
+optional = true
+
+[manta]
+check = "env"
+env_var = "NEOAG_MANTA_ENV"
+entries = ["sv_wgs", "sv_wes"]
+optional = true
+
+[lohhla]
+check = "env"
+env_var = "NEOAG_CONDA_ENV"
+entries = ["snv_indel", "fusion", "splice_junction", "sv_wgs", "sv_wes", "peptide_only"]
+optional = true
+
+[facets]
+check = "env"
+env_var = "NEOAG_ASCAT_ENV"
+entries = ["snv_indel", "fusion", "splice_junction", "sv_wgs", "sv_wes", "peptide_only"]
+optional = true
+
+[reference]
+check = "dir"
+dir = "${NEOAG_SHARED_REF_DIR:-}"
+entries = ["snv_indel", "fusion", "splice_junction", "sv_wgs", "sv_wes", "peptide_only"]
+optional = true

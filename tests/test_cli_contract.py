@@ -75,7 +75,7 @@ def _collect_doc_commands() -> list[tuple[Path, list[str]]]:
                     argv = shlex.split(raw)
                 except ValueError:
                     continue
-                allowed = {"run-demo", "check-tools", "run-upstream", "run-full", "build-intermediates", "build-evidence-layer", "run-v03", "appm-2", "ccf-2", "immune-escape", "sv-build-raw", "sv-build-raw-wes", "sv-run-full", "sv-run-full-wes", "sv-score-v03", "snv-run-full-wes", "snv-call-wes", "vep-annotate", "report-v041"}
+                allowed = {"run-demo", "check-tools", "run-upstream", "run-full", "build-intermediates", "build-evidence-layer", "run-v03", "appm-2", "ccf-2", "immune-escape", "sv-build-raw", "sv-build-raw-wes", "sv-run-full", "sv-run-full-wes", "sv-score-v03", "snv-run-full-wes", "snv-call-wes", "vep-annotate", "report-v041", "snv-build-raw", "extract-variant-peptides", "peptide-predict", "convert-peptide-input"}
                 if not argv or argv[0] not in allowed:
                     continue
                 if len(argv) > 1 and not any(tok.startswith("-") for tok in argv[1:]):

@@ -34,7 +34,7 @@ python -m pip install -e '.[test]' -q
 
 | Entry              | 对应skill             | 独有起点命令                                         | 是否有专用一键路径               | 独有强制输入                                              |
 | ------------------ | --------------------- | ---------------------------------------------------- | -------------------------------- | --------------------------------------------------------- |
-| A SNV/InDel        | `neoag-vcf`         | `vep-annotate`→`extract-variant-peptides`       | `run-full`（通用一键，读TOML） | `variants_vcf`、`tumor_sample_name`                   |
+| A SNV/InDel        | `neoag-vcf`         | `vep-annotate`→`snv-build-raw`                  | `run-full`（通用一键，读TOML） | `variants_vcf`、`tumor_sample_name`                   |
 | B Fusion           | `neoag-fusion`      | `build-intermediates --entry-mode fusion`          | 无专用一键命令，用 `run-full`  | `easyfuse_pass_csv`                                     |
 | C Splice junction  | `neoag-splice`      | `build-intermediates --entry-mode splice_junction` | 无专用一键命令，用 `run-full`  | `splice_junction_tsv`                                   |
 | D1 SV-WGS          | `neoag-sv-wgs`      | `sv-build-raw`                                     | `sv-run-full`                  | `sv_vcf`、`reference_fasta`、`gencode_gtf`、`hla` |
@@ -46,16 +46,22 @@ python -m pip install -e '.[test]' -q
 
 ## Entry A｜SNV/InDel（体细胞VCF） → skill: `neoag-vcf`
 
-| 步骤 | 命令                                                                                                                                                                                                                                             | 中间文件                                                                                                                      | check                     |
-| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- | ------------------------- |
-| 0    | `neoag-v03 run-demo --entry-mode snv_indel --outdir /tmp/demo --sample-id DEMO`                                                                                                                                                                | 全套fixture跑通                                                                                                               | 命令退出码0               |
-| 1    | `neoag-v03 vep-annotate --input-vcf <vcf> --output-vcf <outdir>/upstream/tools/<id>.vep.annotated.vcf.gz --fasta $NEOAG_REFERENCE_FASTA --cache-dir $NEOAG_VEP_CACHE --plugins-dir $NEOAG_VEP_PLUGINS`（仅当VCF无CSQ时）                       | `<outdir>/upstream/tools/<id>.vep.annotated.vcf.gz`                                                                         | 文件非空                  |
-| 2    | `neoag-v03 extract-variant-peptides --input-vcf <annotated_vcf> --output <outdir>/upstream/tools/variant_peptides.tsv --hla-alleles <hla> --tumor-sample-name <name> --normal-proteome-fasta <normal-proteome-fasta> --filter-normal-proteome` | `variant_peptides.tsv`                                                                                                      | 非空                      |
-| 3    | `neoag-v03 peptide-predict -i <variant_peptides.tsv> -o <outdir>/presentation --sample-id <sample_id>`                                                                                                                                         | `presentation/presentation_evidence.tsv` 等                                                                                 | 非空                      |
-| 4    | `appm-2` / `ccf-2` / `peptide-safety` / `immune-escape`（可并行）                                                                                                                                                                        | `appm/appm_summary.tsv`、`clonality/ccf_2.tsv`、`safety/peptide_safety.tsv`、`immune_escape/peptide_escape_flags.tsv` | 各自非空                  |
-| 5    | `score-v03`                                                                                                                                                                                                                                    | `scoring/ranked_events.v03.tsv`、`scoring/ranked_peptides.v03.tsv`                                                        | 非空，行数与raw表量级相符 |
-| 6    | `validation-plan-v03`                                                                                                                                                                                                                          | `scoring/validation_plan.v03.tsv`                                                                                           | 非空                      |
-| 7    | `report-v03 --audience both`                                                                                                                                                                                                                   | `reports/evidence_report.{v03,patient,technical}.html`                                                                      | 三个html都生成            |
+| 步骤 | 命令                                                                                                                                                                                                                                                                                                                                                                                                  | 中间文件                                                                                                                      | check                     |
+| ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ------------------------- |
+| 0    | `neoag-v03 run-demo --entry-mode snv_indel --outdir /tmp/demo --sample-id DEMO`                                                                                                                                                                                                                                                                                                                     | 全套fixture跑通                                                                                                               | 命令退出码0               |
+| 1    | `neoag-v03 vep-annotate --input-vcf <vcf> --output-vcf <outdir>/upstream/tools/<id>.vep.annotated.vcf.gz --fasta $NEOAG_REFERENCE_FASTA --cache-dir $NEOAG_VEP_CACHE --plugins-dir $NEOAG_VEP_PLUGINS`（仅当VCF无CSQ时）                                                                                                                                                                            | `<outdir>/upstream/tools/<id>.vep.annotated.vcf.gz`                                                                         | 文件非空                  |
+| 2    | `neoag-v03 snv-build-raw --variants-vcf <annotated_vcf> --outdir <outdir>/upstream --sample-id <id> --hla <HLA-A*02:01> <HLA-B*07:02> --tumor-sample-name <name>`（**必须用这条命令**，不要直接用 `extract-variant-peptides`的输出接下一步——它产出的 `variant_peptides.tsv`列名和 `peptide-predict`不兼容，会报 `Cannot detect peptide column`；`snv-build-raw`内部做了这层转换） | `upstream/tools/variant_peptides.tsv`、`upstream/parsed/raw_events.tsv`、`upstream/parsed/raw_peptides.tsv`             | `raw_peptides.tsv`非空  |
+| 3    | `neoag-v03 peptide-predict -i <outdir>/upstream/parsed/raw_peptides.tsv -o <outdir>/presentation --sample-id <sample_id>`                                                                                                                                                                                                                                                                           | `presentation/presentation_evidence.tsv` 等                                                                                 | 非空                      |
+| 4    | `appm-2` / `ccf-2` / `peptide-safety` / `immune-escape`（可并行）                                                                                                                                                                                                                                                                                                                             | `appm/appm_summary.tsv`、`clonality/ccf_2.tsv`、`safety/peptide_safety.tsv`、`immune_escape/peptide_escape_flags.tsv` | 各自非空                  |
+| 5    | `score-v03`                                                                                                                                                                                                                                                                                                                                                                                         | `scoring/ranked_events.v03.tsv`、`scoring/ranked_peptides.v03.tsv`                                                        | 非空，行数与raw表量级相符 |
+| 6    | `validation-plan-v03`                                                                                                                                                                                                                                                                                                                                                                               | `scoring/validation_plan.v03.tsv`                                                                                           | 非空                      |
+| 7    | `report-v03 --audience both`                                                                                                                                                                                                                                                                                                                                                                        | `reports/evidence_report.{v03,patient,technical}.html`                                                                      | 三个html都生成            |
+
+`snv-build-raw`是这轮新增的独立子命令（之前这一步的转换逻辑只能通过 `run-upstream`/`run-full`一键命令间接触发，
+没有办法单独调用、单独check），参数上兼容 `extract-variant-peptides`的大部分选项
+（`--lengths`/`--mini-len`/`--normal-proteome-fasta`/`--filter-normal-proteome`等）。
+如果只是想预览滑窗产肽的原始结果（不需要接入打分链），仍然可以用 `extract-variant-peptides`单独跑，
+但它的输出**不能**直接喂给 `peptide-predict`。
 
 **一键替代路径**：`neoag-v03 run-full --config conf/run.<id>.private.toml --outdir results/<id>`
 （内部调用与上表完全相同的底层函数，结果一致，见第二部分"双轨说明"）
@@ -250,6 +256,29 @@ VEP CSQ滑动窗口全枚举产肽（不经pVACseq）。
 
 环境：无外部工具依赖，纯Python。输出：`variant_peptides.tsv`（滑窗肽段全集）。
 
+> **注意**：这个命令的输出 `variant_peptides.tsv`用的是 `mutant_peptide`列名（变异专属schema），
+> **不能**直接喂给 `peptide-predict`（后者内部靠列名别名识别 `peptide`列，认不出 `mutant_peptide`，
+> 会报 `Cannot detect peptide column`）。要接入打分链，请用下面的 `snv-build-raw`，
+> 不要把这个命令的输出直接传给 `peptide-predict`。
+
+### `snv-build-raw`（Entry A的产肽→标准化，一步到位）
+
+| 参数                                                                                             | 说明                                                                                        |
+| ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------- |
+| `--variants-vcf`                                                                               | VEP注释过的VCF（必须已有CSQ）                                                               |
+| `--outdir`                                                                                     | 写入 `parsed/raw_events.tsv`、`parsed/raw_peptides.tsv`、`tools/variant_peptides.tsv` |
+| `--hla`                                                                                        | 一个或多个HLA分型，**必需**                                                           |
+| `--tumor-sample-name` / `--rna-sample-name`                                                  | VCF样本列名                                                                                 |
+| `--lengths` / `--length-min` / `--length-max` / `--mini-len`                             | 同 `extract-variant-peptides`                                                             |
+| `--normal-proteome-fasta` + `--filter-normal-proteome` / `--annotate-normal-proteome-only` | normal proteome安全过滤                                                                     |
+| `--exclude-multi-aa` / `--single-aa-only`                                                    | 同 `extract-variant-peptides`                                                             |
+| `--easyfuse-pass-csv` / `--easyfuse-tsv`                                                     | 可选，snv_indel+fusion合并场景一并产出                                                      |
+
+环境：无外部工具依赖，纯Python。内部先做滑窗产肽（同 `extract-variant-peptides`），
+再经 `variant_peptide_adapter`转换成标准 `raw_peptides.tsv`（含 `peptide`列，`peptide-predict`能直接消费）。
+这是本轮新增的命令——之前这一步转换逻辑只能通过 `run-upstream`/`run-full`一键命令间接触发，
+无法单独调用、单独check中间结果，是"分步执行"设计里的一个真实缺口，现在补上。
+
 ### `build-intermediates`（Entry B/C/E共用的标准化入口）
 
 | 参数                                         | 说明                                                                                                                |
@@ -309,6 +338,8 @@ VEP CSQ滑动窗口全枚举产肽（不经pVACseq）。
 | `-o/--outdir`                                                                                                                    | 输出到 `presentation/`               |
 | `--stub`                                                                                                                         | 用桩预测器快速冒烟测试，不需要真实工具 |
 | `--skip-netmhcpan` / `--skip-mhcflurry` / `--skip-prime` / `--skip-bigmhc-im` / `--skip-deepimmuno` / `--skip-stabpan` | 按需跳过某个预测器                     |
+
+对应工具中netmhcpan, mhcflurry, bigmhc-im, prime必须运行。
 
 环境：NetMHCpan（`NEOAG_NETMHCPAN_BIN`）、MHCflurry（conda环境）、NetMHCstabpan、PRIME/BigMHC_IM/DeepImmuno，均可选，
 缺失时用 `--stub`或对应 `--skip-*`降级。输出：`presentation/presentation_evidence.tsv`等。

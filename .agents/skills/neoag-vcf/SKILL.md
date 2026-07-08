@@ -22,7 +22,7 @@ description: 从体细胞VCF（SNV/InDel）出发，运行滑窗产肽、结合/
 - `outdir`
 - `profile`（不指定则用 `default`）
 - VCF是否已有VEP的 `CSQ` 注释
-- 可选：`normal_expression`、`normal_hla_ligands`、`normal_proteome_fasta`（安全过滤用，）
+- 可选：`normal_expression`、`normal_hla_ligands`、`normal_proteome_fasta`（安全过滤用）
 
 不要臆造真实患者路径或HLA分型，缺失就直接问用户。
 
@@ -36,8 +36,7 @@ description: 从体细胞VCF（SNV/InDel）出发，运行滑窗产肽、结合/
 neoag-v03 run-demo --entry-mode snv_indel --outdir /tmp/neoag_demo_snv --sample-id DEMO_SNV
 ```
 
-该命令会先打印这条链路需要的工具清单，再用仓库自带fixture跑一遍完整链路（VEP/NetMHCpan/MHCflurry
-用fixture桩数据代替，不需要真实安装即可验证代码本身是否工作）。
+该命令会先打印这条链路需要的工具清单。
 
 若要跑真实VCF且VCF没有CSQ注释，额外需要本地VEP，此时检查这几个环境变量：
 
@@ -51,7 +50,7 @@ test -f "$NEOAG_REFERENCE_FASTA" || echo "MISSING: 参考FASTA"
 若要跑本地NetMHCpan，检查：
 
 ```bash
-command -v netMHCpan >/dev/null || echo "MISSING: NetMHCpan（可用 --stub 跳过，或用户已有预计算结果）"
+command -v netMHCpan >/dev/null || echo "MISSING: NetMHCpan"
 ```
 
 环境变量或工具检查不存在时，向用户说明缺失的工具/数据，询问是否需要进行工具安装或配置。
@@ -79,46 +78,55 @@ test -s <outdir>/upstream/tools/<sample_id>.vep.annotated.vcf.gz
 
 不合格（文件为空/命令失败）→ 停止，只重跑这一步；检查 `NEOAG_VEP_BIN`/`NEOAG_VEP_CACHE`/`NEOAG_VEP_PLUGINS`/`NEOAG_REFERENCE_FASTA` 并向用户确认后再试。
 
-### 2. 滑窗产肽
+### 2. 滑窗产肽 + 标准化
 
 ```bash
-neoag-v03 extract-variant-peptides \
-  --input-vcf <annotated_vcf或已有CSQ的原始vcf> \
-  --output <outdir>/upstream/tools/variant_peptides.tsv \
+neoag-v03 snv-build-raw \
+  --variants-vcf <annotated_vcf或已有CSQ的原始vcf> \
+  --outdir <outdir>/upstream \
   --sample-id <sample_id> \
+  --hla <hla_allele_1> <hla_allele_2> ... \
+  --tumor-sample-name <tumor_sample_name> \
   --lengths 8,9,10,11 \
   --mini-len 27 \
-  --hla-alleles <hla_csv> \
-  --tumor-sample-name <tumor_sample_name> \
   --normal-proteome-fasta <normal_proteome_fasta> \
   --filter-normal-proteome
 ```
 
-normal_proteome-fasta为安全过滤，真实数据下必须开启，向用户确认可参考的normal proteome文件。
+`--hla` 是必需参数。normal_proteome_fasta为安全过滤，真实数据下必须开启，向用户确认可参考的normal proteome文件。
+
+**必须用这条命令**，`snv-build-raw`内部会先做滑窗产肽，再自动转换成 `peptide-predict`能消费的标准 `raw_peptides.tsv`（含 `peptide`列）。
 
 check：
 
 ```bash
 test -s <outdir>/upstream/tools/variant_peptides.tsv
+test -s <outdir>/upstream/parsed/raw_peptides.tsv
 ```
 
 不合格 → 只重跑这一步，检查CSQ注释是否存在、`tumor_sample_name`是否与VCF列名一致、HLA格式是否正确。
 
-### 3. 
-
-### 4. 结合/免疫原性预测（公共段第一步）
+### 3. 结合/免疫原性预测（公共段第一步）
 
 ```bash
 neoag-v03 peptide-predict \
-  -i <outdir>/upstream/tools/variant_peptides.tsv \
+  -i <outdir>/upstream/parsed/raw_peptides.tsv \
   -o <outdir>/presentation \
-  --sample-id <sample_id> 
-
+  --sample-id <sample_id>
 ```
+对应工具中netmhcpan, mhcflurry, bigmhc-im, prime必须运行。
+|工具      |输入文件  |    输出文件
+|----------|----------|-------------------------
+|netmhcpan |raw_peptides.tsv |tools/netmhcpan.xls → presentation/netmhcpan_evidence.tsv
+|mhcflurry |raw_peptides.tsv |tools/mhcflurry.csv → mhcflurry_evidence.tsv
+|bigmhc-im |raw_peptides.tsv |bigmhc_im_evidence.tsv
+|prime      |raw_peptides.tsv |presentation/prime_evidence.tsv
+|netmhcstabpan |raw_peptides.tsv |tools/netmhcstabpan.tsv
+|deepimmuno |raw_peptides.tsv |deepimmuno_evidence.tsv
 
-check：`presentation/` 目录下应有 `netmhcpan_evidence.tsv`/`mhcflurry_evidence.tsv` 等文件非空。
+check：各输出文件非空。
 
-### 5. 打分排序（公共段第二步，见 `neoag-shared/SKILL.md` 完整说明）
+### 4. 打分排序（公共段第二步，见 `neoag-shared/SKILL.md` 完整说明）
 
 依次调用 `appm-2`/`ccf-2`/`peptide-safety`/`immune-escape`（可并行）→ `score-v03` →
 `validation-plan-v03` → `report-v03`。参数和check标准见 `../neoag-shared/SKILL.md`，

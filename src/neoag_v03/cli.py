@@ -41,37 +41,77 @@ from .vep.extract_peptides import extract_variant_peptides_from_vcf, parse_pepti
 from .peptide_safety_gate import build_peptide_safety_gate
 from .immune_escape import build_immune_escape_evidence
 from .hla_loh_crosscheck import write_hla_loh_crosscheck
+from .tools_config import check_entry_tools
 
 ROOT = Path(__file__).resolve().parents[2]
 def fixture(x): return ROOT/"data"/"fixtures"/x
+def fixture_snv(x): return ROOT/"data"/"fixtures_snv"/x
 def resource(x): return ROOT/"resources"/x
 
 FIXTURES_SV = ROOT / "data" / "fixtures_sv"
 
-# Tools each entry-mode demo relies on. Used to print a scoped readiness
-# check instead of the removed global `check-tools` command.
-DEMO_ENTRY_TOOLS = {
-    "snv_indel": ["neoag-v03 CLI (pip install -e .)", "NetMHCpan/MHCflurry (optional; demo uses bundled fixtures)"],
-    "fusion": ["neoag-v03 CLI (pip install -e .)"],
-    "splice_junction": ["neoag-v03 CLI (pip install -e .)"],
-    "sv_wgs": ["neoag-v03 CLI (pip install -e .)"],
-    "sv_wes": ["neoag-v03 CLI (pip install -e .)"],
-    "peptide_only": ["neoag-v03 CLI (pip install -e .)"],
-}
-
 
 def _demo_env_precheck(entry_mode):
+    """Real, TOML-driven tool availability check (conf/tools.toml), scoped to
+    only the tools this entry_mode actually needs. Returns {tool: (ok, msg)}
+    so cmd_run_demo can decide whether to run the REAL tool chain or fall
+    back to the bundled-fixture STUB chain for this demo."""
     print(f"[run-demo] entry-mode={entry_mode}: checking tools needed for this demo only")
-    for tool in DEMO_ENTRY_TOOLS.get(entry_mode, []):
-        print(f"  - {tool}")
+    results = check_entry_tools(entry_mode)
+    if not results:
+        print("  (no entry-specific tools declared in conf/tools.toml; neoag-v03 CLI itself is the only requirement)")
+    for _name, (_ok, msg) in results.items():
+        print(f"  - {msg}")
     print()
+    return results
 
 
-def _print_demo_summary(entry_mode, out):
+def _print_demo_summary(entry_mode, out, verification=None):
     print(f"NeoAg v0.4.3 demo completed for entry-mode={entry_mode}.")
     print("Outputs retain .v03.tsv names for schema compatibility.")
+    if verification:
+        for stage, mode in verification.items():
+            print(f"  verification[{stage}]: {mode}")
     for k, v in out.items():
         print(f"  {k}: {v}")
+
+
+def _demo_presentation_stage(env_status, raw_peptides, outdir, sample_id, hla_alleles):
+    """Shared REAL-vs-STUB decision for the presentation stage (NetMHCpan/MHCflurry),
+    used by every entry_mode's run-demo branch so they don't each re-implement it."""
+    from .tools.registry import RunContext
+    from .tools.runner import run_netmhcpan, run_mhcflurry
+
+    netmhcpan_ok, _ = env_status.get("netmhcpan", (False, ""))
+    mhcflurry_ok, _ = env_status.get("mhcflurry", (False, ""))
+    if not (netmhcpan_ok or mhcflurry_ok):
+        return (
+            fixture("netmhcpan_example.xls"),
+            fixture("mhcflurry_predictions.csv"),
+            "STUB (NetMHCpan/MHCflurry not installed; using bundled canned prediction fixtures)",
+        )
+    tools_dir = Path(outdir) / "tools"
+    tools_dir.mkdir(parents=True, exist_ok=True)
+    ctx = RunContext(
+        sample_id=sample_id, outdir=Path(outdir), stub=False,
+        raw_peptides=Path(raw_peptides), executables={}, hla_alleles=hla_alleles,
+    )
+    if netmhcpan_ok:
+        net_raw = tools_dir / "netmhcpan.xls"
+        run_netmhcpan(ctx, net_raw)
+        netmhcpan_path = net_raw
+    else:
+        netmhcpan_path = fixture("netmhcpan_example.xls")
+    if mhcflurry_ok:
+        mhc_raw = tools_dir / "mhcflurry.csv"
+        run_mhcflurry(ctx, mhc_raw)
+        mhcflurry_path = mhc_raw
+    else:
+        mhcflurry_path = fixture("mhcflurry_predictions.csv")
+    return (
+        netmhcpan_path, mhcflurry_path,
+        f"PARTIAL/REAL (netmhcpan={'REAL' if netmhcpan_ok else 'STUB'}, mhcflurry={'REAL' if mhcflurry_ok else 'STUB'})",
+    )
 
 
 def cmd_run_demo(args):
@@ -79,59 +119,131 @@ def cmd_run_demo(args):
     outdir = Path(args.outdir)
     profile = args.profile
     sample_id = args.sample_id
-    _demo_env_precheck(entry_mode)
+    env_status = _demo_env_precheck(entry_mode)
 
     if entry_mode == "snv_indel":
+        from .adapters.variant_peptide_adapter import run_variant_peptide_upstream
+
+        vep_ok, vep_msg = env_status.get("vep", (False, "vep: not checked"))
+        verification: dict[str, str] = {}
+        hla_alleles = ["HLA-A*02:01", "HLA-B*07:02"]
+
+        parsed_dir = outdir / "upstream" / "parsed"
+        tools_dir = outdir / "upstream" / "tools"
+        parsed_dir.mkdir(parents=True, exist_ok=True)
+        tools_dir.mkdir(parents=True, exist_ok=True)
+
+        if vep_ok:
+            from .vep.annotate import run_vep_pvacseq_annotate  # real VEP call
+
+            annotated_vcf = tools_dir / f"{sample_id}.vep.annotated.vcf.gz"
+            vep_result = run_vep_pvacseq_annotate(
+                input_vcf=str(fixture_snv("mini_somatic.vcf")),
+                output_vcf=str(annotated_vcf),
+                reference_fasta=os.environ.get("NEOAG_REFERENCE_FASTA", ""),
+                workdir=str(tools_dir),
+                cache_dir=os.environ.get("NEOAG_VEP_CACHE"),
+                plugins_dir=os.environ.get("NEOAG_VEP_PLUGINS"),
+            )
+            variants_vcf_for_extraction = vep_result.get("annotated_vcf", annotated_vcf)
+            verification["vep"] = "REAL (ran vep-annotate on bundled somatic VCF)"
+        else:
+            # VEP not installed: fall back to a bundled VCF that already carries
+            # CSQ annotation (a realistic case -- many users hand us an
+            # already-annotated VCF). Peptide extraction below is still real,
+            # not a canned peptide-table fixture.
+            variants_vcf_for_extraction = fixture_snv("mini_somatic.vep_annotated.vcf")
+            verification["vep"] = f"SKIPPED ({vep_msg}); using bundled pre-annotated fixture VCF instead"
+
+        vp_out = run_variant_peptide_upstream(
+            {"inputs": {}},
+            variants_vcf=Path(variants_vcf_for_extraction),
+            parsed_dir=parsed_dir,
+            tools_dir=tools_dir,
+            sample_id=sample_id,
+            profile_name=profile,
+            hla_alleles=hla_alleles,
+        )
+        verification["peptide_generation"] = "REAL (extract-variant-peptides on an actual VCF, not a canned peptide-table fixture)"
+        raw_events = vp_out["raw_events"]
+        raw_peptides = vp_out["raw_peptides"]
+
+        netmhcpan_path, mhcflurry_path, verification["presentation"] = _demo_presentation_stage(
+            env_status, raw_peptides, outdir, sample_id, hla_alleles,
+        )
+
         out = run_v03(
             outdir=outdir, profile_name_or_path=profile, sample_id=sample_id,
-            pvac_paths=[fixture("pvacseq_aggregated.tsv")],
-            netmhcpan=fixture("netmhcpan_example.xls"), mhcflurry=fixture("mhcflurry_predictions.csv"),
+            raw_events=raw_events, raw_peptides=raw_peptides,
+            netmhcpan=netmhcpan_path, mhcflurry=mhcflurry_path,
             vep_appm=fixture("vep_appm.tsv"), expression=fixture("gene_expression.tsv"),
             hla_loh=fixture("hla_loh.tsv"), purity=fixture("purity.tsv"), cnv=fixture("cnv_segments.tsv"),
             normal_expression=resource("normal_expression.example.tsv"), normal_hla_ligands=resource("normal_hla_ligands.example.tsv"),
             immunogenicity_stub=True, entry_mode="snv_indel",
         )
-        _print_demo_summary(entry_mode, out)
+        _print_demo_summary(entry_mode, out, verification)
         return
 
     if entry_mode == "fusion":
+        hla_alleles = ["HLA-A*02:01", "HLA-B*07:02"]
         inter = build_raw_intermediates(
             {
                 "sample": {"id": sample_id, "profile": profile},
-                "inputs": {"entry_mode": "fusion", "pvac_files": [str(fixture("pvacfuse_aggregated.tsv"))]},
+                "inputs": {
+                    "entry_mode": "fusion",
+                    "easyfuse_pass_csv": str(fixture("easyfuse_fusions.v2.pass.csv")),
+                    "hla_alleles": hla_alleles,
+                },
             },
             outdir, root=ROOT,
+        )
+        verification = {"raw_build": "REAL (build-intermediates --easyfuse-pass-csv on an actual EasyFuse fixture, same command the tutorial teaches)"}
+        netmhcpan_path, mhcflurry_path, verification["presentation"] = _demo_presentation_stage(
+            env_status, inter["raw_peptides"], outdir, sample_id, hla_alleles,
         )
         out = run_v03(
             outdir=outdir, profile_name_or_path=profile, sample_id=sample_id,
             raw_events=inter["raw_events"], raw_peptides=inter["raw_peptides"],
-            netmhcpan=fixture("netmhcpan_example.xls"), mhcflurry=fixture("mhcflurry_predictions.csv"),
+            netmhcpan=netmhcpan_path, mhcflurry=mhcflurry_path,
             expression=fixture("gene_expression.tsv"), hla_loh=fixture("hla_loh.tsv"),
             purity=fixture("purity.tsv"), cnv=fixture("cnv_segments.tsv"),
             normal_expression=resource("normal_expression.example.tsv"), normal_hla_ligands=resource("normal_hla_ligands.example.tsv"),
             immunogenicity_stub=True, entry_mode="fusion",
         )
-        _print_demo_summary(entry_mode, out)
+        _print_demo_summary(entry_mode, out, verification)
         return
 
     if entry_mode == "splice_junction":
+        hla_alleles = ["HLA-A*02:01", "HLA-B*07:02"]
         inter = build_raw_intermediates(
             {
                 "sample": {"id": sample_id, "profile": profile},
-                "inputs": {"entry_mode": "splice_junction", "pvac_files": [str(fixture("pvacsplice_aggregated.tsv"))]},
+                "inputs": {
+                    "entry_mode": "splice_junction",
+                    # pVACsplice output is the real peptide-generation source for this
+                    # entry; --splice-junction-tsv only *enriches* those peptides with
+                    # junction-support evidence, it does not generate peptides on its own.
+                    "pvac_files": [str(fixture("pvacsplice_aggregated.tsv"))],
+                    "splice_junction_tsv": str(fixture("regtools_splice_junctions.tsv")),
+                    "hla_alleles": hla_alleles,
+                },
             },
             outdir, root=ROOT,
+        )
+        verification = {"raw_build": "REAL (build-intermediates --pvac pvacsplice_aggregated.tsv --splice-junction-tsv on actual fixtures, same command the tutorial teaches)"}
+        netmhcpan_path, mhcflurry_path, verification["presentation"] = _demo_presentation_stage(
+            env_status, inter["raw_peptides"], outdir, sample_id, hla_alleles,
         )
         out = run_v03(
             outdir=outdir, profile_name_or_path=profile, sample_id=sample_id,
             raw_events=inter["raw_events"], raw_peptides=inter["raw_peptides"],
-            netmhcpan=fixture("netmhcpan_example.xls"), mhcflurry=fixture("mhcflurry_predictions.csv"),
+            netmhcpan=netmhcpan_path, mhcflurry=mhcflurry_path,
             expression=fixture("gene_expression.tsv"), hla_loh=fixture("hla_loh.tsv"),
             purity=fixture("purity.tsv"), cnv=fixture("cnv_segments.tsv"),
             normal_expression=resource("normal_expression.example.tsv"), normal_hla_ligands=resource("normal_hla_ligands.example.tsv"),
             immunogenicity_stub=True, entry_mode="splice_junction",
         )
-        _print_demo_summary(entry_mode, out)
+        _print_demo_summary(entry_mode, out, verification)
         return
 
     if entry_mode in ("sv_wgs", "sv_wes"):
@@ -152,9 +264,18 @@ def cmd_run_demo(args):
         if entry_mode == "sv_wgs":
             sv_kwargs["profile_name"] = load_profile(profile)["_profile_name"]
         sv_out = builder(**sv_kwargs)
+        hla_alleles = ["HLA-A*02:01", "HLA-B*07:02"]
+        netmhcpan_path, mhcflurry_path, presentation_status = _demo_presentation_stage(
+            env_status, sv_out["raw_peptides"], outdir, sample_id, hla_alleles,
+        )
+        verification = {
+            "raw_build": "REAL (sv-build-raw" + ("-wes" if entry_mode == "sv_wes" else "") + " on bundled SV VCF/GTF/FASTA fixtures, same command the tutorial teaches)",
+            "presentation": presentation_status,
+        }
         out = run_v03(
             outdir=outdir, profile_name_or_path=profile, sample_id=sample_id,
             raw_events=sv_out["raw_events"], raw_peptides=sv_out["raw_peptides"],
+            netmhcpan=netmhcpan_path, mhcflurry=mhcflurry_path,
             expression=FIXTURES_SV / "expression.tsv",
             normal_expression=FIXTURES_SV / "normal_expression.tsv",
             normal_hla_ligands=FIXTURES_SV / "normal_hla_ligands.tsv",
@@ -162,7 +283,7 @@ def cmd_run_demo(args):
         )
         out["sv_raw_events"] = sv_out["raw_events"]
         out["sv_raw_peptides"] = sv_out["raw_peptides"]
-        _print_demo_summary(entry_mode, out)
+        _print_demo_summary(entry_mode, out, verification)
         return
 
     if entry_mode == "peptide_only":
@@ -173,13 +294,21 @@ def cmd_run_demo(args):
             },
             outdir, root=ROOT,
         )
+        hla_alleles = ["HLA-A*11:01", "HLA-A*02:01"]
+        netmhcpan_path, mhcflurry_path, presentation_status = _demo_presentation_stage(
+            env_status, inter["raw_peptides"], outdir, sample_id, hla_alleles,
+        )
+        verification = {
+            "raw_build": "REAL (build-intermediates --peptide-table on an actual peptide/HLA CSV fixture, same command the tutorial teaches)",
+            "presentation": presentation_status,
+        }
         out = run_v03(
             outdir=outdir, profile_name_or_path=profile, sample_id=sample_id,
             raw_events=inter["raw_events"], raw_peptides=inter["raw_peptides"],
-            netmhcpan=fixture("netmhcpan_example.xls"), mhcflurry=fixture("mhcflurry_predictions.csv"),
+            netmhcpan=netmhcpan_path, mhcflurry=mhcflurry_path,
             immunogenicity_stub=True, entry_mode="peptide_only",
         )
-        _print_demo_summary(entry_mode, out)
+        _print_demo_summary(entry_mode, out, verification)
         return
 
     raise SystemExit(
@@ -419,6 +548,48 @@ def _read_json_optional(path):
     return _load(path)
 
 
+def cmd_snv_build_raw(args):
+    from .adapters.variant_peptide_adapter import run_variant_peptide_upstream
+
+    outdir = Path(args.outdir)
+    parsed_dir = outdir / "parsed"
+    tools_dir = outdir / "tools"
+    parsed_dir.mkdir(parents=True, exist_ok=True)
+    tools_dir.mkdir(parents=True, exist_ok=True)
+
+    cfg = {
+        "inputs": {
+            "tumor_sample_name": args.tumor_sample_name or args.sample_id,
+            "rna_sample_name": args.rna_sample_name,
+            "variant_peptide_lengths": args.lengths,
+            "variant_peptide_length_min": args.length_min,
+            "variant_peptide_length_max": args.length_max,
+            "variant_peptide_mini_len": args.mini_len,
+            "normal_proteome_fasta": args.normal_proteome_fasta,
+            "variant_peptide_filter_normal_proteome": (True if args.filter_normal_proteome else None),
+            "variant_peptide_annotate_normal_only": args.annotate_normal_proteome_only,
+            "variant_peptide_exclude_multi_aa": args.exclude_multi_aa,
+            "variant_peptide_single_aa_only": args.single_aa_only,
+            "easyfuse_pass_csv": args.easyfuse_pass_csv,
+            "easyfuse_tsv": args.easyfuse_tsv,
+        }
+    }
+    result = run_variant_peptide_upstream(
+        cfg,
+        variants_vcf=Path(args.variants_vcf),
+        parsed_dir=parsed_dir,
+        tools_dir=tools_dir,
+        sample_id=args.sample_id,
+        profile_name=args.profile,
+        hla_alleles=list(args.hla) if args.hla else [],
+    )
+    print("Built SNV/InDel raw intermediates via sliding-window peptide extraction (P2 path).")
+    print(f"  raw_events: {result['raw_events']}")
+    print(f"  raw_peptides: {result['raw_peptides']}")
+    print(f"  variant_peptides: {tools_dir / 'variant_peptides.tsv'}")
+    print("Next: neoag-v03 peptide-predict -i <raw_peptides> -o <outdir>/presentation")
+
+
 def cmd_extract_variant_peptides(args):
     normal_proteome_fasta = args.normal_proteome_fasta or os.environ.get("NEOAG_NORMAL_PROTEOME_FASTA")
     if args.filter_normal_proteome and not normal_proteome_fasta:
@@ -501,7 +672,7 @@ def cmd_check_tools(_args):
         status = "OK" if st.available else "MISSING"
         print(f"{st.name:<14} {st.executable:<22} {status:<10} {st.message}")
     print()
-    print(f"Setup guide: {ROOT / 'docs' / 'TOOLS_SETUP.md'}")
+    print(f"Setup guide: {ROOT / 'docs' / 'INSTALL_AND_DATA.md'}")
 
 
 def cmd_run_tool(args):
@@ -1231,6 +1402,33 @@ def build_parser():
         help="Tumor sample column in VCF for VAF extraction (default: second sample or --sample-id)",
     )
     evp.set_defaults(func=cmd_extract_variant_peptides)
+
+    svb = sub.add_parser(
+        "snv-build-raw",
+        help="VEP-annotated VCF -> parsed/raw_events.tsv + raw_peptides.tsv via sliding-window "
+             "peptide extraction (the P2 path; use this when NOT going through pVACseq). "
+             "Mirrors sv-build-raw for the SNV/InDel entry so this step can be run on its own "
+             "instead of only inside run-upstream/run-full.",
+    )
+    svb.add_argument("--variants-vcf", required=True, help="VEP-annotated VCF (.vcf/.vcf.gz), must already have CSQ")
+    svb.add_argument("--outdir", required=True, help="Writes parsed/raw_events.tsv, parsed/raw_peptides.tsv, tools/variant_peptides.tsv")
+    svb.add_argument("--sample-id", default="SAMPLE")
+    svb.add_argument("--profile", default="default")
+    svb.add_argument("--hla", nargs="+", required=True, help="HLA alleles, e.g. HLA-A*02:01 HLA-B*07:02 (required)")
+    svb.add_argument("--tumor-sample-name", default=None, help="Tumor sample column in VCF for VAF extraction (default: --sample-id)")
+    svb.add_argument("--rna-sample-name", default=None, help="Optional RNA sample column for RNA-VAF support")
+    svb.add_argument("--lengths", default="8,9,10,11", help="Peptide lengths, comma-separated (default: 8,9,10,11)")
+    svb.add_argument("--length-min", type=int, default=None)
+    svb.add_argument("--length-max", type=int, default=None)
+    svb.add_argument("--mini-len", type=int, default=10, help="Flanking amino acids for minigene/minigene_nt (default: 10)")
+    svb.add_argument("--normal-proteome-fasta", default=None, help="default: NEOAG_NORMAL_PROTEOME_FASTA; enables filtering")
+    svb.add_argument("--filter-normal-proteome", action="store_true", help="Drop peptides found in --normal-proteome-fasta (default when FASTA is set)")
+    svb.add_argument("--annotate-normal-proteome-only", action="store_true", help="Set in_normal_proteome column but do not filter")
+    svb.add_argument("--exclude-multi-aa", action="store_true")
+    svb.add_argument("--single-aa-only", action="store_true")
+    svb.add_argument("--easyfuse-pass-csv", default=None, help="Optional: also merge an EasyFuse fusions.pass.csv into the same raw tables (combined snv_indel+fusion run)")
+    svb.add_argument("--easyfuse-tsv", default=None)
+    svb.set_defaults(func=cmd_snv_build_raw)
 
     ct = sub.add_parser("check-tools", help="Check availability of integrated bioinformatics tools")
     ct.set_defaults(func=cmd_check_tools)
