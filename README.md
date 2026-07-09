@@ -663,7 +663,7 @@ For a detailed local path inventory, see `docs/PROJECT_DATA_PATHS.md`.
 | --- | --- | --- | --- |
 | Fixture demo: `neoag-v03 run-demo --outdir work/demo_v043 --sample-id DEMO001` | Bundled fixtures | None beyond Python package | Bundled fixtures/resources |
 | Parsed pVAC results: `neoag-v03 run-v03 --outdir results/sample --sample-id SAMPLE001 --pvac data/fixtures/pvacseq_aggregated.tsv --immunogenicity-stub` | pVAC-like TSVs | None if inputs already exist | Optional normal expression/ligand tables |
-| Raw intermediates: `neoag-v03 run-v03 --raw-events ... --raw-peptides ...` | `raw_events.tsv`, `raw_peptides.tsv` | NetMHCpan/MHCflurry outputs if provided; optional evidence tools | Optional expression, LOH, purity, CNV, normal evidence |
+| Raw intermediates: `neoag-v03 run-v03 --outdir results/sample --raw-events raw_events.tsv --raw-peptides raw_peptides.tsv` | `raw_events.tsv`, `raw_peptides.tsv` | NetMHCpan/MHCflurry outputs if provided; optional evidence tools | Optional expression, LOH, purity, CNV, normal evidence |
 | Full upstream run: `neoag-v03 run-full --config conf/run.sample.private.toml --outdir results/sample` | Run config | Depends on enabled tools | Depends on enabled tools |
 | Binding prediction only: `peptide-predict` | Peptide/HLA table | NetMHCpan, MHCflurry, PRIME/BigMHC/DeepImmuno as selected | HLA alleles; predictor model data |
 | VEP annotation: `vep-annotate` | VCF | VEP | VEP cache, reference FASTA, plugins |

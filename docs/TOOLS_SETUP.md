@@ -184,7 +184,8 @@ LOHHLA also requires patient HLA calls, HLA FASTA/resources, tumor/normal BAM, a
 ```bash
 bash scripts/install_fusion_tools.sh
 source conf/tools.env.sh
-neoag-v03 check-tools | grep -E 'arriba|star-fusion|fusioncatcher'
+neoag-v03 check-tools > results/check-tools.fusion.txt
+grep -E 'arriba|star-fusion|fusioncatcher' results/check-tools.fusion.txt
 ```
 
 This installs the `neoag-fusion` conda environment with Arriba and Nextflow, and optionally clones STAR-Fusion and FusionCatcher into `tools/`. EasyFuse still needs its reference bundle and Nextflow cache prepared separately.
