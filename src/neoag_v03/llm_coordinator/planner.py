@@ -108,7 +108,7 @@ def plan_with_llm(message: str, intent: IntentResult, input_state: InputState, s
         )
         return apply_plan_guardrails(message, plan)
 
-    reg = json.dumps(skills_registry, ensure_ascii=False, indent=2)[:6000]
+    reg = json.dumps(skills_registry, ensure_ascii=False, indent=2)[:24000]
     istate = json.dumps(input_state.to_dict(), ensure_ascii=False, indent=2)[:6000]
     prompt = PLANNER_PROMPT_TEMPLATE.format(skills_registry=reg, input_state=istate, intent=json.dumps(intent.to_dict(), ensure_ascii=False))
     try:

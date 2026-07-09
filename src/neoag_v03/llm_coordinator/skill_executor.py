@@ -24,7 +24,36 @@ def expected_outputs_for_skill(registry: dict[str, Any], skill: str, skill_outdi
         path = skill_outdir / item
         if path.exists():
             out[item] = str(path)
-    # Also include common markdown outputs that might not be in older registries.
+
+    summary_path = skill_outdir / "sliding_run_summary.json"
+    if skill == "neoag-sliding-run" and summary_path.exists():
+        out.setdefault("sliding_run_summary.json", str(summary_path))
+        try:
+            summary = json.loads(summary_path.read_text(encoding="utf-8"))
+            run_outdir = Path(summary.get("run_outdir") or "")
+        except Exception:
+            run_outdir = Path()
+        if run_outdir.exists():
+            standard_outputs = [
+                "upstream/tools/variant_peptides.tsv",
+                "upstream/tools/variant_peptides.annotated.tsv",
+                "upstream/parsed/raw_events.tsv",
+                "upstream/parsed/raw_peptides.tsv",
+                "presentation/presentation_evidence.tsv",
+                "scoring/ranked_events.v03.tsv",
+                "scoring/ranked_peptides.v03.tsv",
+                "scoring/validation_plan.v03.tsv",
+                "reports/evidence_report.v03.html",
+                "reports/evidence_report.patient.html",
+                "reports/evidence_report.technical.html",
+                "provenance.v03.json",
+            ]
+            for rel in standard_outputs:
+                path = run_outdir / rel
+                if path.exists():
+                    out.setdefault(f"run-full/{rel}", str(path))
+
+    # Also include common markdown/json outputs that might not be in older registries.
     for path in skill_outdir.glob("*.md"):
         out.setdefault(path.name, str(path))
     for path in skill_outdir.glob("*.json"):
@@ -41,24 +70,25 @@ def _run_subprocess(cmd: list[str]) -> dict[str, Any]:
     }
 
 
-def execute_plan(plan: CoordinatorPlan, files: dict[str, str], result_dir: str | None, outdir: Path, project_root: str, mode: ExecutionMode, allow_high_risk: bool = False) -> list[SkillCallResult]:
+def execute_plan(plan: CoordinatorPlan, files: dict[str, str], result_dir: str | None, outdir: Path, project_root: str, mode: ExecutionMode, allow_high_risk: bool = False, task_parameters: dict[str, Any] | None = None) -> list[SkillCallResult]:
+    task_parameters = task_parameters or {}
     registry = load_registry(project_root)
     results: list[SkillCallResult] = []
     for step in plan.steps:
         skill_out = outdir / step.skill
         if mode == "plan" or step.mode in {"plan", "dry_run"}:
-            cmd = build_skill_command(step.skill, files, result_dir, outdir, project_root, execute=False)
+            cmd = build_skill_command(step.skill, files, result_dir, outdir, project_root, execute=False, task_parameters=task_parameters)
             results.append(SkillCallResult(skill_name=step.skill, status="PLANNED", cmd=cmd or [], summary=step.reason))
             continue
         if step.approval_required and not allow_high_risk:
-            cmd = build_skill_command(step.skill, files, result_dir, outdir, project_root, execute=False)
+            cmd = build_skill_command(step.skill, files, result_dir, outdir, project_root, execute=False, task_parameters=task_parameters)
             results.append(SkillCallResult(skill_name=step.skill, status="APPROVAL_REQUIRED", cmd=cmd or [], summary="Human approval required before execution", failure_code="APPROVAL_REQUIRED"))
             continue
         if mode == "execute-safe" and not is_skill_safe_to_execute(step.skill):
-            cmd = build_skill_command(step.skill, files, result_dir, outdir, project_root, execute=False)
+            cmd = build_skill_command(step.skill, files, result_dir, outdir, project_root, execute=False, task_parameters=task_parameters)
             results.append(SkillCallResult(skill_name=step.skill, status="APPROVAL_REQUIRED", cmd=cmd or [], summary="Skill is not safe for automatic execution in execute-safe mode", failure_code="APPROVAL_REQUIRED"))
             continue
-        cmd = build_skill_command(step.skill, files, result_dir, outdir, project_root, execute=True)
+        cmd = build_skill_command(step.skill, files, result_dir, outdir, project_root, execute=True, task_parameters=task_parameters)
         if cmd is None:
             results.append(SkillCallResult(skill_name=step.skill, status="SKIPPED", summary="Required inputs not found for this skill", failure_code="MISSING_REQUIRED_INPUT"))
             continue

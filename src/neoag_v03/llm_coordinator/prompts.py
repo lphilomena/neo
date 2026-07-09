@@ -27,12 +27,24 @@ Supported intents:
 - tool_check
 - demo_smoke
 - run_scoring
+- fusion_rna_run
+- rna_fastq_to_tpm
 - appm_escape_review
+- hla_typing_compare
 - ccf_review
+- purity_cnv_review
 - ranking_compare
 - patient_report_update
 - experiment_design
 - general_explanation
+- project_overview
+- check_status
+- inspect_results
+- data_transfer
+- debug_error
+- update_docs
+- git_release
+- setup_tool
 - workflow_run_request
 - release_qc
 - unknown
@@ -83,4 +95,29 @@ Boundary note:
 {boundary_note}
 
 Write a concise but informative Chinese summary. Include generated output files if any. Preserve the computational-triage boundary.
+""".strip()
+
+
+TASK_JSON_PROMPT_TEMPLATE = """
+Parse the user request into a structured task JSON.
+
+Return strict JSON with keys:
+intent, task_type, action, workflow, target, inputs, parameters, risk, missing_fields, needs_status_tracking, user_visible_summary.
+
+Allowed intent values:
+input_check, tool_check, demo_smoke, sliding_run, run_scoring, appm_escape_review, hla_typing_compare, ccf_review, purity_cnv_review, ranking_compare, patient_report_update, experiment_design, general_explanation, project_overview, check_status, inspect_results, data_transfer, debug_error, update_docs, git_release, setup_tool, workflow_run_request, release_qc, unknown.
+
+Allowed risk values: low, medium, high.
+Use high for delete, overwrite, upload, install, or long-running compute.
+Use medium for workflow execution.
+Use low for explanation, status, read-only checks, and planning.
+
+User request:
+{message}
+
+Available file records:
+{available_files}
+
+Known tools and skills:
+{tool_registry}
 """.strip()

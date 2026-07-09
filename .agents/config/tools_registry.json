@@ -1,0 +1,1305 @@
+{
+  "amber": {
+    "description": "HMF AMBER B-allele frequency component for PURPLE.",
+    "env": [
+      "HMFTOOLS_AMBER_JAR",
+      "HMFTOOLS_AMBER_LOCI"
+    ],
+    "intents": [
+      "setup_tool",
+      "tool_check",
+      "workflow_run_request"
+    ],
+    "kind": "purity_cnv_dependency",
+    "optional_inputs": [],
+    "outputs": [
+      "BAF files"
+    ],
+    "required_inputs": [
+      "tumor_bam",
+      "normal_bam",
+      "AMBER loci VCF"
+    ],
+    "risk": "medium"
+  },
+  "arriba": {
+    "description": "Arriba fusion caller.",
+    "install": [
+      "scripts/install_fusion_tools.sh"
+    ],
+    "intents": [
+      "workflow_run_request",
+      "inspect_results",
+      "setup_tool",
+      "tool_check"
+    ],
+    "kind": "rna_fusion_tool",
+    "optional_inputs": [],
+    "outputs": [
+      "Arriba fusion TSV"
+    ],
+    "required_inputs": [
+      "RNA BAM or FASTQ aligned with STAR",
+      "reference genome"
+    ],
+    "risk": "medium",
+    "verify": [
+      "scripts/run_arriba_sample.sh",
+      "scripts/verify_external_tools.sh"
+    ]
+  },
+  "ascat": {
+    "description": "ASCAT v2/v3 allele-specific copy-number and purity estimation.",
+    "env": [
+      "ASCAT_HOME",
+      "NEOAG_ASCAT_ENV",
+      "NEOAG_ASCAT_V3_ENV",
+      "NEOAG_ASCAT_V3_BIN"
+    ],
+    "install": [
+      "scripts/install_ascat_pyclone.sh"
+    ],
+    "intents": [
+      "workflow_run_request",
+      "inspect_results",
+      "setup_tool",
+      "tool_check"
+    ],
+    "kind": "purity_cnv_tool",
+    "optional_inputs": [
+      "ascat.prepareHTS",
+      "GC/RT correction"
+    ],
+    "outputs": [
+      "ASCAT purity",
+      "ploidy",
+      "segments",
+      "plots"
+    ],
+    "required_inputs": [
+      "tumor_bam",
+      "normal_bam",
+      "ASCAT loci/alleles reference"
+    ],
+    "risk": "medium",
+    "verify": [
+      "scripts/verify_external_tools.sh"
+    ]
+  },
+  "bcftools": {
+    "description": "Core VCF manipulation utility used for variant/reference preprocessing.",
+    "intents": [
+      "setup_tool",
+      "tool_check",
+      "workflow_run_request"
+    ],
+    "kind": "core_cli",
+    "optional_inputs": [],
+    "outputs": [
+      "filtered/indexed/query VCF outputs"
+    ],
+    "required_inputs": [
+      "VCF/BCF"
+    ],
+    "risk": "low"
+  },
+  "bedtools": {
+    "description": "Interval manipulation utility used by targeted RNA/junction and reference preparation steps.",
+    "intents": [
+      "setup_tool",
+      "tool_check",
+      "workflow_run_request"
+    ],
+    "kind": "core_cli",
+    "optional_inputs": [],
+    "outputs": [
+      "interval intersections/subsets"
+    ],
+    "required_inputs": [
+      "BED/VCF/BAM intervals"
+    ],
+    "risk": "low"
+  },
+  "bigmhc": {
+    "description": "BigMHC model-based prediction stage; uses a Python environment with torch.",
+    "env": [
+      "BIGMHC_DIR",
+      "BIGMHC_BIN",
+      "BIGMHC_PYTHON"
+    ],
+    "intents": [
+      "setup_tool",
+      "tool_check",
+      "sliding_run",
+      "workflow_run_request"
+    ],
+    "kind": "immunogenicity_predictor",
+    "optional_inputs": [
+      "GPU/torch environment"
+    ],
+    "outputs": [
+      "BigMHC presentation/immunogenicity predictions"
+    ],
+    "required_inputs": [
+      "peptide table",
+      "HLA-I alleles",
+      "BigMHC models"
+    ],
+    "risk": "medium",
+    "verify": [
+      "scripts/verify_all_tools_and_refs.sh"
+    ]
+  },
+  "cobalt": {
+    "description": "HMF COBALT read-depth component for PURPLE.",
+    "env": [
+      "HMFTOOLS_COBALT_JAR",
+      "HMFTOOLS_GC_PROFILE"
+    ],
+    "intents": [
+      "setup_tool",
+      "tool_check",
+      "workflow_run_request"
+    ],
+    "kind": "purity_cnv_dependency",
+    "optional_inputs": [],
+    "outputs": [
+      "read-depth ratios"
+    ],
+    "required_inputs": [
+      "tumor_bam",
+      "normal_bam",
+      "GC profile"
+    ],
+    "risk": "medium"
+  },
+  "ctat-reference": {
+    "description": "Reference bundle for STAR-Fusion and fusion workflows.",
+    "env": [
+      "NEOAG_CTAT_LIB_DIR",
+      "NEOAG_CTAT_ARCHIVE",
+      "CTAT_GENOME_LIB"
+    ],
+    "intents": [
+      "setup_tool",
+      "tool_check"
+    ],
+    "kind": "reference_bundle",
+    "optional_inputs": [],
+    "outputs": [
+      "CTAT_GENOME_LIB"
+    ],
+    "required_inputs": [
+      "CTAT genome library archive/current directory"
+    ],
+    "risk": "low"
+  },
+  "deepimmuno": {
+    "description": "Optional DeepImmuno-CNN immunogenicity predictor.",
+    "env": [
+      "DEEPIMMUNO_DIR"
+    ],
+    "install": [
+      "scripts/install_deepimmuno.sh"
+    ],
+    "intents": [
+      "setup_tool",
+      "tool_check",
+      "sliding_run"
+    ],
+    "kind": "immunogenicity_predictor",
+    "optional_inputs": [],
+    "outputs": [
+      "DeepImmuno immunogenicity scores"
+    ],
+    "required_inputs": [
+      "9/10-mer peptide-HLA pairs",
+      "DeepImmuno model files"
+    ],
+    "risk": "medium",
+    "verify": [
+      "scripts/run_deepimmuno.sh"
+    ]
+  },
+  "docker-apptainer": {
+    "description": "Container runtime support for priority tools such as NetMHCpan, NetMHCstabpan, SpecHLA, HLA-LA, PURPLE suite, and EasyFuse.",
+    "install": [
+      "scripts/build_priority_tool_containers.sh",
+      "scripts/build_priority_tool_apptainer.sh",
+      "scripts/pull_docker_tools.sh"
+    ],
+    "intents": [
+      "setup_tool",
+      "tool_check",
+      "workflow_run_request"
+    ],
+    "kind": "runtime",
+    "optional_inputs": [
+      "docker",
+      "apptainer",
+      "container image tar/sif files"
+    ],
+    "outputs": [
+      "containerized tool execution"
+    ],
+    "required_inputs": [],
+    "risk": "medium",
+    "verify": [
+      "scripts/verify_priority_tool_containers.sh"
+    ]
+  },
+  "easyfuse": {
+    "description": "EasyFuse RNA fusion detection workflow.",
+    "env": [
+      "NEOAG_EASYFUSE_HOME",
+      "NEOAG_EASYFUSE_REF",
+      "NEOAG_NEXTFLOW",
+      "NXF_HOME"
+    ],
+    "install": [
+      "scripts/install_fusion_tools.sh",
+      "scripts/easyfuse_prebuild_remaining_envs.sh",
+      "scripts/seed_easyfuse_conda_envs.sh"
+    ],
+    "intents": [
+      "workflow_run_request",
+      "inspect_results",
+      "setup_tool",
+      "tool_check"
+    ],
+    "kind": "rna_fusion_tool",
+    "optional_inputs": [
+      "container mode",
+      "prebuilt conda envs"
+    ],
+    "outputs": [
+      "fusion calls",
+      "EasyFuse reports"
+    ],
+    "required_inputs": [
+      "RNA FASTQ pair",
+      "EasyFuse reference",
+      "Nextflow"
+    ],
+    "risk": "medium",
+    "verify": [
+      "scripts/verify_easyfuse_container.sh",
+      "scripts/verify_all_tools_and_refs.sh"
+    ]
+  },
+  "facets": {
+    "description": "FACETS purity/ploidy and allele-specific copy-number workflow.",
+    "env": [
+      "FACETS_HOME",
+      "NEOAG_DBSNP_VCF"
+    ],
+    "install": [
+      "scripts/install_facets.sh"
+    ],
+    "intents": [
+      "workflow_run_request",
+      "inspect_results",
+      "setup_tool",
+      "tool_check"
+    ],
+    "kind": "purity_cnv_tool",
+    "notes": "Modes include full dbSNP, omni2.5 SNP-only downsample, and common_snp.",
+    "optional_inputs": [
+      "cval",
+      "downsample settings",
+      "common_snp mode"
+    ],
+    "outputs": [
+      "purity",
+      "ploidy",
+      "copy-number segments",
+      "FACETS plots",
+      "cncf table"
+    ],
+    "required_inputs": [
+      "tumor_bam",
+      "normal_bam",
+      "SNP loci/reference VCF"
+    ],
+    "risk": "medium",
+    "verify": [
+      "scripts/verify_external_tools.sh"
+    ]
+  },
+  "fusioncatcher": {
+    "description": "FusionCatcher RNA fusion caller.",
+    "env": [
+      "NEOAG_FUSIONCATCHER_HOME",
+      "NEOAG_FUSIONCATCHER_BIN"
+    ],
+    "install": [
+      "scripts/install_fusion_tools.sh"
+    ],
+    "intents": [
+      "workflow_run_request",
+      "inspect_results",
+      "setup_tool",
+      "tool_check"
+    ],
+    "kind": "rna_fusion_tool",
+    "optional_inputs": [],
+    "outputs": [
+      "FusionCatcher fusion calls"
+    ],
+    "required_inputs": [
+      "RNA FASTQ pair",
+      "FusionCatcher reference"
+    ],
+    "risk": "medium"
+  },
+  "gatk-mutect2": {
+    "description": "GATK4 Mutect2 and FilterMutectCalls for somatic SNV/InDel calling.",
+    "env": [
+      "NEOAG_GATK_ENV",
+      "NEOAG_REFERENCE_FASTA"
+    ],
+    "install": [
+      "scripts/install_gatk.sh"
+    ],
+    "intents": [
+      "setup_tool",
+      "tool_check",
+      "workflow_run_request"
+    ],
+    "kind": "variant_tool",
+    "optional_inputs": [
+      "germline_resource",
+      "panel_of_normals",
+      "intervals"
+    ],
+    "outputs": [
+      "somatic VCF",
+      "filtered somatic VCF",
+      "Mutect2 stats"
+    ],
+    "required_inputs": [
+      "tumor_bam",
+      "normal_bam",
+      "reference_fasta"
+    ],
+    "risk": "medium",
+    "verify": [
+      "scripts/verify_all_tools_and_refs.sh"
+    ]
+  },
+  "hla-la": {
+    "description": "Graph-based HLA typing, suitable for short-read and long-read aligned data when graph is available.",
+    "env": [
+      "HLALA_BIN",
+      "HLA_LA_BIN",
+      "HLALA_GRAPH",
+      "HLA_LA_GRAPH"
+    ],
+    "intents": [
+      "setup_tool",
+      "tool_check",
+      "workflow_run_request",
+      "inspect_results"
+    ],
+    "kind": "hla_tool",
+    "notes": "Requires aligned reads, not raw FASTQ directly.",
+    "optional_inputs": [
+      "bai/crai"
+    ],
+    "outputs": [
+      "R1_bestguess_G.txt",
+      "HLA-LA typing outputs"
+    ],
+    "required_inputs": [
+      "aligned BAM/CRAM",
+      "PRG_MHC_GRCh38_withIMGT graph"
+    ],
+    "risk": "medium",
+    "verify": [
+      "scripts/verify_hla_la_container.sh",
+      "scripts/verify_all_tools_and_refs.sh"
+    ]
+  },
+  "htslib-tabix-bgzip": {
+    "description": "Compression and indexing utilities for VCF/BED/TSV references.",
+    "intents": [
+      "setup_tool",
+      "tool_check"
+    ],
+    "kind": "core_cli",
+    "optional_inputs": [],
+    "outputs": [
+      "bgzip files",
+      "tabix indexes"
+    ],
+    "required_inputs": [
+      "VCF/BED/TSV"
+    ],
+    "risk": "low"
+  },
+  "java": {
+    "description": "Java runtime required by GATK, Nextflow, PURPLE/AMBER/COBALT, and other jar-based tools.",
+    "env": [
+      "JAVA_HOME"
+    ],
+    "intents": [
+      "setup_tool",
+      "tool_check"
+    ],
+    "kind": "runtime",
+    "optional_inputs": [],
+    "outputs": [
+      "JVM runtime for GATK, Nextflow, HMF tools"
+    ],
+    "required_inputs": [
+      "java executable"
+    ],
+    "risk": "low"
+  },
+  "lohhla": {
+    "description": "HLA loss-of-heterozygosity analysis.",
+    "env": [
+      "LOHHLA_HOME",
+      "POLYSOLVER_HOME",
+      "NOVOALIGN_LICENSE_FILE"
+    ],
+    "install": [
+      "scripts/install_lohhla.sh",
+      "scripts/install_polysolver.sh"
+    ],
+    "intents": [
+      "setup_tool",
+      "tool_check",
+      "workflow_run_request",
+      "inspect_results"
+    ],
+    "kind": "hla_loh_tool",
+    "optional_inputs": [
+      "Polysolver",
+      "Novoalign license"
+    ],
+    "outputs": [
+      "HLA LOH calls",
+      "LOHHLA plots/tables"
+    ],
+    "required_inputs": [
+      "tumor_bam",
+      "normal_bam",
+      "HLA typing",
+      "reference fasta"
+    ],
+    "risk": "medium",
+    "verify": [
+      "scripts/verify_external_tools.sh",
+      "scripts/run_lohhla_example.sh"
+    ]
+  },
+  "manta": {
+    "description": "Optional structural variant caller environment used by SV/fusion support scripts.",
+    "env": [
+      "NEOAG_MANTA_ENV"
+    ],
+    "intents": [
+      "setup_tool",
+      "tool_check",
+      "workflow_run_request"
+    ],
+    "kind": "sv_tool",
+    "optional_inputs": [],
+    "outputs": [
+      "SV VCF"
+    ],
+    "required_inputs": [
+      "tumor_bam",
+      "normal_bam",
+      "reference FASTA"
+    ],
+    "risk": "medium"
+  },
+  "mhcflurry": {
+    "description": "Python-based class-I affinity and presentation predictor in the neoag-tools environment.",
+    "env": [
+      "NEOAG_CONDA_ENV",
+      "TF_USE_LEGACY_KERAS"
+    ],
+    "intents": [
+      "setup_tool",
+      "tool_check",
+      "sliding_run"
+    ],
+    "kind": "binding_predictor",
+    "optional_inputs": [
+      "downloaded MHCflurry models"
+    ],
+    "outputs": [
+      "MHCflurry affinity/presentation predictions"
+    ],
+    "required_inputs": [
+      "peptide list",
+      "HLA-I alleles"
+    ],
+    "risk": "medium",
+    "verify": [
+      "tests/test_immunogenicity_tools.py"
+    ]
+  },
+  "mixmhcpred": {
+    "description": "MixMHCpred predictor used directly or as PRIME dependency.",
+    "env": [
+      "MIXMHCPRED_HOME",
+      "MIXMHCPRED_BIN"
+    ],
+    "install": [
+      "scripts/install_immunogenicity_tools.sh"
+    ],
+    "intents": [
+      "setup_tool",
+      "tool_check",
+      "sliding_run"
+    ],
+    "kind": "binding_predictor",
+    "optional_inputs": [],
+    "outputs": [
+      "MixMHCpred rank table"
+    ],
+    "required_inputs": [
+      "peptide list",
+      "HLA-I alleles"
+    ],
+    "risk": "medium",
+    "verify": [
+      "scripts/verify_all_tools_and_refs.sh"
+    ]
+  },
+  "neoag-fusion-rna-run": {
+    "description": "High-level RNA fusion skill that reviews or plans EasyFuse, STAR-Fusion, Arriba, and FusionCatcher workflows and summarizes cross-tool fusion support.",
+    "intents": [
+      "fusion_rna_run",
+      "workflow_run_request",
+      "inspect_results"
+    ],
+    "kind": "skill",
+    "optional_inputs": [
+      "sample_id",
+      "RNA FASTQ pair",
+      "RNA BAM",
+      "EasyFuse results",
+      "STAR-Fusion results",
+      "Arriba results",
+      "FusionCatcher results"
+    ],
+    "outputs": [
+      "fusion_rna_review.md",
+      "fusion_tool_summary.tsv",
+      "fusion_consensus.tsv",
+      "fusion_recommendation.json",
+      "fusion_run_suggestions.tsv"
+    ],
+    "required_inputs": [],
+    "risk": "low"
+  },
+  "neoag-hla-typing-run-and-compare": {
+    "description": "High-level HLA typing skill that compares OptiType, SpecHLA, and HLA-LA calls, summarizes per-locus consensus, and suggests missing runs.",
+    "intents": [
+      "hla_typing_compare",
+      "workflow_run_request",
+      "inspect_results"
+    ],
+    "kind": "skill",
+    "optional_inputs": [
+      "sample_id",
+      "BAM/CRAM",
+      "FASTQ pair",
+      "OptiType results",
+      "SpecHLA results",
+      "HLA-LA results"
+    ],
+    "outputs": [
+      "hla_typing_compare.md",
+      "hla_typing_tool_summary.tsv",
+      "hla_typing_consensus.tsv",
+      "hla_typing_recommendation.json",
+      "hla_typing_run_suggestions.tsv"
+    ],
+    "required_inputs": [],
+    "risk": "low"
+  },
+  "neoag-purity-cnv-run-and-review": {
+    "description": "High-level purity/CNV skill that reviews or plans FACETS, PURPLE/AMBER/COBALT, Sequenza, and ASCAT, then recommends a consensus purity range. Supports sample_id filtering to avoid mixing samples.",
+    "intents": [
+      "purity_cnv_review",
+      "workflow_run_request",
+      "inspect_results"
+    ],
+    "kind": "skill",
+    "optional_inputs": [
+      "sample_id",
+      "tumor_bam",
+      "normal_bam",
+      "FACETS result directory",
+      "PURPLE result directory",
+      "Sequenza result directory",
+      "ASCAT result directory"
+    ],
+    "outputs": [
+      "purity_cnv_review.md",
+      "purity_cnv_tool_summary.tsv",
+      "purity_recommendation.json",
+      "purity_cnv_run_suggestions.tsv"
+    ],
+    "required_inputs": [],
+    "risk": "low"
+  },
+  "neoag-result-inspector": {
+    "description": "Inspect the latest NeoAg sliding-window outputs and summarize candidate counts, priority distributions, top candidates, and key report paths.",
+    "intents": [
+      "inspect_results"
+    ],
+    "kind": "skill",
+    "optional_inputs": [
+      "result_dir",
+      "ranked_peptides.v03.tsv",
+      "ranked_events.v03.tsv",
+      "validation_plan.v03.tsv",
+      "evidence_report.v03.html"
+    ],
+    "outputs": [
+      "result_inspection.md",
+      "result_inspection.json"
+    ],
+    "required_inputs": [],
+    "risk": "low"
+  },
+  "neoag-rna-fastq-to-tpm": {
+    "description": "High-level RNA expression skill that reviews existing TPM files or plans RNA FASTQ/BAM to TPM generation with RSEM, Salmon, Kallisto, or count-to-TPM workflows.",
+    "intents": [
+      "rna_fastq_to_tpm",
+      "workflow_run_request",
+      "inspect_results"
+    ],
+    "kind": "skill",
+    "optional_inputs": [
+      "sample_id",
+      "RNA FASTQ pair",
+      "RNA BAM",
+      "existing gene TPM",
+      "existing transcript TPM",
+      "RSEM/Salmon/Kallisto reference"
+    ],
+    "outputs": [
+      "rna_expression_summary.md",
+      "expression_input_summary.tsv",
+      "gene_tpm.tsv",
+      "rna_tpm_run_suggestions.tsv",
+      "rna_expression_recommendation.json"
+    ],
+    "required_inputs": [],
+    "risk": "low",
+    "execution": "Can execute Salmon quant when FASTQ pair, SALMON_INDEX, SALMON_TX2GENE, and salmon binary are configured; can execute RSEM when FASTQ pair, RSEM_REFERENCE, and rsem-calculate-expression are configured.",
+    "environment": [
+      "SALMON_BIN",
+      "SALMON_INDEX",
+      "SALMON_TX2GENE",
+      "SALMON_THREADS",
+      "RSEM_BIN",
+      "RSEM_REFERENCE",
+      "RSEM_THREADS"
+    ],
+    "reference_files": [
+      "Salmon transcriptome index",
+      "tx2gene transcript-to-gene mapping",
+      "optional RSEM reference prefix"
+    ]
+  },
+  "neoag-sliding-run": {
+    "description": "Run or plan the staged SNV/InDel sliding-window neoantigen workflow.",
+    "env": [
+      "NEOAG_REFERENCE_FASTA",
+      "NEOAG_VEP_BIN",
+      "NEOAG_NETMHCPAN_BIN"
+    ],
+    "intents": [
+      "sliding_run",
+      "workflow_run_request"
+    ],
+    "kind": "skill",
+    "optional_inputs": [
+      "expression_tpm",
+      "rna_alt_reads",
+      "fusion",
+      "splice_junction",
+      "purity",
+      "ploidy",
+      "hla_loh",
+      "netmhcstabpan",
+      "bigmhc"
+    ],
+    "outputs": [
+      "ranked_peptides.v03.tsv",
+      "ranked_events.v03.tsv",
+      "validation_plan.v03.tsv",
+      "evidence_report.v03.html"
+    ],
+    "required_inputs": [
+      "somatic_vcf",
+      "hla"
+    ],
+    "risk": "medium",
+    "verify": [
+      "scripts/run_tests.sh",
+      "scripts/verify_all_tools_and_refs.sh"
+    ]
+  },
+  "netmhcpan": {
+    "description": "DTU NetMHCpan class-I peptide-MHC binding predictor; can run locally or in container.",
+    "env": [
+      "NETMHCPAN_HOME",
+      "NETMHCpan",
+      "NEOAG_NETMHCPAN_BIN",
+      "NEOAG_NETMHCPAN_BACKEND",
+      "NEOAG_NETMHCPAN_TMPDIR"
+    ],
+    "install": [
+      "scripts/install_netmhcpan.sh",
+      "scripts/build_netmhcpan_container.sh"
+    ],
+    "intents": [
+      "setup_tool",
+      "tool_check",
+      "sliding_run",
+      "workflow_run_request"
+    ],
+    "kind": "binding_predictor",
+    "optional_inputs": [
+      "container image",
+      "tmp directory"
+    ],
+    "outputs": [
+      "NetMHCpan binding rank table"
+    ],
+    "required_inputs": [
+      "peptide FASTA/list",
+      "HLA-I alleles"
+    ],
+    "risk": "medium",
+    "verify": [
+      "scripts/verify_netmhcpan_container.sh",
+      "scripts/verify_all_tools_and_refs.sh"
+    ]
+  },
+  "netmhcstabpan": {
+    "description": "NetMHCstabpan peptide-MHC stability predictor; optional stage and can be skipped when unavailable.",
+    "env": [
+      "NETMHCSTABPAN_HOME"
+    ],
+    "install": [
+      "scripts/install_netmhcstabpan.sh"
+    ],
+    "intents": [
+      "setup_tool",
+      "tool_check",
+      "sliding_run",
+      "workflow_run_request"
+    ],
+    "kind": "binding_predictor",
+    "optional_inputs": [
+      "IEDB shim",
+      "container image"
+    ],
+    "outputs": [
+      "stability prediction table"
+    ],
+    "required_inputs": [
+      "peptide list",
+      "HLA-I alleles"
+    ],
+    "risk": "medium",
+    "verify": [
+      "scripts/verify_netmhcstabpan_container.sh",
+      "scripts/verify_all_tools_and_refs.sh"
+    ]
+  },
+  "nextflow": {
+    "description": "Workflow engine used by EasyFuse and Nextflow-mode pipeline runs.",
+    "env": [
+      "NEOAG_NEXTFLOW",
+      "NXF_HOME",
+      "NXF_VER"
+    ],
+    "intents": [
+      "setup_tool",
+      "tool_check",
+      "workflow_run_request"
+    ],
+    "kind": "runtime",
+    "optional_inputs": [
+      "NXF_HOME",
+      "NXF_VER",
+      "offline cache"
+    ],
+    "outputs": [
+      "nextflow work directory",
+      ".nextflow.log"
+    ],
+    "required_inputs": [
+      "Java 11/17 runtime",
+      "Nextflow executable or cached framework jar"
+    ],
+    "risk": "medium",
+    "verify": [
+      "scripts/verify_all_tools_and_refs.sh"
+    ]
+  },
+  "optitype": {
+    "description": "HLA class-I typing from DNA/RNA FASTQ or BAM.",
+    "env": [
+      "NEOAG_OPTITYPE_ENV",
+      "OPTITYPE_ENV",
+      "OPTITYPE_BIN",
+      "OPTITYPE_REFERENCE"
+    ],
+    "install": [
+      "scripts/install_optitype.sh"
+    ],
+    "intents": [
+      "setup_tool",
+      "tool_check",
+      "workflow_run_request",
+      "inspect_results"
+    ],
+    "kind": "hla_tool",
+    "optional_inputs": [
+      "HLA-I only"
+    ],
+    "outputs": [
+      "OptiType HLA-A/B/C typing result"
+    ],
+    "required_inputs": [
+      "DNA/RNA FASTQ or BAM"
+    ],
+    "risk": "medium",
+    "verify": [
+      "scripts/verify_external_tools.sh"
+    ]
+  },
+  "polysolver": {
+    "description": "Optional HLA typing dependency used by LOHHLA workflows.",
+    "env": [
+      "POLYSOLVER_HOME",
+      "NOVOALIGN_LICENSE_FILE"
+    ],
+    "install": [
+      "scripts/install_polysolver.sh"
+    ],
+    "intents": [
+      "setup_tool",
+      "tool_check"
+    ],
+    "kind": "hla_tool_dependency",
+    "optional_inputs": [],
+    "outputs": [
+      "HLA typing for LOHHLA input"
+    ],
+    "required_inputs": [
+      "BAM/FASTQ depending on mode",
+      "licensed dependencies"
+    ],
+    "risk": "medium"
+  },
+  "prime": {
+    "description": "PRIME immunogenicity predictor; requires MixMHCpred.",
+    "env": [
+      "PRIME_HOME",
+      "NEOAG_PRIME_BIN",
+      "MIXMHCPRED_HOME",
+      "MIXMHCPRED_BIN",
+      "NEOAG_PRIME_JOBS"
+    ],
+    "install": [
+      "scripts/install_immunogenicity_tools.sh",
+      "scripts/fix_prime_temp.sh"
+    ],
+    "intents": [
+      "setup_tool",
+      "tool_check",
+      "sliding_run",
+      "workflow_run_request"
+    ],
+    "kind": "immunogenicity_predictor",
+    "optional_inputs": [],
+    "outputs": [
+      "PRIME immunogenicity scores"
+    ],
+    "required_inputs": [
+      "peptide table",
+      "HLA-I alleles",
+      "MixMHCpred binary"
+    ],
+    "risk": "medium",
+    "verify": [
+      "scripts/verify_external_tools.sh",
+      "scripts/verify_all_tools_and_refs.sh"
+    ]
+  },
+  "project-overview": {
+    "description": "Explain project scope, workflows, inputs, outputs, deployment options, and registered tool capabilities.",
+    "intents": [
+      "project_overview",
+      "general_explanation"
+    ],
+    "kind": "explanation",
+    "optional_inputs": [],
+    "outputs": [
+      "final_response.md",
+      "task_spec.json",
+      "task_events.jsonl"
+    ],
+    "required_inputs": [],
+    "risk": "low"
+  },
+  "purple": {
+    "description": "HMF PURPLE integration step.",
+    "env": [
+      "HMFTOOLS_PURPLE_JAR",
+      "HMFTOOLS_ENSEMBL_DATA_DIR"
+    ],
+    "intents": [
+      "workflow_run_request",
+      "inspect_results",
+      "setup_tool",
+      "tool_check"
+    ],
+    "kind": "purity_cnv_tool",
+    "optional_inputs": [
+      "somatic VCF"
+    ],
+    "outputs": [
+      "purity",
+      "ploidy",
+      "copy-number",
+      "driver summary"
+    ],
+    "required_inputs": [
+      "AMBER output",
+      "COBALT output",
+      "PURPLE references"
+    ],
+    "risk": "medium"
+  },
+  "purple-suite": {
+    "description": "Hartwig PURPLE/AMBER/COBALT purity, ploidy, copy-number, and driver analysis suite.",
+    "env": [
+      "HMFTOOLS_HOME",
+      "NEOAG_HMFTOOLS_HOME",
+      "HMFTOOLS_AMBER_JAR",
+      "HMFTOOLS_COBALT_JAR",
+      "HMFTOOLS_PURPLE_JAR",
+      "HMFTOOLS_AMBER_LOCI",
+      "HMFTOOLS_GC_PROFILE",
+      "HMFTOOLS_ENSEMBL_DATA_DIR"
+    ],
+    "intents": [
+      "workflow_run_request",
+      "inspect_results",
+      "setup_tool",
+      "tool_check"
+    ],
+    "kind": "purity_cnv_tool",
+    "optional_inputs": [
+      "somatic VCF",
+      "driver catalog",
+      "reuse AMBER/COBALT"
+    ],
+    "outputs": [
+      "PURPLE purity",
+      "ploidy",
+      "CNV segments",
+      "driver summary",
+      "AMBER BAF",
+      "COBALT depth ratios"
+    ],
+    "required_inputs": [
+      "tumor_bam",
+      "normal_bam",
+      "reference files",
+      "AMBER",
+      "COBALT",
+      "PURPLE"
+    ],
+    "risk": "medium",
+    "verify": [
+      "scripts/verify_purple_suite_container.sh",
+      "scripts/verify_all_tools_and_refs.sh"
+    ]
+  },
+  "pvactools": {
+    "description": "pVACtools-compatible optional neoantigen prediction workflow.",
+    "env": [
+      "NEOAG_CONDA_ENV"
+    ],
+    "install": [
+      "scripts/run_pvac_docker.sh"
+    ],
+    "intents": [
+      "setup_tool",
+      "tool_check",
+      "workflow_run_request"
+    ],
+    "kind": "neoantigen_tool",
+    "optional_inputs": [
+      "expression",
+      "coverage"
+    ],
+    "outputs": [
+      "pVACtools neoantigen reports"
+    ],
+    "required_inputs": [
+      "somatic VCF",
+      "HLA alleles"
+    ],
+    "risk": "medium"
+  },
+  "pyclone-vi": {
+    "description": "PyClone-VI clonality estimation for variant CCF review.",
+    "env": [
+      "NEOAG_PYCLONE_ENV",
+      "NEOAG_PYCLONE_BIN"
+    ],
+    "install": [
+      "scripts/install_ascat_pyclone.sh"
+    ],
+    "intents": [
+      "setup_tool",
+      "tool_check",
+      "inspect_results",
+      "workflow_run_request"
+    ],
+    "kind": "clonality_tool",
+    "optional_inputs": [],
+    "outputs": [
+      "clone assignments",
+      "cellular prevalence estimates"
+    ],
+    "required_inputs": [
+      "variant table with VAF/CN/purity"
+    ],
+    "risk": "medium"
+  },
+  "rsem": {
+    "description": "RNA expression quantification used to add TPM evidence.",
+    "intents": [
+      "workflow_run_request",
+      "inspect_results",
+      "setup_tool"
+    ],
+    "kind": "rna_expression_tool",
+    "notes": "Used by reusable RNA FASTQ to TPM scripts when configured.",
+    "optional_inputs": [],
+    "outputs": [
+      "gene TPM",
+      "isoform TPM"
+    ],
+    "required_inputs": [
+      "RNA FASTQ/BAM",
+      "RSEM reference"
+    ],
+    "risk": "medium"
+  },
+  "samtools": {
+    "description": "Core BAM/FASTA utility used across SpecHLA, HLA-LA, FACETS, Sequenza, and data QC.",
+    "intents": [
+      "setup_tool",
+      "tool_check",
+      "workflow_run_request"
+    ],
+    "kind": "core_cli",
+    "optional_inputs": [],
+    "outputs": [
+      "BAM index",
+      "region extraction",
+      "quickcheck results"
+    ],
+    "required_inputs": [
+      "BAM/CRAM/FASTA as applicable"
+    ],
+    "risk": "low"
+  },
+  "sequenza": {
+    "description": "Sequenza purity/ploidy and copy-number workflow using bam2seqz and R sequenza fit.",
+    "env": [
+      "SEQUENZA_FASTA",
+      "SEQUENZA_GC_WIG"
+    ],
+    "install": [
+      "conda env for sequenza-utils",
+      "R package sequenza"
+    ],
+    "intents": [
+      "workflow_run_request",
+      "inspect_results",
+      "setup_tool",
+      "tool_check"
+    ],
+    "kind": "purity_cnv_tool",
+    "optional_inputs": [
+      "chromosome-sharded seqz"
+    ],
+    "outputs": [
+      "Sequenza cellularity",
+      "ploidy",
+      "segments",
+      "plots"
+    ],
+    "required_inputs": [
+      "tumor_bam",
+      "normal_bam",
+      "reference FASTA",
+      "GC wiggle"
+    ],
+    "risk": "medium",
+    "verify": [
+      "scripts/verify_all_tools_and_refs.sh"
+    ]
+  },
+  "spechla": {
+    "description": "SpecHLA HLA typing/HLA-region analysis from aligned BAM or prepared reads.",
+    "env": [
+      "SPECHLA_HOME",
+      "NEOAG_SPECHLA_HOME",
+      "SPECHLA_ENV"
+    ],
+    "install": [
+      "tools/SpecHLA/install_spechap.sh"
+    ],
+    "intents": [
+      "setup_tool",
+      "tool_check",
+      "workflow_run_request",
+      "check_status",
+      "inspect_results"
+    ],
+    "kind": "hla_tool",
+    "optional_inputs": [
+      "bai",
+      "FASTQ-derived BAM",
+      "purity",
+      "ploidy"
+    ],
+    "outputs": [
+      "HLA typing results",
+      "HLA realignment output",
+      "HLA LOH evidence",
+      "SpecHLA logs"
+    ],
+    "required_inputs": [
+      "tumor_or_normal_bam"
+    ],
+    "risk": "medium",
+    "verify": [
+      "scripts/verify_spechla_container.sh",
+      "scripts/verify_all_tools_and_refs.sh"
+    ]
+  },
+  "star": {
+    "description": "RNA aligner used by fusion/expression workflows and some upstream pipelines.",
+    "intents": [
+      "workflow_run_request",
+      "setup_tool"
+    ],
+    "kind": "rna_alignment_tool",
+    "optional_inputs": [],
+    "outputs": [
+      "RNA BAM"
+    ],
+    "required_inputs": [
+      "RNA FASTQ",
+      "STAR index"
+    ],
+    "risk": "medium"
+  },
+  "star-fusion": {
+    "description": "STAR-Fusion RNA fusion caller using CTAT reference.",
+    "env": [
+      "NEOAG_STAR_FUSION_HOME",
+      "NEOAG_STAR_FUSION_BIN",
+      "CTAT_GENOME_LIB"
+    ],
+    "install": [
+      "scripts/install_fusion_tools.sh"
+    ],
+    "intents": [
+      "workflow_run_request",
+      "inspect_results",
+      "setup_tool",
+      "tool_check"
+    ],
+    "kind": "rna_fusion_tool",
+    "optional_inputs": [],
+    "outputs": [
+      "STAR-Fusion fusion predictions"
+    ],
+    "required_inputs": [
+      "RNA FASTQ pair",
+      "CTAT genome lib"
+    ],
+    "risk": "medium"
+  },
+  "svaba-or-sv-env": {
+    "description": "Optional structural variant support environment.",
+    "env": [
+      "NEOAG_SV_ENV"
+    ],
+    "intents": [
+      "setup_tool",
+      "tool_check",
+      "workflow_run_request"
+    ],
+    "kind": "sv_tool",
+    "optional_inputs": [
+      "SV caller binaries in neoag-sv env"
+    ],
+    "outputs": [
+      "SV calls"
+    ],
+    "required_inputs": [],
+    "risk": "medium"
+  },
+  "vep": {
+    "description": "Ensembl VEP annotation and plugin support for variant peptide extraction.",
+    "env": [
+      "NEOAG_VEP_BIN",
+      "NEOAG_VEP_CACHE",
+      "NEOAG_VEP_CACHE_VERSION",
+      "NEOAG_VEP_PLUGINS"
+    ],
+    "install": [
+      "scripts/install_vep.sh",
+      "scripts/install_vep_cache.sh"
+    ],
+    "intents": [
+      "setup_tool",
+      "tool_check",
+      "sliding_run",
+      "workflow_run_request"
+    ],
+    "kind": "annotation_tool",
+    "optional_inputs": [
+      "Wildtype.pm",
+      "Frameshift.pm",
+      "normal proteome FASTA"
+    ],
+    "outputs": [
+      "annotated VEP VCF/TSV",
+      "variant effect annotations"
+    ],
+    "required_inputs": [
+      "VCF",
+      "GRCh38 FASTA",
+      "VEP GRCh38 cache"
+    ],
+    "risk": "medium",
+    "verify": [
+      "scripts/verify_all_tools_and_refs.sh"
+    ]
+  }
+}

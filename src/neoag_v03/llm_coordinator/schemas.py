@@ -11,13 +11,26 @@ SUPPORTED_INTENTS = {
     "input_check",
     "tool_check",
     "demo_smoke",
+    "sliding_run",
     "run_scoring",
+    "fusion_rna_run",
+    "rna_fastq_to_tpm",
     "appm_escape_review",
+    "hla_typing_compare",
     "ccf_review",
+    "purity_cnv_review",
     "ranking_compare",
     "patient_report_update",
     "experiment_design",
     "general_explanation",
+    "project_overview",
+    "check_status",
+    "inspect_results",
+    "data_transfer",
+    "debug_error",
+    "update_docs",
+    "git_release",
+    "setup_tool",
     "workflow_run_request",
     "release_qc",
     "unknown",
@@ -27,7 +40,11 @@ SAFE_SKILLS = {
     "neoag-input-qc",
     "neoag-tool-and-reference-qc",
     "neoag-hla-loh-appm-review",
+    "neoag-hla-typing-run-and-compare",
     "neoag-ccf-clonality-review",
+    "neoag-purity-cnv-run-and-review",
+    "neoag-fusion-rna-run",
+    "neoag-rna-fastq-to-tpm",
     "neoag-ranking-compare",
     "neoag-patient-report",
 }
@@ -62,6 +79,24 @@ class InputState:
         d = asdict(self)
         d["files"] = [f.to_dict() for f in self.files]
         return d
+
+@dataclass
+class ParsedTask:
+    intent: str
+    task_type: str = "unknown"
+    action: str = "plan"
+    workflow: str | None = None
+    target: str | None = None
+    inputs: list[str] = field(default_factory=list)
+    parameters: dict[str, Any] = field(default_factory=dict)
+    risk: str = "low"
+    missing_fields: list[str] = field(default_factory=list)
+    needs_status_tracking: bool = True
+    user_visible_summary: str = ""
+    source: str = "rule"
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
 
 @dataclass
 class IntentResult:

@@ -1,12 +1,14 @@
-import json, os, signal, subprocess, time, uuid
+import json, os, re, signal, subprocess, time, uuid
 from pathlib import Path
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse
 from pydantic import BaseModel
 
 ROOT = Path(os.environ.get('NEOAG_PROJECT_ROOT', Path.cwd())).resolve()
 JOBS_DIR = Path(os.environ.get('NEOAG_AGENT_WEB_JOBS', ROOT / 'results' / 'agent_web_jobs')).resolve()
+UPLOADS_DIR = Path(os.environ.get('NEOAG_AGENT_WEB_UPLOADS', ROOT / 'results' / 'agent_web_uploads')).resolve()
 JOBS_DIR.mkdir(parents=True, exist_ok=True)
+UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 app = FastAPI(title='NeoAg LLM Agent Web')
 JOBS = {}
 
@@ -19,11 +21,17 @@ class Req(BaseModel):
     model: str = 'deepseek-chat'
     api_key_env: str = 'DEEPSEEK_API_KEY'
     api_base: str | None = None
+    sample_id: str | None = None
     allow_high_risk: bool = True
 
 def jp(job_id):
     d = JOBS_DIR / job_id
     return d, d / 'job.json', d / 'agent.log'
+
+def safe_name(value, default='upload'):
+    name = Path(str(value or default)).name
+    name = re.sub(r'[^A-Za-z0-9._+-]+', '_', name).strip('._')
+    return name or default
 
 def save(job):
     d, meta, _ = jp(job['job_id'])
@@ -74,6 +82,24 @@ def home():
 def health():
     return {'ok': True, 'project_root': str(ROOT), 'jobs_dir': str(JOBS_DIR)}
 
+@app.post('/api/upload')
+async def upload(request: Request, filename: str = 'upload.dat', upload_id: str | None = None):
+    group = safe_name(upload_id or (time.strftime('%Y%m%d_%H%M%S') + '_' + uuid.uuid4().hex[:8]), 'upload')
+    name = safe_name(filename, 'upload.dat')
+    target_dir = UPLOADS_DIR / group
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target = target_dir / name
+    size = 0
+    with target.open('wb') as fh:
+        async for chunk in request.stream():
+            if chunk:
+                fh.write(chunk)
+                size += len(chunk)
+    if size == 0:
+        target.unlink(missing_ok=True)
+        raise HTTPException(400, 'empty upload')
+    return {'path': str(target), 'size': size, 'upload_id': group}
+
 @app.get('/api/jobs')
 def jobs():
     rows = []
@@ -96,6 +122,8 @@ def run(req: Req):
         cmd.append('--allow-high-risk')
     if req.api_base:
         cmd += ['--api-base', req.api_base]
+    if req.sample_id:
+        cmd += ['--sample-id', req.sample_id]
     for f in req.files:
         if f.strip():
             cmd += ['--file', f.strip()]
@@ -134,6 +162,19 @@ def get_log(job_id, tail: int = 500):
         return ''
     lines = p.read_text(encoding='utf-8', errors='ignore').splitlines()
     return '\n'.join(lines[-tail:]) + ('\n' if lines else '')
+
+@app.get('/api/jobs/{job_id}/final', response_class=PlainTextResponse)
+def get_final(job_id):
+    job = load(job_id)
+    p = ROOT / job.get('outdir', '') / 'final_response.md'
+    if not p.exists():
+        return ''
+    created_at = float(job.get('created_at') or 0)
+    # Multiple web jobs may share the same outdir. Do not show a previous job's
+    # final_response.md while the current job is still generating its answer.
+    if created_at and p.stat().st_mtime < created_at:
+        return ''
+    return p.read_text(encoding='utf-8', errors='ignore')
 
 @app.get('/api/jobs/{job_id}/outputs')
 def outs(job_id):
@@ -174,11 +215,17 @@ HTML = r"""<!doctype html>
     <form id="jobForm">
       <p>自然语言任务</p>
       <textarea name="message">帮我用这个 VCF 和 HLA 文件跑 neoantigen sliding-window。NetMHCpan 用容器跑，NetMHCstabpan 跳过，BigMHC 用本地能 import torch 的环境。</textarea>
+      <p>上传 VCF / HLA 文件</p>
+      <input id="vcfFile" name="vcf_upload" type="file" accept=".vcf,.gz,.txt,.tsv">
+      <input id="hlaFile" name="hla_upload" type="file" accept=".txt,.tsv,.csv">
+      <div class="muted">可直接上传本地 VCF/HLA；也可继续填写服务器已有路径。上传文件会保存到 results/agent_web_uploads/。</div>
       <p>服务器文件路径，每行一个</p>
       <textarea name="files">/mnt/zjl-bgi-zzb/peixunban/gl/data/chenxiaoliang_data/data/liver_0520_WGS_shortReads/somatic/M1ML150017383_L01_438.align.somatic.pass.vcf.gz
 /home/na/project/neoantigen/neoag_event_pipeline_v03_rc/work/chenxiaoliang_M1ML150017383.hla.txt</textarea>
       <p>输出目录</p>
       <input name="outdir" value="results/llm_agent_web">
+      <p>Sample ID 过滤（可选，用于结果分析避免混入其他样本）</p>
+      <input name="sample_id" placeholder="例如 M1ML150017383 或 ML150006946_L01_137">
       <p>Provider / Model / Mode / API key env</p>
       <select name="llm_provider"><option>deepseek</option><option>rule</option></select>
       <input name="model" value="deepseek-chat">
@@ -195,6 +242,8 @@ HTML = r"""<!doctype html>
     <div id="jobs">加载中...</div>
   </section>
   <section>
+    <h3>最终回答</h3>
+    <pre id="final">请选择或运行一个任务</pre>
     <h3>日志</h3>
     <div id="currentJob" class="muted">当前未选择任务</div>
     <pre id="log">请选择或运行一个任务</pre>
@@ -207,7 +256,7 @@ HTML = r"""<!doctype html>
   var timer = null;
   function E(id){ return document.getElementById(id); }
   function setNotice(text){ E('notice').textContent = text || ''; }
-  function scrollToLog(){ E('log').scrollIntoView({behavior:'smooth', block:'start'}); }
+  function scrollToLog(){ E('final').scrollIntoView({behavior:'smooth', block:'start'}); }
   async function api(path, opts){
     var r = await fetch(path, opts || {});
     var ct = r.headers.get('content-type') || '';
@@ -216,6 +265,15 @@ HTML = r"""<!doctype html>
     return body;
   }
   function lines(s){ return String(s || '').split("\n").map(function(x){ return x.trim(); }).filter(Boolean); }
+  function makeUploadId(){ return new Date().toISOString().replace(/[^0-9]/g,'').slice(0,14) + '_' + Math.random().toString(16).slice(2,10); }
+  async function uploadOne(file, uploadId){
+    if(!file){ return null; }
+    var url = '/api/upload?upload_id=' + encodeURIComponent(uploadId) + '&filename=' + encodeURIComponent(file.name);
+    var r = await fetch(url, {method:'POST', headers:{'Content-Type':'application/octet-stream'}, body:file});
+    var body = await r.json().catch(function(){ return {}; });
+    if(!r.ok){ throw new Error(body.detail || JSON.stringify(body)); }
+    return body.path;
+  }
   async function refresh(){
     var d = await api('/api/jobs');
     E('jobs').innerHTML = d.jobs.map(function(j){
@@ -243,6 +301,8 @@ HTML = r"""<!doctype html>
     if(!cur){ return; }
     var job = await api('/api/jobs/' + encodeURIComponent(cur));
     E('currentJob').textContent = '当前任务: ' + cur + ' / ' + job.status + ' / PID ' + (job.pid || '-');
+    var finalText = await api('/api/jobs/' + encodeURIComponent(cur) + '/final');
+    E('final').textContent = finalText && finalText.trim() ? finalText : '最终回答暂未生成。';
     var text = await api('/api/jobs/' + encodeURIComponent(cur) + '/log?tail=500');
     if(!text || !text.trim()){
       text = '任务已选择，但日志暂时为空。\n状态: ' + job.status + '\n日志文件: ' + (job.log_path || '-') + '\n输出目录: ' + (job.outdir || '-') + '\n命令: ' + (job.command || []).join(' ');
@@ -261,20 +321,32 @@ HTML = r"""<!doctype html>
   async function runJob(){
     var btn = E('runBtn');
     btn.disabled = true;
-    setNotice(' 正在提交...');
+    setNotice(' 正在上传/提交...');
     try{
       var fd = new FormData(E('jobForm'));
+      var uploadId = makeUploadId();
+      var files = lines(fd.get('files'));
+      var vcfPath = await uploadOne(E('vcfFile').files[0], uploadId);
+      var hlaPath = await uploadOne(E('hlaFile').files[0], uploadId);
+      if(vcfPath){ files.push(vcfPath); }
+      if(hlaPath){ files.push(hlaPath); }
       var body = {
         message: fd.get('message'),
-        files: lines(fd.get('files')),
+        files: files,
         outdir: fd.get('outdir'),
         llm_provider: fd.get('llm_provider'),
         model: fd.get('model'),
         mode: fd.get('mode'),
         api_key_env: fd.get('api_key_env'),
+        sample_id: fd.get('sample_id') || null,
         allow_high_risk: true
       };
       var j = await api('/api/jobs', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+      cur = j.job_id;
+      E('currentJob').textContent = '当前任务: ' + j.job_id + ' / RUNNING';
+      E('final').textContent = '新任务已提交，最终回答生成中。';
+      E('log').textContent = '任务已提交，正在等待日志输出。';
+      E('outs').textContent = '暂无';
       setNotice(' 已提交 ' + j.job_id);
       await refresh();
       await selectJob(j.job_id);

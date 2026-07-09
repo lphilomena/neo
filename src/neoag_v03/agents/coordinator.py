@@ -20,15 +20,88 @@ SKILL_TO_MODULE = {
     "neoag-ranking-compare": "neoag_v03.agent_skills.ranking_compare",
     "neoag-patient-report": "neoag_v03.agent_skills.patient_report",
     "neoag-sliding-run": "neoag_v03.agent_skills.sliding_run",
+    "neoag-result-inspector": "neoag_v03.agent_skills.result_inspector",
+    "neoag-purity-cnv-run-and-review": "neoag_v03.agent_skills.purity_cnv_review",
+    "neoag-hla-typing-run-and-compare": "neoag_v03.agent_skills.hla_typing_compare",
+    "neoag-fusion-rna-run": "neoag_v03.agent_skills.fusion_rna_run",
+    "neoag-rna-fastq-to-tpm": "neoag_v03.agent_skills.rna_fastq_to_tpm",
 }
 
 
-def build_skill_command(skill: str, files: dict[str, str], result_dir: str | None, outdir: Path, project_root: str, execute: bool) -> list[str] | None:
+def build_skill_command(skill: str, files: dict[str, str], result_dir: str | None, outdir: Path, project_root: str, execute: bool, task_parameters: dict[str, Any] | None = None) -> list[str] | None:
+    task_parameters = task_parameters or {}
     if skill not in SKILL_TO_MODULE:
         return None
     module = SKILL_TO_MODULE[skill]
     skill_out = outdir / skill
     base = [sys.executable, "-m", module]
+    if skill == "neoag-rna-fastq-to-tpm":
+        cmd = base + ["--project-root", project_root, "--outdir", str(skill_out)]
+        if result_dir:
+            cmd += ["--result-dir", result_dir]
+        if task_parameters.get("sample_id"):
+            cmd += ["--sample-id", str(task_parameters["sample_id"])]
+        if task_parameters.get("method"):
+            cmd += ["--method", str(task_parameters["method"])]
+        if execute:
+            cmd += ["--execute"]
+        if files.get("fastq1"):
+            cmd += ["--fastq1", files["fastq1"]]
+        if files.get("fastq2"):
+            cmd += ["--fastq2", files["fastq2"]]
+        for key in ["tumor_bam", "normal_bam"]:
+            if files.get(key):
+                cmd += ["--bam", files[key]]
+                break
+        if files.get("expression"):
+            cmd += ["--file", files["expression"]]
+        return cmd
+    if skill == "neoag-fusion-rna-run":
+        cmd = base + ["--project-root", project_root, "--outdir", str(skill_out)]
+        if result_dir:
+            cmd += ["--result-dir", result_dir]
+        if task_parameters.get("sample_id"):
+            cmd += ["--sample-id", str(task_parameters["sample_id"])]
+        for key in ["tumor_bam", "normal_bam"]:
+            if files.get(key):
+                cmd += ["--bam", files[key]]
+                break
+        for key in ["fusion", "fusion_result"]:
+            if files.get(key):
+                cmd += ["--file", files[key]]
+        return cmd
+    if skill == "neoag-hla-typing-run-and-compare":
+        cmd = base + ["--project-root", project_root, "--outdir", str(skill_out)]
+        if result_dir:
+            cmd += ["--result-dir", result_dir]
+        if task_parameters.get("sample_id"):
+            cmd += ["--sample-id", str(task_parameters["sample_id"])]
+        for key, flag in [("tumor_bam", "--bam"), ("normal_bam", "--bam")]:
+            if files.get(key):
+                cmd += [flag, files[key]]
+                break
+        for key in ["hla", "hla_loh"]:
+            if files.get(key):
+                cmd += ["--file", files[key]]
+        return cmd
+    if skill == "neoag-purity-cnv-run-and-review":
+        cmd = base + ["--project-root", project_root, "--outdir", str(skill_out)]
+        if result_dir:
+            cmd += ["--result-dir", result_dir]
+        if task_parameters.get("sample_id"):
+            cmd += ["--sample-id", str(task_parameters["sample_id"])]
+        for key in ["tumor_bam", "normal_bam"]:
+            if files.get(key):
+                cmd += ["--" + key.replace("_", "-"), files[key]]
+        for key in ["purity_table"]:
+            if files.get(key):
+                cmd += ["--file", files[key]]
+        return cmd
+    if skill == "neoag-result-inspector":
+        cmd = base + ["--project-root", project_root, "--outdir", str(skill_out)]
+        if result_dir:
+            cmd += ["--result-dir", result_dir]
+        return cmd
     if skill == "neoag-input-qc":
         cmd = base + ["--outdir", str(skill_out)]
         if result_dir:

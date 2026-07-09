@@ -101,13 +101,86 @@
     "type": "documented_workflow",
     "path": ".agents/skills/neoag-sliding-run/SKILL.md",
     "outputs": [
-      "upstream/tools/variant_peptides.tsv",
-      "upstream/tools/variant_peptides.annotated.tsv",
-      "upstream/parsed/raw_events.tsv",
-      "upstream/parsed/raw_peptides.tsv",
-      "scoring/ranked_events.v03.tsv",
-      "scoring/ranked_peptides.v03.tsv",
-      "reports/evidence_report.technical.html"
+      "sliding_run_summary.json",
+      "run-full/upstream/tools/variant_peptides.tsv",
+      "run-full/upstream/tools/variant_peptides.annotated.tsv",
+      "run-full/upstream/parsed/raw_events.tsv",
+      "run-full/upstream/parsed/raw_peptides.tsv",
+      "run-full/presentation/presentation_evidence.tsv",
+      "run-full/scoring/ranked_events.v03.tsv",
+      "run-full/scoring/ranked_peptides.v03.tsv",
+      "run-full/scoring/validation_plan.v03.tsv",
+      "run-full/reports/evidence_report.v03.html",
+      "run-full/reports/evidence_report.patient.html",
+      "run-full/reports/evidence_report.technical.html",
+      "run-full/provenance.v03.json"
+    ]
+  },
+  "neoag-result-inspector": {
+    "intents": [
+      "inspect_results",
+      "patient_report_update"
+    ],
+    "module": "neoag_v03.agent_skills.result_inspector",
+    "outputs": [
+      "result_inspection.md",
+      "result_inspection.json"
+    ]
+  },
+  "neoag-purity-cnv-run-and-review": {
+    "intents": [
+      "purity_cnv_review",
+      "inspect_results"
+    ],
+    "module": "neoag_v03.agent_skills.purity_cnv_review",
+    "outputs": [
+      "purity_cnv_review.md",
+      "purity_cnv_tool_summary.tsv",
+      "purity_recommendation.json",
+      "purity_cnv_run_suggestions.tsv"
+    ]
+  },
+  "neoag-hla-typing-run-and-compare": {
+    "intents": [
+      "hla_typing_compare",
+      "inspect_results"
+    ],
+    "module": "neoag_v03.agent_skills.hla_typing_compare",
+    "outputs": [
+      "hla_typing_compare.md",
+      "hla_typing_tool_summary.tsv",
+      "hla_typing_consensus.tsv",
+      "hla_typing_recommendation.json",
+      "hla_typing_run_suggestions.tsv"
+    ]
+  },
+  "neoag-fusion-rna-run": {
+    "intents": [
+      "fusion_rna_run",
+      "inspect_results"
+    ],
+    "module": "neoag_v03.agent_skills.fusion_rna_run",
+    "outputs": [
+      "fusion_rna_review.md",
+      "fusion_tool_summary.tsv",
+      "fusion_consensus.tsv",
+      "fusion_recommendation.json",
+      "fusion_run_suggestions.tsv"
+    ]
+  },
+  "neoag-rna-fastq-to-tpm": {
+    "intents": [
+      "rna_fastq_to_tpm",
+      "inspect_results"
+    ],
+    "module": "neoag_v03.agent_skills.rna_fastq_to_tpm",
+    "outputs": [
+      "rna_expression_summary.md",
+      "expression_input_summary.tsv",
+      "rna_input_files.tsv",
+      "gene_tpm.tsv",
+      "rna_tpm_run_suggestions.tsv",
+      "rna_expression_recommendation.json"
     ]
   }
 }

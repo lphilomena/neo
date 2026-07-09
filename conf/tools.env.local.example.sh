@@ -28,3 +28,12 @@
 
 # Site-local cohort data root, if your deployment uses one
 # export NEOAG_COHORT_DATA_ROOT="/path/to/cohort_data"
+
+# RNA FASTQ to TPM (optional; used by neoag-rna-fastq-to-tpm)
+# export SALMON_BIN="salmon"
+# export SALMON_INDEX="$NEOAG_DATA_ROOT/data/ref/rna/salmon_index"
+# export SALMON_TX2GENE="$NEOAG_DATA_ROOT/data/ref/rna/tx2gene.tsv"
+# export SALMON_THREADS="8"
+# export RSEM_BIN="rsem-calculate-expression"
+# export RSEM_REFERENCE="$NEOAG_DATA_ROOT/data/ref/rna/rsem_reference/rsem_ref"
+# export RSEM_THREADS="8"
