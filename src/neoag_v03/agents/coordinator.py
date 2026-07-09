@@ -19,6 +19,7 @@ SKILL_TO_MODULE = {
     "neoag-ccf-clonality-review": "neoag_v03.agent_skills.ccf_review",
     "neoag-ranking-compare": "neoag_v03.agent_skills.ranking_compare",
     "neoag-patient-report": "neoag_v03.agent_skills.patient_report",
+    "neoag-sliding-run": "neoag_v03.agent_skills.sliding_run",
 }
 
 
@@ -40,6 +41,17 @@ def build_skill_command(skill: str, files: dict[str, str], result_dir: str | Non
         if execute:
             cmd += ["--execute"]
         return cmd
+    if skill == "neoag-sliding-run":
+        variants_vcf = files.get("variants_vcf") or files.get("somatic_vcf")
+        hla = files.get("hla")
+        if not variants_vcf or not hla:
+            return None
+        return base + [
+            "--variants-vcf", variants_vcf,
+            "--hla", hla,
+            "--project-root", project_root,
+            "--outdir", str(skill_out),
+        ]
     if skill == "neoag-ranking-compare":
         if not files.get("recommendation") or not files.get("netmhcpan42"):
             return None

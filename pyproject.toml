@@ -13,10 +13,12 @@ dependencies = []
 
 [project.optional-dependencies]
 test = ["pytest>=7", "pytest-timeout>=2.3"]
+agent-llm = ["litellm>=1.40", "langgraph>=0.2", "langchain-core>=0.2"]
 
 [project.scripts]
 neoag-v03 = "neoag_v03.cli:main"
 neoag-agent = "neoag_v03.agents.coordinator:main"
+neoag-llm-agent = "neoag_v03.llm_coordinator.coordinator_agent:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

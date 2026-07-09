@@ -1,0 +1,20 @@
+{
+  "release_name": "neoag_event_pipeline_v043_llm_coordinator_p1_20260708",
+  "base_release": "neoag_event_pipeline_v043_agent_skills_p0_p1_20260707",
+  "created_at": "2026-07-08T03:04:10",
+  "features": [
+    "LLM-assisted Coordinator CLI",
+    "optional LiteLLM provider",
+    "optional LangGraph adapter",
+    "vLLM/Qwen example configs",
+    "guardrails and audit logging",
+    "case_state.json",
+    "final_response.md"
+  ],
+  "validation": {
+    "compileall": "PASS",
+    "pytest_full": "186 passed, 95 skipped",
+    "pytest_llm_coordinator": "3 passed",
+    "actual_ranking_compare_smoke": "PASS on ranked_peptides.recommendation(3).tsv and ranked_peptides.netmhcpan42(2).tsv"
+  }
+}

@@ -1,0 +1,27 @@
+profiles:
+  local_qwen_default:
+    description: "Default privacy-preserving local model profile through vLLM/OpenAI-compatible API."
+    llm_provider: litellm
+    model: openai/qwen3-32b
+    api_base: http://localhost:8000/v1
+    api_key_env: LOCAL_VLLM_API_KEY
+    default_temperature: 0.0
+    patient_data_allowed: true
+
+  local_qwen_router:
+    description: "Small/fast local router model for intent classification."
+    llm_provider: litellm
+    model: openai/qwen3-8b
+    api_base: http://localhost:8000/v1
+    api_key_env: LOCAL_VLLM_API_KEY
+    default_temperature: 0.0
+    patient_data_allowed: true
+
+  deepseek_dev_deidentified:
+    description: "Cloud fallback for de-identified development only."
+    llm_provider: litellm
+    model: deepseek/deepseek-chat
+    api_base: https://api.deepseek.com
+    api_key_env: DEEPSEEK_API_KEY
+    default_temperature: 0.0
+    patient_data_allowed: false

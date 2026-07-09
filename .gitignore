@@ -68,3 +68,7 @@ conf/*.local.toml
 /data/ascat/reference/WGS_hg38/files_chr_bam/
 /data/ascat/reference/WGS_hg38/files_chr_bam_nochr_name/
 /data/ascat/reference/WGS_hg38/files_nochr_name/
+
+# Container build artifacts
+containers/sif/
+containers/**/*.sif

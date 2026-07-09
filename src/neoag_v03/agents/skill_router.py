@@ -57,4 +57,7 @@ def find_named_files(result_dir: str | None, explicit_files: list[str] | None = 
     put("appm_gene_status", lambda n: "appm_gene_status" in n)
     put("appm_submodule_scores", lambda n: "appm_submodule_scores" in n)
     put("ranked_peptides", lambda n: n.startswith("ranked_peptides") and n.endswith(".tsv"))
+    put("variants_vcf", lambda n: (n.endswith(".vcf") or n.endswith(".vcf.gz")) and ("somatic" in n or "variant" in n or "mutect" in n))
+    put("somatic_vcf", lambda n: (n.endswith(".vcf") or n.endswith(".vcf.gz")) and "somatic" in n)
+    put("hla", lambda n: ("hla" in n) and (n.endswith(".txt") or n.endswith(".tsv") or n.endswith(".csv")))
     return out

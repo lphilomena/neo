@@ -64,6 +64,16 @@ NEOAG_TOOL_QUARANTINE="${NEOAG_TOOL_QUARANTINE:-}"
 
 # BigMHC_IM (repo ~5GB incl. models under models/bat*/im/)
 export BIGMHC_DIR="${NEOAG_TOOLS_ROOT}/tools/bigmhc"
+
+# Use the neoag-tools Python for BigMHC because other tool envs on PATH may not include torch.
+export BIGMHC_PYTHON="${BIGMHC_PYTHON:-${NEOAG_CONDA_BASE}/envs/neoag-tools/bin/python}"
+if [[ ! -x "${BIGMHC_PYTHON}" ]]; then
+  if [[ -x "${NEOAG_CONDA_BASE}/envs/neoag-tools/bin/python" ]]; then
+    export BIGMHC_PYTHON="${NEOAG_CONDA_BASE}/envs/neoag-tools/bin/python"
+  elif [[ -x "${HOME}/miniforge3/envs/neoag-tools/bin/python" ]]; then
+    export BIGMHC_PYTHON="${HOME}/miniforge3/envs/neoag-tools/bin/python"
+  fi
+fi
 if [[ ! -f "${BIGMHC_DIR}/src/predict.py" && -n "${NEOAG_TOOL_QUARANTINE}" && -f "${NEOAG_TOOL_QUARANTINE}/bigmhc/src/predict.py" ]]; then
   export BIGMHC_DIR="${NEOAG_TOOL_QUARANTINE}/bigmhc"
 fi

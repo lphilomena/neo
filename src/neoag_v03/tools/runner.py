@@ -737,7 +737,7 @@ def run_vep_appm(ctx: RunContext, out_tsv: Path) -> Path:
         "-o", str(raw),
     ]
     if os.environ.get("NEOAG_VEP_ONLINE", "").lower() in {"1", "true", "yes"}:
-        cmd.extend(["--species", "homo_sapiens"])
+        cmd.extend(["--database", "--species", "homo_sapiens"])
     else:
         cmd.extend(["--cache", "--offline"])
         cache_dir = os.environ.get("NEOAG_VEP_CACHE", "").strip()
@@ -984,6 +984,7 @@ def _write_bigmhc_im_stub(pairs: list[tuple[str, str]], out_tsv: Path, sample_id
 def _run_bigmhc_im_external(pairs: list[tuple[str, str]], out_tsv: Path, ctx: RunContext) -> None:
     import os
     import subprocess
+    import sys
 
     work = out_tsv.parent / "bigmhc_im"
     work.mkdir(parents=True, exist_ok=True)
@@ -995,8 +996,9 @@ def _run_bigmhc_im_external(pairs: list[tuple[str, str]], out_tsv: Path, ctx: Ru
     bigmhc_dir = Path(ctx.executables.get("bigmhc_dir") or os.environ.get("BIGMHC_DIR", ""))
     predict_py = bigmhc_dir / "src" / "predict.py"
     out_prd = work / "input.csv.prd"
+    bigmhc_python = ctx.executables.get("bigmhc_python") or os.environ.get("BIGMHC_PYTHON") or sys.executable
     cmd = [
-        "python3",
+        bigmhc_python,
         str(predict_py),
         f"-i={in_csv}",
         "-m=im",

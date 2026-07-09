@@ -15,6 +15,7 @@ from neoag_v03.vep.extract_peptides import (
     extract_variant_peptides_from_vcf,
     parse_peptide_lengths,
     peptide_in_normal_proteome,
+    pick_csq_transcript,
     sliding_full_mutant_mode,
     sliding_variant_peptides,
 )
@@ -46,6 +47,38 @@ def test_build_mutant_protein_missense():
     )
     assert mut == "MKVLVV"
     assert a0 == 3 and a1 == 3
+
+
+def test_build_mutant_protein_missense_without_plugin_context():
+    mut, a0, a1 = build_mutant_protein(
+        "missense_variant",
+        "",
+        protein_position_raw="10",
+        amino_acids="K/N",
+        frameshift_sequence="",
+    )
+    assert mut
+    assert "N" in mut
+    assert a0 == 21 and a1 == 21
+
+
+def test_pick_csq_transcript_accepts_amino_acids_without_plugin_context():
+    idx = {
+        "Consequence": 0,
+        "WildtypeProtein": 1,
+        "FrameshiftSequence": 2,
+        "Amino_acids": 3,
+        "CANONICAL": 4,
+        "MANE_SELECT": 5,
+        "BIOTYPE": 6,
+        "TSL": 7,
+    }
+    picked = pick_csq_transcript(
+        [["missense_variant", "", "", "K/N", "YES", "", "protein_coding", "1"]],
+        idx,
+    )
+    assert picked is not None
+    assert picked[3] == "K/N"
 
 
 def test_build_mutant_protein_multi_aa_substitution():

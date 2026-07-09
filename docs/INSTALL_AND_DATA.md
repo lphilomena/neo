@@ -395,3 +395,15 @@ Do not commit or package:
 - `tools/`, `results/`, `work/`, `dist/`, `conda_packs/`, `.nextflow*`
 
 Use `scripts/check_release_boundary.sh` before preparing an online release.
+
+## NetMHCpan 4.2c Docker/Apptainer runtime
+
+When the host system lacks `/bin/tcsh` or has glibc older than the official NetMHCpan 4.2c binary requires, build and use the container runtime described in [NETMHCPAN_CONTAINER.md](NETMHCPAN_CONTAINER.md). Keep the licensed official package under `tools/netMHCpan` and mount it at runtime; do not bake it into the image.
+
+### Priority tool containers
+
+Docker/Apptainer runtimes for NetMHCpan, NetMHCstabpan, HLA-LA, SpecHLA, PURPLE/AMBER/COBALT, and EasyFuse are documented in [docs/PRIORITY_TOOL_CONTAINERS.md](docs/PRIORITY_TOOL_CONTAINERS.md). These images contain only runtime dependencies; licensed tools and large reference data are mounted from host paths.
+
+### Project data paths
+
+Host-side reference and tool data paths for real deployments are summarized in [docs/PROJECT_DATA_PATHS.md](docs/PROJECT_DATA_PATHS.md). Keep large reference data and licensed tool packages outside git and mount/configure them at runtime.

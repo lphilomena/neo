@@ -676,3 +676,49 @@ test -f "$NEOAG_NORMAL_PROTEOME_FASTA"
 ## 解释边界
 
 本流程用于研究分层和验证规划。排序候选需要结合 assay validation、疾病背景、HLA typing、tumor purity、expression/protein support、safety evidence、immune-escape context 以及适当的临床或科研治理流程进行复核。
+
+### NetMHCpan 4.2c 容器运行环境
+
+如果服务器因为缺少 `tcsh` 或 glibc 版本过低无法直接运行官方 NetMHCpan 4.2c，请使用 [docs/NETMHCPAN_CONTAINER.md](docs/NETMHCPAN_CONTAINER.md) 中的 Docker/Apptainer 运行方式。镜像只包含系统依赖，官方授权的 `tools/netMHCpan` 目录在运行时挂载。
+
+### Priority tool containers
+
+Docker/Apptainer runtimes for NetMHCpan, NetMHCstabpan, HLA-LA, SpecHLA, PURPLE/AMBER/COBALT, and EasyFuse are documented in [docs/PRIORITY_TOOL_CONTAINERS.md](docs/PRIORITY_TOOL_CONTAINERS.md). These images contain only runtime dependencies; licensed tools and large reference data are mounted from host paths.
+
+## LLM-assisted Coordinator P1
+
+This release adds an optional LLM-assisted Coordinator layer on top of the P0 Skills Pack. The default mode is dependency-free and rule-based; installing the optional `agent-llm` extra enables LiteLLM/LangGraph integration.
+
+Plan only:
+
+```bash
+neoag-llm-agent --message "compare recommendation and NetMHCpan42 rankings" \
+  --file ranked_peptides.recommendation.tsv \
+  --file ranked_peptides.netmhcpan42.tsv \
+  --outdir work/llm_plan --mode plan
+```
+
+Execute safe Skills:
+
+```bash
+neoag-llm-agent --message "compare recommendation and NetMHCpan42 rankings" \
+  --file ranked_peptides.recommendation.tsv \
+  --file ranked_peptides.netmhcpan42.tsv \
+  --outdir work/llm_execute --mode execute-safe
+```
+
+Local Qwen/vLLM through LiteLLM/OpenAI-compatible API:
+
+```bash
+neoag-llm-agent --message "update patient report" \
+  --file evidence_report.v04x_latest.html \
+  --file ranked_peptides.recommendation.tsv \
+  --file ranked_peptides.netmhcpan42.tsv \
+  --outdir work/llm_report --mode execute-safe \
+  --llm-provider litellm --model openai/qwen3-32b \
+  --api-base http://localhost:8000/v1 --api-key-env LOCAL_VLLM_API_KEY
+```
+
+The Coordinator does not replace Project B CLI/Nextflow. It plans and calls registered Skills; high-impact operations such as HPC submission, installation, deletion, and overwrite require explicit approval.
+
+See `docs/LLM_COORDINATOR_P1.md` and `docs/MODEL_API_AND_AGENT_FRAMEWORK_SELECTION.md`.

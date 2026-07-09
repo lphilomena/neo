@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+PYTHON="${NEOAG_LLM_PYTHON:-/home/na/miniforge3/envs/neoag-vllm/bin/python}"
+if [[ ! -x "$PYTHON" ]]; then
+  echo "ERROR: NEOAG_LLM_PYTHON is not executable: $PYTHON" >&2
+  echo "Install with: /home/na/miniforge3/envs/neoag-vllm/bin/python -m pip install -e \"$ROOT.[agent-llm]\"" >&2
+  exit 127
+fi
+export PYTHONPATH="$ROOT/src:${PYTHONPATH:-}"
+exec "$PYTHON" -m neoag_v03.llm_coordinator.coordinator_agent "$@"
