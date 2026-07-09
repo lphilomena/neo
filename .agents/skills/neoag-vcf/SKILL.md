@@ -57,7 +57,9 @@ test -f "$NEOAG_REFERENCE_FASTA" || echo "MISSING: 参考FASTA"
 
 环境变量不存在或错误时，让用户提供准确的环境变量，并将用户的环境变量写入 `conf/tools.env.local.sh`复用。
 
-结合/免疫原性预测需要netmhcpan, mhcflurry, bigmhc-im, prime，检查工具是否已安装可用。
+结合/免疫原性预测需要netmhcpan, mhcflurry, bigmhc-im, prime，netmhcstabpan和deepimmuno，其中netmhcpan, mhcflurry, bigmhc-im, prime必选，netmhcstabpan和deepimmuno询问用户。
+
+确定需要的工具后，检查工具是否已安装可用。
 
 工具检查不存在时，向用户说明缺失的工具，询问是否需要进行工具安装或配置。
 
@@ -122,7 +124,7 @@ neoag-v03 peptide-predict \
   --sample-id <sample_id>
 ```
 
-对应工具中netmhcpan, mhcflurry, bigmhc-im, prime必须运行。
+对应工具中netmhcpan, mhcflurry, bigmhc-im, prime必须运行，不可skip。
 
 | 工具          | 输入文件         | 输出文件                                                   |
 | ------------- | ---------------- | ---------------------------------------------------------- |
