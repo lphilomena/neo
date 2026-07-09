@@ -1,0 +1,19 @@
+[sample]
+id = "SAMPLE001"
+profile = "default"
+
+[tools]
+stub = false
+enabled = ["netmhcpan", "mhcflurry"]
+immunogenicity_stub = false
+
+[inputs]
+entry_mode = "snv_indel"
+variant_peptide_extraction = true
+variants_vcf = "/mnt/zjl-bgi-zzb/peixunban/gl/data/chenxiaoliang_data/data/liver_0520_WGS_shortReads/somatic/M1ML150017383_L01_438.align.somatic.pass.vcf.gz"
+tumor_sample_name = "TUMOR"
+hla_alleles = ["HLA-A*02:01", "HLA-B*07:02", "HLA-C*07:02"]
+extract_appm_from_vcf = false
+normal_expression = "resources/normal_expression.example.tsv"
+normal_hla_ligands = "resources/normal_hla_ligands.example.tsv"
+

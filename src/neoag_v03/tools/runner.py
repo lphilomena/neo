@@ -2,6 +2,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -14,7 +15,7 @@ from .prep import (
     mhcflurry_allele_list,
 )
 from .postprocess import vep_to_appm_tsv, lohhla_to_hla_loh_tsv, facets_to_purity_tsv
-from .registry import TOOL_REGISTRY, RunContext, ROOT
+from .registry import TOOL_REGISTRY, RunContext, ROOT, resolve_runner_mode, RunnerMode, tool_docker_image
 
 
 def strict_production_enabled() -> bool:
@@ -170,14 +171,215 @@ def _stub_copy(fixture: str, dest: Path) -> None:
     shutil.copy2(src, dest)
 
 
-def _run_cmd(cmd: list[str], workdir: Path) -> None:
+# ---------------------------------------------------------------------------
+# Runner mode dispatch: conda (subprocess) vs docker (container)
+# ---------------------------------------------------------------------------
+
+_current_tool: str | None = None
+
+
+@contextmanager
+def _tool_context(tool_name: str):
+    """Set the current tool name for the duration of one runner invocation."""
+    global _current_tool
+    old = _current_tool
+    _current_tool = tool_name
+    try:
+        yield
+    finally:
+        _current_tool = old
+
+
+def _effective_mode(tool_name: str) -> RunnerMode:
+    """Return the effective runner mode for *tool_name*.
+
+    Docker mode is only used when:
+    1. NEOAG_RUNNER_MODE is ``docker``, AND
+    2. The tool has a known Docker image in DOCKER_IMAGES.
+    Otherwise conda mode is used (silent fallback).
+    """
+    if resolve_runner_mode() != RunnerMode.DOCKER:
+        return RunnerMode.CONDA
+    if tool_docker_image(tool_name) is None:
+        return RunnerMode.CONDA
+    return RunnerMode.DOCKER
+
+
+def _collect_docker_mounts(cmd: list[str], workdir: Path) -> list[str]:
+    """Collect ``-v host:container`` mount arguments for a Docker run.
+
+    Strategy: mount every filesystem root that the command touches
+    (project root, tools root, workdir tree, and any external data mounts)
+    at the identical path inside the container so all host paths resolve.
+
+    Additionally, for well-known tools, remap host paths to the container's
+    expected default locations (e.g. VEP cache → /opt/vep/.vep).
+    """
+    mounts: dict[str, str] = {}  # host_path → container_path (not always identical)
+
+    def _add(host: Path, container: Path | None = None) -> None:
+        try:
+            resolved = host.resolve()
+        except (OSError, RuntimeError):
+            return
+        for p in [resolved] + list(resolved.parents):
+            if p.exists():
+                target = str(container) if container else str(p)
+                mounts[str(p)] = target
+                return
+
+    # Always mount the project root and tools root
+    project_root = os.environ.get("NEOAG_PROJECT_ROOT", "")
+    if project_root and Path(project_root).exists():
+        mounts[project_root] = project_root
+    tools_root = os.environ.get("NEOAG_TOOLS_ROOT", "")
+    if tools_root and Path(tools_root).exists() and tools_root != project_root:
+        mounts[tools_root] = tools_root
+
+    # Mount workdir tree
+    _add(workdir)
+
+    # Mount directories referenced in command arguments
+    for arg in cmd:
+        if arg.startswith("-"):
+            continue
+        p = Path(arg)
+        if p.exists():
+            mounts[str(p.resolve())] = str(p.resolve())
+        elif p.parent.exists():
+            mounts[str(p.parent.resolve())] = str(p.parent.resolve())
+
+    # ---- Tool-specific remaps ----
+    # VEP: the official container expects cache at /opt/vep/.vep
+    vep_cache = os.environ.get("NEOAG_VEP_CACHE", "").strip()
+    if vep_cache and Path(vep_cache).exists():
+        mounts[vep_cache] = "/opt/vep/.vep"
+
+    # pVACtools: the official container has IEDB at /opt/iedb
+    # No action needed — pvacseq auto-detects /opt/iedb
+
+    # Mount external data directories from environment (host=container)
+    for env_var in ("NEOAG_REFERENCE_FASTA",
+                    "NETMHCPAN_HOME", "MHCFLURRY_DOWNLOADS_DIR",
+                    "BIGMHC_DIR", "PRIME_HOME", "MIXMHCPRED_HOME",
+                    "CTAT_GENOME_LIB", "NEOAG_EASYFUSE_REF",
+                    "NEOAG_CTAT_LIB_DIR", "NEOAG_SHARED_REF_DIR"):
+        val = os.environ.get(env_var, "").strip()
+        if val:
+            p = Path(val)
+            if p.exists():
+                mounts[str(p.resolve())] = str(p.resolve())
+            else:
+                # Mount the nearest existing parent (file may not exist yet on dev)
+                _add(p)
+
+    # Mount conda base so tools that still use conda envs (NetMHCpan etc.) can find shared libs
+    conda_base = os.environ.get("NEOAG_CONDA_BASE", "")
+    if conda_base and Path(conda_base).exists():
+        mounts[conda_base] = conda_base
+
+    return [arg for pair in (("-v", f"{h}:{c}") for h, c in mounts.items()) for arg in pair]
+
+
+def _run_docker(image: str, cmd: list[str], workdir: Path, *, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+    """Execute *cmd* inside a Docker container from *image*.
+
+    Returns the completed process so callers can inspect stdout/stderr.
+    """
     workdir.mkdir(parents=True, exist_ok=True)
-    proc = subprocess.run(cmd, cwd=workdir, capture_output=True, text=True)
+
+    mounts = _collect_docker_mounts(cmd, workdir)
+
+    # Build env-var passthrough: always pass core vars, then add caller's env dict
+    passthrough = {
+        "NEOAG_PROJECT_ROOT": os.environ.get("NEOAG_PROJECT_ROOT", ""),
+        "NEOAG_TOOLS_ROOT": os.environ.get("NEOAG_TOOLS_ROOT", ""),
+        "NETMHCPAN_HOME": os.environ.get("NETMHCPAN_HOME", ""),
+        "NETMHCpan": os.environ.get("NETMHCpan", ""),
+        "TMPDIR": os.environ.get("TMPDIR", "/tmp"),
+        # Prepend conda tool envs to PATH so shebangs like python3.11 resolve
+        "PATH": (
+            f"{os.environ.get('NEOAG_CONDA_BASE', '')}/envs/neoag-tools/bin:"
+            f"{os.environ.get('NEOAG_CONDA_BASE', '')}/envs/neoag-vep/bin:"
+            f"{os.environ.get('PATH', '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin')}"
+        ),
+        # Conda env libs (TensorFlow, CUDA, etc.)
+        "LD_LIBRARY_PATH": os.environ.get("LD_LIBRARY_PATH", ""),
+        # MHCflurry needs these
+        "TF_USE_LEGACY_KERAS": os.environ.get("TF_USE_LEGACY_KERAS", "1"),
+        "MHCFLURRY_DOWNLOADS_DIR": os.environ.get("MHCFLURRY_DOWNLOADS_DIR", ""),
+    }
+    if env:
+        passthrough.update(env)
+
+    # Custom (neoag-*) images use ENTRYPOINT ["/bin/bash", "-lc"] which
+    # wraps the command; "exec" inside wrapper scripts fails under that.
+    # Bypass the entrypoint so the command runs directly.
+    entrypoint_args = ["--entrypoint", ""] if image.startswith("neoag-") else []
+
+    # Resolve bare executable names to full host paths so they are
+    # accessible inside the container via volume mounts.
+    if cmd and not os.path.isabs(cmd[0]) and "/" not in cmd[0]:
+        resolved = shutil.which(cmd[0])
+        if resolved:
+            cmd = [resolved, *cmd[1:]]
+
+    docker_cmd = [
+        "docker", "run", "--rm",
+        *entrypoint_args,
+        "--workdir", str(workdir),
+        *[arg for pair in (("-e", f"{k}={v}") for k, v in passthrough.items()) for arg in pair],
+        *mounts,
+        image,
+        *cmd,
+    ]
+
+    proc = subprocess.run(
+        docker_cmd,
+        cwd=workdir,
+        capture_output=True,
+        text=True,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"Docker command failed ({proc.returncode}): {' '.join(cmd)}\n"
+            f"Image: {image}\n"
+            f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
+        )
+    return proc
+
+
+def _run_cmd(cmd: list[str], workdir: Path, *, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+    """Execute *cmd* using the currently active runner mode.
+
+    In Docker mode the command runs inside a container with volume mounts;
+    in conda mode it runs as a local subprocess.  *env* supplies extra
+    environment variables (merged on top of ``os.environ`` for conda,
+    passed as ``-e`` flags for Docker).
+
+    Returns the completed process so callers can inspect stdout/stderr.
+    Raises RuntimeError if the command exits non-zero.
+    """
+    workdir.mkdir(parents=True, exist_ok=True)
+
+    # Determine mode based on current tool context
+    tool = _current_tool
+    if tool and _effective_mode(tool) == RunnerMode.DOCKER:
+        image = tool_docker_image(tool)
+        if image:
+            return _run_docker(image, cmd, workdir, env=env)
+
+    # Default: conda mode (subprocess)
+    subprocess_env = os.environ.copy()
+    if env:
+        subprocess_env.update(env)
+    proc = subprocess.run(cmd, cwd=workdir, capture_output=True, text=True, env=subprocess_env)
     if proc.returncode != 0:
         raise RuntimeError(
             f"Command failed ({proc.returncode}): {' '.join(cmd)}\n"
             f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
         )
+    return proc
 
 
 def _iedb_mhci_row(method: str, peptide: str, allele: str) -> dict[str, str]:
@@ -427,13 +629,7 @@ def _run_netmhcpan_local(
             "-t",
             "-99.9",
         ]
-        proc = subprocess.run(
-            cmd,
-            cwd=work,
-            capture_output=True,
-            text=True,
-            env=_netmhcpan_subprocess_env(),
-        )
+        proc = _run_cmd(cmd, work, env=_netmhcpan_subprocess_env())
         if proc.returncode != 0:
             raise RuntimeError(
                 f"NetMHCpan 4.2 failed ({proc.returncode}) on chunk {chunk_idx} "
@@ -498,13 +694,7 @@ def _run_netmhcpan_local_by_allele(
             "-t",
             "-99.9",
         ]
-        proc = subprocess.run(
-            cmd,
-            cwd=work,
-            capture_output=True,
-            text=True,
-            env=_netmhcpan_subprocess_env(),
-        )
+        proc = _run_cmd(cmd, work, env=_netmhcpan_subprocess_env())
         if proc.returncode != 0:
             raise RuntimeError(
                 f"NetMHCpan allele-mode failed ({proc.returncode}) for {hla}: {' '.join(cmd)}\n"
@@ -729,7 +919,10 @@ def run_vep_appm(ctx: RunContext, out_tsv: Path) -> Path:
     work = ctx.outdir / "tools" / "vep"
     raw = work / "vep_raw.tsv"
     import os
-    vep_bin = ctx.exe("vep")
+    docker_mode = _effective_mode("vep") == RunnerMode.DOCKER
+    # In Docker mode use the bare executable name (inside the container);
+    # in conda mode resolve to the full host path (may include conda env prefix).
+    vep_bin = "vep" if docker_mode else ctx.exe("vep")
     cmd = [
         *vep_bin.split(),
         "-i", str(ctx.variants_vcf),
@@ -737,17 +930,21 @@ def run_vep_appm(ctx: RunContext, out_tsv: Path) -> Path:
         "-o", str(raw),
     ]
     if os.environ.get("NEOAG_VEP_ONLINE", "").lower() in {"1", "true", "yes"}:
-        cmd.extend(["--species", "homo_sapiens"])
+        cmd.extend(["--database", "--species", "homo_sapiens"])
     else:
         cmd.extend(["--cache", "--offline"])
         cache_dir = os.environ.get("NEOAG_VEP_CACHE", "").strip()
         if cache_dir:
-            cmd.extend(["--dir_cache", cache_dir])
+            if docker_mode:
+                # VEP official container expects cache at /opt/vep/.vep
+                cmd.extend(["--dir_cache", "/opt/vep/.vep"])
+            else:
+                cmd.extend(["--dir_cache", cache_dir])
         cache_version = os.environ.get("NEOAG_VEP_CACHE_VERSION", "").strip()
         if cache_version:
             cmd.extend(["--cache_version", cache_version])
         reference_fasta = os.environ.get("NEOAG_REFERENCE_FASTA", "").strip()
-        if reference_fasta:
+        if reference_fasta and Path(reference_fasta).is_file():
             cmd.extend(["--fasta", reference_fasta])
     _run_cmd(cmd, work)
     vep_to_appm_tsv(raw, out_tsv)
@@ -855,7 +1052,7 @@ def _run_prime_batch(
     ]
     if mixmhcpred:
         cmd.extend(["-mix", mixmhcpred])
-    subprocess.run(cmd, check=True, cwd=batch_dir, env=os.environ.copy())
+    _run_cmd(cmd, batch_dir, env=os.environ.copy())
     return raw_out
 
 
@@ -1006,7 +1203,7 @@ def _run_bigmhc_im_external(pairs: list[tuple[str, str]], out_tsv: Path, ctx: Ru
         f"-o={out_prd}",
         "-d=cpu",
     ]
-    subprocess.run(cmd, check=True, cwd=bigmhc_dir / "src", env=os.environ.copy())
+    _run_cmd(cmd, bigmhc_dir / "src", env=os.environ.copy())
     from ..adapters.bigmhc_im import parse_bigmhc_im, write_bigmhc_im_evidence
 
     write_bigmhc_im_evidence(out_tsv, parse_bigmhc_im(out_prd, ctx.sample_id))
@@ -1104,10 +1301,22 @@ def run_tool(name: str, ctx: RunContext, output: str | Path) -> Path:
         raise KeyError(f"No runner for tool '{name}'. Known: {sorted(RUNNERS)}")
     if ctx.stub:
         require_non_strict(f"stub mode for tool {name}")
-    st = check_tool(name, ctx.exe(name))
-    if not st.available and not ctx.stub:
-        raise RuntimeError(
-            f"{name} ({ctx.exe(name)}) not available: {st.message}. "
-            "Install the tool, set executables.<name> in run config, or enable tools.stub."
-        )
-    return RUNNERS[name](ctx, Path(output))
+
+    mode = _effective_mode(name)
+    if mode == RunnerMode.DOCKER:
+        # In Docker mode the executable lives inside the container;
+        # skip the host-PATH existence check.
+        image = tool_docker_image(name)
+        print(f"[runner] {name}: docker mode ({image})", flush=True)
+    else:
+        st = check_tool(name, ctx.exe(name))
+        if not st.available and not ctx.stub:
+            raise RuntimeError(
+                f"{name} ({ctx.exe(name)}) not available: {st.message}. "
+                "Install the tool, set executables.<name> in run config, or enable tools.stub."
+            )
+        if resolve_runner_mode() == RunnerMode.DOCKER and not tool_docker_image(name):
+            print(f"[runner] {name}: no docker image — falling back to conda", flush=True)
+
+    with _tool_context(name):
+        return RUNNERS[name](ctx, Path(output))
