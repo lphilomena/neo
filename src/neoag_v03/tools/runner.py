@@ -281,21 +281,54 @@ def _collect_docker_mounts(cmd: list[str], workdir: Path) -> list[str]:
     return [arg for pair in (("-v", f"{h}:{c}") for h, c in mounts.items()) for arg in pair]
 
 
-def _run_docker(image: str, cmd: list[str], workdir: Path) -> None:
-    """Execute *cmd* inside a Docker container from *image*."""
+def _run_docker(image: str, cmd: list[str], workdir: Path, *, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+    """Execute *cmd* inside a Docker container from *image*.
+
+    Returns the completed process so callers can inspect stdout/stderr.
+    """
     workdir.mkdir(parents=True, exist_ok=True)
 
     mounts = _collect_docker_mounts(cmd, workdir)
 
+    # Build env-var passthrough: always pass core vars, then add caller's env dict
+    passthrough = {
+        "NEOAG_PROJECT_ROOT": os.environ.get("NEOAG_PROJECT_ROOT", ""),
+        "NEOAG_TOOLS_ROOT": os.environ.get("NEOAG_TOOLS_ROOT", ""),
+        "NETMHCPAN_HOME": os.environ.get("NETMHCPAN_HOME", ""),
+        "NETMHCpan": os.environ.get("NETMHCpan", ""),
+        "TMPDIR": os.environ.get("TMPDIR", "/tmp"),
+        # Prepend conda tool envs to PATH so shebangs like python3.11 resolve
+        "PATH": (
+            f"{os.environ.get('NEOAG_CONDA_BASE', '')}/envs/neoag-tools/bin:"
+            f"{os.environ.get('NEOAG_CONDA_BASE', '')}/envs/neoag-vep/bin:"
+            f"{os.environ.get('PATH', '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin')}"
+        ),
+        # Conda env libs (TensorFlow, CUDA, etc.)
+        "LD_LIBRARY_PATH": os.environ.get("LD_LIBRARY_PATH", ""),
+        # MHCflurry needs these
+        "TF_USE_LEGACY_KERAS": os.environ.get("TF_USE_LEGACY_KERAS", "1"),
+        "MHCFLURRY_DOWNLOADS_DIR": os.environ.get("MHCFLURRY_DOWNLOADS_DIR", ""),
+    }
+    if env:
+        passthrough.update(env)
+
+    # Custom (neoag-*) images use ENTRYPOINT ["/bin/bash", "-lc"] which
+    # wraps the command; "exec" inside wrapper scripts fails under that.
+    # Bypass the entrypoint so the command runs directly.
+    entrypoint_args = ["--entrypoint", ""] if image.startswith("neoag-") else []
+
+    # Resolve bare executable names to full host paths so they are
+    # accessible inside the container via volume mounts.
+    if cmd and not os.path.isabs(cmd[0]) and "/" not in cmd[0]:
+        resolved = shutil.which(cmd[0])
+        if resolved:
+            cmd = [resolved, *cmd[1:]]
+
     docker_cmd = [
         "docker", "run", "--rm",
+        *entrypoint_args,
         "--workdir", str(workdir),
-        # Pass through relevant environment
-        "-e", f"NEOAG_PROJECT_ROOT={os.environ.get('NEOAG_PROJECT_ROOT', '')}",
-        "-e", f"NEOAG_TOOLS_ROOT={os.environ.get('NEOAG_TOOLS_ROOT', '')}",
-        "-e", f"NETMHCPAN_HOME={os.environ.get('NETMHCPAN_HOME', '')}",
-        "-e", f"NETMHCpan={os.environ.get('NETMHCpan', '')}",
-        "-e", f"TMPDIR={os.environ.get('TMPDIR', '/tmp')}",
+        *[arg for pair in (("-e", f"{k}={v}") for k, v in passthrough.items()) for arg in pair],
         *mounts,
         image,
         *cmd,
@@ -313,10 +346,20 @@ def _run_docker(image: str, cmd: list[str], workdir: Path) -> None:
             f"Image: {image}\n"
             f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
         )
+    return proc
 
 
-def _run_cmd(cmd: list[str], workdir: Path) -> None:
-    """Execute *cmd* using the currently active runner mode."""
+def _run_cmd(cmd: list[str], workdir: Path, *, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+    """Execute *cmd* using the currently active runner mode.
+
+    In Docker mode the command runs inside a container with volume mounts;
+    in conda mode it runs as a local subprocess.  *env* supplies extra
+    environment variables (merged on top of ``os.environ`` for conda,
+    passed as ``-e`` flags for Docker).
+
+    Returns the completed process so callers can inspect stdout/stderr.
+    Raises RuntimeError if the command exits non-zero.
+    """
     workdir.mkdir(parents=True, exist_ok=True)
 
     # Determine mode based on current tool context
@@ -324,16 +367,19 @@ def _run_cmd(cmd: list[str], workdir: Path) -> None:
     if tool and _effective_mode(tool) == RunnerMode.DOCKER:
         image = tool_docker_image(tool)
         if image:
-            _run_docker(image, cmd, workdir)
-            return
+            return _run_docker(image, cmd, workdir, env=env)
 
     # Default: conda mode (subprocess)
-    proc = subprocess.run(cmd, cwd=workdir, capture_output=True, text=True)
+    subprocess_env = os.environ.copy()
+    if env:
+        subprocess_env.update(env)
+    proc = subprocess.run(cmd, cwd=workdir, capture_output=True, text=True, env=subprocess_env)
     if proc.returncode != 0:
         raise RuntimeError(
             f"Command failed ({proc.returncode}): {' '.join(cmd)}\n"
             f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
         )
+    return proc
 
 
 def _iedb_mhci_row(method: str, peptide: str, allele: str) -> dict[str, str]:
@@ -583,13 +629,7 @@ def _run_netmhcpan_local(
             "-t",
             "-99.9",
         ]
-        proc = subprocess.run(
-            cmd,
-            cwd=work,
-            capture_output=True,
-            text=True,
-            env=_netmhcpan_subprocess_env(),
-        )
+        proc = _run_cmd(cmd, work, env=_netmhcpan_subprocess_env())
         if proc.returncode != 0:
             raise RuntimeError(
                 f"NetMHCpan 4.2 failed ({proc.returncode}) on chunk {chunk_idx} "
@@ -654,13 +694,7 @@ def _run_netmhcpan_local_by_allele(
             "-t",
             "-99.9",
         ]
-        proc = subprocess.run(
-            cmd,
-            cwd=work,
-            capture_output=True,
-            text=True,
-            env=_netmhcpan_subprocess_env(),
-        )
+        proc = _run_cmd(cmd, work, env=_netmhcpan_subprocess_env())
         if proc.returncode != 0:
             raise RuntimeError(
                 f"NetMHCpan allele-mode failed ({proc.returncode}) for {hla}: {' '.join(cmd)}\n"
@@ -1018,7 +1052,7 @@ def _run_prime_batch(
     ]
     if mixmhcpred:
         cmd.extend(["-mix", mixmhcpred])
-    subprocess.run(cmd, check=True, cwd=batch_dir, env=os.environ.copy())
+    _run_cmd(cmd, batch_dir, env=os.environ.copy())
     return raw_out
 
 
@@ -1169,7 +1203,7 @@ def _run_bigmhc_im_external(pairs: list[tuple[str, str]], out_tsv: Path, ctx: Ru
         f"-o={out_prd}",
         "-d=cpu",
     ]
-    subprocess.run(cmd, check=True, cwd=bigmhc_dir / "src", env=os.environ.copy())
+    _run_cmd(cmd, bigmhc_dir / "src", env=os.environ.copy())
     from ..adapters.bigmhc_im import parse_bigmhc_im, write_bigmhc_im_evidence
 
     write_bigmhc_im_evidence(out_tsv, parse_bigmhc_im(out_prd, ctx.sample_id))

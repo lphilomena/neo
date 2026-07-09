@@ -145,6 +145,49 @@ pull "quay.io/biocontainers/tabix:1.11--hdfd78af_0" \
 
 echo ""
 echo "============================================================"
+echo "  三、自建镜像 (deploy/build_containers/)"
+echo "============================================================"
+echo ""
+echo ">>> 以下镜像由 Dockerfile 本地构建，非远程拉取。"
+echo ">>> 若镜像不存在，请先运行相应的 docker build 命令。"
+echo ""
+
+# 检查自建镜像是否存在
+check_and_pull() {
+    local image="$1"
+    local desc="$2"
+    echo ">>> [$desc]"
+    echo "    $image"
+    if docker image inspect "$image" &>/dev/null; then
+        echo "    (已存在, skip)"
+    else
+        echo "    (不存在 — 请手动构建: cd deploy/build_containers/<name> && docker build -t $image .)"
+    fi
+    echo ""
+}
+
+# NetMHCpan 4.2 — DTU 许可工具 (需手动放置 netMHCpan 源码到 tools/netMHCpan/)
+check_and_pull "neoag-netmhcpan:4.2c-ubuntu22.04" \
+     "NetMHCpan 4.2 — MHC-I 结合预测 (自建)"
+
+# NetMHCstabpan — DTU 许可工具
+check_and_pull "neoag-netmhcstabpan:1.0-ubuntu22.04" \
+     "NetMHCstabpan 1.0 — pMHC 稳定性预测 (自建)"
+
+# base-bioinfo — 通用生物信息学基础镜像 (Python3 + samtools + bcftools + bedtools + ...)
+check_and_pull "neoag-base-bioinfo:ubuntu22.04" \
+     "base-bioinfo — 通用生物信息学基础 (MHCflurry/PRIME/BigMHC/DeepImmuno/PyClone)"
+
+# purple-suite — Java 17 运行时 (GATK/FACETS 等)
+check_and_pull "neoag-purple-suite:ubuntu22.04" \
+     "purple-suite — Java 17 运行时 (FACETS/PyClone)"
+
+# SpecHLA — HLA 分型
+check_and_pull "neoag-spechla:ubuntu22.04" \
+     "SpecHLA — HLA 分型与拷贝数 (自建)"
+
+echo ""
+echo "============================================================"
 echo "  拉取完成"
 echo "============================================================"
 echo ""

@@ -50,6 +50,16 @@ DOCKER_IMAGES: dict[str, str] = {
     # ---- 基础工具 (Biocontainers) ----
     "samtools": "quay.io/biocontainers/samtools:1.23.1--ha83d96e_0",
     "tabix": "quay.io/biocontainers/tabix:1.11--hdfd78af_0",
+    # ---- 自建镜像 (deploy/build_containers/) ----
+    "netmhcpan": "neoag-netmhcpan:4.2c-ubuntu22.04",
+    "netmhcstabpan": "neoag-netmhcstabpan:1.0-ubuntu22.04",
+    "mhcflurry": "neoag-base-bioinfo:ubuntu22.04",
+    "prime": "neoag-base-bioinfo:ubuntu22.04",
+    "bigmhc_im": "neoag-base-bioinfo:ubuntu22.04",
+    "deepimmuno": "neoag-base-bioinfo:ubuntu22.04",
+    "pyclone": "neoag-base-bioinfo:ubuntu22.04",
+    "facets": "neoag-purple-suite:ubuntu22.04",
+    "spechla": "neoag-spechla:ubuntu22.04",
 }
 
 
