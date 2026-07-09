@@ -118,6 +118,8 @@ Notes:
 - On shared clusters, set `NXF_HOME` to a writable shared cache to avoid repeated downloads.
 - Avoid launching from a root-owned `.nextflow` directory. If you see `.nextflow/history.lock (Permission denied)`, set `NXF_HOME` to a writable path and use `bin/neoag-nextflow`.
 
+For a consolidated tool inventory, Docker-image map, agent-skill map, and licensing boundary, see [Tool Inventory](TOOL_INVENTORY.md).
+
 ## 4. External Tool Installation Table
 
 Tools are optional for fixture demo but required by specific real-data modes. Install only the tools needed for your workflow.
