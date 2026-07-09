@@ -1,9 +1,61 @@
 from __future__ import annotations
+import os
 from dataclasses import dataclass, field
+from enum import Enum
 from pathlib import Path
 from typing import Callable
 
 ROOT = Path(__file__).resolve().parents[3]
+
+
+class RunnerMode(Enum):
+    CONDA = "conda"
+    DOCKER = "docker"
+
+
+def resolve_runner_mode() -> RunnerMode:
+    """Resolve runner mode from NEOAG_RUNNER_MODE env var.
+
+    Values: ``conda`` (default), ``docker``.
+    In Docker mode, tools that lack a public image fall back to conda.
+    """
+    raw = os.environ.get("NEOAG_RUNNER_MODE", "conda").strip().lower()
+    if raw in {"docker", "container"}:
+        return RunnerMode.DOCKER
+    return RunnerMode.CONDA
+
+
+# Docker images for tools that have official or biocontainers images.
+# Maps tool registry name → docker image:tag (explicit version, never :latest).
+# Tools NOT listed here fall back to conda mode regardless of NEOAG_RUNNER_MODE.
+DOCKER_IMAGES: dict[str, str] = {
+    # ---- 官方 Docker 镜像 ----
+    "vep": "ensemblorg/ensembl-vep:release_115.2",
+    "pvacseq": "griffithlab/pvactools:6.1.1",
+    "pvacfuse": "griffithlab/pvactools:6.1.1",
+    "pvacsplice": "griffithlab/pvactools:6.1.1",
+    "optitype": "fred2/optitype:release-v1.3.1",
+    "gatk": "broadinstitute/gatk:4.6.2.0",
+    "arriba": "uhrigs/arriba:2.5.1",
+    "easyfuse": "tronbioinformatics/easyfuse:1.3.7",
+    "gridss": "gridss/gridss:2.13.2",
+    "delly": "dellytools/delly:v2.3.0",
+    # ---- Biocontainers 镜像 ----
+    "lohhla": "quay.io/biocontainers/lohhla:20171108--hdfd78af_3",
+    "ascat": "quay.io/biocontainers/ascat:2.5.2--r40hdfd78af_3",
+    "star_fusion": "quay.io/biocontainers/star-fusion:1.15.1--hdfd78af_1",
+    "fusioncatcher": "quay.io/biocontainers/fusioncatcher:1.33b--hdfd78af_0",
+    "manta": "quay.io/biocontainers/manta:1.6.0--h9ee0642_3",
+    "svaba": "quay.io/biocontainers/svaba:1.2.0--h69ac913_1",
+    # ---- 基础工具 (Biocontainers) ----
+    "samtools": "quay.io/biocontainers/samtools:1.23.1--ha83d96e_0",
+    "tabix": "quay.io/biocontainers/tabix:1.11--hdfd78af_0",
+}
+
+
+def tool_docker_image(tool_name: str) -> str | None:
+    """Return the Docker image:tag for *tool_name*, or None if unavailable."""
+    return DOCKER_IMAGES.get(tool_name)
 
 
 @dataclass(frozen=True)

@@ -225,3 +225,48 @@
 
   这是一种典型的策略模式：通过切换 profile 文件，同一套流水线代码可以适配不同肿瘤类型和分析场景，而无需修改任何 Python 代码。Profile 之间采用浅层合并（TOML section 级别覆盖），未在子 profile 中定义的参数自然继承 default.toml 的值。
 
+
+# 流程执行程序
+## 主脚本
+runner.py  （src/neoag_v03/tools/runner.py）的结构如下：
+
+  总体架构
+
+  ┌─────────────────────────────────────────────────┐
+  │  RUNNERS (字典, L1086-1099)                       │
+  │  "tool_name" → lambda(ctx, path): run_xxx(...)   │
+  │  供外部通过 run_tool(name, ctx, output) 调度      │
+  └─────────────────────────────────────────────────┘
+            │
+            │ 每个 runner 内部调用 ctx.exe("tool_name")
+            │ 得到可执行文件路径，再用 subprocess.run() 执行
+            ▼
+  ┌─────────────────────────────────────────────────┐
+  │  核心函数 _run_cmd(cmd, workdir)                  │
+  │  L173: subprocess.run(cmd, cwd=workdir, ...)     │
+  │  所有工具的底层执行都经过这里                      │
+  └─────────────────────────────────────────────────┘
+
+每个 run_xxx() 函数都遵循同样的三步模式：
+
+  def run_xxx(ctx: RunContext, out_path: Path) -> Path:
+      # 1. stub 模式 → 直接复制 fixture 文件
+      if ctx.stub:
+          _stub_copy(spec.fixture_outputs[...], out_path)
+          return out_path
+
+      # 2. 验证输入数据
+      if not ctx.xxx:
+          raise ValueError("xxx requires xxx")
+
+      # 3. 组装命令 + subprocess 执行
+      cmd = [ctx.exe("xxx"), ...args...]
+      _run_cmd(cmd, workdir)
+      return out_path
+
+  当前所有工具的调用路径是：
+  run_tool(name, ctx, output)
+    → ctx.exe(name)        # 返回 conda 环境的可执行文件路径
+    → _run_cmd(cmd, work)  # subprocess.run() 本地执行
+
+
