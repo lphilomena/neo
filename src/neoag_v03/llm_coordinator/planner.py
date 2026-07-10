@@ -10,6 +10,7 @@ from .guardrails import apply_plan_guardrails
 from .json_utils import extract_json_object
 from .model_provider import BaseModelProvider, parse_intent_response
 from .prompts import COORDINATOR_SYSTEM_PROMPT, INTENT_PROMPT_TEMPLATE, PLANNER_PROMPT_TEMPLATE
+from .schema_validation import SchemaValidationError, validate_plan_object, validate_plan_payload
 from .schemas import CoordinatorPlan, InputState, IntentResult, PlanStep, validate_intent
 
 
@@ -39,6 +40,8 @@ def classify_with_llm(message: str, provider: BaseModelProvider, file_kinds: lis
         intent = parse_intent_response(resp.text, source=resp.provider)
         if intent and intent.confidence >= min_confidence:
             return intent
+    except SchemaValidationError:
+        raise
     except Exception:
         pass
     return rule_intent(message)
@@ -46,12 +49,14 @@ def classify_with_llm(message: str, provider: BaseModelProvider, file_kinds: lis
 
 def _default_steps_for_intent(intent: str) -> list[PlanStep]:
     skills = INTENT_TO_SKILLS.get(intent, INTENT_TO_SKILLS.get("input_check", []))
+    if not skills and intent in {"project_overview", "general_explanation"}:
+        skills = ["project-overview"]
     return [
         PlanStep(
             step_id=f"s{i+1}",
             skill=s,
             mode="execute",
-            reason=f"Run registered skill for intent {intent}",
+            reason=f"Run registered skill for intent {intent}" if s != "project-overview" else "Generate a deterministic project overview without external tools",
         )
         for i, s in enumerate(skills)
     ]
@@ -106,7 +111,9 @@ def plan_with_llm(message: str, intent: IntentResult, input_state: InputState, s
             questions_to_user=intent.missing_information_questions,
             model_provider="rule",
         )
-        return apply_plan_guardrails(message, plan)
+        plan = apply_plan_guardrails(message, plan)
+        validate_plan_object(plan, skills_registry)
+        return plan
 
     reg = json.dumps(skills_registry, ensure_ascii=False, indent=2)[:24000]
     istate = json.dumps(input_state.to_dict(), ensure_ascii=False, indent=2)[:6000]
@@ -118,9 +125,14 @@ def plan_with_llm(message: str, intent: IntentResult, input_state: InputState, s
         ], temperature=0.0, response_format="json_object")
         obj = extract_json_object(resp.text)
         if obj:
+            validate_plan_payload(obj, skills_registry)
             plan = _coerce_plan(obj, intent.intent, resp.provider)
             if plan and len(plan.steps) >= min_valid_steps:
-                return apply_plan_guardrails(message, plan)
+                plan = apply_plan_guardrails(message, plan)
+                validate_plan_object(plan, skills_registry)
+                return plan
+    except SchemaValidationError:
+        raise
     except Exception:
         pass
     plan = CoordinatorPlan(
@@ -134,4 +146,6 @@ def plan_with_llm(message: str, intent: IntentResult, input_state: InputState, s
         questions_to_user=intent.missing_information_questions,
         model_provider="rule_fallback",
     )
-    return apply_plan_guardrails(message, plan)
+    plan = apply_plan_guardrails(message, plan)
+    validate_plan_object(plan, skills_registry)
+    return plan

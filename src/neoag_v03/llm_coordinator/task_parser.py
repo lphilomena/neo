@@ -7,6 +7,7 @@ from neoag_v03.agents.skill_router import classify_intent
 from .json_utils import extract_json_object
 from .model_provider import BaseModelProvider
 from .prompts import COORDINATOR_SYSTEM_PROMPT, TASK_JSON_PROMPT_TEMPLATE
+from .schema_validation import SchemaValidationError, validate_parsed_task, validate_task_payload
 from .schemas import ParsedTask, validate_intent
 from .tool_registry import registry_for_prompt
 
@@ -109,6 +110,7 @@ def _coerce_task(obj: dict[str, Any], fallback: ParsedTask, source: str) -> Pars
 def parse_task_with_llm(message: str, provider: BaseModelProvider, available_files: list[dict[str, Any]], tool_registry: dict[str, Any]) -> ParsedTask:
     fallback = rule_parse_task(message, available_files)
     if getattr(provider, "name", "") == "rule":
+        validate_parsed_task(fallback)
         return fallback
     prompt = TASK_JSON_PROMPT_TEMPLATE.format(
         message=message,
@@ -122,7 +124,13 @@ def parse_task_with_llm(message: str, provider: BaseModelProvider, available_fil
         ], temperature=0.0, response_format="json_object")
         obj = extract_json_object(resp.text)
         if obj:
-            return _coerce_task(obj, fallback, resp.provider)
+            validate_task_payload(obj)
+            task = _coerce_task(obj, fallback, resp.provider)
+            validate_parsed_task(task)
+            return task
+    except SchemaValidationError:
+        raise
     except Exception:
         pass
+    validate_parsed_task(fallback)
     return fallback

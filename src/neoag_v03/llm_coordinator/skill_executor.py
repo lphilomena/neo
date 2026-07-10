@@ -8,6 +8,7 @@ from typing import Any
 
 from neoag_v03.agents.coordinator import build_skill_command
 from .guardrails import is_skill_safe_to_execute
+from .schema_validation import validate_skill_result
 from .schemas import CoordinatorPlan, ExecutionMode, SkillCallResult
 
 
@@ -105,4 +106,6 @@ def execute_plan(plan: CoordinatorPlan, files: dict[str, str], result_dir: str |
             summary=f"Executed {step.skill}" if run["returncode"] == 0 else f"{step.skill} failed",
             failure_code=None if run["returncode"] == 0 else "SKILL_RUNTIME_ERROR",
         ))
+    for result in results:
+        validate_skill_result(result)
     return results

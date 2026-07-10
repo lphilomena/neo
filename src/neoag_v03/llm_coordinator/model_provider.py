@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .json_utils import extract_json_object
+from .schema_validation import validate_intent_payload
 from .schemas import IntentResult, validate_intent
 from neoag_v03.agents.skill_router import classify_intent
 
@@ -102,6 +103,7 @@ def parse_intent_response(text: str, source: str = "llm") -> IntentResult | None
     obj = extract_json_object(text)
     if not obj:
         return None
+    validate_intent_payload(obj)
     intent = validate_intent(str(obj.get("intent", "unknown")))
     try:
         confidence = float(obj.get("confidence", 0.0))
