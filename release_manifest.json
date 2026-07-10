@@ -1,118 +1,104 @@
 {
-  "artifacts": {
-    "external_package_manifest": "work/releases/neoag_event_pipeline_v043_online_20260629.manifest.json",
-    "external_sha256": "work/releases/neoag_event_pipeline_v043_online_20260629.tar.gz.sha256",
-    "install_and_data_guide": "README.md",
-    "online_release_guide": "docs/ONLINE_RELEASE.md",
-    "release_notes": "RELEASE.md"
-  },
-  "created_at_utc": "2026-06-29T07:16:39+00:00",
-  "feature_status": {
-    "fusion_splice_targeted_rna_validation": "implemented in parsed/rna_junction_evidence.tsv targeted_validation_* fields",
-    "hla_loh_cross_validation": "implemented via neoag-v03 crosscheck-hla-loh for LOHHLA + SpecHLA normalized tables",
-    "rna_alt_reads_rna_vaf": "implemented via src/neoag_v03/adapters/rna_vaf.py and build-evidence-layer --rna-vaf"
+  "schema_version": "neoag-online-release-manifest-v3",
+  "project": "neoag_event_pipeline",
+  "release_name": "v043_online_20260710",
+  "version": "v0.4.3",
+  "created_at_utc": "2026-07-10T02:22:24.094182+00:00",
+  "package": {
+    "name": "neoag_event_pipeline_v043_online_20260710.tar.gz",
+    "path": "work/releases/neoag_event_pipeline_v043_online_20260710.tar.gz",
+    "exists": true,
+    "size_bytes": 707617,
+    "sha256": "e1d2a0db7992ae7053b0c4a44274761e1389354a2bae1d37d64fd18bbaa0e408",
+    "sha256_file": "work/releases/neoag_event_pipeline_v043_online_20260710.tar.gz.sha256",
+    "sha256_file_sha256": "570540e62c30829e24a921d733315f1f2b879ce17c3438d77d22a2f785b74cec",
+    "files_count": 445
   },
   "git": {
+    "branch": "na0707_upload_release",
+    "head": "da053afa55eee60cf999ab68148c129a00dd9650",
     "dirty": true,
-    "head": "0bf6a5c3dda61fe6c1d9db01a2df9adb6758bee9",
-    "status_count": 977
+    "status_count": 26,
+    "status_sample": [
+      " M CHANGELOG_INSTALL_README_20260701.md",
+      " M RELEASE_REFRESH_20260615.md",
+      " M bin/ascat-v3",
+      " M bin/neoag-llm-agent",
+      " M bin/neoag-v03",
+      " M bin/snp-pileup",
+      " M bin/vep-neoag",
+      " M conf/run.conda.toml",
+      " M conf/run.hcc1395.toml",
+      " M deploy/load_local_images.sh",
+      " M docs/PROJECT_DATA_PATHS.md",
+      " M docs/TOOLS_SETUP.md",
+      " M release_manifest.json",
+      " M scripts/compare_somatic_vcfs.py",
+      " M scripts/package_v04_release.py",
+      " M scripts/run_hla_la_container.sh",
+      " M scripts/start_agent_web.sh",
+      " M scripts/start_vllm_qwen_example.sh",
+      " M scripts/verify_hla_la_container.sh",
+      " M src/neoag_v03/agent_skills/input_qc.py",
+      " M src/neoag_v03/agent_skills/sliding_run.py",
+      " M src/neoag_v03/agents/guardrails.py",
+      " M src/neoag_v03/llm_coordinator/input_state.py",
+      " M src/neoag_v03/web/agent_app.py",
+      "?? bin/hla-hed",
+      "?? scripts/hla_hed.py"
+    ]
   },
-  "notes": [
-    "release_manifest.json is external release metadata and is intentionally not embedded in the tarball to avoid archive self-hash mismatch.",
-    "The tarball is accompanied by an external .sha256 file and external package manifest JSON.",
-    "Patient-specific scripts and site-local absolute paths are excluded from the online package rather than deleted from the working analysis tree.",
-    "README.md now embeds the installation, external tool, reference data, dependency matrix, acceptance, and troubleshooting guide.",
-    "README.md embeds common run commands for demo, raw intermediates, evidence sidecars, HLA LOH cross-check, reports, and Nextflow fixture runs.",
-    "README.md embeds the installation, external tool, reference data, dependency matrix, acceptance, and troubleshooting guide.",
-    "README.md includes sliding-window variant peptide extraction through run-full ranking commands.",
-    "README.md includes configuration file guidance for conf/tools.env.sh, local overrides, site config, run TOMLs, key variables, and private-file boundaries.",
-    "ASCAT v3.2.0 is available through conda/env.neoag-ascat-v3.yml and bin/ascat-v3 --check; ASCAT 2.5.2 remains as the legacy baseline.",
-    "README_zh.md has been synchronized to README.md for the online release package."
-  ],
-  "package": {
-    "exists": true,
-    "manifest_file": "work/releases/neoag_event_pipeline_v043_online_20260629.manifest.json",
-    "manifest_file_sha256": "021a61e249ebaa748be8a5242dd1013f18d6a2b92bc6d9e056b1bf64dcebfca7",
-    "name": "neoag_event_pipeline_v043_online_20260629.tar.gz",
-    "path": "work/releases/neoag_event_pipeline_v043_online_20260629.tar.gz",
-    "sha256": "2ddd9124d986dcd83d5a6dd27be8aa3db4f93cae6af4c00897ac2f2b2ea68e15",
-    "sha256_file": "work/releases/neoag_event_pipeline_v043_online_20260629.tar.gz.sha256",
-    "sha256_file_sha256": "7ca13901c2be60db11191b3c3dc492ad8dc2f5ee7d8a70b88d10d5642d32cabd",
-    "size_bytes": 493688
+  "verification": {
+    "syntax_checks": {
+      "status": "pass",
+      "summary": "py_compile for edited Python modules and bash -n for edited shell wrappers passed"
+    },
+    "input_qc_ranking_compare": {
+      "status": "pass",
+      "summary": "recommendation + ranked_peptides.netmhcpan42 result-dir recommends ranking_compare"
+    },
+    "pytest_default": {
+      "status": "pass",
+      "summary": "203 passed, 96 skipped using the project conda test environment"
+    },
+    "run_demo": {
+      "status": "pass",
+      "summary": "neoag-v03 run-demo produced ranked_peptides.v03.tsv and evidence_report.v03.html"
+    },
+    "package_forbidden_entry_scan": {
+      "status": "pass",
+      "forbidden_entries": []
+    },
+    "package_forbidden_text_scan": {
+      "status": "pass",
+      "summary": "No site-local conda/storage roots, listed patient IDs, private sample data tokens, or agent_task_index path in package text files"
+    },
+    "web_internal_prototype": {
+      "status": "pass",
+      "summary": "web defaults to rule provider, blank model/api key env, generic textarea/files placeholders, and internal prototype label"
+    }
   },
-  "project": "neoag_event_pipeline",
   "release_boundary": {
-    "bundled": [
-      "src",
-      "bin",
-      "conda",
-      "conf portable examples",
-      "docs markdown",
-      "modules",
-      "profiles generic",
-      "resources examples",
-      "scripts generic",
-      "tests",
-      "workflows",
-      "data/fixtures",
-      "data/fixtures_snv",
-      "data/fixtures_sv",
-      "data/improve"
-    ],
     "excluded": [
+      "__MACOSX",
+      "__pycache__",
+      ".pytest_cache",
+      "agent task index",
+      "release manifest from package payload",
       "tools",
       "results",
       "work",
       "dist",
       "conda_packs",
-      ".nextflow*",
-      ".venv*",
-      "data/ref",
-      "data/vep",
-      "data/external",
-      "data/examples",
-      "patient-specific scripts/configs",
       "site-local absolute paths",
-      "docx/pptx office artifacts",
-      "licensed binaries"
+      "patient-specific paths"
     ],
-    "external_required": [
-      "licensed external tools",
-      "large references",
-      "real patient inputs",
-      "site/private configs",
-      "Nextflow runtime cache for offline runs"
-    ]
+    "manifest_policy": "release_manifest.json is external metadata and is not embedded in the package payload"
   },
-  "release_name": "v043_online_20260629",
-  "schema_version": "neoag-online-release-manifest-v2",
-  "verification": {
-    "nextflow": {
-      "offline_boundary": "offline use must pre-stage Java, populated NXF_HOME, conda/container assets, tools, and references",
-      "online_boundary": "bin/nextflow may download runtime dependencies into NXF_HOME on first online use",
-      "status": "previous_pass_with_prepopulated_cache"
-    },
-    "package_forbidden_path_scan": {
-      "status": "pass",
-      "summary": "online package generated with exclusion rules for tools/results/work/dist/conda_packs/.git/.venv/.nextflow, patient tokens, site-local absolute paths, docx/pptx, and local env files"
-    },
-    "pytest_default": {
-      "scope": "release-safe unit and contract checks; skips integration, benchmark, external-tool, and long workflow tests by default",
-      "status": "pass",
-      "summary": "184 passed, 95 skipped on source tree"
-    },
-    "pytest_run_all": {
-      "scope": "maintainer/release verification mode; opts into integration, benchmark, external-tool, and longer workflow tests; requires installed tools, references, and writable Nextflow cache",
-      "status": "not_run_for_this_packaging_refresh"
-    },
-    "pytest_targeted_rna_hla": {
-      "status": "pass",
-      "summary": "RNA VAF, splice/fusion targeted validation, and HLA LOH crosscheck tests: 5 passed, 13 skipped in targeted rerun"
-    },
-    "unpacked_package_targeted_rna_hla": {
-      "status": "pass",
-      "summary": "unpacked online package RNA VAF, splice/fusion targeted validation, and HLA LOH crosscheck tests: 5 passed, 13 skipped"
-    }
-  },
-  "version": "v0.4.3"
+  "notes": [
+    "Hardcoded conda/site paths were replaced with environment variables or generic placeholders in release-tracked files.",
+    "HLA-LA and container image paths now require environment variables or explicit local configuration.",
+    "Web app is marked internal prototype and no longer defaults to DeepSeek or patient paths.",
+    "Final response guardrail wording uses not-a-determined-treatment-plan semantics."
+  ]
 }

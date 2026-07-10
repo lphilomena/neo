@@ -1,10 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-PYTHON="${NEOAG_LLM_PYTHON:-/home/na/miniforge3/envs/neoag-vllm/bin/python}"
-if [[ ! -x "$PYTHON" ]]; then
-  echo "ERROR: NEOAG_LLM_PYTHON is not executable: $PYTHON" >&2
-  echo "Install with: /home/na/miniforge3/envs/neoag-vllm/bin/python -m pip install -e \"$ROOT.[agent-llm]\"" >&2
+CONDA_BASE="${NEOAG_CONDA_BASE:-$(conda info --base 2>/dev/null || true)}"
+PYTHON="${NEOAG_LLM_PYTHON:-}"
+if [[ -z "$PYTHON" && -n "$CONDA_BASE" && -x "$CONDA_BASE/envs/neoag-vllm/bin/python" ]]; then
+  PYTHON="$CONDA_BASE/envs/neoag-vllm/bin/python"
+elif [[ -z "$PYTHON" ]]; then
+  PYTHON="$(command -v python3 || command -v python || true)"
+fi
+if [[ -z "$PYTHON" || ! -x "$PYTHON" ]]; then
+  echo "ERROR: set NEOAG_LLM_PYTHON=/path/to/python with agent dependencies installed" >&2
+  echo "Install example: python -m pip install -e \"$ROOT.[agent-llm]\"" >&2
   exit 127
 fi
 export PYTHONPATH="$ROOT/src:${PYTHONPATH:-}"

@@ -20,7 +20,7 @@ This file records the server refresh because `RELEASE.md` is owned by root in th
 
 After `source conf/tools.env.sh`:
 
-- Java: `/home/na/miniforge3/envs/neoag-fusion/bin/java`
+- Java: `${NEOAG_CONDA_BASE}/envs/neoag-fusion/bin/java`
 - Nextflow: `bin/nextflow -version` reports `26.04.3 build 12259`
 
 ## Remaining Note

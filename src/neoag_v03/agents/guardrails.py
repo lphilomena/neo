@@ -17,7 +17,7 @@ def needs_human_approval(message: str, planned_skills: list[str]) -> bool:
 def sanitize_patient_language(text: str) -> str:
     out = text
     for claim in PROHIBITED_CLAIMS:
-        out = out.replace(claim, "计算预测候选，需进一步验证")
+        out = out.replace(claim, "候选结果需进一步验证，不能直接确定治疗方案")
     return out
 
 

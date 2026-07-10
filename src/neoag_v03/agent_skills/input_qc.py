@@ -69,6 +69,8 @@ def inspect_result_dir(path: Path) -> dict[str, object]:
 
 
 def recommend_workflow(features: dict[str, bool]) -> str:
+    if features.get("has_ranked_peptides_recommendation") and features.get("has_ranked_peptides_netmhcpan42"):
+        return "ranking_compare"
     if features.get("has_ranked_peptides") or features.get("has_ranked_peptides_recommendation"):
         return "result_review"
     if features.get("has_raw_events") and features.get("has_raw_peptides") and features.get("has_presentation"):
@@ -89,9 +91,13 @@ def build_missing(features: dict[str, bool], workflow: str) -> list[dict[str, st
     def add(key: str, severity: str, reason: str):
         if not features.get(key):
             missing.append({"input": key, "severity": severity, "reason": reason})
-    if workflow in {"snv_indel_workflow", "evidence_scoring", "result_review"}:
+    if workflow in {"snv_indel_workflow", "evidence_scoring", "result_review", "ranking_compare"}:
         add("has_hla", "required", "HLA alleles are required for peptide-HLA presentation prediction")
-    if workflow == "result_review":
+    if workflow == "ranking_compare":
+        add("has_ranked_peptides_recommendation", "required", "recommendation ranked peptide table is required for ranking comparison")
+        add("has_ranked_peptides_netmhcpan42", "required", "NetMHCpan 4.2 ranked peptide table is required for ranking comparison")
+        add("has_evidence_report", "recommended", "evidence report improves interpretation of ranking shifts")
+    elif workflow == "result_review":
         add("has_ranked_peptides", "required", "ranked peptides table is required for result review")
         add("has_evidence_report", "recommended", "evidence report improves APPM/escape/report interpretation")
         add("has_expression", "recommended", "missing RNA expression cannot be interpreted as not expressed")

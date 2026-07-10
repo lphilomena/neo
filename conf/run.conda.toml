@@ -13,7 +13,7 @@ enabled = ["pvacseq", "pvacfuse", "netmhcpan", "mhcflurry", "vep"]
 # Executables resolve from PATH after sourcing conf/tools.env.sh
 [tools.executables]
 # netmhcpan = "/opt/netMHCpan/netMHCpan"
-# pvacseq = "/root/miniconda3/envs/neoag-tools/bin/pvacseq"
+# pvacseq = "/path/to/conda/envs/neoag-tools/bin/pvacseq"
 
 [inputs]
 hla_alleles = ["HLA-A*02:01", "HLA-B*07:02", "HLA-DRB1*04:01"]

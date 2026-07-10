@@ -2,7 +2,7 @@
 # Run VEP in isolated neoag-vep env (avoids Perl path clash with neoag-tools).
 set -euo pipefail
 
-CONDA_BASE="${NEOAG_CONDA_BASE:-$(conda info --base 2>/dev/null || echo /home/na/miniforge3)}"
+CONDA_BASE="${NEOAG_CONDA_BASE:-$(conda info --base 2>/dev/null || echo)}"
 VEP_ENV_NAME="${NEOAG_VEP_ENV:-neoag-vep}"
 if [[ -x "${VEP_ENV_NAME}/bin/perl" ]]; then
   VEP_ENV="${VEP_ENV_NAME}"

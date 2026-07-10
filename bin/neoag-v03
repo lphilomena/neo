@@ -7,7 +7,7 @@ if [[ -f "$ROOT/conf/tools.env.sh" && "${NEOAG_SKIP_TOOLS_ENV:-0}" != "1" ]]; th
   source "$ROOT/conf/tools.env.sh"
 fi
 
-CONDA_BASE="$(conda info --base 2>/dev/null || echo /root/miniconda3)"
+CONDA_BASE="$(conda info --base 2>/dev/null || echo)"
 PY="${NEOAG_PYTHON:-${CONDA_BASE}/envs/${NEOAG_CONDA_ENV:-neoag-tools}/bin/python}"
 if [[ ! -x "${PY}" && -x "$ROOT/.venv/bin/python" ]]; then
   PY="$ROOT/.venv/bin/python"

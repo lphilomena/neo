@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-CONDA_BASE="${NEOAG_CONDA_BASE:-/home/na/miniforge3}"
+CONDA_BASE="${NEOAG_CONDA_BASE:-$(conda info --base 2>/dev/null || true)}"
 ASCAT_V3_ENV="${NEOAG_ASCAT_V3_ENV:-neoag-ascat-v3}"
 RSCRIPT="${CONDA_BASE}/envs/${ASCAT_V3_ENV}/bin/Rscript"
 

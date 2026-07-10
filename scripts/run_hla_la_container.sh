@@ -3,8 +3,9 @@ set -euo pipefail
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 REPO_ROOT=$(cd -- "$SCRIPT_DIR/.." && pwd)
 [[ -f "$REPO_ROOT/conf/tools.env.sh" ]] && source "$REPO_ROOT/conf/tools.env.sh"
-HLALA_HOME=${HLALA_HOME:-${HLA_LA_HOME:-/mnt/zjl-bgi-zzb/peixunban/gl/data/tools/hla-la/env/opt/hla-la}}
+HLALA_HOME=${HLALA_HOME:-${HLA_LA_HOME:-}}
 HLALA_BIN=${HLALA_BIN:-${HLA_LA_BIN:-$HLALA_HOME/bin/HLA-LA.pl}}
+[[ -n "$HLALA_HOME" ]] || { echo "ERROR: set HLALA_HOME or HLA_LA_HOME to your HLA-LA installation" >&2; exit 2; }
 [[ -x "$HLALA_BIN" ]] || HLALA_BIN=${HLALA_HOME}/HLA-LA.pl
 [[ -x "$HLALA_BIN" ]] || HLALA_BIN=${HLALA_HOME}/run_HLA-LA.pl
 GRAPH=${HLALA_GRAPH:-${HLA_LA_GRAPH:-$HLALA_HOME/graphs/PRG_MHC_GRCh38_withIMGT}}

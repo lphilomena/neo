@@ -19,7 +19,6 @@ INCLUDE_FILES = [
     'RELEASE_REFRESH_20260615.md', 'CHANGELOG_V04_EVIDENCE_SAFETY_ESCAPE.md',
     'CHANGELOG_V041_APPM_CCF_IMMUNE_ESCAPE.md', 'CHANGELOG_V042.md',
     'CHANGELOG_V043.md', 'README_PATCH_V043.md', 'README_PATCH_V043_CCF21.md',
-    'release_manifest.json',
 ]
 INCLUDE_DATA_ROOTS = [
     'data/fixtures', 'data/fixtures_snv', 'data/fixtures_sv', 'data/improve',
@@ -93,11 +92,11 @@ def main() -> None:
 
     outdir = Path(args.outdir)
     outdir.mkdir(parents=True, exist_ok=True)
-    stamp = dt.datetime.now(dt.UTC).strftime('%Y%m%d')
+    stamp = dt.datetime.now(dt.timezone.utc).strftime('%Y%m%d')
     name = args.name or f'neoag_event_pipeline_v043_lite_{stamp}.tar.gz'
     tar_path = outdir / name
     files = iter_files()
-    root_name = tar_path.name.removesuffix('.tar.gz')
+    root_name = tar_path.name[:-7] if tar_path.name.endswith('.tar.gz') else tar_path.stem
     with tarfile.open(tar_path, 'w:gz') as tf:
         for p in files:
             tf.add(p, arcname=str(Path(root_name) / p.relative_to(ROOT)))

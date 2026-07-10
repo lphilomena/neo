@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import gzip
 import json
+import os
 import re
 import subprocess
 from pathlib import Path
@@ -58,11 +59,12 @@ def _toml_array(values: Iterable[str]) -> str:
 
 
 def _default_reference_fasta(root: Path) -> Path | None:
-    candidates = [
-        root / "data/ref/hg38/Homo_sapiens_assembly38.fasta",
-        Path("/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/ref/hg38/Homo_sapiens_assembly38.fasta"),
-        Path("/mnt/zjl-bgi-zzb/peixunban/gl/data/reference/Homo_sapiens.GRCh38.dna.primary_assembly.fa"),
-    ]
+    candidates: list[Path] = []
+    for key in ("NEOAG_REFERENCE_FASTA", "REFERENCE_FASTA"):
+        value = os.environ.get(key)
+        if value:
+            candidates.append(Path(value))
+    candidates.append(root / "data/ref/hg38/Homo_sapiens_assembly38.fasta")
     for candidate in candidates:
         if candidate.is_file():
             return candidate

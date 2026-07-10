@@ -66,7 +66,9 @@ def build_input_state(files: list[str] | None = None, result_dir: str | None = N
         else:
             state.missing_inputs.append({"input": "input_qc", "severity": "warning", "reason": f"input-qc failed returncode={proc.returncode}: {proc.stderr[-300:]}"})
     else:
-        if state.features.get("has_ranked_peptides"):
+        if state.features.get("has_ranked_peptides_recommendation") and state.features.get("has_ranked_peptides_netmhcpan42"):
+            state.recommended_workflow = "ranking_compare"
+        elif state.features.get("has_ranked_peptides"):
             state.recommended_workflow = "result_review"
         elif state.features.get("has_sv_vcf"):
             state.recommended_workflow = "dna_sv_workflow"

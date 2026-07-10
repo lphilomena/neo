@@ -7,7 +7,7 @@ This document records the preferred host-side data layout for real deployments. 
 Preferred staged bundle root on the current server:
 
 ```bash
-/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git
+${NEOAG_DATA_ROOT}
 ```
 
 Recommended environment setup:
@@ -20,16 +20,16 @@ source /home/na/project/neoantigen/neoag_event_pipeline_v03_rc/conf/tools.env.sh
 
 | Category | Preferred path | Environment variable | Used for |
 | --- | --- | --- | --- |
-| GRCh38 FASTA | `/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/ref/hg38/Homo_sapiens_assembly38.fasta` | `NEOAG_REFERENCE_FASTA` | VEP, GATK, SV peptide building |
-| GRCh38 FASTA index | `/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/ref/hg38/Homo_sapiens_assembly38.fasta.fai` | derived from FASTA | samtools/GATK/VEP checks |
-| GRCh38 dictionary | `/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/ref/hg38/Homo_sapiens_assembly38.dict` | derived from FASTA | GATK |
-| GTF | `/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/ref/hg38/gencode.gtf` | workflow-specific | RNA TPM, SV/fusion annotation |
-| Capture BED | `/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/ref/hg38/capture.bed` | workflow-specific | WES/panel workflows |
-| VEP cache | `/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/vep/homo_sapiens/105_GRCh38` | `NEOAG_VEP_CACHE`, `NEOAG_VEP_CACHE_VERSION` | Offline VEP |
-| CTAT library | `/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/ctat/current` | `CTAT_GENOME_LIB` | STAR-Fusion |
-| EasyFuse reference | `/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/easyfuse/current` | `NEOAG_EASYFUSE_REF` | EasyFuse |
-| FACETS common SNP VCF | `/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/facets/reference/common_snp.hg38.vcf.gz` | workflow-specific | FACETS common SNP mode |
-| HLA-LA graph | `/mnt/zjl-bgi-zzb/peixunban/gl/data/tools/hla-la/env/opt/hla-la/graphs/PRG_MHC_GRCh38_withIMGT` | `HLALA_GRAPH` / `HLA_LA_GRAPH` | HLA-LA |
+| GRCh38 FASTA | `${NEOAG_DATA_ROOT}/data/ref/hg38/Homo_sapiens_assembly38.fasta` | `NEOAG_REFERENCE_FASTA` | VEP, GATK, SV peptide building |
+| GRCh38 FASTA index | `${NEOAG_DATA_ROOT}/data/ref/hg38/Homo_sapiens_assembly38.fasta.fai` | derived from FASTA | samtools/GATK/VEP checks |
+| GRCh38 dictionary | `${NEOAG_DATA_ROOT}/data/ref/hg38/Homo_sapiens_assembly38.dict` | derived from FASTA | GATK |
+| GTF | `${NEOAG_DATA_ROOT}/data/ref/hg38/gencode.gtf` | workflow-specific | RNA TPM, SV/fusion annotation |
+| Capture BED | `${NEOAG_DATA_ROOT}/data/ref/hg38/capture.bed` | workflow-specific | WES/panel workflows |
+| VEP cache | `${NEOAG_DATA_ROOT}/data/vep/homo_sapiens/105_GRCh38` | `NEOAG_VEP_CACHE`, `NEOAG_VEP_CACHE_VERSION` | Offline VEP |
+| CTAT library | `${NEOAG_DATA_ROOT}/data/ctat/current` | `CTAT_GENOME_LIB` | STAR-Fusion |
+| EasyFuse reference | `${NEOAG_DATA_ROOT}/data/easyfuse/current` | `NEOAG_EASYFUSE_REF` | EasyFuse |
+| FACETS common SNP VCF | `${NEOAG_DATA_ROOT}/data/facets/reference/common_snp.hg38.vcf.gz` | workflow-specific | FACETS common SNP mode |
+| HLA-LA graph | `${NEOAG_TOOLS_ROOT}/hla-la/env/opt/hla-la/graphs/PRG_MHC_GRCh38_withIMGT` | `HLALA_GRAPH` / `HLA_LA_GRAPH` | HLA-LA |
 
 ## Tool Install Roots
 
@@ -38,7 +38,7 @@ source /home/na/project/neoantigen/neoag_event_pipeline_v03_rc/conf/tools.env.sh
 | NetMHCpan | `tools/netMHCpan` | Licensed official package; use container wrapper for runtime compatibility. |
 | NetMHCstabpan | `tools/netMHCstabpan` | Licensed package or IEDB shim. |
 | SpecHLA | `tools/SpecHLA` | Keep `db/` and `script/` outside release archives if large/licensed. |
-| HLA-LA | `/mnt/zjl-bgi-zzb/peixunban/gl/data/tools/hla-la/env/opt/hla-la` | External installation; graph mounted at runtime. |
+| HLA-LA | `${NEOAG_TOOLS_ROOT}/hla-la/env/opt/hla-la` | External installation; graph mounted at runtime. |
 | HMFTOOLS | `tools/HMFTOOLS` | PURPLE/AMBER/COBALT jars discovered under `.conda/share`. |
 | EasyFuse | `tools/EasyFuse` | Code in tools root; reference bundle mounted from `neodata4git`. |
 
@@ -50,8 +50,8 @@ Typical mounted roots:
 
 ```bash
 /home/na/project/neoantigen/neoag_event_pipeline_v03_rc
-/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git
-/mnt/zjl-bgi-zzb/peixunban/gl/data/tools
+${NEOAG_DATA_ROOT}
+${NEOAG_TOOLS_ROOT}
 ```
 
 ## Git Boundary

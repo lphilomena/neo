@@ -9,7 +9,7 @@ Updated according to migration tests on the 169 machine.
 - Fixed `scripts/setup_tools_env.sh` to prefer conda C++ runtime for MHCflurry model download.
 - Added `libstdcxx-ng`, `sysroot_linux-64`, and `patchelf` to `conda/env.neoag-tools.yml`; added `libstdcxx-ng` to lite env.
 - Fixed VEP install script to export `NEOAG_VEP_BIN` and add the VEP env to PATH.
-- Fixed NetMHCpan installer to use `NEOAG_CONDA_BASE` / `conda info --base` instead of hardcoded `/home/na/miniforge3`, and to fall back to direct binary execution if conda loader is unavailable.
+- Fixed NetMHCpan installer to use `NEOAG_CONDA_BASE` / `conda info --base` instead of hardcoded `${NEOAG_CONDA_BASE}`, and to fall back to direct binary execution if conda loader is unavailable.
 - Rewrote ASCAT/PyClone installer to use conda by default and create `bin/ascat.R` / `bin/pyclone` wrappers.
 - Rewrote PRIME/MixMHCpred/BigMHC installer to set required variables, compile `PRIME.x`, install Python dependencies, and create `bin/bigmhc_predict`.
 - Added `scripts/install_facets.sh` and `scripts/install_lohhla.sh`.

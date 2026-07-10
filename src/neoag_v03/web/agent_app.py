@@ -193,7 +193,7 @@ HTML = r"""<!doctype html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>NeoAg Agent</title>
+  <title>NeoAg Agent Internal Prototype</title>
   <style>
     body{font-family:Arial,sans-serif;margin:20px;background:#f6f7f9;color:#111827}
     section{background:white;padding:16px;margin:12px 0;border:1px solid #ddd;border-radius:8px}
@@ -210,27 +210,26 @@ HTML = r"""<!doctype html>
   </style>
 </head>
 <body>
-  <h2>NeoAg LLM Agent</h2>
+  <h2>NeoAg Agent <span class="muted">Internal prototype</span></h2>
   <section>
     <form id="jobForm">
       <p>自然语言任务</p>
-      <textarea name="message">帮我用这个 VCF 和 HLA 文件跑 neoantigen sliding-window。NetMHCpan 用容器跑，NetMHCstabpan 跳过，BigMHC 用本地能 import torch 的环境。</textarea>
+      <textarea name="message">请描述要执行的任务，例如：检查输入文件并生成结果解读。</textarea>
       <p>上传 VCF / HLA 文件</p>
       <input id="vcfFile" name="vcf_upload" type="file" accept=".vcf,.gz,.txt,.tsv">
       <input id="hlaFile" name="hla_upload" type="file" accept=".txt,.tsv,.csv">
-      <div class="muted">可直接上传本地 VCF/HLA；也可继续填写服务器已有路径。上传文件会保存到 results/agent_web_uploads/。</div>
+      <div class="muted">Internal prototype. Do not paste patient-identifying paths into shared demos. 可上传本地 VCF/HLA，也可填写服务器已有路径。</div>
       <p>服务器文件路径，每行一个</p>
-      <textarea name="files">/mnt/zjl-bgi-zzb/peixunban/gl/data/chenxiaoliang_data/data/liver_0520_WGS_shortReads/somatic/M1ML150017383_L01_438.align.somatic.pass.vcf.gz
-/home/na/project/neoantigen/neoag_event_pipeline_v03_rc/work/chenxiaoliang_M1ML150017383.hla.txt</textarea>
+      <textarea name="files" placeholder="/path/to/input.vcf.gz&#10;/path/to/hla.txt"></textarea>
       <p>输出目录</p>
       <input name="outdir" value="results/llm_agent_web">
       <p>Sample ID 过滤（可选，用于结果分析避免混入其他样本）</p>
-      <input name="sample_id" placeholder="例如 M1ML150017383 或 ML150006946_L01_137">
+      <input name="sample_id" placeholder="例如 SAMPLE001">
       <p>Provider / Model / Mode / API key env</p>
-      <select name="llm_provider"><option>deepseek</option><option>rule</option></select>
-      <input name="model" value="deepseek-chat">
+      <select name="llm_provider"><option>rule</option><option>deepseek</option><option>openai-compatible</option><option>vllm</option></select>
+      <input name="model" placeholder="optional model name; leave blank for rule provider">
       <select name="mode"><option>execute-with-approval</option><option>execute-safe</option><option>plan</option></select>
-      <input name="api_key_env" value="DEEPSEEK_API_KEY">
+      <input name="api_key_env" placeholder="optional API key env; leave blank for rule provider">
       <button id="runBtn" type="button">运行</button>
       <span id="notice" class="muted"></span>
     </form>

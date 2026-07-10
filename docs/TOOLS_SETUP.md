@@ -107,7 +107,7 @@ If an existing installation needs only wrapper repair:
 bash scripts/install_netmhcpan.sh --repair
 ```
 
-The previous hardcoded `/home/na/miniforge3` path was removed. Use `NEOAG_CONDA_BASE` to override conda location.
+The previous hardcoded `${NEOAG_CONDA_BASE}` path was removed. Use `NEOAG_CONDA_BASE` to override conda location.
 
 ### 4.4 NetMHCstabpan
 

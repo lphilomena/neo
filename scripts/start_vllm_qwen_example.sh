@@ -4,7 +4,7 @@ set -euo pipefail
 # Example only. Adjust model path/name, tensor parallelism, GPU memory, and port
 # for your local/HPC environment. Do not run this blindly on shared servers.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-CONDA_BASE="${CONDA_BASE:-/home/na/miniforge3}"
+CONDA_BASE="${CONDA_BASE:-${NEOAG_CONDA_BASE:-$(conda info --base 2>/dev/null || true)}}"
 VLLM_ENV="${VLLM_ENV:-neoag-vllm}"
 VLLM_PYTHON="${VLLM_PYTHON:-}"
 
