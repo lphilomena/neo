@@ -32,7 +32,7 @@ python -m pip install -e '.[test]' -q
 
 ## 6类入口对照速查表
 
-| Entry              | 对应skill             | 独有起点命令                                         | 是否有专用一键路径               | 关键输入                                                  |
+| Entry              | 对应skill             | 独有起点命令                                         | 是否有专用一键路径               | 关键输入                                              |
 | ------------------ | --------------------- | ---------------------------------------------------- | -------------------------------- | --------------------------------------------------------- |
 | A SNV/InDel        | `neoag-vcf`         | `vep-annotate`→`snv-build-raw`                  | `run-full`（通用一键，读TOML） | `variants_vcf`、`tumor_sample_name`                   |
 | B Fusion           | `neoag-fusion`      | `build-intermediates --entry-mode fusion`          | 无专用一键命令，用 `run-full`  | `easyfuse_pass_csv`                                     |
@@ -194,22 +194,27 @@ python -m pip install -e '.[test]' -q
 neoag-v03 run-demo --entry-mode {snv_indel,fusion,splice_junction,sv_wgs,sv_wes,peptide_only} --outdir <dir> --sample-id <id>
 ```
 
-现在做两件事，而不只是打印工具名单：
+现在做两件事：
 
-1. **真实检测**：读 `conf/tools.toml`里该入口对应的工具段，实际检查二进制/目录/环境变量是否存在
-   （不再是之前那种"打印一个固定字符串，不做任何检测"的假检查），打印每个工具 OK/MISSING。
-2. **REAL/STUB双模式执行**：不再是"无论如何都用预处理好的pVAC聚合表fixture走捷径"。现在：
-   - **产肽阶段**：全部6个入口都从各自**真实格式**的输入出发（体细胞VCF、EasyFuse
+1. **真实检测（仅提示，不影响demo执行）**：读 `conf/tools.toml`里该入口对应的工具段，实际检查
+   二进制/目录/环境变量是否存在，打印每个工具 OK/MISSING。这是告诉你**真实（非demo）运行**这个入口
+   需要装什么，不是`run-demo`本身的前置条件——即使全部MISSING，demo也会正常跑完。
+2. **始终STUB执行**：`run-demo`**永远不会尝试真实调用**VEP/NetMHCpan/MHCflurry等外部工具，
+   全程用仓库自带fixture。这是刻意的设计选择——早期版本试过"检测到工具就真的调用"，
+   结果demo的成败会被工具版本、license、网络/API限流这些和流程代码本身无关的因素干扰，
+   反而更难判断"到底是我的代码坏了还是环境有问题"。
+   - **产肽阶段**：6个入口仍然从各自**真实格式**的输入出发（体细胞VCF、EasyFuse
      `fusions.pass.csv`、pVACsplice聚合表+RegTools junction TSV、SV VCF、肽段CSV），
-     和第一部分教程里教的命令组合是**同一段代码**，不再是走另一条"仅用于demo"的捷径。
-   - **VEP阶段**（仅snv_indel）：VEP可用则真的跑 `vep-annotate`；不可用则退化为使用仓库自带的
-     一份**已带CSQ注释**的fixture VCF继续走真实的 `extract-variant-peptides`（该步骤本身是纯Python，
-     不需要VEP，缺的只是"谁来产生CSQ"这一步）。
-   - **呈递预测阶段**（presentation，所有入口共用）：NetMHCpan/MHCflurry任一真实可用，就调用真实
-     预测（`run_netmhcpan`/`run_mhcflurry`，和 `peptide-predict`背后同一批函数）；都不可用时才回退到
-     仓库自带的预计算预测结果fixture。
-   - 执行完会打印一行 `verification[<阶段>]: REAL/STUB/PARTIAL`，明确告诉你这次demo到底验证了什么，
-     不会出现"demo通过≠教程里的命令能用"的情况。
+     和第一部分教程里教的命令组合是**同一段代码**——这部分是纯Python逻辑，没有外部工具依赖，
+     所以能放心保留"真实执行"。
+   - **VEP阶段**（仅snv_indel）：一律用仓库自带的一份**已带CSQ注释**的fixture VCF，
+     不会尝试调用真实VEP，即使`vep`二进制检测为可用。
+   - **呈递预测阶段**（presentation，所有入口共用）：一律用仓库自带的预计算NetMHCpan/MHCflurry
+     预测结果fixture，不会尝试调用真实NetMHCpan/MHCflurry。
+   - 执行完会打印一行 `verification[<阶段>]: STUB(...)`，明确告诉你这次demo每个阶段实际用的是fixture，
+     不是真实工具产出。
+   - 想验证真实工具本身是否装对了，直接用 `vep-annotate`/`peptide-predict`（带上`neoag-v03`前缀）
+     对你自己的数据跑，而不是指望`run-demo`帮你验证工具安装。
 
 ```bash
 neoag-v03 check-tools

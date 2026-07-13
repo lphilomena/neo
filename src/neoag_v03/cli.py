@@ -52,23 +52,30 @@ FIXTURES_SV = ROOT / "data" / "fixtures_sv"
 
 
 def _demo_env_precheck(entry_mode):
-    """Real, TOML-driven tool availability check (conf/tools.toml), scoped to
-    only the tools this entry_mode actually needs. Returns {tool: (ok, msg)}
-    so cmd_run_demo can decide whether to run the REAL tool chain or fall
-    back to the bundled-fixture STUB chain for this demo."""
-    print(f"[run-demo] entry-mode={entry_mode}: checking tools needed for this demo only")
+    """Informational only. Prints which tools a REAL (non-demo) run of this
+    entry_mode would need, per conf/tools.toml. run-demo itself never invokes
+    any of these tools -- it always uses bundled fixtures for VEP/NetMHCpan/
+    MHCflurry/etc, so a tool showing MISSING here does not block or change
+    this demo in any way. Trying to auto-detect-and-invoke real tools here
+    used to be attempted and was dropped: too many ways for a real install to
+    differ from what run-demo expects (versions, licenses, network/API
+    flakiness), which made the demo fail for reasons unrelated to the
+    pipeline code itself. Use `neoag-v03 check-tools` / this printout only to
+    plan what to install before your first real (non-fixture) run."""
+    print(f"[run-demo] entry-mode={entry_mode}: tools you will need for REAL runs (not required for this demo)")
     results = check_entry_tools(entry_mode)
     if not results:
-        print("  (no entry-specific tools declared in conf/tools.toml; neoag-v03 CLI itself is the only requirement)")
+        print("  (no entry-specific tools declared in conf/tools.toml)")
     for _name, (_ok, msg) in results.items():
         print(f"  - {msg}")
+    print("  this demo always uses bundled fixtures below, regardless of the above")
     print()
-    return results
 
 
 def _print_demo_summary(entry_mode, out, verification=None):
     print(f"NeoAg v0.4.3 demo completed for entry-mode={entry_mode}.")
     print("Outputs retain .v03.tsv names for schema compatibility.")
+    print("  mode: STUB (bundled fixtures throughout; no external tools invoked)")
     if verification:
         for stage, mode in verification.items():
             print(f"  verification[{stage}]: {mode}")
@@ -76,42 +83,12 @@ def _print_demo_summary(entry_mode, out, verification=None):
         print(f"  {k}: {v}")
 
 
-def _demo_presentation_stage(env_status, raw_peptides, outdir, sample_id, hla_alleles):
-    """Shared REAL-vs-STUB decision for the presentation stage (NetMHCpan/MHCflurry),
-    used by every entry_mode's run-demo branch so they don't each re-implement it."""
-    from .tools.registry import RunContext
-    from .tools.runner import run_netmhcpan, run_mhcflurry
-
-    netmhcpan_ok, _ = env_status.get("netmhcpan", (False, ""))
-    mhcflurry_ok, _ = env_status.get("mhcflurry", (False, ""))
-    if not (netmhcpan_ok or mhcflurry_ok):
-        return (
-            fixture("netmhcpan_example.xls"),
-            fixture("mhcflurry_predictions.csv"),
-            "STUB (NetMHCpan/MHCflurry not installed; using bundled canned prediction fixtures)",
-        )
-    tools_dir = Path(outdir) / "tools"
-    tools_dir.mkdir(parents=True, exist_ok=True)
-    ctx = RunContext(
-        sample_id=sample_id, outdir=Path(outdir), stub=False,
-        raw_peptides=Path(raw_peptides), executables={}, hla_alleles=hla_alleles,
-    )
-    if netmhcpan_ok:
-        net_raw = tools_dir / "netmhcpan.xls"
-        run_netmhcpan(ctx, net_raw)
-        netmhcpan_path = net_raw
-    else:
-        netmhcpan_path = fixture("netmhcpan_example.xls")
-    if mhcflurry_ok:
-        mhc_raw = tools_dir / "mhcflurry.csv"
-        run_mhcflurry(ctx, mhc_raw)
-        mhcflurry_path = mhc_raw
-    else:
-        mhcflurry_path = fixture("mhcflurry_predictions.csv")
-    return (
-        netmhcpan_path, mhcflurry_path,
-        f"PARTIAL/REAL (netmhcpan={'REAL' if netmhcpan_ok else 'STUB'}, mhcflurry={'REAL' if mhcflurry_ok else 'STUB'})",
-    )
+def _demo_presentation_stub():
+    """Presentation stage always uses bundled canned prediction fixtures for
+    run-demo -- see _demo_env_precheck docstring for why. Use
+    `neoag-v03 peptide-predict` directly (not run-demo) to exercise real
+    NetMHCpan/MHCflurry against your own data."""
+    return fixture("netmhcpan_example.xls"), fixture("mhcflurry_predictions.csv")
 
 
 def cmd_run_demo(args):
@@ -119,12 +96,11 @@ def cmd_run_demo(args):
     outdir = Path(args.outdir)
     profile = args.profile
     sample_id = args.sample_id
-    env_status = _demo_env_precheck(entry_mode)
+    _demo_env_precheck(entry_mode)
 
     if entry_mode == "snv_indel":
         from .adapters.variant_peptide_adapter import run_variant_peptide_upstream
 
-        vep_ok, vep_msg = env_status.get("vep", (False, "vep: not checked"))
         verification: dict[str, str] = {}
         hla_alleles = ["HLA-A*02:01", "HLA-B*07:02"]
 
@@ -133,27 +109,11 @@ def cmd_run_demo(args):
         parsed_dir.mkdir(parents=True, exist_ok=True)
         tools_dir.mkdir(parents=True, exist_ok=True)
 
-        if vep_ok:
-            from .vep.annotate import run_vep_pvacseq_annotate  # real VEP call
-
-            annotated_vcf = tools_dir / f"{sample_id}.vep.annotated.vcf.gz"
-            vep_result = run_vep_pvacseq_annotate(
-                input_vcf=str(fixture_snv("mini_somatic.vcf")),
-                output_vcf=str(annotated_vcf),
-                reference_fasta=os.environ.get("NEOAG_REFERENCE_FASTA", ""),
-                workdir=str(tools_dir),
-                cache_dir=os.environ.get("NEOAG_VEP_CACHE"),
-                plugins_dir=os.environ.get("NEOAG_VEP_PLUGINS"),
-            )
-            variants_vcf_for_extraction = vep_result.get("annotated_vcf", annotated_vcf)
-            verification["vep"] = "REAL (ran vep-annotate on bundled somatic VCF)"
-        else:
-            # VEP not installed: fall back to a bundled VCF that already carries
-            # CSQ annotation (a realistic case -- many users hand us an
-            # already-annotated VCF). Peptide extraction below is still real,
-            # not a canned peptide-table fixture.
-            variants_vcf_for_extraction = fixture_snv("mini_somatic.vep_annotated.vcf")
-            verification["vep"] = f"SKIPPED ({vep_msg}); using bundled pre-annotated fixture VCF instead"
+        # Always use the bundled, already-CSQ-annotated fixture VCF -- run-demo
+        # never invokes VEP itself (see _demo_env_precheck docstring). Peptide
+        # extraction below is still real code, just not real external tools.
+        variants_vcf_for_extraction = fixture_snv("mini_somatic.vep_annotated.vcf")
+        verification["vep"] = "STUB (using bundled pre-annotated fixture VCF; run-demo never invokes VEP itself)"
 
         vp_out = run_variant_peptide_upstream(
             {"inputs": {}},
@@ -168,9 +128,8 @@ def cmd_run_demo(args):
         raw_events = vp_out["raw_events"]
         raw_peptides = vp_out["raw_peptides"]
 
-        netmhcpan_path, mhcflurry_path, verification["presentation"] = _demo_presentation_stage(
-            env_status, raw_peptides, outdir, sample_id, hla_alleles,
-        )
+        netmhcpan_path, mhcflurry_path = _demo_presentation_stub()
+        verification["presentation"] = "STUB (bundled NetMHCpan/MHCflurry prediction fixtures; no external tools invoked)"
 
         out = run_v03(
             outdir=outdir, profile_name_or_path=profile, sample_id=sample_id,
@@ -198,9 +157,8 @@ def cmd_run_demo(args):
             outdir, root=ROOT,
         )
         verification = {"raw_build": "REAL (build-intermediates --easyfuse-pass-csv on an actual EasyFuse fixture, same command the tutorial teaches)"}
-        netmhcpan_path, mhcflurry_path, verification["presentation"] = _demo_presentation_stage(
-            env_status, inter["raw_peptides"], outdir, sample_id, hla_alleles,
-        )
+        netmhcpan_path, mhcflurry_path = _demo_presentation_stub()
+        verification["presentation"] = "STUB (bundled NetMHCpan/MHCflurry prediction fixtures; no external tools invoked)"
         out = run_v03(
             outdir=outdir, profile_name_or_path=profile, sample_id=sample_id,
             raw_events=inter["raw_events"], raw_peptides=inter["raw_peptides"],
@@ -231,9 +189,8 @@ def cmd_run_demo(args):
             outdir, root=ROOT,
         )
         verification = {"raw_build": "REAL (build-intermediates --pvac pvacsplice_aggregated.tsv --splice-junction-tsv on actual fixtures, same command the tutorial teaches)"}
-        netmhcpan_path, mhcflurry_path, verification["presentation"] = _demo_presentation_stage(
-            env_status, inter["raw_peptides"], outdir, sample_id, hla_alleles,
-        )
+        netmhcpan_path, mhcflurry_path = _demo_presentation_stub()
+        verification["presentation"] = "STUB (bundled NetMHCpan/MHCflurry prediction fixtures; no external tools invoked)"
         out = run_v03(
             outdir=outdir, profile_name_or_path=profile, sample_id=sample_id,
             raw_events=inter["raw_events"], raw_peptides=inter["raw_peptides"],
@@ -265,9 +222,8 @@ def cmd_run_demo(args):
             sv_kwargs["profile_name"] = load_profile(profile)["_profile_name"]
         sv_out = builder(**sv_kwargs)
         hla_alleles = ["HLA-A*02:01", "HLA-B*07:02"]
-        netmhcpan_path, mhcflurry_path, presentation_status = _demo_presentation_stage(
-            env_status, sv_out["raw_peptides"], outdir, sample_id, hla_alleles,
-        )
+        netmhcpan_path, mhcflurry_path = _demo_presentation_stub()
+        presentation_status = "STUB (bundled NetMHCpan/MHCflurry prediction fixtures; no external tools invoked)"
         verification = {
             "raw_build": "REAL (sv-build-raw" + ("-wes" if entry_mode == "sv_wes" else "") + " on bundled SV VCF/GTF/FASTA fixtures, same command the tutorial teaches)",
             "presentation": presentation_status,
@@ -295,9 +251,8 @@ def cmd_run_demo(args):
             outdir, root=ROOT,
         )
         hla_alleles = ["HLA-A*11:01", "HLA-A*02:01"]
-        netmhcpan_path, mhcflurry_path, presentation_status = _demo_presentation_stage(
-            env_status, inter["raw_peptides"], outdir, sample_id, hla_alleles,
-        )
+        netmhcpan_path, mhcflurry_path = _demo_presentation_stub()
+        presentation_status = "STUB (bundled NetMHCpan/MHCflurry prediction fixtures; no external tools invoked)"
         verification = {
             "raw_build": "REAL (build-intermediates --peptide-table on an actual peptide/HLA CSV fixture, same command the tutorial teaches)",
             "presentation": presentation_status,
