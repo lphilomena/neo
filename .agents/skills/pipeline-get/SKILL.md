@@ -1,6 +1,6 @@
 ---
 name: pipeline-get
-description: 检查并安装nextflow, 并获取可用的 pipeline 列表。在以下情况自动调用本 skill：当用户提到介绍这个工具/仓库/pipeline，或者"帮我安装这个工具"、"这个工具怎么用"、"这个仓库里有什么"、"有什么功能"、"怎么分析"等意图时。
+description: 获取仓库可用的 pipeline 列表。在以下情况自动调用本 skill：当用户提到介绍这个工具/仓库/pipeline，或者"帮我安装这个工具"、"这个工具怎么用"、"这个仓库里有什么"、"有什么功能"、"怎么分析"等意图时。
 ---
 # NeoAg Pipeline 总览 / 环境自检 / 入口分诊
 
@@ -33,7 +33,7 @@ bin/neoag-nextflow -version
 ## 第二步：告诉用户有哪些子 pipeline 可用
 
 本仓库把新抗原分析流程按输入文件类型拆成 6 个独立入口 skill，每个入口从各自的原始输入
-一路跑到 `ranked_peptides.v03.tsv` / `evidence_report.v03.html`, 详细流程可参考`reference/USAGE_GUIDE.md`：
+一路跑到 `ranked_peptides.v03.tsv` / `evidence_report.v03.html`, 详细流程可参考 `reference/USAGE_GUIDE.md`：
 
 | Skill 名称            | 适用输入                                            | 典型触发场景                                              |
 | --------------------- | --------------------------------------------------- | --------------------------------------------------------- |

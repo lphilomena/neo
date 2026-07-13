@@ -32,7 +32,7 @@ python -m pip install -e '.[test]' -q
 
 ## 6类入口对照速查表
 
-| Entry              | 对应skill             | 独有起点命令                                         | 是否有专用一键路径               | 独有强制输入                                              |
+| Entry              | 对应skill             | 独有起点命令                                         | 是否有专用一键路径               | 关键输入                                                  |
 | ------------------ | --------------------- | ---------------------------------------------------- | -------------------------------- | --------------------------------------------------------- |
 | A SNV/InDel        | `neoag-vcf`         | `vep-annotate`→`snv-build-raw`                  | `run-full`（通用一键，读TOML） | `variants_vcf`、`tumor_sample_name`                   |
 | B Fusion           | `neoag-fusion`      | `build-intermediates --entry-mode fusion`          | 无专用一键命令，用 `run-full`  | `easyfuse_pass_csv`                                     |

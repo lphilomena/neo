@@ -32,7 +32,7 @@ description: 从体细胞VCF（SNV/InDel）出发，运行滑窗产肽、结合/
 
 参考 `../pipeline-get/SKILL.md`检查neoag-v03是否已有虚拟环境可用。
 
-在所有命令前需要激活工具的path：
+在所有命令前需要激活工具的path和环境变量：
 
 ```bash
 source conf/tools.env.sh
@@ -125,6 +125,8 @@ neoag-v03 peptide-predict \
 ```
 
 对应工具中netmhcpan, mhcflurry, bigmhc-im, prime必须运行，不可skip。
+
+检查工具的安装情况，没有安装的工具需安装，安装严格参考 `../pipeline-get/reference/INSTALL_AND_DATA.md`，不要自行写命令安装，没有安装命令的工具请提醒用户。
 
 | 工具          | 输入文件         | 输出文件                                                   |
 | ------------- | ---------------- | ---------------------------------------------------------- |
