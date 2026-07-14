@@ -1,37 +1,42 @@
 ---
 name: neoag-run-demo-and-smoke
-description: Run or plan pytest/run-demo/Nextflow smoke tests for a Project B release.
+description: Run or plan Project B run-demo, pytest and optional Nextflow smoke tests.
+category: D - 工程治理/执行控制型 Skills：输入质控、环境健康检查、全流程编排、发布审计和受控执行
+risk_level: MEDIUM
+approval_required: false
 ---
 
 # neoag-run-demo-and-smoke
 
-## Use when
+## 目标
 
-- The user request matches this skill description.
-- The required inputs are available or can be discovered from a result directory.
+demo/pytest/Nextflow smoke
 
-## Do not use when
+## 什么时候使用
+- release 验收
+- 新环境最小可运行性测试
 
-- The user asks for a clinical diagnosis or guaranteed treatment effect.
-- Required inputs are absent and cannot be requested from the user.
-- A high-impact operation would overwrite data, submit HPC jobs, or install tools without explicit confirmation.
+## 什么时候不要使用
+- 不要在没有确认的生产目录覆盖结果
 
-## Required inputs
+## 必需输入
+- `project_root`
 
-See the command wrapper and `references/INPUTS.md`. Missing inputs must be reported as missing evidence, not interpreted as negative biological evidence.
+## 可选输入
+- `无`
 
-## Primary command
+## 输出
+- `smoke_test_report.md`
+- `demo_output_manifest.tsv`
+
+## 运行示例
 
 ```bash
-python -m neoag_v03.agent_skills.run_demo_smoke --project-root <PROJECT_ROOT> --outdir <OUTDIR>
+neoag-skill run neoag-run-demo-and-smoke --outdir work/neoag-run-demo-and-smoke --dry-run
 ```
 
-## Outputs
-
-Each skill writes a Markdown report plus TSV/JSON sidecars under the requested output directory.
-
-## Safety and interpretation boundaries
-
-- Computational triage only. Candidate neoantigens are not confirmed neoantigens.
-- Missing RNA/HLA LOH/APPM/CCF evidence must be labelled as missing or partial, not negative.
-- Patient-facing outputs must avoid clinical efficacy promises.
+## 边界
+- Skill 不承担临床决策；不得判断患者是否适合治疗或推荐临床用药。
+- 缺失证据只能标记为 missing/unassessed，不能解释为阴性结果。
+- 高风险写入、HPC 提交、安装工具、下载参考库、删除或覆盖文件必须经过 human approval。
+- Skill 目录不包含患者 BAM/FASTQ/VCF、大型参考库、VEP cache、NetMHCpan license、LOHHLA reference 或大型 conda env。

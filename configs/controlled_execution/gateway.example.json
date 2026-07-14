@@ -1,0 +1,7 @@
+{
+  "host": "127.0.0.1",
+  "port": 8000,
+  "default_outdir": "work/neoag_gateway",
+  "require_approval_for": ["pipeline-full", "tool-install", "overwrite", "hpc-submit"],
+  "allow_patient_private_paths_in_public_release": false
+}

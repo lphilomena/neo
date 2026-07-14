@@ -1,6 +1,6 @@
 # Online Release Guide
 
-This document defines the public online release boundary for NeoAg Event Pipeline v0.4.3. The shape follows the same practical principles used by OpenRare-style repositories: keep the repository installable, auditable, and runnable with lightweight fixtures, while leaving heavyweight tools and private deployment state outside the source release.
+This document defines the public online release boundary for NeoAg Event Pipeline v0.4.3. The shape follows the same practical principles used by manifest-driven controlled repositories: keep the repository installable, auditable, and runnable with lightweight fixtures, while leaving heavyweight tools and private deployment state outside the source release.
 
 ## Release Boundary
 

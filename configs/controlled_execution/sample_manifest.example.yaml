@@ -1,0 +1,29 @@
+sample_id: SAMPLE001
+disease: example_tumor
+case_id: CASE001
+
+tumor:
+  wgs_bam: data/fixtures/tumor.wgs.bam
+  wes_bam: null
+  wts_bam: data/fixtures/tumor.rna.bam
+
+normal:
+  wgs_bam: data/fixtures/normal.wgs.bam
+  wes_bam: null
+
+inputs:
+  somatic_vcf: data/fixtures/somatic.pass.vcf.gz
+  sv_vcf:
+    - data/fixtures/manta.somaticSV.vcf.gz
+  fusion_tsv: results/SAMPLE001/fusion/fusions.pass.csv
+  expression_tsv: results/SAMPLE001/rna/gene_tpm.tsv
+  hla_typing: results/SAMPLE001/hla/hla_typing.tsv
+  hla_loh: results/SAMPLE001/hla/spechla_loh.tsv
+  purity_tsv: results/SAMPLE001/cnv/facets_purity.tsv
+  cnv_segments: results/SAMPLE001/cnv/cnv_segments.tsv
+  ranked_peptides_recommendation: results/SAMPLE001/scoring/ranked_peptides.recommendation.tsv
+  ranked_peptides_netmhcpan42: results/SAMPLE001/scoring/ranked_peptides.netmhcpan42.tsv
+  evidence_report: results/SAMPLE001/reports/evidence_report.v03.html
+
+notes:
+  boundary: example manifest only; replace paths locally and do not commit patient-private paths

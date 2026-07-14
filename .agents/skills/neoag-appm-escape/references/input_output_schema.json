@@ -1,0 +1,39 @@
+{
+  "name": "neoag-appm-escape",
+  "category": "B",
+  "category_label": "公共证据分析型 Skills：对所有入口共用的 HLA、表达、CCF、APPM、安全和排序证据层进行标准化分析",
+  "purpose": "APPM / HLA LOH / immune escape 证据层",
+  "description": "Aggregate APPM gene status, HLA LOH and immune escape flags into pathway-level and peptide-level modifiers.",
+  "use_when": [
+    "需要 APPM、HLA LOH、B2M/TAP/JAK/NLRC5/CIITA 风险评估"
+  ],
+  "do_not_use_when": [
+    "缺所有 APPM 输入时，只能输出 unassessed，不得输出 intact"
+  ],
+  "required_inputs": [
+    "gene_status_or_appm",
+    "peptides_optional"
+  ],
+  "optional_inputs": [
+    "hla_loh",
+    "ranked_peptides"
+  ],
+  "outputs": [
+    "appm_summary.tsv",
+    "appm_gene_status.tsv",
+    "appm_peptide_modifiers.tsv",
+    "immune_escape_summary.tsv",
+    "peptide_escape_flags.tsv"
+  ],
+  "risk_level": "LOW",
+  "approval_required": false,
+  "handler": "appm_escape",
+  "external_tools": [],
+  "downstream_skills": [],
+  "boundaries": [
+    "Skill 不承担临床决策；不得判断患者是否适合治疗或推荐临床用药。",
+    "缺失证据只能标记为 missing/unassessed，不能解释为阴性结果。",
+    "高风险写入、HPC 提交、安装工具、下载参考库、删除或覆盖文件必须经过 human approval。",
+    "Skill 目录不包含患者 BAM/FASTQ/VCF、大型参考库、VEP cache、NetMHCpan license、LOHHLA reference 或大型 conda env。"
+  ]
+}

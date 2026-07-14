@@ -33,6 +33,14 @@ neoag-agent --message "compare recommendation and NetMHCpan42 rankings" --result
 
 Default mode is dry-run planning. Add `--execute` for supported low-impact skills. See `docs/AGENT_SKILLS_P0_P1.md` for the skill list, expected inputs, outputs, and interpretation boundaries.
 
+For moving this package to a new machine with another programming agent, use the skill-first migration flow: read `.agents/config/skills_registry.abcd.json`, create local manifests, run Doctor, then run `pipeline-full` dry-run. See `docs/SKILL_FIRST_MIGRATION.md` and the helper:
+
+```bash
+bash scripts/bootstrap_agent_deploy.sh
+```
+
+For stricter hand-off to a target-machine programming agent, use the dedicated deployment skill at `.agents/skills/neoag-remote-deploy/SKILL.md`.
+
 ## Quick Start
 
 Run these commands from the project root:
@@ -863,3 +871,23 @@ The Coordinator does not replace Project B CLI/Nextflow. It plans and calls regi
 See `docs/LLM_COORDINATOR_P1.md` and `docs/MODEL_API_AND_AGENT_FRAMEWORK_SELECTION.md`.
 
 - [Tool inventory](docs/TOOL_INVENTORY.md): external tools, Docker images, environment variables, references, and licensing boundaries.
+
+## Skills Taxonomy A/B/C/D
+
+This release includes an upgraded NeoAg Skills taxonomy organized into four categories:
+
+- **A Entry adapter skills**: `neoag-vcf`, `neoag-fusion`, `neoag-splice`, `neoag-sv-wgs`, `neoag-sv-wes`, `neoag-peptide-csv`.
+- **B Public evidence analysis skills**: `neoag-hla-typing-loh`, `neoag-presentation`, `neoag-expression`, `neoag-rna-evidence`, `neoag-ccf`, `neoag-appm-escape`, `neoag-safety`, `neoag-ranking`.
+- **C Review/report/design skills**: `neoag-ranking-compare`, `neoag-experiment-design`, `neoag-patient-report`, `neoag-technical-report`, `neoag-concept-explainer`.
+- **D Governance/execution-control skills**: `neoag-input-qc`, `neoag-doctor`, `neoag-tool-reference-qc`, `neoag-run-demo-and-smoke`, `neoag-pipeline-full`, `neoag-release-qc`, `neoag-gateway-submit`, `neoag-hpc-runner`.
+
+Use:
+
+```bash
+neoag-skill list
+neoag-skill describe neoag-vcf
+neoag-skill validate --root . --outdir work/skill_validate
+neoag-skill run neoag-peptide-csv --outdir work/peptides --arg peptide_csv=peptides.tsv
+```
+
+Skills are SOP wrappers. They do not make clinical decisions, do not include patient BAM/FASTQ/VCF or large references, and high-risk execution paths remain dry-run or human-approval gated.

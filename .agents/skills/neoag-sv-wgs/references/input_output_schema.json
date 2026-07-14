@@ -1,0 +1,43 @@
+{
+  "name": "neoag-sv-wgs",
+  "category": "A",
+  "category_label": "入口适配型 Skills：把不同来源输入转换为 Project B 标准 raw_events/raw_peptides/evidence tables",
+  "purpose": "WGS DNA SV 入口标准化",
+  "description": "Parse WGS SV VCFs (Manta/GRIDSS/SvABA/DELLY) into SV events requiring transcript/protein reconstruction.",
+  "use_when": [
+    "用户提供 WGS SV VCF",
+    "需要进入 DNA SV-derived neoantigen workflow"
+  ],
+  "do_not_use_when": [
+    "输入来自 WES/capture-limited SV，应调用 neoag-sv-wes"
+  ],
+  "required_inputs": [
+    "sv_vcf"
+  ],
+  "optional_inputs": [
+    "gtf",
+    "reference_fasta",
+    "sample_id",
+    "rna_junctions"
+  ],
+  "outputs": [
+    "sv_events.tsv",
+    "raw_events.tsv",
+    "raw_peptides.tsv",
+    "sv_reconstruction_tasks.tsv"
+  ],
+  "risk_level": "LOW",
+  "approval_required": false,
+  "handler": "sv_wgs",
+  "external_tools": [],
+  "downstream_skills": [
+    "neoag-presentation",
+    "neoag-experiment-design"
+  ],
+  "boundaries": [
+    "Skill 不承担临床决策；不得判断患者是否适合治疗或推荐临床用药。",
+    "缺失证据只能标记为 missing/unassessed，不能解释为阴性结果。",
+    "高风险写入、HPC 提交、安装工具、下载参考库、删除或覆盖文件必须经过 human approval。",
+    "Skill 目录不包含患者 BAM/FASTQ/VCF、大型参考库、VEP cache、NetMHCpan license、LOHHLA reference 或大型 conda env。"
+  ]
+}

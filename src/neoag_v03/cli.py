@@ -1473,6 +1473,58 @@ def build_parser():
     pp.add_argument("--skip-stabpan", action="store_true")
     pp.set_defaults(func=cmd_peptide_predict)
 
+
+    # controlled-execution Phase 0-2 execution layer
+    odoc = sub.add_parser("doctor", help="controlled-execution read-only health, reference, tool and release-boundary check")
+    odoc.add_argument("--project-root", default=".")
+    odoc.add_argument("--outdir", required=True)
+    odoc.add_argument("--tools-manifest")
+    odoc.add_argument("--reference-manifest")
+    odoc.add_argument("--sample-manifest")
+    odoc.add_argument("--profile", default="local")
+    odoc.add_argument("--run-demo", action="store_true")
+    odoc.add_argument("--run-pytest", action="store_true")
+    odoc.add_argument("--run-nextflow", action="store_true")
+    odoc.add_argument("--mini-smoke", action="store_true")
+    odoc.add_argument("--skip-release-audit", action="store_true")
+    odoc.add_argument("--dry-run", action="store_true")
+    def _cmd_controlled_execution_doctor(args):
+        from .controlled_execution.doctor import run_doctor
+        res = run_doctor(project_root=args.project_root, outdir=args.outdir, tools_manifest=args.tools_manifest, reference_manifest=args.reference_manifest, sample_manifest=args.sample_manifest, profile=args.profile, run_demo=args.run_demo, run_pytest=args.run_pytest, run_nextflow=args.run_nextflow, mini_smoke=args.mini_smoke, release_audit=not args.skip_release_audit, allow_execute=not args.dry_run)
+        print(f"NeoAg Doctor status: {res.status}")
+        for k, v in res.outputs.items(): print(f"  {k}: {v}")
+    odoc.set_defaults(func=_cmd_controlled_execution_doctor)
+
+    opipe = sub.add_parser("pipeline-full", help="controlled-execution manifest-driven full pipeline runner (safe dry-run by default)")
+    opipe.add_argument("--sample-manifest", required=True)
+    opipe.add_argument("--tools-manifest")
+    opipe.add_argument("--reference-manifest")
+    opipe.add_argument("--project-root", default=".")
+    opipe.add_argument("--outdir", required=True)
+    opipe.add_argument("--profile", default="local")
+    opipe.add_argument("--execute", action="store_true")
+    opipe.add_argument("--strict", action="store_true")
+    opipe.add_argument("--run-demo-fixture", action="store_true")
+    def _cmd_controlled_execution_pipeline(args):
+        from .controlled_execution.pipeline_runner import run_pipeline_full
+        run = run_pipeline_full(sample_manifest=args.sample_manifest, tools_manifest=args.tools_manifest, reference_manifest=args.reference_manifest, project_root=args.project_root, outdir=args.outdir, profile=args.profile, dry_run=not args.execute, allow_partial=not args.strict, run_demo_for_fixture=args.run_demo_fixture)
+        print(f"NeoAg pipeline-full status: {run.status}")
+        print(f"  run_id: {run.run_id}")
+        print(f"  run_manifest: {Path(run.output_dir) / 'run_manifest.json'}")
+    opipe.set_defaults(func=_cmd_controlled_execution_pipeline)
+
+    oaudit = sub.add_parser("release-audit", help="Scan release tree for cache artifacts, private paths and patient/site hints")
+    oaudit.add_argument("--root", default=".")
+    oaudit.add_argument("--outdir", required=True)
+    oaudit.add_argument("--scan-generated-dirs", action="store_true")
+    def _cmd_controlled_execution_release_audit(args):
+        from .controlled_execution.release_audit import scan_release_boundary, write_release_audit
+        result = scan_release_boundary(args.root, skip_dirs=set() if args.scan_generated_dirs else None)
+        outs = write_release_audit(result, args.outdir)
+        print(f"Release audit status: {result['status']}")
+        for k, v in outs.items(): print(f"  {k}: {v}")
+    oaudit.set_defaults(func=_cmd_controlled_execution_release_audit)
+
     return p
 
 def main(argv=None):

@@ -1,0 +1,33 @@
+{
+  "name": "neoag-run-demo-and-smoke",
+  "category": "D",
+  "category_label": "工程治理/执行控制型 Skills：输入质控、环境健康检查、全流程编排、发布审计和受控执行",
+  "purpose": "demo/pytest/Nextflow smoke",
+  "description": "Run or plan Project B run-demo, pytest and optional Nextflow smoke tests.",
+  "use_when": [
+    "release 验收",
+    "新环境最小可运行性测试"
+  ],
+  "do_not_use_when": [
+    "不要在没有确认的生产目录覆盖结果"
+  ],
+  "required_inputs": [
+    "project_root"
+  ],
+  "optional_inputs": [],
+  "outputs": [
+    "smoke_test_report.md",
+    "demo_output_manifest.tsv"
+  ],
+  "risk_level": "MEDIUM",
+  "approval_required": false,
+  "handler": "run_demo_smoke",
+  "external_tools": [],
+  "downstream_skills": [],
+  "boundaries": [
+    "Skill 不承担临床决策；不得判断患者是否适合治疗或推荐临床用药。",
+    "缺失证据只能标记为 missing/unassessed，不能解释为阴性结果。",
+    "高风险写入、HPC 提交、安装工具、下载参考库、删除或覆盖文件必须经过 human approval。",
+    "Skill 目录不包含患者 BAM/FASTQ/VCF、大型参考库、VEP cache、NetMHCpan license、LOHHLA reference 或大型 conda env。"
+  ]
+}

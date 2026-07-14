@@ -19,6 +19,11 @@ agent-llm = ["litellm>=1.40", "langgraph>=0.2", "langchain-core>=0.2"]
 neoag-v03 = "neoag_v03.cli:main"
 neoag-agent = "neoag_v03.agents.coordinator:main"
 neoag-llm-agent = "neoag_v03.llm_coordinator.coordinator_agent:main"
+neoag-doctor = "neoag_v03.controlled_execution.doctor:main"
+neoag-gateway = "neoag_v03.controlled_execution.gateway:main"
+neoag-pipeline-full = "neoag_v03.controlled_execution.pipeline_runner:main"
+neoag-release-audit = "neoag_v03.controlled_execution.release_audit:main"
+neoag-skill = "neoag_v03.skill_taxonomy.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

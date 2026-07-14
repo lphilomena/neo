@@ -1,0 +1,12 @@
+{
+  "release_name": "neoag_event_pipeline_v043_skills_taxonomy_abcd_20260713",
+  "base": "neoag_event_pipeline_v043_controlled_execution_phase0_2",
+  "scope": "A/B/C/D Skills taxonomy upgrade with entry adapters, public evidence skills, review/report/design skills, governance wrappers, registry, CLI and tests",
+  "tests": {
+    "compileall": "passed",
+    "pytest": "215 passed, 96 skipped",
+    "specific": "tests/test_skills_taxonomy_abcd.py: 5 passed"
+  },
+  "new_cli": ["neoag-skill"],
+  "created_at": "2026-07-13"
+}

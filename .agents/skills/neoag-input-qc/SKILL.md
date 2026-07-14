@@ -1,37 +1,43 @@
 ---
 name: neoag-input-qc
-description: Inspect sample manifests/result directories and recommend the Project B workflow.
+description: Inspect manifests/result directories and recommend workflow while listing missing inputs.
+category: D - 工程治理/执行控制型 Skills：输入质控、环境健康检查、全流程编排、发布审计和受控执行
+risk_level: LOW
+approval_required: false
 ---
 
 # neoag-input-qc
 
-## Use when
+## 目标
 
-- The user request matches this skill description.
-- The required inputs are available or can be discovered from a result directory.
+输入状态检查与 workflow 推荐
 
-## Do not use when
+## 什么时候使用
+- 任何任务的第一步
+- 用户问能不能跑、缺什么输入
 
-- The user asks for a clinical diagnosis or guaranteed treatment effect.
-- Required inputs are absent and cannot be requested from the user.
-- A high-impact operation would overwrite data, submit HPC jobs, or install tools without explicit confirmation.
+## 什么时候不要使用
+- 不能用 input-qc 的缺失信息直接做生物学阴性结论
 
-## Required inputs
+## 必需输入
+- `manifest_or_result_dir`
 
-See the command wrapper and `references/INPUTS.md`. Missing inputs must be reported as missing evidence, not interpreted as negative biological evidence.
+## 可选输入
+- `无`
 
-## Primary command
+## 输出
+- `input_status.json`
+- `input_qc_report.tsv`
+- `missing_inputs.tsv`
+
+## 运行示例
 
 ```bash
-python -m neoag_v03.agent_skills.input_qc --result-dir <RESULT_DIR> --outdir <OUTDIR>
+neoag-skill run neoag-input-qc --outdir work/neoag-input-qc --dry-run
 ```
 
-## Outputs
-
-Each skill writes a Markdown report plus TSV/JSON sidecars under the requested output directory.
-
-## Safety and interpretation boundaries
-
-- Computational triage only. Candidate neoantigens are not confirmed neoantigens.
-- Missing RNA/HLA LOH/APPM/CCF evidence must be labelled as missing or partial, not negative.
-- Patient-facing outputs must avoid clinical efficacy promises.
+## 边界
+- Skill 不承担临床决策；不得判断患者是否适合治疗或推荐临床用药。
+- 缺失证据只能标记为 missing/unassessed，不能解释为阴性结果。
+- 高风险写入、HPC 提交、安装工具、下载参考库、删除或覆盖文件必须经过 human approval。
+- Skill 目录不包含患者 BAM/FASTQ/VCF、大型参考库、VEP cache、NetMHCpan license、LOHHLA reference 或大型 conda env。

@@ -4,6 +4,12 @@ This guide is the deployment checklist for NeoAg Event Pipeline v0.4.3. It cover
 
 The online release is intentionally lightweight. It includes source code, workflows, tests, configuration examples, and small fixtures. It does not include licensed tools, large references, real patient data, results, work directories, conda packs, or Nextflow caches.
 
+For agent-assisted migration to a new machine, start with the skill-first deployment guide: [Skill-first migration package](SKILL_FIRST_MIGRATION.md). The safe bootstrap command is:
+
+```bash
+bash scripts/bootstrap_agent_deploy.sh
+```
+
 ## 1. Base System Environment
 
 Recommended baseline:

@@ -1,0 +1,41 @@
+{
+  "name": "neoag-splice",
+  "category": "A",
+  "category_label": "入口适配型 Skills：把不同来源输入转换为 Project B 标准 raw_events/raw_peptides/evidence tables",
+  "purpose": "Splice/junction 输入标准化",
+  "description": "Normalize RegTools/splice junction tables and optional variant VCF into splice-junction event and peptide candidate inputs.",
+  "use_when": [
+    "用户提供 RegTools splice junction TSV",
+    "需要构建 splice/exon junction 候选"
+  ],
+  "do_not_use_when": [
+    "仅有普通 SNV/InDel VCF 时，应调用 neoag-vcf"
+  ],
+  "required_inputs": [
+    "junctions"
+  ],
+  "optional_inputs": [
+    "vcf",
+    "sample_id"
+  ],
+  "outputs": [
+    "splice_events.tsv",
+    "raw_events.tsv",
+    "raw_peptides.tsv",
+    "splice_qc.tsv"
+  ],
+  "risk_level": "LOW",
+  "approval_required": false,
+  "handler": "splice",
+  "external_tools": [],
+  "downstream_skills": [
+    "neoag-rna-evidence",
+    "neoag-experiment-design"
+  ],
+  "boundaries": [
+    "Skill 不承担临床决策；不得判断患者是否适合治疗或推荐临床用药。",
+    "缺失证据只能标记为 missing/unassessed，不能解释为阴性结果。",
+    "高风险写入、HPC 提交、安装工具、下载参考库、删除或覆盖文件必须经过 human approval。",
+    "Skill 目录不包含患者 BAM/FASTQ/VCF、大型参考库、VEP cache、NetMHCpan license、LOHHLA reference 或大型 conda env。"
+  ]
+}

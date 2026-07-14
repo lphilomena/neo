@@ -1,0 +1,88 @@
+bwa:
+  mode: container
+  image: biocontainers/bwa:latest
+  executable: bwa
+
+star:
+  mode: container
+  image: biocontainers/star:latest
+  executable: STAR
+
+vep:
+  mode: apptainer
+  image: neoag-vep.sif
+  executable: vep
+
+netmhcpan:
+  mode: local_license
+  path: /opt/netMHCpan/bin/netMHCpan
+  executable: netMHCpan
+  license_required: true
+
+netmhcstabpan:
+  mode: local_license
+  path: /opt/netMHCstabpan/bin/NetMHCstabpan
+  executable: NetMHCstabpan
+  license_required: true
+
+mhcflurry:
+  mode: conda
+  executable: mhcflurry-predict
+
+lohhla:
+  mode: container
+  image: neoag-lohhla.sif
+  executable: LOHHLA
+
+facets:
+  mode: conda_or_container
+  executable: runFACETS.R
+
+purple:
+  mode: container
+  image: neoag-purple.sif
+  executable: purple
+
+ascat:
+  mode: conda
+  executable: ascat.R
+
+sequenza:
+  mode: conda
+  executable: sequenza-utils
+
+arriba:
+  mode: container
+  image: neoag-arriba.sif
+  executable: arriba
+
+star_fusion:
+  mode: container
+  image: neoag-star-fusion.sif
+  executable: STAR-Fusion
+
+fusioncatcher:
+  mode: container
+  image: neoag-fusioncatcher.sif
+  executable: fusioncatcher
+
+easyfuse:
+  mode: container
+  image: neoag-easyfuse.sif
+  executable: easyfuse
+
+optitype:
+  mode: conda_or_container
+  executable: OptiTypePipeline.py
+
+hla_la:
+  mode: local_or_container
+  executable: HLA-LA.pl
+
+spechla:
+  mode: conda_or_container
+  executable: SpecHLA
+
+pyclone_vi:
+  mode: conda
+  executable: pyclone-vi

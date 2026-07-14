@@ -33,6 +33,14 @@ neoag-agent --message "比较 recommendation 和 NetMHCpan42 排序差异" --res
 
 默认模式只生成 dry-run plan。对支持的低风险 skill，可加 `--execute` 执行。skill 列表、输入、输出和解释边界见 `docs/AGENT_SKILLS_P0_P1.md`。
 
+如果要把本包迁移到新机器并交给另一个编程 agent 部署，建议使用 skill-first 迁移流程：先读 `.agents/config/skills_registry.abcd.json`，再生成本机 manifest，运行 Doctor，最后运行 `pipeline-full` dry-run。详见 `docs/SKILL_FIRST_MIGRATION.md`，也可以直接运行：
+
+```bash
+bash scripts/bootstrap_agent_deploy.sh
+```
+
+如果要交给目标机器上的编程 agent 严格按 SOP 部署，请优先读取 `.agents/skills/neoag-remote-deploy/SKILL.md`。
+
 ## 快速开始
 
 从项目根目录运行：
@@ -724,3 +732,23 @@ The Coordinator does not replace Project B CLI/Nextflow. It plans and calls regi
 See `docs/LLM_COORDINATOR_P1.md` and `docs/MODEL_API_AND_AGENT_FRAMEWORK_SELECTION.md`.
 
 - [Tool inventory](docs/TOOL_INVENTORY.md): external tools, Docker images, environment variables, references, and licensing boundaries.
+
+## Skills A/B/C/D 分层体系
+
+本版本新增四类 Skills：
+
+- **A 类入口适配型**：`neoag-vcf`、`neoag-fusion`、`neoag-splice`、`neoag-sv-wgs`、`neoag-sv-wes`、`neoag-peptide-csv`。
+- **B 类公共证据分析型**：`neoag-hla-typing-loh`、`neoag-presentation`、`neoag-expression`、`neoag-rna-evidence`、`neoag-ccf`、`neoag-appm-escape`、`neoag-safety`、`neoag-ranking`。
+- **C 类审阅/报告/实验设计型**：`neoag-ranking-compare`、`neoag-experiment-design`、`neoag-patient-report`、`neoag-technical-report`、`neoag-concept-explainer`。
+- **D 类工程治理/执行控制型**：`neoag-input-qc`、`neoag-doctor`、`neoag-tool-reference-qc`、`neoag-run-demo-and-smoke`、`neoag-pipeline-full`、`neoag-release-qc`、`neoag-gateway-submit`、`neoag-hpc-runner`。
+
+使用：
+
+```bash
+neoag-skill list
+neoag-skill describe neoag-vcf
+neoag-skill validate --root . --outdir work/skill_validate
+neoag-skill run neoag-peptide-csv --outdir work/peptides --arg peptide_csv=peptides.tsv
+```
+
+Skills 是 SOP 封装，不承担临床决策，不包含患者 BAM/FASTQ/VCF 或大型参考库；HPC、安装、覆盖、删除等高风险路径默认 dry-run 或需要人工确认。

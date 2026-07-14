@@ -1,0 +1,16 @@
+genome_build: GRCh38
+reference_fasta: /ref/GRCh38.fa
+gencode_gtf: /ref/gencode.v44.annotation.gtf
+vep_cache: /ref/vep_cache/homo_sapiens/115_GRCh38
+protein_fasta: /ref/protein.fa
+normal_proteome: /ref/normal_proteome.fa
+normal_ligandome: /ref/normal_ligandome.tsv
+normal_junctions: /ref/normal_junctions.tsv
+hla_reference: /ref/hla/
+facets_snp_vcf: /ref/facets/common_snp.vcf.gz
+ascat_loci: /ref/ascat/G1000_loci_hg38.txt
+ascat_alleles: /ref/ascat/G1000_alleles_hg38.txt
+hla_la_graph: /ref/hla-la/PRG_MHC_GRCh38_withIMGT
+arriba_reference: /ref/arriba/
+star_fusion_reference: /ref/ctat/current/
+lohhla_reference: /ref/lohhla/hla_reference

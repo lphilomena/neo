@@ -1,0 +1,43 @@
+{
+  "name": "neoag-presentation",
+  "category": "B",
+  "category_label": "公共证据分析型 Skills：对所有入口共用的 HLA、表达、CCF、APPM、安全和排序证据层进行标准化分析",
+  "purpose": "HLA binding / presentation 证据标准化",
+  "description": "Normalize NetMHCpan/MHCflurry/PRIME/BigMHC/MixMHCpred predictions into presentation_evidence.tsv.",
+  "use_when": [
+    "已有 prediction 表需要标准化",
+    "raw_peptides 需要标记 presentation 计算计划"
+  ],
+  "do_not_use_when": [
+    "需要解释综合推荐排序，应调用 neoag-ranking-compare"
+  ],
+  "required_inputs": [
+    "predictions_or_raw_peptides"
+  ],
+  "optional_inputs": [
+    "hla",
+    "sample_id"
+  ],
+  "outputs": [
+    "presentation_evidence.tsv",
+    "presentation_summary.tsv",
+    "presentation_qc.tsv"
+  ],
+  "risk_level": "LOW",
+  "approval_required": false,
+  "handler": "presentation",
+  "external_tools": [
+    "NetMHCpan",
+    "MHCflurry",
+    "PRIME",
+    "BigMHC",
+    "MixMHCpred"
+  ],
+  "downstream_skills": [],
+  "boundaries": [
+    "Skill 不承担临床决策；不得判断患者是否适合治疗或推荐临床用药。",
+    "缺失证据只能标记为 missing/unassessed，不能解释为阴性结果。",
+    "高风险写入、HPC 提交、安装工具、下载参考库、删除或覆盖文件必须经过 human approval。",
+    "Skill 目录不包含患者 BAM/FASTQ/VCF、大型参考库、VEP cache、NetMHCpan license、LOHHLA reference 或大型 conda env。"
+  ]
+}
