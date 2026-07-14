@@ -1,0 +1,23 @@
+# Real reference manifest backed by neodata4git companion data.
+# This manifest records existing reference paths; it does not clone conda/env directories.
+genome_build: GRCh38
+reference_fasta: /mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/ref/hg38/Homo_sapiens_assembly38.fasta
+gencode_gtf: /mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/ref/hg38/gencode.gtf
+vep_cache: /mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/vep
+protein_fasta: /mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/normal/proteome/Homo_sapiens.GRCh38.pep.all.fa
+normal_proteome: /mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/normal/proteome/Homo_sapiens.GRCh38.pep.all.fa
+normal_ligandome: /mnt/zjl-bgi-zzb/peixunban/gl/liup/test_env_tools/refs/normal/normal_hla_ligands.hla_ligand_atlas.predicted_alleles.tsv
+normal_junctions: /mnt/zjl-bgi-zzb/peixunban/gl/liup/test_env_tools/refs/MISSING_normal_junctions.tsv
+hla_reference: /mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/hla/spechla_db
+facets_snp_vcf: /mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/facets/reference/common_snp.hg38.vcf.gz
+ascat_loci: /mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/ascat/reference/WGS_hg38/smoke_chr1_100_nochr_name/loci/G1000_loci_hg38_1.txt
+ascat_alleles: /mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/ascat/reference/WGS_hg38/smoke_chr1_100_nochr_name/alleles/G1000_alleles_hg38_1.txt
+hla_la_graph: /mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/hla/PRG_MHC_GRCh38_withIMGT
+arriba_reference: /mnt/zjl-bgi-zzb/peixunban/gl/liup/test_env_tools/refs/arriba
+star_fusion_reference: /mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/ref/ctat/current
+lohhla_reference: /mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/lohhla/polysolver
+# Optional workflow-specific references found in the companion bundle.
+easyfuse_reference: /mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/easyfuse/current
+sequenza_reference_fasta: /mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/sequenza/reference/GRCh38.primary_assembly.chr.fa
+purple_reference: /mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/hmf/purple_reference
+optitype_reference: /mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/hla/optitype_reference

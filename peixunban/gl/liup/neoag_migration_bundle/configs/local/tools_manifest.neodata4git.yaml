@@ -1,0 +1,86 @@
+# Real/authorized tool manifest backed by test_env_tools + neodata4git companion tools.
+bwa:
+  mode: conda
+  executable: bwa
+star:
+  mode: conda_or_container
+  executable: STAR
+vep:
+  mode: conda
+  executable: vep
+netmhcpan:
+  mode: local_license
+  path: /mnt/zjl-bgi-zzb/peixunban/gl/liup/test_env_tools/bin/netMHCpan
+  executable: netMHCpan
+  license_required: true
+netmhcstabpan:
+  mode: local_license
+  path: /mnt/zjl-bgi-zzb/peixunban/gl/liup/test_env_tools/bin/NetMHCstabpan
+  executable: NetMHCstabpan
+  license_required: true
+mhcflurry:
+  mode: conda
+  executable: mhcflurry-predict
+lohhla:
+  mode: local_or_container
+  path: /mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/lohhla/polysolver
+  executable: LOHHLA
+facets:
+  mode: conda
+  executable: Rscript
+purple:
+  mode: container_tar
+  image: /mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/work/container_images/neoag-purple-suite_ubuntu22.04.tar
+  executable: purple
+ascat:
+  mode: conda
+  executable: Rscript
+sequenza:
+  mode: conda_or_container
+  executable: sequenza-utils
+arriba:
+  mode: container_tar
+  image: /mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/work/container_images/neoag-base-bioinfo_ubuntu22.04.tar
+  executable: arriba
+star_fusion:
+  mode: container_tar
+  image: /mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/work/container_images/neoag-base-bioinfo_ubuntu22.04.tar
+  executable: STAR-Fusion
+fusioncatcher:
+  mode: container
+  executable: fusioncatcher
+easyfuse:
+  mode: container_tar
+  image: /mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/work/container_images/neoag-easyfuse_ubuntu22.04.tar
+  executable: easyfuse
+optitype:
+  mode: conda_or_container
+  executable: OptiTypePipeline.py
+hla_la:
+  mode: container_tar
+  image: /mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/work/container_images/neoag-hla-la_ubuntu22.04.tar
+  executable: HLA-LA.pl
+spechla:
+  mode: container_tar
+  image: /mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/work/container_images/neoag-spechla_ubuntu22.04.tar
+  executable: SpecHLA
+pyclone_vi:
+  mode: conda
+  executable: pyclone-vi
+prime:
+  mode: local_license
+  path: /mnt/zjl-bgi-zzb/peixunban/gl/liup/test_env_tools/bin/PRIME
+  executable: PRIME
+  license_required: true
+mixmhcpred:
+  mode: local_license
+  path: /mnt/zjl-bgi-zzb/peixunban/gl/liup/test_env_tools/bin/MixMHCpred
+  executable: MixMHCpred
+  license_required: true
+deepimmuno:
+  mode: local
+  path: /mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/predictors/DeepImmuno
+  executable: DeepImmuno
+bigmhc:
+  mode: local
+  path: /mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/predictors/bigmhc
