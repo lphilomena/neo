@@ -46,9 +46,10 @@ conf/                     ← 运行配置文件（6 个）
   sv_wes_demo.config        - SV WES fixture 演示
   snv_wes_demo.config       - SNV WES fixture 演示
 
-workflows/                ← 工作流定义文件（9 个）
+workflows/                ← 工作流定义文件（10 个）
   main.nf                   - 核心评分流程（从 pVAC TSV 输入）
-  main_full.nf              - 端到端全流程（上游工具 + 评分 + 报告）
+  main_all.nf               - 完整端到端（BAM→HLA Typing→Mutect2→Upstream→评分）
+  main_fromVCF.nf           - VCF 入口端到端（已知 VCF+HLA→Upstream→评分→报告）
   neoag_v03_rc.nf           - 核心评分链子流程（被 include）
   snv_phase1_wes.nf         - WES SNV Phase1（BAM → Mutect2 → 评分）
   snv_phase1_wes_fixture.nf - WES SNV fixture（已有 VCF，跳过变异检出）
@@ -211,7 +212,7 @@ bin/neoag-nextflow run workflows/sv_phase1_5_wes.nf -c conf/sv_wes_demo.config
 |---|---|---|---|
 | `demo.config` | 快速演示 | `leukemia` | `main.nf` |
 | `local.config` | 本地执行器（最小配置） | — | 任意 |
-| `tools.config` | 上游工具路径 | — | `main_full.nf` |
+| `tools.config` | 上游工具路径 | — | `main_fromVCF.nf` |
 | `sv_demo.config` | SV WGS fixture 演示 | `sv_wgs_phase1` | `sv_phase1_wgs.nf`, `sv_phase1_fixture.nf` |
 | `sv_wes_demo.config` | SV WES fixture 演示 | `sv_wes_phase1_5` | `sv_phase1_5_wes.nf` |
 | `snv_wes_demo.config` | SNV WES fixture 演示 | `default` | `snv_phase1_wes.nf`, `snv_phase1_wes_fixture.nf` |

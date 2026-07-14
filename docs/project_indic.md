@@ -103,7 +103,7 @@
   ├────────────────────┼─────────────────┼──────────────────────────────────────────────────────────┤
   │ main_all.nf        │ default         │ 完整端到端: OptiType→Mutect2→Filter→Upstream→评分→报告  │
   ├────────────────────┼─────────────────┼──────────────────────────────────────────────────────────┤
-  │ main_full.nf       │ default         │ 简化端到端: TOML 配置→Run-Upstream→评分→报告             │
+  │ main_fromVCF.nf    │ default         │ VCF 入口端到端: TOML 配置→Run-Upstream→评分→报告     │
   ├────────────────────┼─────────────────┼──────────────────────────────────────────────────────────┤
   │ snv_phase1_wes.nf  │ default         │ WES SNV Phase1: BAM→Mutect2→pVAC→评分                    │
   ├────────────────────┼─────────────────┼──────────────────────────────────────────────────────────┤
@@ -489,7 +489,7 @@ runner.py  （src/neoag_v03/tools/runner.py）的结构如下：
 
   参考基因组是流程的关键输入，VEP 注释、GATK 工具等都需要它。Nextflow 层和 Python 层均有解析机制：
 
-  —— Nextflow 层（main_all.nf 第 64-77 行 / main_full.nf 第 69-83 行）——
+  —— Nextflow 层（main_all.nf 第 64-77 行 / main_fromVCF.nf 第 69-83 行）——
 
   优先级 1:  CLI 参数 --reference_fasta /path/to/GRCh38.fa
   优先级 2:  环境变量 NEOAG_REFERENCE_FASTA
@@ -537,14 +537,14 @@ runner.py  （src/neoag_v03/tools/runner.py）的结构如下：
     --outdir results/SAMPLE001_all \
     -c conf/main_full.config
 
-  —— 方式 B：已知 VCF + 已知 HLA，跳过检测直接评分（main_full.nf）——
+  —— 方式 B：已知 VCF + 已知 HLA，跳过检测直接评分（main_fromVCF.nf）——
 
   # 假设数据布局：
   #   /data/somatic.vcf.gz              ← 已过滤的体细胞变异 VCF
   #   /data/ref/GRCh38.fa               ← 参考基因组
   #   conf/run.private.toml             ← 上游工具配置（含 hla_alleles）
 
-  bin/neoag-nextflow run workflows/main_full.nf \
+  bin/neoag-nextflow run workflows/main_fromVCF.nf \
     --run_config conf/run.private.toml \
     --outdir results/SAMPLE001_full \
     -c conf/main_full.config

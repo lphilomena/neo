@@ -1,7 +1,7 @@
 # NeoAg — individual case (known VCF + known HLA, no re-typing / no re-calling)
 
 [sample]
-id = "yumin"
+id = "sunbinbin"
 profile = "default"
 
 [tools]
@@ -10,15 +10,15 @@ enabled = ["pvacseq", "netmhcpan", "mhcflurry", "vep"]
 
 [inputs]
 # --- Known HLA typing results ---
-hla_alleles = ["HLA-A*03:01", "HLA-A*24:02", "HLA-B*07:02", "HLA-B*51:01", "HLA-C*07:02", "HLA-C*14:02"]
+hla_alleles = ["HLA-A*01:01", "HLA-A*24:02", "HLA-B*27:05", "HLA-B*40:01", "HLA-C*02:02", "HLA-C*04:01"]
 
 entry_mode = "snv_indel"
 
 # --- Known somatic VCF (already filtered) ---
-tumor_vcf = "/mnt/zjl-bgi-zzb/peixunban/gl/data/chenxiaoliang_data/dsrct_data/dsrct/yumin/somatic-vcf/yumin_tumor.somatic.pass.vcf.gz"
-variants_vcf = "/mnt/zjl-bgi-zzb/peixunban/gl/data/chenxiaoliang_data/dsrct_data/dsrct/yumin/somatic-vcf/yumin_tumor.somatic.pass.vcf.gz"
-tumor_sample_name = "yumin_tumor"
-normal_sample_name = "yumin_blood"
+tumor_vcf = "/mnt/zjl-bgi-zzb/peixunban/gl/data/chenxiaoliang_data/dsrct_data/dsrct/sunbinbin/somatic-vcf/sunbinbin_tumor.somatic.pass.vcf.gz"
+variants_vcf = "/mnt/zjl-bgi-zzb/peixunban/gl/data/chenxiaoliang_data/dsrct_data/dsrct/sunbinbin/somatic-vcf/sunbinbin_tumor.somatic.pass.vcf.gz"
+tumor_sample_name = "sunbinbin_tumor"
+normal_sample_name = "sunbinbin_blood"
 extract_appm_from_vcf = true
 
 # --- Reference genome ---
