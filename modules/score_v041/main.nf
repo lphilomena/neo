@@ -1,5 +1,7 @@
 process SCORE_V041 {
   tag "score-v041"
+  label 'small'
+  container params.neoag_container ?: null
   publishDir "${params.outdir}/scoring", mode: 'copy'
 
   input:

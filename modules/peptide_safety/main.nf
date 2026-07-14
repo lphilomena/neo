@@ -1,5 +1,7 @@
 process PEPTIDE_SAFETY {
   tag "peptide-safety"
+  label 'small'
+  container params.neoag_container ?: null
   publishDir "${params.outdir}/safety", mode: 'copy'
 
   input:

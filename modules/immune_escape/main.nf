@@ -1,5 +1,7 @@
 process IMMUNE_ESCAPE {
   tag "$sample_id"
+  label 'medium'
+  container params.neoag_container ?: null
   publishDir "${params.outdir}/immune_escape", mode: 'copy'
 
   input:

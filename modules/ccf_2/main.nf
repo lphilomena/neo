@@ -1,5 +1,7 @@
 process CCF_2 {
   tag "ccf-2"
+  label 'medium'
+  container params.neoag_container ?: null
   publishDir "${params.outdir}/clonality", mode: 'copy'
 
   input:

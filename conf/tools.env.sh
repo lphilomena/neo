@@ -42,19 +42,22 @@ if [[ -x "${NEOAG_CONDA_BASE}/envs/${NEOAG_VEP_ENV}/bin/vep" ]]; then
 else
   export NEOAG_VEP_BIN="${NEOAG_TOOLS_ROOT}/bin/vep-neoag"
 fi
-# VEP cache root (must contain homo_sapiens/<version>_GRCh38/, not the release dir itself).
-export NEOAG_VEP_CACHE="${NEOAG_TOOLS_ROOT}/data/vep"
-if [[ ! -d "${NEOAG_VEP_CACHE}/homo_sapiens" && -d "/mnt/zjl-bgi-zzb/peixunban/gl/data/reference/homo_sapiens" ]]; then
-  export NEOAG_VEP_CACHE="/mnt/zjl-bgi-zzb/peixunban/gl/data/reference"
-elif [[ ! -d "${NEOAG_VEP_CACHE}/homo_sapiens" && -d "${NEOAG_TOOLS_ROOT}/../neoag_event_pipeline_v03_rc_artifact_quarantine_20260622_091158/data/vep/homo_sapiens" ]]; then
-  export NEOAG_VEP_CACHE="${NEOAG_TOOLS_ROOT}/../neoag_event_pipeline_v03_rc_artifact_quarantine_20260622_091158/data/vep"
-fi
+# Reference data root (reference genome, VEP cache, annotations).
+# Override via conf/tools.env.local.sh to point to your site's reference bundle.
+export NEOAG_REFERENCE_DIR="${NEOAG_REFERENCE_DIR:-/mnt/zjl-bgi-zzb/peixunban/gl/data/reference}"
+
+# VEP cache root (must contain homo_sapiens/<version>_GRCh38/).
+export NEOAG_VEP_CACHE="${NEOAG_REFERENCE_DIR}"
 export NEOAG_VEP_CACHE_VERSION="105"
+
+# Reference genome FASTA for VEP annotation.
+export NEOAG_REFERENCE_FASTA="${NEOAG_REFERENCE_DIR}/Homo_sapiens.GRCh38.dna.primary_assembly.chr.fa"
+
+# VEP plugins directory
 export NEOAG_VEP_PLUGINS="${NEOAG_TOOLS_ROOT}/work/vep_plugins"
 if [[ ! -f "${NEOAG_VEP_PLUGINS}/Wildtype.pm" && -f "${NEOAG_TOOLS_ROOT}/../neoag_event_pipeline_v03_rc_artifact_quarantine_20260622_091158/work/vep_plugins/Wildtype.pm" ]]; then
   export NEOAG_VEP_PLUGINS="${NEOAG_TOOLS_ROOT}/../neoag_event_pipeline_v03_rc_artifact_quarantine_20260622_091158/work/vep_plugins"
 fi
-export NEOAG_REFERENCE_FASTA="${NEOAG_TOOLS_ROOT}/data/ref/hg38/Homo_sapiens_assembly38.fasta"
 
 # Ensembl GRCh38 reference proteome (optional; set in conf/tools.env.local.sh)
 export NEOAG_NORMAL_PROTEOME_FASTA="${NEOAG_NORMAL_PROTEOME_FASTA:-}"

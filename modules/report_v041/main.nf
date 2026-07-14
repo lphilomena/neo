@@ -1,5 +1,7 @@
 process REPORT_V041 {
   tag "report-v041"
+  label 'small'
+  container params.neoag_container ?: null
   publishDir "${params.outdir}/reports", mode: 'copy'
 
   input:

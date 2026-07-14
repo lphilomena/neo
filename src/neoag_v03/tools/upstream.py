@@ -197,6 +197,31 @@ def run_upstream(config_path: str | Path, outdir: str | Path | None = None) -> d
     use_variant_peptides = variant_peptide_extraction_enabled(cfg, variants_vcf)
     splice_tsv = _path_or_none(inputs_cfg.get("splice_junction_tsv") or inputs_cfg.get("regtools_tsv"))
 
+    # --- HLA typing (OptiType) -----------------------------------------------
+    # When enabled, compute HLA alleles from sequencing data instead of
+    # requiring pre-configured inputs.hla_alleles.  Must run BEFORE variant
+    # peptide extraction and neoantigen prediction which depend on ctx.hla_alleles.
+    if "optitype" in enabled:
+        opti_out = tools_dir / "optitype_hla_typing.csv"
+        try:
+            run_tool("optitype", ctx, opti_out)
+            from .postprocess import optitype_to_hla_alleles
+
+            computed_hla = optitype_to_hla_alleles(opti_out)
+            if computed_hla:
+                ctx.hla_alleles = computed_hla
+                outputs["optitype_hla"] = str(opti_out)
+                outputs["hla_source"] = "optitype"
+                print(f"[upstream] OptiType HLA typing: {computed_hla}", flush=True)
+        except (RuntimeError, FileNotFoundError, ValueError) as exc:
+            outputs["optitype_fallback"] = str(exc)
+            # Keep pre-configured hla_alleles from TOML if OptiType fails
+            if not ctx.hla_alleles:
+                raise RuntimeError(
+                    f"OptiType HLA typing failed and no inputs.hla_alleles "
+                    f"configured: {exc}"
+                ) from exc
+
     if use_variant_peptides and variants_vcf and variants_vcf.is_file():
         variants_vcf, vep_outputs = _auto_annotate_variants_vcf(
             cfg,

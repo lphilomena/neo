@@ -183,6 +183,15 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
         fixture_outputs={"hla_loh": _fx("hla_loh.tsv")},
         docs_url="https://bitbucket.org/mcferrine/lohhla/src/master/",
     ),
+    "optitype": ToolSpec(
+        name="optitype",
+        category="hla",
+        executable="optitype",
+        description="OptiType: precision 4-digit HLA typing from NGS (DNA/RNA)",
+        version_args=("--version",),
+        fixture_outputs={"hla_csv": _fx("optitype_hla_typing.csv")},
+        docs_url="https://github.com/FRED-2/OptiType",
+    ),
     "facets": ToolSpec(
         name="facets",
         category="purity",

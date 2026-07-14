@@ -46,6 +46,8 @@ workflow {
     purity_ch,
     cnv_ch,
     normal_expression_ch,
-    normal_hla_ligands_ch
+    normal_hla_ligands_ch,
+    Channel.empty(),
+    Channel.empty(),
   )
 }

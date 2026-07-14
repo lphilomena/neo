@@ -1280,6 +1280,71 @@ def run_deepimmuno(ctx: RunContext, out_tsv: Path) -> Path:
         return out_tsv
 
 
+def run_optitype(ctx: RunContext, out_csv: Path) -> Path:
+    """Run OptiType HLA typing from BAM or FASTQ input.
+
+    OptiType produces a *_result.tsv with 4-digit HLA typing (A1,A2,B1,B2,C1,C2).
+    """
+    import shutil
+
+    spec = TOOL_REGISTRY["optitype"]
+    if ctx.stub:
+        _stub_copy(spec.fixture_outputs["hla_csv"], out_csv)
+        return out_csv
+
+    # Determine input files: BAM takes precedence, then FASTQ pairs
+    input_bam = ctx.variants_vcf  # not correct for BAM, but ctx doesn't have bam_path yet
+    # Use environment variables or executables config for BAM paths
+    import os
+    bam = (os.environ.get("NEOAG_OPTITYPE_BAM") or ""
+           or str(ctx.executables.get("optitype_bam", "")))
+    fq1 = (os.environ.get("NEOAG_OPTITYPE_FQ1") or ""
+           or str(ctx.executables.get("optitype_fq1", "")))
+    fq2 = (os.environ.get("NEOAG_OPTITYPE_FQ2") or ""
+           or str(ctx.executables.get("optitype_fq2", "")))
+    seq_type = os.environ.get("NEOAG_OPTITYPE_SEQ_TYPE", "dna").strip().lower()
+
+    if not bam and not fq1:
+        raise RuntimeError(
+            "OptiType requires input BAM or FASTQ. "
+            "Set NEOAG_OPTITYPE_BAM or NEOAG_OPTITYPE_FQ1/FQ2 env vars, "
+            "or use tools.stub=true."
+        )
+
+    work = ctx.outdir / "tools" / "optitype_work"
+    work.mkdir(parents=True, exist_ok=True)
+
+    cmd = [ctx.exe("optitype"), "run", "-o", str(work.resolve()), "-p", ctx.sample_id]
+
+    if bam:
+        cmd.extend(["-i", bam])
+    else:
+        cmd.extend(["-i", fq1])
+        if fq2:
+            cmd.extend(["-i", fq2])
+
+    if seq_type == "rna":
+        cmd.append("--rna")
+    else:
+        cmd.append("--dna")
+
+    threads = os.environ.get("NEOAG_OPTITYPE_THREADS", "4")
+    cmd.extend(["--threads", threads])
+
+    _run_cmd(cmd, work)
+
+    # Find the result CSV
+    result_files = list(work.glob(f"{ctx.sample_id}*_result.tsv"))
+    if not result_files:
+        result_files = list(work.glob("*_result.tsv"))
+    if not result_files:
+        raise FileNotFoundError(f"OptiType did not produce a _result.tsv in {work}")
+
+    result_csv = result_files[0]
+    shutil.copy2(result_csv, out_csv)
+    return out_csv
+
+
 RUNNERS = {
     "netmhcpan": lambda ctx, p: run_netmhcpan(ctx, p),
     "netmhcstabpan": lambda ctx, p: run_netmhcstabpan(ctx, p),
@@ -1293,6 +1358,7 @@ RUNNERS = {
     "vep": lambda ctx, p: run_vep_appm(ctx, p),
     "lohhla": lambda ctx, p: run_lohhla(ctx, p),
     "facets": lambda ctx, p: run_facets(ctx, p),
+    "optitype": lambda ctx, p: run_optitype(ctx, p),
 }
 
 
