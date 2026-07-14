@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from .audit import AuditLogger, run_command
-from .io_utils import ensure_dir, markdown_table, now_iso, write_json, write_tsv
+from .io_utils import ensure_dir, markdown_table, now_iso, sha256_file, write_json, write_tsv
 from .manifests import load_manifest, manifest_paths
 from .release_audit import scan_release_boundary, write_release_audit
 
@@ -160,6 +160,31 @@ def _check_expected_sidecar(path_value: str | None, suffix: str, name: str, *, b
         return _row("reference_specific", name, "MISSING", "main file exists but sidecar is missing", str(sidecar), blocking=blocking)
     return _row("reference_specific", name, "MISSING", "main reference file is missing", str(p), blocking=blocking)
 
+
+
+def _check_declared_hashes(data: dict[str, Any], category: str) -> list[CheckRow]:
+    rows: list[CheckRow] = []
+    refs = data.get("references") if isinstance(data.get("references"), dict) else {}
+    for name, spec in refs.items():
+        if not isinstance(spec, dict):
+            continue
+        expected = str(spec.get("sha256") or "")
+        path_value = str(spec.get("path") or "")
+        if not expected or expected.startswith("<"):
+            continue
+        p, exists = _path_exists(path_value)
+        if not p:
+            rows.append(_row(category, f"{name}.sha256", "INFO", "reference path not declared", ""))
+            continue
+        if not exists or not p.is_file():
+            rows.append(_row(category, f"{name}.sha256", "MISSING", "cannot verify hash because file is missing or not a regular file", str(p), blocking=bool(spec.get("required"))))
+            continue
+        try:
+            observed = sha256_file(p)
+            rows.append(_row(category, f"{name}.sha256", "OK" if observed == expected else "FAIL", "sha256 matches" if observed == expected else f"sha256 mismatch observed={observed}", str(p), blocking=bool(spec.get("required"))))
+        except Exception as exc:
+            rows.append(_row(category, f"{name}.sha256", "FAIL", str(exc), str(p), blocking=bool(spec.get("required"))))
+    return rows
 
 def _check_reference_specifics(ref_data: dict[str, Any]) -> list[CheckRow]:
     rows: list[CheckRow] = []
@@ -460,6 +485,7 @@ def run_doctor(
 
     # Reference/sample path checks.
     rows.extend(_check_manifest_paths(ref_data, "reference"))
+    rows.extend(_check_declared_hashes(ref_data, "reference_hash"))
     rows.extend(_check_manifest_paths(sample_data, "sample_input"))
     rows.extend(_check_reference_specifics(ref_data))
 

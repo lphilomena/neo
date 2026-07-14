@@ -254,7 +254,7 @@ SKILL_SPECS: list[SkillSpec] = [
         do_not_use_when=["用户只是分析已有 ranked_peptides 或报告结果", "尚未完成 Doctor 和 dry-run 时不应直接运行患者级生产流程"],
         required_inputs=["project_root 或 release_tarball"],
         optional_inputs=["sha256", "deployment_tier", "tools_manifest", "reference_manifest", "sample_manifest"],
-        outputs=["preflight_report.md", "smoke_test_report.md", "deployment_report.md", "doctor_summary.md", "local manifests"],
+        outputs=["deployment_layout.md", "preflight_report.md", "smoke_test_report.md", "deployment_report.md", "doctor_summary.md", "local manifests"],
         risk_level="LOW_TO_HIGH_BY_STEP", approval_required=True,
         downstream_skills=["neoag-doctor", "neoag-tool-reference-qc", "neoag-run-demo-and-smoke", "neoag-pipeline-full", "neoag-release-qc"],
         boundaries=[

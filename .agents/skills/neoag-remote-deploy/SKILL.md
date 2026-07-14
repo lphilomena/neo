@@ -197,6 +197,10 @@ bash .agents/skills/neoag-remote-deploy/scripts/08_plan_asset_migration.sh \
 # Review work/agent_deploy/asset_migration_report.md first, then run approved sync/rewrite.
 ```
 
+## Four-way Deployment Layout
+
+Use `/opt/neoag/{code,conf,envs,refs,runs}` or an equivalent site root on target machines. Read `references/DEPLOYMENT_LAYOUT.md` and run `scripts/08_init_deploy_layout.py --deploy-root /opt/neoag --project-root <root> --outdir <outdir>` to write a layout plan. Add `--create` only after user approval.
+
 ## Deployment Tiers
 
 Read `references/DEPLOYMENT_TIERS.md` before choosing a tier.
@@ -235,6 +239,7 @@ execution.
 
 Read these only as needed:
 
+- `references/DEPLOYMENT_LAYOUT.md`: four-way code/conf/envs/refs/runs deployment layout.
 - `references/DEPLOYMENT_TIERS.md`: tier selection and acceptance criteria.
 - `references/TOOLS_KNOWN_ISSUES.md`: common migration failures and fixes.
 - `references/PRODUCTION_ASSET_MIGRATION.md`: env_tool, references, licensed

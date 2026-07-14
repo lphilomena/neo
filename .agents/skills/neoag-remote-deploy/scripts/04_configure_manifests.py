@@ -7,6 +7,8 @@ parser = argparse.ArgumentParser(description='Create target-machine local manife
 parser.add_argument('--project-root', default='.')
 parser.add_argument('--outdir', default='configs/local')
 parser.add_argument('--overwrite', action='store_true')
+parser.add_argument('--deploy-root', default='/opt/neoag')
+parser.add_argument('--rewrite-deploy-root', action='store_true', help='Rewrite /opt/neoag in templates to --deploy-root')
 args = parser.parse_args()
 root = Path(args.project_root).resolve()
 outdir = (root / args.outdir).resolve()
@@ -25,6 +27,9 @@ for src_name, dst_name in items.items():
     if dst.exists() and not args.overwrite:
         print(f'keep_existing={dst}')
     else:
-        shutil.copyfile(src, dst)
+        content = src.read_text()
+        if args.rewrite_deploy_root:
+            content = content.replace('/opt/neoag', str(Path(args.deploy_root)))
+        dst.write_text(content)
         print(f'created={dst}')
 print('Edit these manifests for target-machine paths. Do not commit private local paths.')

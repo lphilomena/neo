@@ -126,6 +126,10 @@ production runtime smoke tests. Do not run real data until
 `11_validate_production_runtime.sh --mini-prime` and Doctor mini smoke have
 passed or the remaining gaps are explicitly waived.
 
+## Deployment layout
+
+For new machines, prefer a four-way site root such as `/opt/neoag/` with `code/`, `conf/`, `envs/`, `refs/` and `runs/`. Keep `refs/` read-only during pipeline execution and use `refs/_staging/` for newly generated reference assets before promotion. See `.agents/skills/neoag-remote-deploy/references/DEPLOYMENT_LAYOUT.md`.
+
 ## Manifest rules
 
 All machine-specific paths belong in manifests or local env overrides, not in
@@ -194,4 +198,3 @@ A machine is migration-ready when:
 - `pipeline-full` dry-run writes a complete DAG and run manifest;
 - no source file or skill SOP contains machine-specific patient paths;
 - required external tools and references are declared in manifests.
-

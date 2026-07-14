@@ -55,6 +55,25 @@ def infer_sample_id(sample_manifest: dict[str, Any]) -> str:
     return "UNKNOWN_SAMPLE"
 
 
+def reference_entry(data: dict[str, Any], key: str) -> dict[str, Any]:
+    refs = data.get("references")
+    if isinstance(refs, dict) and isinstance(refs.get(key), dict):
+        return dict(refs[key])
+    if data.get(key):
+        return {"path": data.get(key), "required": key in {"reference_fasta", "gencode_gtf", "vep_cache"}}
+    return {}
+
+
+def reference_path(data: dict[str, Any], key: str) -> str:
+    entry = reference_entry(data, key)
+    return str(entry.get("path") or "")
+
+
+def reference_required(data: dict[str, Any], key: str) -> bool:
+    entry = reference_entry(data, key)
+    return bool(entry.get("required"))
+
+
 VALID_TOOL_MODES = {"container", "apptainer", "local_license", "conda", "conda_or_container", "local_or_container", "path", "system"}
 
 
@@ -102,11 +121,27 @@ def validate_sample_manifest(data: dict[str, Any]) -> list[dict[str, str]]:
 
 def validate_reference_manifest(data: dict[str, Any]) -> list[dict[str, str]]:
     rows: list[dict[str, str]] = []
-    required = ["genome_build", "reference_fasta", "gencode_gtf", "vep_cache"]
+    if data.get("manifest_version"):
+        rows.append({"manifest": "reference", "field": "manifest_version", "status": "OK", "message": str(data.get("manifest_version"))})
+    genome_build = data.get("genome_build")
+    rows.append({"manifest": "reference", "field": "genome_build", "status": "OK" if genome_build else "FAIL", "message": "present" if genome_build else "required field missing"})
+    required = ["reference_fasta", "gencode_gtf", "vep_cache"]
     for key in required:
-        rows.append({"manifest": "reference", "field": key, "status": "OK" if data.get(key) else "FAIL", "message": "present" if data.get(key) else "required field missing"})
-    for key in ["normal_proteome", "normal_ligandome", "normal_junctions", "hla_reference", "facets_snp_vcf"]:
-        rows.append({"manifest": "reference", "field": key, "status": "OK" if data.get(key) else "INFO", "message": "present" if data.get(key) else "optional field not declared"})
+        value = reference_path(data, key)
+        rows.append({"manifest": "reference", "field": key, "status": "OK" if value else "FAIL", "message": "present" if value else "required field missing"})
+    optional = ["normal_proteome", "normal_ligandome", "normal_junctions", "hla_reference", "facets_snp_vcf", "hla_la_graph", "lohhla_reference", "normal_readthrough"]
+    for key in optional:
+        value = reference_path(data, key)
+        rows.append({"manifest": "reference", "field": key, "status": "OK" if value else "INFO", "message": "present" if value else "optional field not declared"})
+    refs = data.get("references")
+    if isinstance(refs, dict):
+        for key, spec in refs.items():
+            if isinstance(spec, dict):
+                if spec.get("required") and not spec.get("path"):
+                    rows.append({"manifest": "reference", "field": f"references.{key}.path", "status": "FAIL", "message": "required reference missing path"})
+                for meta in ["source", "version"]:
+                    if not spec.get(meta):
+                        rows.append({"manifest": "reference", "field": f"references.{key}.{meta}", "status": "WARN", "message": f"{meta} not declared"})
     return rows
 
 

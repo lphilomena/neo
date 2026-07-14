@@ -987,6 +987,7 @@
         "sample_manifest"
       ],
       "outputs": [
+        "deployment_layout.md",
         "preflight_report.md",
         "smoke_test_report.md",
         "deployment_report.md",

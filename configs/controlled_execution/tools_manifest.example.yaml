@@ -1,88 +1,152 @@
-bwa:
-  mode: container
-  image: biocontainers/bwa:latest
-  executable: bwa
+manifest_version: 1
+layout_root: /opt/neoag
 
-star:
-  mode: container
-  image: biocontainers/star:latest
-  executable: STAR
+tools:
+  bwa:
+    mode: container
+    image: biocontainers/bwa:latest
+    executable: bwa
+    env: env.neoag-core
+    required: false
 
-vep:
-  mode: apptainer
-  image: neoag-vep.sif
-  executable: vep
+  star:
+    mode: container
+    image: biocontainers/star:latest
+    executable: STAR
+    env: env.neoag-fusion
+    required: false
 
-netmhcpan:
-  mode: local_license
-  path: /opt/netMHCpan/bin/netMHCpan
-  executable: netMHCpan
-  license_required: true
+  vep:
+    mode: apptainer
+    image: /opt/neoag/envs/containers/apptainer/neoag-vep_115.sif
+    executable: vep
+    env: env.neoag-vep
+    required: true
+    smoke_command: "vep --help"
 
-netmhcstabpan:
-  mode: local_license
-  path: /opt/netMHCstabpan/bin/NetMHCstabpan
-  executable: NetMHCstabpan
-  license_required: true
+  netmhcpan:
+    mode: local_license
+    executable: /opt/neoag/refs/mhc/netmhcpan/4.2/local_install/netMHCpan
+    env: env.neoag-mhc
+    license_required: true
+    distributable: false
+    required: true
+    smoke_command: "netMHCpan -h"
 
-mhcflurry:
-  mode: conda
-  executable: mhcflurry-predict
+  netmhcstabpan:
+    mode: local_license
+    executable: /opt/neoag/refs/mhc/netmhcstabpan/local_install/NetMHCstabpan
+    env: env.neoag-mhc
+    license_required: true
+    distributable: false
+    required: false
+    smoke_command: "NetMHCstabpan -h"
 
-lohhla:
-  mode: container
-  image: neoag-lohhla.sif
-  executable: LOHHLA
+  mhcflurry:
+    mode: conda
+    executable: mhcflurry-predict
+    env: env.neoag-mhc
+    model_dir: /opt/neoag/refs/mhc/mhcflurry/models
+    required: false
+    smoke_command: "mhcflurry-predict --help"
 
-facets:
-  mode: conda_or_container
-  executable: runFACETS.R
+  prime:
+    mode: conda_or_container
+    executable: PRIME
+    env: env.neoag-mhc
+    required: false
 
-purple:
-  mode: container
-  image: neoag-purple.sif
-  executable: purple
+  bigmhc:
+    mode: conda_or_container
+    executable: bigmhc_predict
+    env: env.neoag-mhc
+    required: false
 
-ascat:
-  mode: conda
-  executable: ascat.R
+  lohhla:
+    mode: local_or_container
+    executable: LOHHLA
+    env: env.neoag-hla
+    reference_dir: /opt/neoag/refs/hla/lohhla/hla_reference
+    required: false
 
-sequenza:
-  mode: conda
-  executable: sequenza-utils
+  optitype:
+    mode: conda_or_container
+    executable: OptiTypePipeline.py
+    env: env.neoag-hla
+    required: false
 
-arriba:
-  mode: container
-  image: neoag-arriba.sif
-  executable: arriba
+  hla_la:
+    mode: local_or_container
+    executable: HLA-LA.pl
+    env: env.neoag-hla
+    reference_dir: /opt/neoag/refs/hla/hla-la/graph/PRG_MHC_GRCh38_withIMGT
+    required: false
 
-star_fusion:
-  mode: container
-  image: neoag-star-fusion.sif
-  executable: STAR-Fusion
+  spechla:
+    mode: conda_or_container
+    executable: SpecHLA
+    env: env.neoag-hla
+    required: false
 
-fusioncatcher:
-  mode: container
-  image: neoag-fusioncatcher.sif
-  executable: fusioncatcher
+  facets:
+    mode: conda_or_container
+    executable: runFACETS.R
+    env: env.neoag-cnv
+    snp_vcf: /opt/neoag/refs/cnv/facets/common_snp.vcf.gz
+    required: false
 
-easyfuse:
-  mode: container
-  image: neoag-easyfuse.sif
-  executable: easyfuse
+  purple:
+    mode: container
+    image: /opt/neoag/envs/containers/apptainer/neoag-purple.sif
+    executable: purple
+    env: env.neoag-cnv
+    required: false
 
-optitype:
-  mode: conda_or_container
-  executable: OptiTypePipeline.py
+  ascat:
+    mode: conda
+    executable: ascat.R
+    env: env.neoag-cnv
+    required: false
 
-hla_la:
-  mode: local_or_container
-  executable: HLA-LA.pl
+  sequenza:
+    mode: conda
+    executable: sequenza-utils
+    env: env.neoag-cnv
+    required: false
 
-spechla:
-  mode: conda_or_container
-  executable: SpecHLA
+  arriba:
+    mode: container
+    image: /opt/neoag/envs/containers/apptainer/neoag-arriba.sif
+    executable: arriba
+    env: env.neoag-fusion
+    required: false
 
-pyclone_vi:
-  mode: conda
-  executable: pyclone-vi
+  star_fusion:
+    mode: container
+    image: /opt/neoag/envs/containers/apptainer/neoag-star-fusion.sif
+    executable: STAR-Fusion
+    env: env.neoag-fusion
+    required: false
+
+  fusioncatcher:
+    mode: container
+    image: /opt/neoag/envs/containers/apptainer/neoag-fusioncatcher.sif
+    executable: fusioncatcher
+    env: env.neoag-fusion
+    required: false
+
+  easyfuse:
+    mode: container
+    image: /opt/neoag/envs/containers/apptainer/neoag-easyfuse.sif
+    executable: easyfuse
+    env: env.neoag-fusion
+    required: false
+
+  pyclone_vi:
+    mode: conda
+    executable: pyclone-vi
+    env: env.neoag-cnv
+    required: false
+
+notes:
+  boundary: example manifest only; target machines should copy to configs/local/ and edit paths

@@ -1,18 +1,26 @@
+manifest_version: 1
 sample_id: SAMPLE001
-disease: example_tumor
 case_id: CASE001
+disease: example_tumor
+genome_build: GRCh38
+
+run_layout:
+  run_root: /opt/neoag/runs/SAMPLE001/run_20260714_001
+  outputs: /opt/neoag/runs/SAMPLE001/run_20260714_001/outputs
+  logs: /opt/neoag/runs/SAMPLE001/run_20260714_001/logs
+  audit_log: /opt/neoag/runs/SAMPLE001/run_20260714_001/audit_log.jsonl
 
 tumor:
-  wgs_bam: data/fixtures/tumor.wgs.bam
+  dna_bam: /data/SAMPLE001/tumor.bam
+  rna_bam: /data/SAMPLE001/rna.bam
   wes_bam: null
-  wts_bam: data/fixtures/tumor.rna.bam
 
 normal:
-  wgs_bam: data/fixtures/normal.wgs.bam
+  dna_bam: /data/SAMPLE001/normal.bam
   wes_bam: null
 
 inputs:
-  somatic_vcf: data/fixtures/somatic.pass.vcf.gz
+  somatic_vcf: /data/SAMPLE001/results/mutect2.pass.vcf.gz
   sv_vcf:
     - data/fixtures/manta.somaticSV.vcf.gz
   fusion_tsv: results/SAMPLE001/fusion/fusions.pass.csv

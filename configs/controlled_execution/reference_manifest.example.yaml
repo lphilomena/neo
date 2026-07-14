@@ -1,16 +1,109 @@
+manifest_version: 1
 genome_build: GRCh38
-reference_fasta: /ref/GRCh38.fa
-gencode_gtf: /ref/gencode.v44.annotation.gtf
-vep_cache: /ref/vep_cache/homo_sapiens/115_GRCh38
-protein_fasta: /ref/protein.fa
-normal_proteome: /ref/normal_proteome.fa
-normal_ligandome: /ref/normal_ligandome.tsv
-normal_junctions: /ref/normal_junctions.tsv
-hla_reference: /ref/hla/
-facets_snp_vcf: /ref/facets/common_snp.vcf.gz
-ascat_loci: /ref/ascat/G1000_loci_hg38.txt
-ascat_alleles: /ref/ascat/G1000_alleles_hg38.txt
-hla_la_graph: /ref/hla-la/PRG_MHC_GRCh38_withIMGT
-arriba_reference: /ref/arriba/
-star_fusion_reference: /ref/ctat/current/
-lohhla_reference: /ref/lohhla/hla_reference
+created_at: 2026-07-14
+owner: neoag
+layout_root: /opt/neoag
+
+references:
+  reference_fasta:
+    path: /opt/neoag/refs/GRCh38/fasta/GRCh38.fa
+    source: GATK Resource Bundle
+    version: hg38_v0
+    sha256: "<sha256>"
+    required: true
+
+  gencode_gtf:
+    path: /opt/neoag/refs/GRCh38/gencode/gencode.v44.annotation.gtf.gz
+    source: GENCODE
+    version: v44
+    sha256: "<sha256>"
+    required: true
+
+  vep_cache:
+    path: /opt/neoag/refs/GRCh38/vep/vep_115_GRCh38
+    source: Ensembl VEP
+    version: 115_GRCh38
+    vep_version_required: "115"
+    required: true
+
+  protein_fasta:
+    path: /opt/neoag/refs/GRCh38/protein/protein.fa
+    source: Ensembl or GENCODE
+    version: "<version>"
+    required: false
+
+  normal_proteome:
+    path: /opt/neoag/refs/safety/normal_proteome/human_proteome.fa
+    source: UniProt_or_GENCODE
+    version: "<version>"
+    required: false
+
+  normal_ligandome:
+    path: /opt/neoag/refs/safety/normal_ligandome/normal_ms_ligands.tsv
+    source: curated
+    version: "<version>"
+    required: false
+
+  normal_junctions:
+    path: /opt/neoag/refs/safety/normal_junctions/normal_splice_junctions.tsv
+    source: curated
+    version: "<version>"
+    required: false
+
+  hla_reference:
+    path: /opt/neoag/refs/hla/
+    source: local curated HLA references
+    version: "<version>"
+    required: false
+
+  hla_la_graph:
+    path: /opt/neoag/refs/hla/hla-la/graph/PRG_MHC_GRCh38_withIMGT
+    source: HLA-LA graph bundle
+    version: GRCh38_withIMGT
+    required: false
+
+  lohhla_reference:
+    path: /opt/neoag/refs/hla/lohhla/hla_reference
+    source: LOHHLA reference bundle
+    version: "<version>"
+    required: false
+
+  facets_snp_vcf:
+    path: /opt/neoag/refs/cnv/facets/common_snp.vcf.gz
+    source: gnomAD/1000G common biallelic SNPs
+    version: GRCh38
+    sha256: "<sha256>"
+    required: false
+
+  ascat_loci:
+    path: /opt/neoag/refs/cnv/ascat/loci/G1000_loci_hg38.txt
+    source: ASCAT hg38 reference
+    version: "<version>"
+    required: false
+
+  ascat_alleles:
+    path: /opt/neoag/refs/cnv/ascat/loci/G1000_alleles_hg38.txt
+    source: ASCAT hg38 reference
+    version: "<version>"
+    required: false
+
+  arriba_reference:
+    path: /opt/neoag/refs/fusion/arriba/
+    source: Arriba reference bundle
+    version: "<version>"
+    required: false
+
+  star_fusion_reference:
+    path: /opt/neoag/refs/fusion/star_fusion/ctat/current/
+    source: CTAT genome lib
+    version: "<version>"
+    required: false
+
+  normal_readthrough:
+    path: /opt/neoag/refs/fusion/normal_readthrough/normal_readthrough.tsv
+    source: curated normal fusion/read-through background
+    version: "<version>"
+    required: false
+
+notes:
+  boundary: example manifest only; replace paths locally and do not commit private paths

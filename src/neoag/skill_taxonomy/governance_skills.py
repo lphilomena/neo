@@ -121,6 +121,7 @@ def run_remote_deploy(args: dict[str, Any]) -> dict[str, Any]:
     skill_dir = project_root / ".agents" / "skills" / "neoag-remote-deploy"
     steps = [
         "Read .agents/skills/neoag-remote-deploy/SKILL.md",
+        "Run scripts/08_init_deploy_layout.py to plan code/conf/envs/refs/runs layout",
         "Run scripts/00_preflight.sh",
         "Run scripts/02_install_core.sh only if core entry points are missing or user approved install",
         "Run scripts/03_check_runtime.sh",
@@ -158,6 +159,10 @@ def run_remote_deploy(args: dict[str, Any]) -> dict[str, Any]:
         write_json(outdir / "skill_result.json", res)
         return res
     import subprocess
+    script = skill_dir / "scripts" / "08_init_deploy_layout.py"
+    if script.exists():
+        deploy_root = str(args.get("deploy_root") or "/opt/neoag")
+        subprocess.run([str(script), "--project-root", str(project_root), "--outdir", str(outdir), "--deploy-root", deploy_root], check=False)
     script = skill_dir / "scripts" / "00_preflight.sh"
     if script.exists():
         subprocess.run([str(script), "--project-root", str(project_root), "--outdir", str(outdir)], check=False)
@@ -171,7 +176,7 @@ def run_remote_deploy(args: dict[str, Any]) -> dict[str, Any]:
         "status": "PASS",
         "skill": "neoag-remote-deploy",
         "summary": "Low-risk deployment preparation completed. Review Doctor/smoke steps before production use.",
-        "outputs": {"plan": str(plan), "deployment_report": str(outdir / "deployment_report.md")},
+        "outputs": {"plan": str(plan), "deployment_layout": str(outdir / "deployment_layout.md"), "deployment_report": str(outdir / "deployment_report.md")},
     }
     write_json(outdir / "skill_result.json", res)
     return res
