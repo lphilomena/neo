@@ -1,6 +1,6 @@
 ---
 name: neoag-remote-deploy
-description: Use this skill when deploying or migrating Project B / NeoAg Event Pipeline to a new machine with a programming agent. It provides a fixed SOP for release checksum verification, unpacking, preflight checks, core Python installation, runtime smoke tests, local manifest generation, read-only Doctor, deployment reporting, and safe tiered external-tool readiness checks. Do not use it for interpreting existing neoantigen results only.
+description: Use this skill when deploying or migrating Project B / NeoAg Event Pipeline to a new machine with a programming agent. It provides a fixed SOP for release checksum verification, unpacking, preflight checks, core Python installation, optional env_tool/reference/licensed-tool asset migration, portable activation rewriting, runtime smoke tests, local manifest generation, read-only Doctor, deployment reporting, and safe tiered external-tool readiness checks. Do not use it for interpreting existing neoantigen results only.
 ---
 
 # NeoAg Remote Deploy
@@ -10,7 +10,9 @@ description: Use this skill when deploying or migrating Project B / NeoAg Event 
 Deploy Project B on a new machine with a programming agent using a fixed,
 reproducible, safety-first SOP. Make the target machine ready for Tier 0/Tier 1
 result review first, then use Doctor to decide whether Tier 2/Tier 3
-external-tool deployment is needed.
+external-tool deployment is needed. When full production execution is requested,
+use the production-asset extension in this skill to migrate or rebuild
+`env_tool`, references, and licensed-tool wrappers before running real data.
 
 ## When To Use
 
@@ -28,7 +30,11 @@ compare reports, explain HLA results, or analyze patient outputs.
 - optional deployment tier: `tier0`, `tier1`, `tier2`, or `tier3`;
 - optional local `tools_manifest.yaml`, `reference_manifest.yaml`, and
   `sample_manifest.yaml`;
-- optional container image manifests.
+- optional container image manifests;
+- optional source asset paths or old-machine SSH host for migration:
+  `env_tool`, reference data root, and licensed-tool root;
+- explicit human approval for any `--execute`, `--write`, rsync, large download,
+  licensed-tool staging, or real pipeline run.
 
 ## Outputs
 
@@ -39,7 +45,10 @@ Write deployment outputs under a work directory, usually `work/remote_deploy/`:
 - `smoke_test_report.md`;
 - `doctor/doctor_summary.md` and Doctor TSV/JSON outputs;
 - `deployment_report.md`;
-- `audit_log.jsonl`.
+- `audit_log.jsonl`;
+- optional `asset_migration_plan.tsv`, `asset_migration_report.md`,
+  `production_runtime_status.tsv`, and rewritten local activation files when
+  production assets are approved.
 
 ## Core Procedure
 
@@ -62,6 +71,24 @@ Follow this sequence. Do not skip ahead to full pipeline execution.
 8. Write deployment report:
    `scripts/07_write_deploy_report.py --project-root <root> --workdir <outdir>`.
 
+For Tier 3 or real VCF/BAM/FASTQ execution, continue with the production asset
+extension before running real data:
+
+9. Plan migration/rebuild of machine assets without copying anything:
+   `scripts/08_plan_asset_migration.sh --project-root <root> --outdir <outdir> --tools-root <target-env_tool> --reference-root <target-reference-root> --licensed-root <target-licensed-root>`.
+10. After approval, sync approved assets from the old machine or staged local
+    paths. Default is dry-run; use `--execute` only with approval:
+    `scripts/09_sync_production_assets.sh --old-host <user@host> --old-env-tool <path> --old-reference-root <path> --old-licensed-root <path> --tools-root <target-env_tool> --reference-root <target-reference-root> --licensed-root <target-licensed-root> --outdir <outdir> --execute`.
+11. Rewrite local activation and wrappers so the new machine uses portable
+    paths, not old `/home`, `/mnt`, or stale conda prefixes:
+    `scripts/10_rewrite_production_activation.sh --project-root <root> --tools-root <target-env_tool> --reference-root <target-reference-root> --licensed-root <target-licensed-root> --write`.
+12. Validate the production runtime before real data:
+    `scripts/11_validate_production_runtime.sh --project-root <root> --tools-root <target-env_tool> --outdir <outdir>/production_runtime --mini-prime`.
+
+Do not run `run-full`, `pipeline-full --execute`, or any patient workflow until
+step 12 shows that VEP, reference FASTA, NetMHCpan, PRIME/MixMHCpred, and the
+enabled Python dependencies are available or explicitly waived.
+
 Fast path from an existing checkout:
 
 ```bash
@@ -70,6 +97,19 @@ bash scripts/bootstrap_agent_deploy.sh --outdir work/agent_deploy
 
 The bundled deployment scripts are more explicit and should be used when another
 agent needs a step-by-step audit trail.
+
+Production asset fast path after explicit approval:
+
+```bash
+bash .agents/skills/neoag-remote-deploy/scripts/08_plan_asset_migration.sh \
+  --project-root . \
+  --tools-root /root/neo/env_tool \
+  --reference-root /root/neo/neodata4git \
+  --licensed-root /root/neo/licensed_tools \
+  --outdir work/agent_deploy
+
+# Review work/agent_deploy/asset_migration_report.md first, then run approved sync/rewrite.
+```
 
 ## Deployment Tiers
 
@@ -91,6 +131,15 @@ execution.
 - Do not package licensed tools, license files, or controlled references.
 - Do not download large references, install system packages, submit HPC jobs,
   delete files, or overwrite results without explicit approval.
+- Do not copy or package licensed tools unless the user confirms the target use
+  is licensed and the transfer is allowed. Prefer wrappers that point to a
+  locally staged official installation.
+- Do not migrate raw old-machine activation files verbatim. Always rewrite
+  `activate_neoag_production_refs.sh`, `common.sh` defaults, VEP, NetMHCpan,
+  PRIME, and MixMHCpred wrappers for the target machine.
+- Do not trust long-running PRIME jobs until PRIME/MixMHCpred smoke tests have
+  produced non-empty output. A running `PRIME.x` process with 100% CPU and a
+  one-byte output file is not sufficient readiness evidence.
 - `check-tools` or `which tool` is not enough for production readiness. Use
   Doctor mini smoke or mark the tool `PARTIAL`.
 - Missing expression, HLA LOH, CCF, reference, or tool evidence must be reported
@@ -102,6 +151,8 @@ Read these only as needed:
 
 - `references/DEPLOYMENT_TIERS.md`: tier selection and acceptance criteria.
 - `references/TOOLS_KNOWN_ISSUES.md`: common migration failures and fixes.
+- `references/PRODUCTION_ASSET_MIGRATION.md`: env_tool, references, licensed
+  tools, activation rewrites, and smoke-test acceptance criteria.
 - `references/REFERENCE_MANIFEST_SCHEMA.md`: local reference manifest guidance.
 - `references/TOOLS_MANIFEST_SCHEMA.md`: local tools manifest guidance.
 
@@ -114,4 +165,7 @@ Use stable failure codes in reports:
 `NEXTFLOW_FAILED`, `TOOLS_MANIFEST_MISSING`, `REFERENCE_MANIFEST_MISSING`,
 `LICENSED_TOOL_MISSING`, `REFERENCE_PATH_MISSING`,
 `TOOL_PATH_OK_BUT_SMOKE_FAILED`, `PRIVATE_PATH_DETECTED`,
-`PATIENT_DATA_IN_RELEASE`.
+`PATIENT_DATA_IN_RELEASE`, `ASSET_SYNC_NOT_APPROVED`,
+`ASSET_SOURCE_MISSING`, `ACTIVATION_REWRITE_REQUIRED`,
+`PRIME_SMOKE_FAILED`, `MIXMHCPRED_SMOKE_FAILED`, `VEP_CACHE_MISSING`,
+`NETMHCPAN_LICENSE_TOOL_MISSING`.

@@ -112,6 +112,20 @@ Only after reviewing `doctor/recommended_fixes.md`,
 `doctor/blocking_issues.tsv` and `pipeline_full/pipeline_plan.md` should the
 agent suggest tool installation, reference staging or real execution.
 
+For Tier 3 or real VCF/BAM/FASTQ execution, the agent must then use the
+production asset extension in:
+
+```text
+.agents/skills/neoag-remote-deploy/SKILL.md
+.agents/skills/neoag-remote-deploy/references/PRODUCTION_ASSET_MIGRATION.md
+```
+
+This extension plans and, after approval, syncs or rebuilds `env_tool`,
+reference roots, licensed-tool wrappers, target-machine activation files, and
+production runtime smoke tests. Do not run real data until
+`11_validate_production_runtime.sh --mini-prime` and Doctor mini smoke have
+passed or the remaining gaps are explicitly waived.
+
 ## Manifest rules
 
 All machine-specific paths belong in manifests or local env overrides, not in
