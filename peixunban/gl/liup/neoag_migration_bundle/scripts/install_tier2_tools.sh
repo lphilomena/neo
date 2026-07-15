@@ -14,6 +14,10 @@ fi
 activate_paths
 samtools --version | head -1
 bcftools --version | head -1
+log "ensuring tf-keras for MHCflurry legacy Keras compatibility"
+conda run -p "${NEOAG_CONDA_BASE}/envs/${NEOAG_TOOLS_ENV}" python -m pip install tf-keras >> "${TOOLS_ROOT}/logs/install_${NEOAG_TOOLS_ENV}.log" 2>&1
 mhcflurry-predict --help >/dev/null
+printf "allele,peptide\nHLA-A*02:01,SLYNTVATL\n" > "${TOOLS_ROOT}/logs/mhcflurry_smoke.csv"
+mhcflurry-predict "${TOOLS_ROOT}/logs/mhcflurry_smoke.csv" --out "${TOOLS_ROOT}/logs/mhcflurry_smoke.out.csv" >/dev/null
 pvacseq --help >/dev/null
 log "tier2 lite tools OK"

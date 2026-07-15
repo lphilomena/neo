@@ -14,6 +14,8 @@ else
 fi
 activate_paths
 python -m pip install -e "$PROJECT_ROOT" > "${TOOLS_ROOT}/logs/pip_install_project_editable.log" 2>&1
+log "installing BigMHC CPU Python dependencies"
+python -m pip install "numpy<2" pandas scipy scikit-learn psutil "torch>=2,<3" >> "${TOOLS_ROOT}/logs/pip_install_bigmhc_deps.log" 2>&1
 find "$PROJECT_ROOT/bin" -maxdepth 1 -type f -exec chmod +x {} \;
 python --version
 java -version

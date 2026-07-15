@@ -39,3 +39,15 @@ Notes:
 - `install_all_nonlicensed.sh` can download/install many large packages. Use it only on a machine intended for full deployment.
 - VEP cache is not downloaded unless `INSTALL_VEP_CACHE=1` is set.
 - NetMHCpan, NetMHCstabpan, Polysolver/Novoalign and similar tools must follow local license rules.
+
+
+
+MHCflurry compatibility:
+
+- MHCflurry 2.0.6 requires legacy Keras session APIs when TensorFlow 2.x installs Keras 3. The tier2 install script installs tf-keras, and common.sh exports TF_USE_LEGACY_KERAS=1 for reproducible CPU execution.
+- The tier2 install script runs a one-peptide MHCflurry smoke test and writes logs/mhcflurry_smoke.out.csv.
+
+BigMHC compatibility:
+
+- BigMHC_IM is launched by neoag-v03 with the neoag-core Python interpreter. install_tier1_core.sh now installs CPU Python dependencies needed by BigMHC: torch, numpy, pandas, scipy, scikit-learn, and psutil.
+- On offline machines, pre-populate pip/conda caches for these packages before running the tier1 script, or install them into the neoag-core environment manually.

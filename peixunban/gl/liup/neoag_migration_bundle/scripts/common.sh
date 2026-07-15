@@ -36,6 +36,10 @@ activate_paths() {
   export PYTHONPATH="${PROJECT_ROOT}/src${PYTHONPATH:+:${PYTHONPATH}}"
   export PATH="${PROJECT_ROOT}/bin:${NEOAG_CONDA_BASE}/envs/${NEOAG_CORE_ENV}/bin:${NEOAG_CONDA_BASE}/envs/${NEOAG_TOOLS_ENV}/bin:${NEOAG_CONDA_BASE}/bin:${PATH}"
   export LD_LIBRARY_PATH="${NEOAG_CONDA_BASE}/envs/${NEOAG_TOOLS_ENV}/lib:${NEOAG_CONDA_BASE}/envs/${NEOAG_CORE_ENV}/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+  # MHCflurry 2.0.6 uses legacy Keras session APIs; keep TensorFlow on tf_keras.
+  export TF_USE_LEGACY_KERAS="${TF_USE_LEGACY_KERAS:-1}"
+  export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:--1}"
+  export TF_CPP_MIN_LOG_LEVEL="${TF_CPP_MIN_LOG_LEVEL:-2}"
 }
 run_in_project() {
   activate_paths
