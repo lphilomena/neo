@@ -51,3 +51,8 @@ BigMHC compatibility:
 
 - BigMHC_IM is launched by neoag-v03 with the neoag-core Python interpreter. install_tier1_core.sh now installs CPU Python dependencies needed by BigMHC: torch, numpy, pandas, scipy, scikit-learn, and psutil.
 - On offline machines, pre-populate pip/conda caches for these packages before running the tier1 script, or install them into the neoag-core environment manually.
+
+Root one-shot install:
+
+- On a new machine where /root/neo/env_tool is the target, run scripts/install_to_root_neo_env_tool.sh as root. It clones neo-na0707_upload_release and na0707_upload_release, extracts the migration and patch bundles, installs Miniforge under /root/neo/env_tool/miniforge3, and runs tier1/tier2 installers.
+- For offline machines, set MINIFORGE_INSTALLER=/path/to/Miniforge3-Linux-x86_64.sh and pre-populate conda/pip caches. For real production runs, copy or mount the companion neodata4git directory under /root/neo/neodata4git, or set NEODATA_ROOT to its path.
