@@ -60,3 +60,13 @@ source /mnt/zjl-bgi-zzb/peixunban/gl/liup/test_env_tools/activate_neoag_producti
 ```
 
 Expected status: PARTIAL with no blocking issues. PARTIAL remains because some optional/container tools and sample input placeholders are intentionally not required for a dry-run migration doctor.
+
+## Root bootstrap entry
+
+For a new machine targeting `/root/neo/env_tool`, run:
+
+```bash
+sudo bash bootstrap/install_to_root_neo_env_tool.sh
+```
+
+This clones the release branches, extracts the migration/patch bundles, installs Miniforge under `/root/neo/env_tool/miniforge3`, then runs tier1/tier2 installers.

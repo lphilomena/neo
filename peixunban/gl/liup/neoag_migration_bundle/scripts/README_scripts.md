@@ -54,7 +54,7 @@ BigMHC compatibility:
 
 Root one-shot install:
 
-- On a new machine where /root/neo/env_tool is the target, run scripts/install_to_root_neo_env_tool.sh as root. It clones neo-na0707_upload_release and na0707_upload_release, extracts the migration and patch bundles, installs Miniforge under /root/neo/env_tool/miniforge3, and runs tier1/tier2 installers.
+- On a new machine where /root/neo/env_tool is the target, run bootstrap/install_to_root_neo_env_tool.sh as root. It clones neo-na0707_upload_release and na0707_upload_release, extracts the migration and patch bundles, installs Miniforge under /root/neo/env_tool/miniforge3, and runs tier1/tier2 installers.
 - For offline machines, set MINIFORGE_INSTALLER=/path/to/Miniforge3-Linux-x86_64.sh and pre-populate conda/pip caches. For real production runs, copy or mount the companion neodata4git directory under /root/neo/neodata4git, or set NEODATA_ROOT to its path.
 
 Real VCF release test:
