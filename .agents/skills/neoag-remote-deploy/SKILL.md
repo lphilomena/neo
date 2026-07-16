@@ -138,6 +138,10 @@ asset locations so a new machine can prepare itself reproducibly:
 - BigMHC models: `--bigmhc-models-dir <dir>` copies a local model directory, or
   combine it with `--bigmhc-models-host <user@host>` to copy from a source
   server using rsync.
+- Large model/reference sets can also be synchronized from a TSV manifest with
+  `--asset-manifest configs/assets/production_assets.tsv --sync-assets
+  --asset-source-host <user@host>`. The manifest stores paths and markers only,
+  not the asset payloads.
 - Licensed tools remain explicit inputs via `--netmhcpan-tar`,
   `--netmhcpan-dir`, `--netmhcpan-url`, `--mixmhcpred-dir`,
   `--mixmhcpred-archive`, and `--mixmhcpred-url`; do not bundle or download

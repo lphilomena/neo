@@ -1,0 +1,5 @@
+# Large deployable assets. Keep data out of Git; this file only records locations.
+# source_path can be local, absolute on --asset-source-host, or user@host:/path.
+asset_name	source_path	target_path	kind	required	sha256	marker
+bigmhc_models	/home/na/project/neoantigen/neoag_event_pipeline_v03_rc_artifact_quarantine_20260622_091158/tools/bigmhc/models	/root/neo/env_tool/tools/bigmhc/models	dir	1	-	bat512/im
+easyfuse_ref	/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata/data/ref/easyfuse_ref_v4	/root/neo/neodata4git/easyfuse/current	dir	0	-	BEFORE_EXECUTING_EASYFUSE

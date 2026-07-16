@@ -160,3 +160,24 @@ be stopped and rerun after repair.
   Python environment.
 - BigMHC and immunogenicity paths require Python packages in the runtime env:
   `torch`, `numpy`, `pandas`, `scipy`, `sklearn`, and `psutil`.
+
+
+## Asset Manifest Sync
+
+Large assets such as BigMHC models, EasyFuse references, CTAT libraries, and
+other indexed references should stay outside Git. Use
+`configs/assets/production_assets.tsv` to declare source and target paths, then
+sync them during installation:
+
+```bash
+bash .agents/skills/neoag-remote-deploy/scripts/13_install_readme_tools.sh \
+  --asset-manifest configs/assets/production_assets.tsv \
+  --sync-assets \
+  --asset-source-host na@10.200.50.134 \
+  --execute
+```
+
+The installer calls `15_sync_asset_manifest.sh`. Default mode is dry-run; with
+`--execute`, directories and files are copied with rsync. Required assets fail
+the install if sync or marker/checksum verification fails. Optional assets are
+reported but do not stop the install.
