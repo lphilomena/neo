@@ -181,3 +181,22 @@ The installer calls `15_sync_asset_manifest.sh`. Default mode is dry-run; with
 `--execute`, directories and files are copied with rsync. Required assets fail
 the install if sync or marker/checksum verification fails. Optional assets are
 reported but do not stop the install.
+
+
+## One Command New-Machine Install
+
+For a fresh target machine, use `16_install_new_machine.sh` as the primary
+entrypoint. It wraps asset manifest synchronization, README tool installation,
+activation rewrite, production runtime validation, and optional real VCF smoke.
+
+```bash
+bash .agents/skills/neoag-remote-deploy/scripts/16_install_new_machine.sh \
+  --asset-manifest configs/assets/production_assets.tsv \
+  --asset-source-host na@10.200.50.134 \
+  --allow-download \
+  --execute
+```
+
+Add `--standard` for a broader tool set, or add `--run-real-vcf-smoke
+--real-vcf-smoke-top-n 1` for a post-install real-data smoke. Default mode is
+dry-run; `--execute` is required for sync/install/rewrite.

@@ -112,6 +112,17 @@ user-approved download URL. Then use `12_install_local_licensed_tools.sh` with
 `--allow-download`; do not download from third-party mirrors or bypass license,
 registration, login, or click-through controls.
 
+For new-machine migrations, prefer the consolidated entrypoint when the user
+wants one command for asset sync, tool installation, activation rewrite,
+runtime validation, and optional real VCF smoke:
+
+```bash
+bash .agents/skills/neoag-remote-deploy/scripts/16_install_new_machine.sh \
+  --asset-source-host na@10.200.50.134 \
+  --allow-download \
+  --execute
+```
+
 For README-listed open/conda tools, prefer `13_install_readme_tools.sh` over
 running many installer scripts manually. It defaults to Miniforge3 under
 `/root/neo/env_tool/miniforge3` or `<tools-root>/miniforge3`; use
