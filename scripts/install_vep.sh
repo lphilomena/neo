@@ -72,7 +72,9 @@ WRAPPER_DIR="${TOOLS_ROOT}/tools/bin"
 mkdir -p "${WRAPPER_DIR}"
 cat > "${WRAPPER_DIR}/vep" <<EOF
 #!/usr/bin/env bash
-exec "${CONDA_BASE}/bin/conda" run -n "${ENV_NAME}" vep "\$@"
+unset PERL5LIB PERL_LOCAL_LIB_ROOT PERL_MB_OPT PERL_MM_OPT
+export PATH="${PREFIX}/bin:\${PATH}"
+exec "${PREFIX}/bin/vep" "\$@"
 EOF
 chmod +x "${WRAPPER_DIR}/vep"
 VEP_BIN="${WRAPPER_DIR}/vep"
