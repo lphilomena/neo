@@ -46,6 +46,15 @@ fi
 echo "==> Ensuring setuptools<82 (pkg_resources required by mhcflurry) ..."
 pip install -q "setuptools>=65,<82"
 
+echo "==> Ensuring tf-keras legacy shim for MHCflurry ..."
+TF_KERAS_SPEC="$(python - <<'PY'
+import tensorflow as tf
+major, minor, *_ = tf.__version__.split(".")
+print(f"tf-keras>={major}.{minor},<{major}.{int(minor) + 1}")
+PY
+)"
+pip install -q "${TF_KERAS_SPEC}"
+
 echo "==> Fetching MHCflurry models..."
 if command -v mhcflurry-downloads >/dev/null 2>&1; then
   mhcflurry-downloads fetch || { echo "WARN: mhcflurry-downloads fetch failed. Try: conda activate ${ENV_NAME}; export LD_LIBRARY_PATH=\"${CONDA_PREFIX}/lib:${LD_LIBRARY_PATH:-}\"; mhcflurry-downloads fetch"; }
@@ -74,6 +83,7 @@ export NEOAG_CONDA_BASE="${CONDA_BASE}"
 export NEOAG_CONDA_ENV="${ENV_NAME}"
 export PATH="${PREFIX}/bin:\${PATH}"
 export LD_LIBRARY_PATH="${PREFIX}/lib:\${LD_LIBRARY_PATH:-}"
+export TF_USE_LEGACY_KERAS="\${TF_USE_LEGACY_KERAS:-1}"
 export NEOAG_TOOLS_ROOT="${ROOT}"
 
 # NetMHCpan (set after scripts/install_netmhcpan.sh)

@@ -24,9 +24,13 @@ PYTHON_BIN="${NEOAG_IMMUNO_PYTHON:-python3}"
 mkdir -p "${TOOLS}" "${BIN_DIR}"
 
 echo "[0/4] Python dependencies for MixMHCpred/BigMHC"
-"${PYTHON_BIN}" -m pip install -q numpy pandas psutil || true
+"${PYTHON_BIN}" -m pip install numpy pandas psutil || true
 if [[ "${NEOAG_SKIP_TORCH_INSTALL:-0}" != "1" ]]; then
-  "${PYTHON_BIN}" -m pip install -q torch || echo "WARN: torch install failed; BigMHC smoke test may fail. Install torch manually or set NEOAG_SKIP_TORCH_INSTALL=1 if already available." >&2
+  if "${PYTHON_BIN}" -c 'import torch' >/dev/null 2>&1; then
+    echo "torch already available in ${PYTHON_BIN}; skip reinstall"
+  else
+    "${PYTHON_BIN}" -m pip install torch || echo "WARN: torch install failed; BigMHC smoke test may fail. Install torch manually or set NEOAG_SKIP_TORCH_INSTALL=1 if already available." >&2
+  fi
 fi
 
 echo "[1/4] PRIME"
@@ -54,7 +58,8 @@ chmod +x "${MIX_DIR}/MixMHCpred" 2>/dev/null || true
 echo "[3/4] BigMHC"
 if [[ ! -f "${BIGMHC_DIR}/src/predict.py" ]]; then
   rm -rf "${BIGMHC_DIR}" 2>/dev/null || true
-  git clone --progress https://github.com/KarchinLab/bigmhc.git "${BIGMHC_DIR}"
+  git clone --depth 1 --filter=blob:none --sparse --progress https://github.com/KarchinLab/bigmhc.git "${BIGMHC_DIR}"
+  (cd "${BIGMHC_DIR}" && git sparse-checkout set src data/example1.csv data/pseudoseqs.csv README.md requirements.txt)
 fi
 
 cat > "${BIN_DIR}/bigmhc_predict" <<EOF

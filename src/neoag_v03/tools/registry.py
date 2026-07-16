@@ -281,10 +281,25 @@ class RunContext:
 
     def exe(self, tool: str) -> str:
         import os
+        from pathlib import Path
         if tool == "vep":
             return (
                 self.executables.get(tool)
                 or os.environ.get("NEOAG_VEP_BIN")
                 or TOOL_REGISTRY[tool].executable
             )
+        if tool == "netmhcpan":
+            for override in (os.environ.get("NEOAG_NETMHCPAN_BIN"), os.environ.get("NETMHCPAN_BIN")):
+                if override and Path(override).is_file():
+                    return str(Path(override))
+            tools_root = os.environ.get("NEOAG_TOOLS_ROOT") or ""
+            if tools_root:
+                candidate = Path(tools_root) / "bin" / "netMHCpan"
+                if candidate.is_file():
+                    return str(candidate)
+            home = os.environ.get("NETMHCPAN_HOME") or os.environ.get("NETMHCpan") or ""
+            if home:
+                candidate = Path(home) / "netMHCpan"
+                if candidate.is_file():
+                    return str(candidate)
         return self.executables.get(tool) or TOOL_REGISTRY[tool].executable

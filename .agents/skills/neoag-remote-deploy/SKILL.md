@@ -79,14 +79,23 @@ extension before running real data:
 10. After approval, sync approved assets from the old machine or staged local
     paths. Default is dry-run; use `--execute` only with approval:
     `scripts/09_sync_production_assets.sh --old-host <user@host> --old-env-tool <path> --old-reference-root <path> --old-licensed-root <path> --tools-root <target-env_tool> --reference-root <target-reference-root> --licensed-root <target-licensed-root> --outdir <outdir> --execute`.
-11. Rewrite local activation and wrappers so the new machine uses portable
+11. When README-listed external tools should be installed or rebuilt on the
+    target machine, use the consolidated installer. It defaults to Miniforge3 at
+    `<target-env_tool>/miniforge3`, supports open conda/git tools by group, and
+    delegates licensed/local archives to `12_install_local_licensed_tools.sh`:
+    `scripts/13_install_readme_tools.sh --project-root <root> --tools-root <target-env_tool> --licensed-root <target-licensed-root> --reference-root <target-reference-root> --core-env --vep --gatk --immunogenicity --allow-download --execute`.
+12. When licensed tools are available as files or directories already visible
+    on the target machine, install them into the target licensed-tool root without
+    creating `/mnt`, `/home`, or old-machine symlinks:
+    `scripts/12_install_local_licensed_tools.sh --licensed-root <target-licensed-root> --netmhcpan-tar <netMHCpan.tar.gz> --mixmhcpred-dir <MixMHCpred_install> --execute`.
+13. Rewrite local activation and wrappers so the new machine uses portable
     paths, not old `/home`, `/mnt`, or stale conda prefixes:
     `scripts/10_rewrite_production_activation.sh --project-root <root> --tools-root <target-env_tool> --reference-root <target-reference-root> --licensed-root <target-licensed-root> --write`.
-12. Validate the production runtime before real data:
+14. Validate the production runtime before real data:
     `scripts/11_validate_production_runtime.sh --project-root <root> --tools-root <target-env_tool> --outdir <outdir>/production_runtime --mini-prime`.
 
 Do not run `run-full`, `pipeline-full --execute`, or any patient workflow until
-step 12 shows that VEP, reference FASTA, NetMHCpan, PRIME/MixMHCpred, and the
+step 14 shows that VEP, reference FASTA, NetMHCpan, PRIME/MixMHCpred, and the
 enabled Python dependencies are available or explicitly waived.
 
 Fast path from an existing checkout:
@@ -97,6 +106,42 @@ bash scripts/bootstrap_agent_deploy.sh --outdir work/agent_deploy
 
 The bundled deployment scripts are more explicit and should be used when another
 agent needs a step-by-step audit trail.
+
+When local licensed-tool installers are missing, first retrieve an official or
+user-approved download URL. Then use `12_install_local_licensed_tools.sh` with
+`--allow-download`; do not download from third-party mirrors or bypass license,
+registration, login, or click-through controls.
+
+For README-listed open/conda tools, prefer `13_install_readme_tools.sh` over
+running many installer scripts manually. It defaults to Miniforge3 under
+`/root/neo/env_tool/miniforge3` or `<tools-root>/miniforge3`; use
+`--no-install-miniforge` only when a site-managed conda must be used instead.
+Use `--allow-download` for Miniforge, conda packages, git clones, VEP cache, or
+approved tool URLs.
+
+The core environment installer must keep MHCflurry compatible with modern
+TensorFlow/Keras by installing the matching `tf-keras` shim and exporting
+`TF_USE_LEGACY_KERAS=1` in generated activation files.
+
+`13_install_readme_tools.sh --run-real-vcf-smoke` runs the default
+M1ML150017383 VCF smoke test after installation. The smoke test runs
+MHCflurry by default, skips NetMHCstabpan by default because it is slow,
+and accepts `--real-vcf-smoke-top-n <N>` for a smaller or larger test.
+Use `--skip-real-vcf-mhcflurry` only as a temporary fallback on hosts with
+unresolved TensorFlow/Keras compatibility issues.
+
+External assets are not bundled in the skill, but the installer accepts staged
+asset locations so a new machine can prepare itself reproducibly:
+
+- Real VCF smoke inputs: `--real-vcf`, `--real-annotated-vcf`,
+  `--real-vcf-hla-alleles`, and `--real-vcf-hla-file`.
+- BigMHC models: `--bigmhc-models-dir <dir>` copies a local model directory, or
+  combine it with `--bigmhc-models-host <user@host>` to copy from a source
+  server using rsync.
+- Licensed tools remain explicit inputs via `--netmhcpan-tar`,
+  `--netmhcpan-dir`, `--netmhcpan-url`, `--mixmhcpred-dir`,
+  `--mixmhcpred-archive`, and `--mixmhcpred-url`; do not bundle or download
+  them unless the user has rights and approves the source.
 
 Production asset fast path after explicit approval:
 

@@ -16,24 +16,35 @@ for arg in "$@"; do
   esac
 done
 
+if [[ -n "${NEOAG_CONDA_BASE:-}" ]]; then
+  export PATH="$NEOAG_CONDA_BASE/bin:$PATH"
+fi
+
 if ! command -v conda >/dev/null 2>&1; then
   echo "ERROR: conda required" >&2
   exit 1
 fi
 
-# shellcheck disable=SC1091
-source "$(conda info --base)/etc/profile.d/conda.sh"
+CONDA_BASE="${NEOAG_CONDA_BASE:-$(conda info --base)}"
+TOOLS_ROOT="${NEOAG_TOOLS_ROOT:-$(dirname "$CONDA_BASE")}"
+CONDA_PKGS_DIR="${NEOAG_CONDA_PKGS_DIR:-$TOOLS_ROOT/conda_pkgs}"
+mkdir -p "$CONDA_PKGS_DIR"
+conda config --remove-key pkgs_dirs >/dev/null 2>&1 || true
+conda config --add pkgs_dirs "$CONDA_PKGS_DIR" >/dev/null 2>&1 || true
 
-if ! conda env list | awk '{print $1}' | grep -qx "${ENV_NAME}"; then
+# shellcheck disable=SC1091
+source "$CONDA_BASE/etc/profile.d/conda.sh"
+
+if [[ ! -x "$CONDA_BASE/envs/${ENV_NAME}/bin/vep" ]]; then
   echo "==> Creating ${ENV_NAME} from conda/env.neoag-vep.yml ..."
-  conda env create -n "${ENV_NAME}" -f "${ROOT}/conda/env.neoag-vep.yml"
+  conda create -n "${ENV_NAME}" --override-channels -c conda-forge -c bioconda -y ensembl-vep
 fi
 
 conda activate "${ENV_NAME}"
 
 if ! command -v vep >/dev/null 2>&1; then
   echo "==> Installing ensembl-vep into ${ENV_NAME} ..."
-  conda install -y -c bioconda -c conda-forge ensembl-vep
+  conda install --override-channels -c conda-forge -c bioconda -y ensembl-vep
 fi
 
 echo "==> VEP version:"
@@ -53,14 +64,22 @@ else
   echo "Or use online VEP (set NEOAG_VEP_ONLINE=1 in run config / see docs/TOOLS_SETUP.md)."
 fi
 
-PREFIX="$(conda env list | awk -v n="${ENV_NAME}" '$1==n {print $NF}')"
+PREFIX="${CONDA_BASE}/envs/${ENV_NAME}"
+WRAPPER_DIR="${TOOLS_ROOT}/tools/bin"
+mkdir -p "${WRAPPER_DIR}"
+cat > "${WRAPPER_DIR}/vep" <<EOF
+#!/usr/bin/env bash
+exec "${CONDA_BASE}/bin/conda" run -n "${ENV_NAME}" vep "\$@"
+EOF
+chmod +x "${WRAPPER_DIR}/vep"
+VEP_BIN="${WRAPPER_DIR}/vep"
 TOOLS_ENV="${ROOT}/conf/tools.env.sh"
 mkdir -p "${ROOT}/conf"
 if [[ ! -f "${TOOLS_ENV}" ]]; then
   cat > "${TOOLS_ENV}" <<EOF
 export NEOAG_PROJECT_ROOT="${ROOT}"
-export NEOAG_TOOLS_ROOT="${ROOT}"
-export NEOAG_CONDA_BASE="$(conda info --base)"
+export NEOAG_TOOLS_ROOT="${TOOLS_ROOT}"
+export NEOAG_CONDA_BASE="${NEOAG_CONDA_BASE:-$(conda info --base)}"
 export NEOAG_CONDA_ENV="neoag-tools"
 EOF
 fi
@@ -68,11 +87,9 @@ if ! grep -q 'VEP — installed via scripts/install_vep.sh' "${TOOLS_ENV}"; then
   cat >> "${TOOLS_ENV}" <<EOF
 
 # VEP — installed via scripts/install_vep.sh
+export PATH="${WRAPPER_DIR}:\${PATH}"
 export NEOAG_VEP_ENV="${ENV_NAME}"
-export NEOAG_VEP_BIN="${PREFIX}/bin/vep"
-if [[ -d "${PREFIX}/bin" ]]; then
-  export PATH="${PREFIX}/bin:\${PATH}"
-fi
+export NEOAG_VEP_BIN="${VEP_BIN}"
 EOF
 else
   echo "==> conf/tools.env.sh already contains a VEP install block; check NEOAG_VEP_BIN if needed."

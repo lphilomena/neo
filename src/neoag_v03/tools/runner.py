@@ -775,7 +775,7 @@ def run_mhcflurry(ctx: RunContext, out_csv: Path) -> Path:
         str(pep_csv),
         "--out", str(out_csv),
     ]
-    _run_cmd(cmd, work)
+    _run_cmd(cmd, work, env={"TF_USE_LEGACY_KERAS": "1"})
     return out_csv
 
 

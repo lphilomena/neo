@@ -31,7 +31,7 @@ fi
 env_exists() { conda env list | awk '{print $1}' | grep -qx "$1"; }
 
 fusion_env_has_arriba() {
-  env_exists "${ENV_NAME}" && conda run -n "${ENV_NAME}" arriba --version >/dev/null 2>&1
+  env_exists "${ENV_NAME}" && conda run -n "${ENV_NAME}" arriba -h >/dev/null 2>&1
 }
 
 if [[ "${NEOAG_FORCE_ENV_UPDATE:-0}" == "1" ]]; then
@@ -69,9 +69,9 @@ fi
 
 echo "==> Smoke tests"
 if fusion_env_has_arriba; then
-  conda run -n "${ENV_NAME}" arriba --version
+  conda run -n "${ENV_NAME}" arriba -h | head -6
 elif command -v arriba >/dev/null 2>&1; then
-  arriba --version
+  arriba -h | head -6
 else
   echo "ERROR: arriba not available after install" >&2
   exit 1

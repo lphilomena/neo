@@ -23,7 +23,7 @@ source "${CONDA_BASE}/etc/profile.d/conda.sh"
 
 if conda env list | awk '{print $1}' | grep -qx "${ENV_NAME}"; then
   echo "==> Updating existing env ${ENV_NAME} ..."
-  conda env update -n "${ENV_NAME}" -f "${YML}" --prune -y
+  conda env update -n "${ENV_NAME}" -f "${YML}" --prune
 else
   echo "==> Creating env from ${YML} (may take several minutes) ..."
   conda env create -n "${ENV_NAME}" -f "${YML}"
