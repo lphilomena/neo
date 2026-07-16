@@ -15,6 +15,7 @@ MINIFORGE_URL="https://github.com/conda-forge/miniforge/releases/latest/download
 INSTALL_CORE_ENV=0
 INSTALL_VEP=0
 INSTALL_VEP_CACHE=0
+VEP_VERSION="105"
 INSTALL_GATK=0
 INSTALL_IMMUNOGENICITY=0
 INSTALL_DEEPIMMUNO=0
@@ -83,6 +84,7 @@ Tool groups:
   --core-env                  pVACtools/MHCflurry core conda env via scripts/setup_tools_env.sh
   --vep                      VEP conda env via scripts/install_vep.sh
   --vep-cache                VEP cache via scripts/install_vep_cache.sh (large download)
+  --vep-version VERSION      Ensembl VEP/cache release to install/use (default: 105)
   --gatk                     GATK4 / Mutect2 via scripts/install_gatk.sh
   --immunogenicity           PRIME + MixMHCpred + BigMHC via scripts/install_immunogenicity_tools.sh
   --deepimmuno               DeepImmuno via scripts/install_deepimmuno.sh
@@ -159,6 +161,7 @@ while [[ $# -gt 0 ]]; do
     --core-env) INSTALL_CORE_ENV=1; shift ;;
     --vep) INSTALL_VEP=1; shift ;;
     --vep-cache) INSTALL_VEP=1; INSTALL_VEP_CACHE=1; shift ;;
+    --vep-version) VEP_VERSION="$2"; shift 2 ;;
     --gatk) INSTALL_GATK=1; shift ;;
     --immunogenicity) INSTALL_IMMUNOGENICITY=1; shift ;;
     --deepimmuno) INSTALL_DEEPIMMUNO=1; shift ;;
@@ -319,8 +322,8 @@ if [[ -n "$NETMHCPAN_TAR$NETMHCPAN_DIR$NETMHCPAN_URL$MIXMHCPRED_DIR$MIXMHCPRED_A
 fi
 
 [[ "$INSTALL_CORE_ENV" == "1" ]] && run "install core pVACtools/MHCflurry env" env NEOAG_TOOLS_LITE="$CORE_ENV_LITE" bash scripts/setup_tools_env.sh
-[[ "$INSTALL_VEP" == "1" ]] && run "install VEP env" bash scripts/install_vep.sh
-[[ "$INSTALL_VEP_CACHE" == "1" ]] && { need_download_ok "VEP cache"; run "install VEP cache" bash scripts/install_vep_cache.sh; }
+[[ "$INSTALL_VEP" == "1" ]] && run "install VEP env" env NEOAG_VEP_VERSION="$VEP_VERSION" bash scripts/install_vep.sh
+[[ "$INSTALL_VEP_CACHE" == "1" ]] && { need_download_ok "VEP cache"; run "install VEP cache" env NEOAG_VEP_CACHE_VERSION="$VEP_VERSION" bash scripts/install_vep_cache.sh; }
 [[ "$INSTALL_GATK" == "1" ]] && run "install GATK4" bash scripts/install_gatk.sh
 IMMUNO_PYTHON="${CONDA_BASE}/envs/neoag-tools/bin/python"
 [[ -x "$IMMUNO_PYTHON" ]] || IMMUNO_PYTHON="${CONDA_BASE}/envs/neoag-core/bin/python"
@@ -393,7 +396,7 @@ fi
   echo
   echo "Selected groups:"
   for item in \
-    "core-env:$INSTALL_CORE_ENV" "core-env-lite:$CORE_ENV_LITE" "skip-torch-install:$SKIP_TORCH_INSTALL" "vep:$INSTALL_VEP" "vep-cache:$INSTALL_VEP_CACHE" \
+    "core-env:$INSTALL_CORE_ENV" "core-env-lite:$CORE_ENV_LITE" "skip-torch-install:$SKIP_TORCH_INSTALL" "vep:$INSTALL_VEP" "vep-cache:$INSTALL_VEP_CACHE" "vep-version:$VEP_VERSION" \
     "gatk:$INSTALL_GATK" "immunogenicity:$INSTALL_IMMUNOGENICITY" \
     "netmhcstabpan:$INSTALL_NETMHCSTABPAN" "deepimmuno:$INSTALL_DEEPIMMUNO" \
     "lohhla:$INSTALL_LOHHLA" "polysolver:$INSTALL_POLYSOLVER" "optitype:$INSTALL_OPTITYPE" \

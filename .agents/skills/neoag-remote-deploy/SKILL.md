@@ -130,6 +130,8 @@ running many installer scripts manually. It defaults to Miniforge3 under
 Use `--allow-download` for Miniforge, conda packages, git clones, VEP cache, or
 approved tool URLs.
 
+VEP is pinned to release 105 by default (`--vep-version 105`) and must match the bundled `homo_sapiens/105_GRCh38` cache.
+
 The core environment installer must keep MHCflurry compatible with modern
 TensorFlow/Keras by installing the matching `tf-keras` shim and exporting
 `TF_USE_LEGACY_KERAS=1` in generated activation files.

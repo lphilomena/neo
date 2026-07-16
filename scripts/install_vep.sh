@@ -9,6 +9,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ENV_NAME="${NEOAG_VEP_ENV:-neoag-vep}"
+VEP_VERSION="${NEOAG_VEP_VERSION:-105}"
 INSTALL_CACHE=false
 for arg in "$@"; do
   case "$arg" in
@@ -37,14 +38,15 @@ source "$CONDA_BASE/etc/profile.d/conda.sh"
 
 if [[ ! -x "$CONDA_BASE/envs/${ENV_NAME}/bin/vep" ]]; then
   echo "==> Creating ${ENV_NAME} from conda/env.neoag-vep.yml ..."
-  conda create -n "${ENV_NAME}" --override-channels -c conda-forge -c bioconda -y ensembl-vep
+  conda create -n "${ENV_NAME}" --override-channels -c conda-forge -c bioconda -y "ensembl-vep=${VEP_VERSION}.*"
 fi
 
 conda activate "${ENV_NAME}"
 
-if ! command -v vep >/dev/null 2>&1; then
-  echo "==> Installing ensembl-vep into ${ENV_NAME} ..."
-  conda install --override-channels -c conda-forge -c bioconda -y ensembl-vep
+CURRENT_VEP_VERSION="$(conda list -n "${ENV_NAME}" ensembl-vep 2>/dev/null | awk '$1=="ensembl-vep" {print $2; exit}')"
+if ! command -v vep >/dev/null 2>&1 || [[ "${CURRENT_VEP_VERSION}" != ${VEP_VERSION}* ]]; then
+  echo "==> Installing ensembl-vep ${VEP_VERSION}.* into ${ENV_NAME} ..."
+  conda install --override-channels -c conda-forge -c bioconda -y "ensembl-vep=${VEP_VERSION}.*"
 fi
 
 echo "==> VEP version:"
@@ -58,6 +60,7 @@ else
   echo ""
   echo "NOTE: neoag upstream uses --cache --offline by default."
   echo "Run cache install when ready:"
+  echo "  export NEOAG_VEP_VERSION=${VEP_VERSION}"
   echo "  conda activate ${ENV_NAME}"
   echo "  vep_install -a cf -s homo_sapiens -y"
   echo ""
@@ -89,6 +92,7 @@ if ! grep -q 'VEP — installed via scripts/install_vep.sh' "${TOOLS_ENV}"; then
 # VEP — installed via scripts/install_vep.sh
 export PATH="${WRAPPER_DIR}:\${PATH}"
 export NEOAG_VEP_ENV="${ENV_NAME}"
+export NEOAG_VEP_VERSION="${VEP_VERSION}"
 export NEOAG_VEP_BIN="${VEP_BIN}"
 EOF
 else

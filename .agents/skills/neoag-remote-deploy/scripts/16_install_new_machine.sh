@@ -9,6 +9,7 @@ CONDA_BASE=""
 OUTDIR="work/agent_deploy/new_machine_install"
 ASSET_MANIFEST="configs/assets/production_assets.tsv"
 ASSET_SOURCE_HOST="na@10.200.50.134"
+VEP_VERSION="105"
 EXECUTE=0
 ALLOW_DOWNLOAD=0
 
@@ -47,6 +48,7 @@ Common options:
   --asset-manifest FILE       Large asset manifest (default: configs/assets/production_assets.tsv)
   --asset-source-host HOST    Source host for asset paths (default: na@10.200.50.134)
   --allow-download            Permit official/user-approved network downloads
+  --vep-version VERSION       Ensembl VEP/cache release to install/use (default: 105)
   --execute                   Actually run installation/sync/rewrite
 
 Tool group shortcuts:
@@ -97,6 +99,7 @@ while [[ $# -gt 0 ]]; do
     --asset-manifest) ASSET_MANIFEST="$2"; shift 2 ;;
     --asset-source-host) ASSET_SOURCE_HOST="$2"; shift 2 ;;
     --allow-download) ALLOW_DOWNLOAD=1; shift ;;
+    --vep-version) VEP_VERSION="$2"; shift 2 ;;
     --execute) EXECUTE=1; shift ;;
     --minimal) INSTALL_TOOL_GROUPS=(--core-env --immunogenicity); shift ;;
     --standard) INSTALL_TOOL_GROUPS=(--core-env --vep --gatk --immunogenicity --optitype --facets --ascat-pyclone); shift ;;
@@ -147,6 +150,7 @@ install_args=(
   "${CONDA_ARG[@]}"
   --outdir "$OUTDIR/readme_tools"
   "${INSTALL_TOOL_GROUPS[@]}"
+  --vep-version "$VEP_VERSION"
 )
 [[ "$ALLOW_DOWNLOAD" == "1" ]] && install_args+=(--allow-download)
 [[ "$EXECUTE" == "1" ]] && install_args+=(--execute)

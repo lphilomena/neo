@@ -48,7 +48,7 @@ bash .agents/skills/neoag-remote-deploy/scripts/16_install_new_machine.sh \
   --execute
 ```
 
-Add `--standard` for a broader common tool set, and add `--run-real-vcf-smoke --real-vcf-smoke-top-n 1` when a post-install real VCF smoke test is approved.
+Add `--standard` for a broader common tool set, and add `--run-real-vcf-smoke --real-vcf-smoke-top-n 1` when a post-install real VCF smoke test is approved. The default installer pins VEP to Ensembl release 105 (`--vep-version 105`) to match the `homo_sapiens/105_GRCh38` cache.
 
 ## New Machine Migration
 
