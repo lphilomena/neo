@@ -39,7 +39,16 @@ For moving this package to a new machine with another programming agent, use the
 bash scripts/bootstrap_agent_deploy.sh
 ```
 
-For stricter hand-off to a target-machine programming agent, use the dedicated deployment skill at `.agents/skills/neoag-remote-deploy/SKILL.md`.
+For stricter hand-off to a target-machine programming agent, use the dedicated deployment skill at `.agents/skills/neoag-remote-deploy/SKILL.md`. For a fresh production-like machine, the preferred consolidated entrypoint is:
+
+```bash
+bash .agents/skills/neoag-remote-deploy/scripts/16_install_new_machine.sh \
+  --asset-source-host na@10.200.50.134 \
+  --allow-download \
+  --execute
+```
+
+Add `--standard` for a broader common tool set, and add `--run-real-vcf-smoke --real-vcf-smoke-top-n 1` when a post-install real VCF smoke test is approved.
 
 ## Quick Start
 
@@ -610,7 +619,7 @@ neodata4git/
       common_snp.hg38.vcf.gz
       common_snp.hg38.vcf.gz.tbi
     vep/homo_sapiens/105_GRCh38/
-    easyfuse/current/
+    easyfuse/easyfuse_ref_v4/
     ascat/reference/WGS_hg38/
     sequenza/reference/
       GRCh38.primary_assembly.chr.fa
@@ -628,7 +637,7 @@ neodata4git/
       netMHCstabpan/
       prime/
       mixMHCpred_install/
-      bigmhc/
+      bigmhc/models/
       DeepImmuno/
     hmf/purple_reference/            # optional until PURPLE is used
     normal/proteome/
@@ -640,6 +649,26 @@ neodata4git/
 ```
 
 Current known gaps in this bundle are `data/ref/hg38/capture.bed`, `data/sequenza/reference/gc.wig.gz`, and `data/hmf/purple_reference`. They are not needed for every workflow, but must be staged before WES/panel SV, Sequenza, or PURPLE production runs respectively.
+
+For this deployment line, the canonical large-asset source root is:
+
+```bash
+/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git
+```
+
+The installer reads `configs/assets/production_assets.tsv` and can sync large
+assets from that root via:
+
+```bash
+bash .agents/skills/neoag-remote-deploy/scripts/13_install_readme_tools.sh \
+  --asset-manifest configs/assets/production_assets.tsv \
+  --sync-assets \
+  --asset-source-host na@10.200.50.134 \
+  --execute
+```
+
+`production_assets.tsv` stores paths and markers only; it does not put BigMHC
+models, EasyFuse references, real VCFs, licensed tools, or patient data into Git.
 
 
 For the full portable reference-bundle layout and acceptance command, use the `neodata4git` section above. Minimal configuration is:
