@@ -46,6 +46,9 @@ fi
 echo "==> Ensuring setuptools<82 (pkg_resources required by mhcflurry) ..."
 pip install -q "setuptools>=65,<82"
 
+echo "==> Ensuring Biopython ..."
+pip install -q biopython
+
 echo "==> Ensuring tf-keras legacy shim for MHCflurry ..."
 TF_KERAS_SPEC="$(python - <<'PY'
 import tensorflow as tf
