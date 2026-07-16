@@ -50,6 +50,58 @@ bash .agents/skills/neoag-remote-deploy/scripts/16_install_new_machine.sh \
 
 Add `--standard` for a broader common tool set, and add `--run-real-vcf-smoke --real-vcf-smoke-top-n 1` when a post-install real VCF smoke test is approved.
 
+## New Machine Migration
+
+For a fresh target machine, clone this branch and run the consolidated installer:
+
+```bash
+git clone --branch na0707_upload_release https://github.com/lphilomena/neo.git /root/neo/src/na0707_upload_release
+cd /root/neo/src/na0707_upload_release
+
+bash .agents/skills/neoag-remote-deploy/scripts/16_install_new_machine.sh \
+  --asset-source-host na@10.200.50.134 \
+  --allow-download \
+  --execute
+```
+
+Use `--standard` when the machine should also prepare common production tools
+such as VEP, GATK, OptiType, FACETS, and ASCAT/PyClone:
+
+```bash
+bash .agents/skills/neoag-remote-deploy/scripts/16_install_new_machine.sh \
+  --standard \
+  --asset-source-host na@10.200.50.134 \
+  --allow-download \
+  --execute
+```
+
+To run a small post-install real VCF smoke test:
+
+```bash
+bash .agents/skills/neoag-remote-deploy/scripts/16_install_new_machine.sh \
+  --standard \
+  --run-real-vcf-smoke \
+  --real-vcf-smoke-top-n 1 \
+  --asset-source-host na@10.200.50.134 \
+  --allow-download \
+  --execute
+```
+
+Large assets are synchronized from `configs/assets/production_assets.tsv`, whose
+current source root is `/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git`.
+Licensed tools such as NetMHCpan and MixMHCpred are not bundled in Git; provide
+approved local directories, archives, or URLs through the installer pass-through
+options, for example after `--`:
+
+```bash
+bash .agents/skills/neoag-remote-deploy/scripts/16_install_new_machine.sh \
+  --standard \
+  --asset-source-host na@10.200.50.134 \
+  --allow-download \
+  --execute \
+  -- --netmhcpan-dir /path/to/netMHCpan --mixmhcpred-dir /path/to/mixMHCpred_install
+```
+
 ## Quick Start
 
 Run these commands from the project root:
