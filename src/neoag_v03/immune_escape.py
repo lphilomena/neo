@@ -47,7 +47,8 @@ IMMUNE_ESCAPE_SUMMARY_FIELDS = [
 PEPTIDE_ESCAPE_FIELDS = [
     "peptide_id", "event_id", "peptide", "hla_allele", "mhc_class", "therapy_context", "restricting_hla_lost",
     "lost_hla_alleles", "b2m_status", "hla_class_i_global_status", "jak_stat_status", "tap_processing_status",
-    "nlrc5_status", "ciita_status", "escape_status", "escape_reason", "escape_multiplier", "priority_cap",
+    "nlrc5_status", "ciita_status", "escape_status", "escape_reason", "escape_multiplier", "escape_severity",
+    "priority_cap",
 ]
 
 
@@ -306,6 +307,20 @@ def build_immune_escape_evidence(
 
     flags: list[dict[str, str]] = []
     strict_lost = _strict_lost_hla_policy(ctx)
+    # Multiplier / priority-cap magnitudes are read from
+    # profile["immune_escape"]["multipliers" / "priority_caps"] (scoring
+    # audit fix #6), falling back to the same numeric values that used to be
+    # hardcoded here if the profile doesn't define a key.
+    esc_cfg = dict((profile or {}).get("immune_escape", {}))
+    mult_cfg = dict(esc_cfg.get("multipliers", {}))
+    cap_cfg = dict(esc_cfg.get("priority_caps", {}))
+
+    def _mult(key: str, fallback: float) -> float:
+        return float(mult_cfg.get(key, fallback))
+
+    def _cap(key: str, fallback: str) -> str:
+        return str(cap_cfg.get(key, fallback))
+
     for p in read_tsv(raw_peptides):
         peptide_id = p.get("peptide_id", "")
         event_id = p.get("event_id", "")
@@ -315,29 +330,29 @@ def build_immune_escape_evidence(
         status = "ESCAPE_PASS"; mult = 1.0; cap = ""
         if hla in lost_hla:
             if strict_lost:
-                status = "LOST_RESTRICTING_HLA"; mult = 0.0; cap = "D"
+                status = "LOST_RESTRICTING_HLA"; mult = _mult("hla_lost_strict", 0.0); cap = _cap("hla_lost_strict", "D")
             else:
-                status = "LOST_RESTRICTING_HLA_RETAINED_FOR_REVIEW"; mult = min(mult, 0.35); cap = "C_CAUTION"
+                status = "LOST_RESTRICTING_HLA_RETAINED_FOR_REVIEW"; mult = min(mult, _mult("hla_lost_lenient", 0.35)); cap = _cap("hla_lost_lenient", "C_CAUTION")
             reasons.append("restricting_hla_lost")
         if mhc_i and b2m:
-            status = "GLOBAL_MHC_I_LOSS"; mult = 0.0; cap = "D"; reasons.append("b2m_biallelic_loss")
+            status = "GLOBAL_MHC_I_LOSS"; mult = _mult("b2m_biallelic_loss", 0.0); cap = _cap("b2m_biallelic_loss", "D"); reasons.append("b2m_biallelic_loss")
         elif mhc_i and tap_def:
             if mult > 0:
                 status = "APM_PROCESSING_DEFECT" if status == "ESCAPE_PASS" else status
-                mult = min(mult, 0.35); cap = cap or "C"
+                mult = min(mult, _mult("tap_defect", 0.35)); cap = cap or _cap("tap_defect", "C")
             reasons.append("tap_processing_defect")
         elif mhc_i and nlrc5_def:
             if mult > 0:
                 status = "APM_TRANSCRIPTION_CAUTION" if status == "ESCAPE_PASS" else status
-                mult = min(mult, 0.70); cap = cap or "B_CAUTION"
+                mult = min(mult, _mult("nlrc5_defect", 0.70)); cap = cap or _cap("nlrc5_defect", "B_CAUTION")
             reasons.append("nlrc5_caution")
         if (not mhc_i) and ciita_def:
             status = "MHC_II_PRESENTATION_DEFECT" if status == "ESCAPE_PASS" else status
-            mult = min(mult, 0.40); cap = cap or "C"; reasons.append("ciita_or_mhc_ii_defect")
+            mult = min(mult, _mult("ciita_defect", 0.40)); cap = cap or _cap("ciita_defect", "C"); reasons.append("ciita_or_mhc_ii_defect")
         if jak1 or jak2:
             if mult > 0:
                 status = "IFNG_RESPONSE_DEFECT_CAUTION" if status == "ESCAPE_PASS" else status
-                mult = min(mult, 0.60); cap = cap or "B_CAUTION"
+                mult = min(mult, _mult("jak_stat_defect", 0.60)); cap = cap or _cap("jak_stat_defect", "B_CAUTION")
             reasons.append("jak_stat_defect")
         # Escape event clonality context if the peptide's source event has CCF.
         ccf = ccf_by_event.get(event_id, {})
@@ -363,6 +378,15 @@ def build_immune_escape_evidence(
             "escape_status": status,
             "escape_reason": ";".join(reasons),
             "escape_multiplier": f"{mult:.4f}",
+            # escape_severity is a normalized 3-tier summary derived directly
+            # from `mult` (not from a hand-maintained list of status
+            # strings), so downstream safety_status escalation (see
+            # scoring_v03.py::merge_escape_flags) stays correct even if new
+            # granular `escape_status` values are added later (scoring audit
+            # fix #5 -- previously that escalation checked for literal
+            # "ESCAPE_REJECT"/"ESCAPE_CAUTION" strings that this module never
+            # actually emitted, so it silently never fired).
+            "escape_severity": "ESCAPE_REJECT" if mult <= 0.0 else ("ESCAPE_CAUTION" if mult < 1.0 else "ESCAPE_PASS"),
             "priority_cap": cap,
         })
 

@@ -17,6 +17,7 @@ from ..model_layers import enrich_event_layers, enrich_peptide_layers, infer_mut
 from ..schemas import EVENT_FIELDS, FUSION_EVIDENCE_FIELDS, PEPTIDE_FIELDS
 from ..utils import first, safe_id, to_float
 from ..evidence_provenance import ProvenanceRecord, provenance_from_file, without_provenance, write_evidence_tsv
+from ..driver_gene_db import lookup_driver_relevance
 
 # Common read-through / low-confidence fusion types in normal tissue (EasyFuse taxonomy).
 READTHROUGH_TYPES = frozenset({"cis_near"})
@@ -265,7 +266,7 @@ def easyfuse_row_to_event(
         "rna_junction_reads": str(junction),
         "event_confidence": f"{confidence:.3f}",
         "event_expression": "0.0",
-        "driver_relevance": "0.0",
+        "driver_relevance": str(lookup_driver_relevance(gene)),
         "tumor_vaf": "0.0",
         "tumor_depth": "",
         "tumor_alt_count": "",

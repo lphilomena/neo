@@ -88,7 +88,7 @@ def merge_escape_flags(peptide: dict, flags: Mapping[str, Any] | None) -> dict:
     if not flags:
         peptide.setdefault("escape_multiplier", "1.0000")
         return peptide
-    for k in ["escape_status", "escape_flag", "escape_reason", "resistance_risk", "escape_action", "escape_multiplier", "priority_cap"]:
+    for k in ["escape_status", "escape_severity", "escape_flag", "escape_reason", "resistance_risk", "escape_action", "escape_multiplier", "priority_cap"]:
         val = flags.get(k)
         if val not in {None, ""}:
             if k == "priority_cap" and peptide.get("priority_cap"):
@@ -96,10 +96,16 @@ def merge_escape_flags(peptide: dict, flags: Mapping[str, Any] | None) -> dict:
                 peptide["priority_cap"] = apply_priority_cap_value(peptide.get("priority_cap"), str(val))
             else:
                 peptide[k] = val
-    if flags.get("escape_status") == "ESCAPE_REJECT":
+    # `escape_severity` is a normalized 3-tier field ("ESCAPE_REJECT" /
+    # "ESCAPE_CAUTION" / "ESCAPE_PASS") derived directly from the escape
+    # multiplier in immune_escape.py, unlike the free-form `escape_status`
+    # string (e.g. "GLOBAL_MHC_I_LOSS") this used to (incorrectly) compare
+    # against literal "ESCAPE_REJECT"/"ESCAPE_CAUTION" values that
+    # immune_escape.py never actually produced (scoring audit fix #5).
+    if flags.get("escape_severity") == "ESCAPE_REJECT":
         peptide["safety_status"] = "FAIL"
         peptide["safety_reason"] = ";".join(x for x in [peptide.get("safety_reason"), flags.get("escape_reason")] if x)
-    elif flags.get("escape_status") == "ESCAPE_CAUTION" and peptide.get("safety_status") != "FAIL":
+    elif flags.get("escape_severity") == "ESCAPE_CAUTION" and peptide.get("safety_status") != "FAIL":
         peptide["safety_status"] = "CAUTION"
         peptide["safety_reason"] = ";".join(x for x in [peptide.get("safety_reason"), flags.get("escape_reason")] if x)
     return peptide

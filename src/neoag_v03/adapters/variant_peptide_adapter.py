@@ -8,6 +8,8 @@ from typing import Any
 
 from ..config import load_profile
 from ..input_router import resolve_entry_mode
+from ..driver_gene_db import lookup_driver_relevance
+from ..tumor_specificity import compute_tumor_specificity
 from ..model_layers import enrich_event_layers, enrich_peptide_layers, infer_mutation_source, infer_peptide_consequence
 from ..schemas import EVENT_FIELDS, PEPTIDE_FIELDS
 from ..utils import read_tsv, safe_id, write_tsv
@@ -57,7 +59,7 @@ def event_from_variant_row(row: dict[str, str], sample_id: str, profile_name: st
         "rna_junction_reads": "",
         "event_confidence": "0.7",
         "event_expression": "0.0",
-        "driver_relevance": "0.0",
+        "driver_relevance": str(lookup_driver_relevance(gene)),
         "tumor_vaf": row.get("vaf") or "0.0",
         "tumor_depth": row.get("tumor_depth") or "",
         "tumor_alt_count": row.get("tumor_alt_count") or "",
@@ -66,7 +68,7 @@ def event_from_variant_row(row: dict[str, str], sample_id: str, profile_name: st
         "rna_depth": row.get("rna_depth") or "",
         "clonality": "0.5",
         "persistence": "0.5",
-        "tumor_specificity": "0.7",
+        "tumor_specificity": str(compute_tumor_specificity(gene, 0.0)),
         "source": tool,
         "mutation_source": infer_mutation_source(event_type=event_type, tool=tool, consequence=consequence),
         "peptide_consequence": infer_peptide_consequence(event_type=event_type, consequence=consequence, tool=tool),

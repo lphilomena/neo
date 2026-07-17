@@ -26,8 +26,12 @@ tumor_specificity = 0.05
 hla_binding = 0.20
 hla_presentation = 0.25
 rna_junction_support = 0.05
-normal_tissue_safety = 0.05
-apm_integrity = 0.05
+# normal_tissue_safety / apm_integrity are 0.0: these signals already act as
+# independent multiplicative gates (safety_multiplier / appm_multiplier)
+# applied after the L3 composite, so a nonzero weight here would double-count
+# the same underlying value (scoring audit fix #1).
+normal_tissue_safety = 0.0
+apm_integrity = 0.0
 immunogenicity = 0.15
 [event_weights]
 event_confidence = 0.22
@@ -98,6 +102,52 @@ iedb = 0.20
 # HLA-stratified source multipliers disabled (CEDAR ablation: hurts gated composite AUROC).
 # Re-enable under [immunogenicity.hla_source_multipliers."HLA-..."] when retuned.
 
+[driver_genes]
+# Reference table for driver_relevance lookup (scoring audit fix #2).
+# reference_path left unset -> falls back to resources/driver_genes.tsv.
+enabled = true
+unknown_gene_relevance = 0.3
+# reference_path = "resources/driver_genes.tsv"
+
 [immune_escape]
 therapy_context = "vaccine"
 hla_loh_policy = "exclude_lost_hla_for_vaccine"
+
+# Escape-multiplier magnitudes (scoring audit fix #6). Previously these were
+# Python literals in immune_escape.py; they are now read from here (with the
+# same numeric values as fallback defaults if a key is missing), and
+# appm_explainability.py's per-mechanism submodule scores are derived from
+# this same table instead of maintaining a second, independently hardcoded
+# and inconsistent set of numbers.
+[immune_escape.multipliers]
+hla_lost_strict = 0.0
+hla_lost_lenient = 0.35
+b2m_biallelic_loss = 0.0
+tap_defect = 0.35
+nlrc5_defect = 0.70
+ciita_defect = 0.40
+jak_stat_defect = 0.60
+# The remaining keys below are specific to the finer-grained per-mechanism
+# submodule scores in appm_explainability.py (biallelic loss of the HLA
+# locus genes themselves, and "functional caution" -- reduced but not
+# biallelic-lost -- states) and have no direct counterpart above; they used
+# to be a second, independently hardcoded and inconsistent set of numbers,
+# now sourced from this same table (scoring audit fix #6).
+hla_locus_biallelic_single = 0.70
+hla_locus_biallelic_multi = 0.40
+hla_loh_single_allele = 0.70
+hla_loh_multi_allele = 0.45
+core_caution_penalty = 0.75
+processing_caution_penalty = 0.75
+regulation_caution_penalty = 0.65
+mhc_ii_caution_penalty = 0.65
+ifng_caution_penalty = 0.65
+
+[immune_escape.priority_caps]
+hla_lost_strict = "D"
+hla_lost_lenient = "C_CAUTION"
+b2m_biallelic_loss = "D"
+tap_defect = "C"
+nlrc5_defect = "B_CAUTION"
+ciita_defect = "C"
+jak_stat_defect = "B_CAUTION"

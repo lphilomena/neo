@@ -1,0 +1,111 @@
+gene	category	driver_relevance	source_note
+TP53	tsg	0.95	Vogelstein2013;COSMIC_CGC_Tier1;pan-cancer top TSG
+KRAS	oncogene	0.95	Vogelstein2013;COSMIC_CGC_Tier1;RAS pathway
+PIK3CA	oncogene	0.9	Vogelstein2013;COSMIC_CGC_Tier1
+PTEN	tsg	0.9	Vogelstein2013;COSMIC_CGC_Tier1
+APC	tsg	0.9	Vogelstein2013;COSMIC_CGC_Tier1;colorectal
+EGFR	oncogene	0.9	Vogelstein2013;COSMIC_CGC_Tier1;lung
+BRAF	oncogene	0.9	Vogelstein2013;COSMIC_CGC_Tier1
+NRAS	oncogene	0.9	Vogelstein2013;COSMIC_CGC_Tier1;RAS pathway
+HRAS	oncogene	0.85	Vogelstein2013;COSMIC_CGC_Tier1;RAS pathway
+MYC	oncogene	0.9	Vogelstein2013;COSMIC_CGC_Tier1
+RB1	tsg	0.9	Vogelstein2013;COSMIC_CGC_Tier1
+VHL	tsg	0.85	Vogelstein2013;COSMIC_CGC_Tier1;renal
+CDKN2A	tsg	0.9	Vogelstein2013;COSMIC_CGC_Tier1
+SMAD4	tsg	0.85	Vogelstein2013;COSMIC_CGC_Tier1
+ARID1A	tsg	0.85	Bailey2018;COSMIC_CGC_Tier1;chromatin remodeling
+CTNNB1	oncogene	0.85	Vogelstein2013;COSMIC_CGC_Tier1;Wnt pathway
+NOTCH1	oncogene	0.8	Bailey2018;COSMIC_CGC_Tier1
+IDH1	oncogene	0.85	Bailey2018;COSMIC_CGC_Tier1;glioma/AML
+IDH2	oncogene	0.85	Bailey2018;COSMIC_CGC_Tier1;glioma/AML
+FBXW7	tsg	0.8	Vogelstein2013;COSMIC_CGC_Tier1
+STK11	tsg	0.8	Vogelstein2013;COSMIC_CGC_Tier1;lung
+ATM	tsg	0.8	Vogelstein2013;COSMIC_CGC_Tier1;DNA damage response
+ATR	tsg	0.7	COSMIC_CGC_Tier1;DNA damage response
+BRCA1	tsg	0.85	Vogelstein2013;COSMIC_CGC_Tier1;HR repair
+BRCA2	tsg	0.85	Vogelstein2013;COSMIC_CGC_Tier1;HR repair
+PALB2	tsg	0.75	COSMIC_CGC_Tier1;HR repair
+KIT	oncogene	0.85	Vogelstein2013;COSMIC_CGC_Tier1;GIST
+PDGFRA	oncogene	0.8	COSMIC_CGC_Tier1;GIST/glioma
+FLT3	oncogene	0.85	COSMIC_CGC_Tier1;AML
+NPM1	oncogene	0.8	COSMIC_CGC_Tier1;AML
+DNMT3A	tsg	0.8	Bailey2018;COSMIC_CGC_Tier1;AML/clonal hematopoiesis
+TET2	tsg	0.8	Bailey2018;COSMIC_CGC_Tier1;AML/clonal hematopoiesis
+ASXL1	tsg	0.75	COSMIC_CGC_Tier1;myeloid
+EZH2	both	0.75	Bailey2018;COSMIC_CGC_Tier1;chromatin
+JAK2	oncogene	0.85	COSMIC_CGC_Tier1;myeloproliferative
+JAK1	oncogene	0.7	COSMIC_CGC_Tier1;JAK-STAT
+JAK3	oncogene	0.7	COSMIC_CGC_Tier1;JAK-STAT
+NPM1	oncogene	0.8	COSMIC_CGC_Tier1
+RUNX1	both	0.8	COSMIC_CGC_Tier1;myeloid
+CEBPA	tsg	0.75	COSMIC_CGC_Tier1;AML
+WT1	both	0.7	COSMIC_CGC_Tier1;Wilms/AML;also known TAA
+NF1	tsg	0.85	Vogelstein2013;COSMIC_CGC_Tier1;RAS pathway
+NF2	tsg	0.75	COSMIC_CGC_Tier1
+MLH1	tsg	0.8	Vogelstein2013;COSMIC_CGC_Tier1;MMR
+MSH2	tsg	0.8	Vogelstein2013;COSMIC_CGC_Tier1;MMR
+MSH6	tsg	0.75	COSMIC_CGC_Tier1;MMR
+PMS2	tsg	0.7	COSMIC_CGC_Tier1;MMR
+POLE	both	0.75	Bailey2018;COSMIC_CGC_Tier1;hypermutator
+ERBB2	oncogene	0.9	Vogelstein2013;COSMIC_CGC_Tier1;HER2
+ERBB3	oncogene	0.7	COSMIC_CGC_Tier1
+MET	oncogene	0.85	Vogelstein2013;COSMIC_CGC_Tier1
+ALK	oncogene	0.85	COSMIC_CGC_Tier1;lung/NB fusion driver
+ROS1	oncogene	0.75	COSMIC_CGC_Tier1;fusion driver
+RET	oncogene	0.8	COSMIC_CGC_Tier1;fusion/point mutation driver
+FGFR1	oncogene	0.75	COSMIC_CGC_Tier1
+FGFR2	oncogene	0.75	COSMIC_CGC_Tier1
+FGFR3	oncogene	0.75	COSMIC_CGC_Tier1
+CCND1	oncogene	0.75	COSMIC_CGC_Tier1;cell cycle
+CDK4	oncogene	0.75	COSMIC_CGC_Tier1;cell cycle
+CDK6	oncogene	0.7	COSMIC_CGC_Tier1;cell cycle
+MDM2	oncogene	0.75	COSMIC_CGC_Tier1;p53 pathway
+MDM4	oncogene	0.65	COSMIC_CGC_Tier1;p53 pathway
+GNAS	oncogene	0.7	Vogelstein2013;COSMIC_CGC_Tier1
+GNAQ	oncogene	0.65	COSMIC_CGC_Tier1;uveal melanoma
+GNA11	oncogene	0.65	COSMIC_CGC_Tier1;uveal melanoma
+CIC	tsg	0.6	Bailey2018;COSMIC_CGC_Tier1
+SPOP	both	0.65	Bailey2018;COSMIC_CGC_Tier1;prostate
+FOXA1	both	0.65	Bailey2018;COSMIC_CGC_Tier1;prostate/breast
+GATA3	both	0.7	Bailey2018;COSMIC_CGC_Tier1;breast
+TBX3	tsg	0.55	Bailey2018
+RNF43	tsg	0.65	Bailey2018;COSMIC_CGC_Tier1;Wnt pathway
+ARID2	tsg	0.65	Bailey2018;COSMIC_CGC_Tier1;chromatin
+ARID1B	tsg	0.6	Bailey2018;chromatin
+SMARCA4	tsg	0.75	Bailey2018;COSMIC_CGC_Tier1;chromatin
+SMARCB1	tsg	0.7	COSMIC_CGC_Tier1;chromatin
+PBRM1	tsg	0.7	Bailey2018;COSMIC_CGC_Tier1;renal
+SETD2	tsg	0.65	Bailey2018;COSMIC_CGC_Tier1;renal
+KMT2D	tsg	0.7	Bailey2018;COSMIC_CGC_Tier1;chromatin
+KMT2C	tsg	0.65	Bailey2018;chromatin
+CREBBP	tsg	0.65	COSMIC_CGC_Tier1;chromatin
+EP300	tsg	0.65	COSMIC_CGC_Tier1;chromatin
+TSC1	tsg	0.7	COSMIC_CGC_Tier1;mTOR pathway
+TSC2	tsg	0.7	COSMIC_CGC_Tier1;mTOR pathway
+MTOR	oncogene	0.6	COSMIC_CGC_Tier1;mTOR pathway
+AKT1	oncogene	0.7	COSMIC_CGC_Tier1;PI3K pathway
+PIK3R1	tsg	0.65	Bailey2018;COSMIC_CGC_Tier1;PI3K pathway
+STAT3	oncogene	0.6	COSMIC_CGC_Tier1
+CARD11	oncogene	0.6	COSMIC_CGC_Tier1;lymphoma
+MYD88	oncogene	0.65	COSMIC_CGC_Tier1;lymphoma
+TNFAIP3	tsg	0.6	COSMIC_CGC_Tier1;lymphoma
+B2M	tsg	0.55	COSMIC_CGC_Tier1;immune evasion driver (context dependent)
+CASP8	tsg	0.55	Bailey2018;COSMIC_CGC_Tier1
+NFE2L2	oncogene	0.65	Bailey2018;COSMIC_CGC_Tier1;lung/HNSC
+KEAP1	tsg	0.65	Bailey2018;COSMIC_CGC_Tier1;lung
+U2AF1	both	0.6	COSMIC_CGC_Tier1;splicing/MDS
+SF3B1	both	0.7	Bailey2018;COSMIC_CGC_Tier1;splicing
+SRSF2	both	0.6	COSMIC_CGC_Tier1;splicing/MDS
+ZRSR2	tsg	0.55	COSMIC_CGC_Tier1;splicing/MDS
+CALR	oncogene	0.65	COSMIC_CGC_Tier1;myeloproliferative
+MPL	oncogene	0.6	COSMIC_CGC_Tier1;myeloproliferative
+BCOR	tsg	0.55	COSMIC_CGC_Tier1
+BCORL1	tsg	0.5	COSMIC_CGC_Tier1
+CBL	tsg	0.6	COSMIC_CGC_Tier1;RAS pathway
+PTPN11	oncogene	0.7	Vogelstein2013;COSMIC_CGC_Tier1;RAS pathway
+SOS1	oncogene	0.55	COSMIC_CGC_Tier1;RAS pathway
+MAP2K1	oncogene	0.6	COSMIC_CGC_Tier1;MAPK pathway
+MAP2K2	oncogene	0.5	COSMIC_CGC_Tier1;MAPK pathway
+ESR1	oncogene	0.65	COSMIC_CGC_Tier1;breast endocrine resistance
+AR	oncogene	0.7	COSMIC_CGC_Tier1;prostate
+TERT	oncogene	0.7	COSMIC_CGC_Tier1;promoter mutation driver

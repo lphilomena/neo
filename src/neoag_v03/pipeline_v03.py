@@ -75,7 +75,7 @@ def run_v03(
         shutil.copy2(raw_events, raw_events_path)
         shutil.copy2(raw_peptides, raw_peptides_path)
     elif pvac_paths:
-        parse_pvactools_outputs(pvac_paths, sample_id, profile["_profile_name"], raw_events_path, raw_peptides_path)
+        parse_pvactools_outputs(pvac_paths, sample_id, profile["_profile_name"], raw_events_path, raw_peptides_path, profile=profile)
     else:
         raise ValueError("run_v03 requires pvac_paths or pre-built raw_events + raw_peptides")
 

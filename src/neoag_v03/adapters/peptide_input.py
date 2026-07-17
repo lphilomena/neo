@@ -16,6 +16,8 @@ from typing import Any
 from ..schemas import EVENT_FIELDS, PEPTIDE_FIELDS
 from ..model_layers import enrich_event_layers, infer_mutation_source, infer_peptide_consequence
 from ..utils import MISSING, safe_id, write_tsv
+from ..driver_gene_db import lookup_driver_relevance
+from ..tumor_specificity import compute_tumor_specificity
 
 PEPTIDE_COLUMN_ALIASES = frozenset({
     "peptide",
@@ -306,7 +308,7 @@ def build_raw_events_from_peptides(
             "rna_junction_reads": pep.get("rna_junction_reads", ""),
             "event_confidence": "0.5",
             "event_expression": "0.0",
-            "driver_relevance": "0.0",
+            "driver_relevance": str(lookup_driver_relevance(pep.get("gene") or "UNKNOWN")),
             "tumor_vaf": "0.0",
             "tumor_depth": "",
             "tumor_alt_count": "",
@@ -315,7 +317,7 @@ def build_raw_events_from_peptides(
             "rna_depth": "",
             "clonality": "0.5",
             "persistence": "0.5",
-            "tumor_specificity": "0.7",
+            "tumor_specificity": str(compute_tumor_specificity(pep.get("gene") or "UNKNOWN", 0.0)),
             "source": pep.get("source_tool") or "peptide_input",
         }
         events[eid] = enrich_event_layers(base)

@@ -199,44 +199,51 @@ def _module_confidence(
     }
 
 
-def _submodule_score(sample_id: str, parent: str, submodule: str, genes: set[str], gene_map: Mapping[str, Mapping[str, str]], lost_hla: list[str], input_rows: list[dict[str, str]], conflict_rows: list[dict[str, str]]) -> dict[str, str]:
+def _submodule_score(sample_id: str, parent: str, submodule: str, genes: set[str], gene_map: Mapping[str, Mapping[str, str]], lost_hla: list[str], input_rows: list[dict[str, str]], conflict_rows: list[dict[str, str]], profile: Mapping[str, Any] | None = None) -> dict[str, str]:
     rows = [dict(gene_map[g]) for g in sorted(genes) if g in gene_map]
     score = 1.0
     reasons: list[str] = []
     action = "none"
+    mult_cfg = dict((profile or {}).get("immune_escape", {}).get("multipliers", {}))
+
+    def _m(key: str, fallback: float) -> float:
+        return float(mult_cfg.get(key, fallback))
+
     if submodule == "MHC_I_CORE":
         if _is_bial(gene_map.get("B2M")):
-            score = min(score, 0.05); reasons.append("B2M_biallelic_loss"); action = "hard_cap_mhc_i"
+            score = min(score, _m("b2m_biallelic_loss", 0.0)); reasons.append("B2M_biallelic_loss"); action = "hard_cap_mhc_i"
         hla_losses = [g for g in ["HLA-A", "HLA-B", "HLA-C"] if _is_bial(gene_map.get(g))]
         if hla_losses:
-            score = min(score, 0.40 if len(hla_losses) >= 2 else 0.70); reasons.append("hla_locus_core_loss:" + ",".join(hla_losses)); action = action or "cap_affected_hla"
+            cap_val = _m("hla_locus_biallelic_multi", 0.40) if len(hla_losses) >= 2 else _m("hla_locus_biallelic_single", 0.70)
+            score = min(score, cap_val); reasons.append("hla_locus_core_loss:" + ",".join(hla_losses)); action = action or "cap_affected_hla"
         if any(_is_caution(gene_map.get(g)) for g in ["HLA-A", "HLA-B", "HLA-C", "B2M"]):
-            score = min(score, 0.75); reasons.append("core_gene_caution")
+            score = min(score, _m("core_caution_penalty", 0.75)); reasons.append("core_gene_caution")
     elif submodule == "MHC_I_PROCESSING":
         if _is_bial(gene_map.get("TAP1")) or _is_bial(gene_map.get("TAP2")):
-            score = min(score, 0.25); reasons.append("TAP1_TAP2_biallelic_defect"); action = "processing_cap"
+            score = min(score, _m("tap_defect", 0.35)); reasons.append("TAP1_TAP2_biallelic_defect"); action = "processing_cap"
         if any(_is_caution(gene_map.get(g)) for g in genes):
-            score = min(score, 0.75); reasons.append("processing_gene_caution")
+            score = min(score, _m("processing_caution_penalty", 0.75)); reasons.append("processing_gene_caution")
     elif submodule == "MHC_I_REGULATION":
         if _is_bial(gene_map.get("NLRC5")):
-            score = min(score, 0.40); reasons.append("NLRC5_biallelic_loss"); action = "regulation_cap"
+            score = min(score, _m("nlrc5_defect", 0.70)); reasons.append("NLRC5_biallelic_loss"); action = "regulation_cap"
         elif _is_caution(gene_map.get("NLRC5")):
-            score = min(score, 0.65); reasons.append("NLRC5_caution")
+            score = min(score, _m("regulation_caution_penalty", 0.65)); reasons.append("NLRC5_caution")
     elif submodule == "MHC_I_HLA_LOH":
         if lost_hla:
-            score = min(score, 0.70 if len(lost_hla) == 1 else 0.45); reasons.append("hla_allele_loh:" + ",".join(lost_hla)); action = "peptide_level_hla_loh_policy"
+            cap_val = _m("hla_loh_multi_allele", 0.45) if len(lost_hla) > 1 else _m("hla_loh_single_allele", 0.70)
+            score = min(score, cap_val); reasons.append("hla_allele_loh:" + ",".join(lost_hla)); action = "peptide_level_hla_loh_policy"
         elif not _assessed(input_rows, "hla_loh"):
             reasons.append("HLA_LOH_NOT_ASSESSED"); action = "review_missing_hla_loh"
     elif submodule == "MHC_II_CORE":
         if any(_is_bial(gene_map.get(g)) for g in ["CIITA", "RFX5", "RFXANK", "RFXAP"]):
-            score = min(score, 0.15); reasons.append("CIITA_RFX_biallelic_defect"); action = "mhc_ii_cap"
+            score = min(score, _m("ciita_defect", 0.40)); reasons.append("CIITA_RFX_biallelic_defect"); action = "mhc_ii_cap"
         elif any(_is_caution(gene_map.get(g)) for g in genes):
-            score = min(score, 0.65); reasons.append("mhc_ii_core_caution")
+            score = min(score, _m("mhc_ii_caution_penalty", 0.65)); reasons.append("mhc_ii_core_caution")
     elif submodule == "IFNG_SIGNALING":
         if any(_is_bial(gene_map.get(g)) for g in ["JAK1", "JAK2", "IFNGR1", "IFNGR2", "STAT1"]):
-            score = min(score, 0.20); reasons.append("JAK_STAT_IFNGR_biallelic_defect"); action = "ifng_response_cap"
+            score = min(score, _m("jak_stat_defect", 0.60)); reasons.append("JAK_STAT_IFNGR_biallelic_defect"); action = "ifng_response_cap"
         elif any(_is_caution(gene_map.get(g)) for g in genes):
-            score = min(score, 0.65); reasons.append("ifng_signaling_caution")
+            score = min(score, _m("ifng_caution_penalty", 0.65)); reasons.append("ifng_signaling_caution")
     if not reasons:
         reasons.append("no_major_signal")
     status_prefix = submodule
@@ -316,12 +323,12 @@ def enhance_appm_outputs_v042(outdir: str | Path, *, raw_peptides: str | Path | 
         lost_hla = [x for x in summary_rows[0].get("hla_loh_alleles", "").split(",") if x]
 
     sub_rows = [
-        _submodule_score(sample_id, "MHC-I", "MHC_I_CORE", MHC_I_CORE, gene_map, lost_hla, input_rows, conflict_rows),
-        _submodule_score(sample_id, "MHC-I", "MHC_I_PROCESSING", MHC_I_PROCESSING, gene_map, lost_hla, input_rows, conflict_rows),
-        _submodule_score(sample_id, "MHC-I", "MHC_I_REGULATION", MHC_I_REGULATION, gene_map, lost_hla, input_rows, conflict_rows),
-        _submodule_score(sample_id, "MHC-I", "MHC_I_HLA_LOH", set(), gene_map, lost_hla, input_rows, conflict_rows),
-        _submodule_score(sample_id, "MHC-II", "MHC_II_CORE", MHC_II_CORE, gene_map, lost_hla, input_rows, conflict_rows),
-        _submodule_score(sample_id, "IFNG-JAK-STAT", "IFNG_SIGNALING", IFNG_SIGNALING, gene_map, lost_hla, input_rows, conflict_rows),
+        _submodule_score(sample_id, "MHC-I", "MHC_I_CORE", MHC_I_CORE, gene_map, lost_hla, input_rows, conflict_rows, profile=profile),
+        _submodule_score(sample_id, "MHC-I", "MHC_I_PROCESSING", MHC_I_PROCESSING, gene_map, lost_hla, input_rows, conflict_rows, profile=profile),
+        _submodule_score(sample_id, "MHC-I", "MHC_I_REGULATION", MHC_I_REGULATION, gene_map, lost_hla, input_rows, conflict_rows, profile=profile),
+        _submodule_score(sample_id, "MHC-I", "MHC_I_HLA_LOH", set(), gene_map, lost_hla, input_rows, conflict_rows, profile=profile),
+        _submodule_score(sample_id, "MHC-II", "MHC_II_CORE", MHC_II_CORE, gene_map, lost_hla, input_rows, conflict_rows, profile=profile),
+        _submodule_score(sample_id, "IFNG-JAK-STAT", "IFNG_SIGNALING", IFNG_SIGNALING, gene_map, lost_hla, input_rows, conflict_rows, profile=profile),
     ]
     sub_path = out / "appm_submodule_scores.tsv"
     write_tsv(sub_path, sub_rows, APPM_SUBMODULE_SCORE_FIELDS)
