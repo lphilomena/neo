@@ -26,10 +26,6 @@ tumor_specificity = 0.05
 hla_binding = 0.20
 hla_presentation = 0.25
 rna_junction_support = 0.05
-# normal_tissue_safety / apm_integrity are 0.0: these signals already act as
-# independent multiplicative gates (safety_multiplier / appm_multiplier)
-# applied after the L3 composite, so a nonzero weight here would double-count
-# the same underlying value (scoring audit fix #1).
 normal_tissue_safety = 0.0
 apm_integrity = 0.0
 immunogenicity = 0.15
@@ -108,6 +104,13 @@ iedb = 0.20
 enabled = true
 unknown_gene_relevance = 0.3
 # reference_path = "resources/driver_genes.tsv"
+
+[tumor_specificity_gtex]
+# Reference matrix for tumor_specificity lookup (scoring audit fix #3).
+# reference_path left unset -> falls back to resources/gtex_median_tpm.tsv.
+enabled = true
+unknown_gene_specificity = 0.5
+# reference_path = "resources/gtex_median_tpm.tsv"
 
 [immune_escape]
 therapy_context = "vaccine"
