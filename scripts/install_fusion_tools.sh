@@ -82,4 +82,32 @@ else
   echo "WARN: STAR-Fusion not installed; set NEOAG_SKIP_STAR_FUSION_CLONE=1 to silence or rerun after network access." >&2
 fi
 
+
+PROJECT_BIN="${ROOT}/bin"
+TOOLS_ENV="${ROOT}/conf/tools.env.sh"
+ARRIBA_BIN="${CONDA_BASE}/envs/${ENV_NAME}/bin/arriba"
+mkdir -p "${PROJECT_BIN}" "${ROOT}/conf"
+if [[ -x "${ARRIBA_BIN}" ]]; then
+  cat > "${PROJECT_BIN}/arriba" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+exec "${ARRIBA_BIN}" "\$@"
+EOF
+  chmod +x "${PROJECT_BIN}/arriba"
+fi
+
+fusion_block="export NEOAG_FUSION_ENV=\"${ENV_NAME}\"
+export NEOAG_ARRIBA_BIN=\"${ARRIBA_BIN}\"
+export PATH=\"${PROJECT_BIN}:${CONDA_BASE}/envs/${ENV_NAME}/bin:\$PATH\""
+if [[ -f "${TOOLS_ENV}" ]]; then
+  if grep -q 'NEOAG_FUSION_ENV' "${TOOLS_ENV}"; then
+    sed -i "s|^export NEOAG_FUSION_ENV=.*|export NEOAG_FUSION_ENV=\"${ENV_NAME}\"|" "${TOOLS_ENV}"
+    sed -i "s|^export NEOAG_ARRIBA_BIN=.*|export NEOAG_ARRIBA_BIN=\"${ARRIBA_BIN}\"|" "${TOOLS_ENV}"
+  else
+    printf '\n# Fusion tools (Arriba/STAR-Fusion/FusionCatcher)\n%s\n' "${fusion_block}" >> "${TOOLS_ENV}"
+  fi
+else
+  printf '%s\n' "${fusion_block}" > "${TOOLS_ENV}"
+fi
+
 echo "==> Done. Run: source conf/tools.env.sh && neoag-v03 check-tools | grep -E 'arriba|star-fusion|fusioncatcher'"

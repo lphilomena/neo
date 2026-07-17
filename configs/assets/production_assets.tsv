@@ -11,3 +11,8 @@ reference_fasta	/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/easyfuse/eas
 bigmhc_models	/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/predictors/bigmhc/models	/root/neo/env_tool/tools/bigmhc/models	dir	1	-	bat512/im
 easyfuse_ref	/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/easyfuse/easyfuse_ref_v4	/root/neo/neodata4git/data/easyfuse/easyfuse_ref_v4	dir	0	-	BEFORE_EXECUTING_EASYFUSE
 vep_cache	/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/vep	/root/neo/neodata4git/data/vep	dir	1	-	homo_sapiens/105_GRCh38/info.txt
+deepimmuno_source	/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/predictors/DeepImmuno	/root/neo/env_tool/tools/DeepImmuno	dir	1	-	deepimmuno-cnn.py
+netmhcpan_install	/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/predictors/netMHCpan	/root/neo/licensed_tools/netMHCpan	dir	0	-	netMHCpan
+netmhcstabpan_install	/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/predictors/netMHCstabpan	/root/neo/licensed_tools/netMHCstabpan	dir	0	-	netMHCstabpan
+polysolver_distribution	/home/na/project/neoantigen/software/polysolver	/root/neo/licensed_tools/polysolver	dir	0	-	shell_call_hla_type
+novoalign_license	/home/na/project/neoantigen/wbscript/novoalign.lic	/root/neo/licensed_tools/novoalign/novoalign.lic	file	0	-	-

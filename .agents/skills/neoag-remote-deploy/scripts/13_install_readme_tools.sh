@@ -266,12 +266,41 @@ ensure_reference_indexes_after_asset_sync() {
   fi
 }
 
+register_synced_tool_assets() {
+  [[ "$EXECUTE" == "1" ]] || return 0
+
+  if [[ -f "$TOOLS_ROOT/tools/DeepImmuno/deepimmuno-cnn.py" ]]; then
+    run "register synced DeepImmuno asset" bash scripts/install_deepimmuno.sh "$TOOLS_ROOT/tools/DeepImmuno"
+  fi
+
+  if [[ -x "$LICENSED_ROOT/netMHCpan/netMHCpan" ]]; then
+    if [[ -x "${CONDA_BASE:-$TOOLS_ROOT/miniforge3}/envs/neoag-tools/bin/patchelf" || -x "$LICENSED_ROOT/netMHCpan/Linux_x86_64/bin/netMHCpan-4.2" ]]; then
+      if ! run "repair/register synced NetMHCpan asset" env NETMHCPAN_HOME="$LICENSED_ROOT/netMHCpan" NEOAG_CONDA_BASE="${CONDA_BASE:-$TOOLS_ROOT/miniforge3}" bash scripts/install_netmhcpan.sh --repair; then
+        log "WARN: NetMHCpan asset is present but repair/smoke failed; license asset was left in place for manual validation."
+      fi
+    fi
+  fi
+
+  if [[ -x "$LICENSED_ROOT/netMHCstabpan/netMHCstabpan" ]]; then
+    TOOLS_ENV="$PROJECT_ROOT/conf/tools.env.sh"
+    run "register synced NetMHCstabpan asset" bash -lc "mkdir -p '$PROJECT_ROOT/conf'; if ! grep -q 'NETMHCSTABPAN_HOME' '$TOOLS_ENV' 2>/dev/null; then printf '\n# NetMHCstabpan (licensed or shim)\nexport NETMHCSTABPAN_HOME=\"$LICENSED_ROOT/netMHCstabpan\"\nexport PATH=\"$LICENSED_ROOT/netMHCstabpan:\$PATH\"\n' >> '$TOOLS_ENV'; fi"
+  fi
+
+  if [[ -d "$LICENSED_ROOT/polysolver" && -z "$POLYSOLVER_HOME_ARG" ]]; then
+    POLYSOLVER_HOME_ARG="$LICENSED_ROOT/polysolver"
+  fi
+  if [[ -f "$LICENSED_ROOT/novoalign/novoalign.lic" && -z "$NOVOALIGN_LICENSE_FILE_ARG" ]]; then
+    NOVOALIGN_LICENSE_FILE_ARG="$LICENSED_ROOT/novoalign/novoalign.lic"
+  fi
+}
+
 sync_assets_if_requested() {
   [[ "$SYNC_ASSETS" == "1" ]] || return 0
   args=(--project-root "$PROJECT_ROOT" --asset-manifest "$ASSET_MANIFEST" --outdir "$OUTDIR/assets")
   [[ -n "$ASSET_SOURCE_HOST" ]] && args+=(--asset-source-host "$ASSET_SOURCE_HOST")
   [[ "$EXECUTE" == "1" ]] && args+=(--execute)
   run "sync large assets from manifest" bash .agents/skills/neoag-remote-deploy/scripts/15_sync_asset_manifest.sh "${args[@]}"
+  register_synced_tool_assets
   ensure_reference_indexes_after_asset_sync
   if [[ -f "$REFERENCE_MANIFEST" ]]; then
     verify_ref_args=("$REFERENCE_MANIFEST" --vep-version "$VEP_VERSION")
@@ -328,6 +357,8 @@ export MIXMHCPRED_HOME="$LICENSED_ROOT/mixMHCpred_install"
 export BIGMHC_DIR="$TOOLS_ROOT/tools/bigmhc"
 export DEEPIMMUNO_DIR="$TOOLS_ROOT/tools/DeepImmuno"
 
+sync_assets_if_requested
+
 if [[ -n "$NETMHCPAN_TAR$NETMHCPAN_DIR$NETMHCPAN_URL$MIXMHCPRED_DIR$MIXMHCPRED_ARCHIVE$MIXMHCPRED_URL$NETMHCSTABPAN_DIR$NETMHCSTABPAN_ARCHIVE$NETMHCSTABPAN_URL" ]]; then
   args=(--licensed-root "$LICENSED_ROOT" --outdir "$OUTDIR")
   [[ -n "$NETMHCPAN_TAR" ]] && args+=(--netmhcpan-tar "$NETMHCPAN_TAR")
@@ -361,9 +392,12 @@ if [[ "$INSTALL_NETMHCSTABPAN" == "1" ]]; then
   fi
 fi
 if [[ "$INSTALL_DEEPIMMUNO" == "1" ]]; then
+  if [[ -z "$DEEPIMMUNO_SOURCE" && -f "$TOOLS_ROOT/tools/DeepImmuno/deepimmuno-cnn.py" ]]; then
+    DEEPIMMUNO_SOURCE="$TOOLS_ROOT/tools/DeepImmuno"
+  fi
   [[ -z "$DEEPIMMUNO_SOURCE" ]] && need_download_ok "DeepImmuno git clone"
   if [[ -n "$DEEPIMMUNO_SOURCE" ]]; then
-    run "install DeepImmuno from local source" bash scripts/install_deepimmuno.sh "$DEEPIMMUNO_SOURCE"
+    run "install DeepImmuno from local/source asset" bash scripts/install_deepimmuno.sh "$DEEPIMMUNO_SOURCE"
   else
     run "install DeepImmuno from official repo" bash scripts/install_deepimmuno.sh "$TOOLS_ROOT/tools/DeepImmuno"
   fi
@@ -379,7 +413,6 @@ fi
 [[ "$INSTALL_FACETS" == "1" ]] && run "install FACETS" bash scripts/install_facets.sh
 [[ "$INSTALL_ASCAT_PYCLONE" == "1" ]] && run "install ASCAT/PyClone-VI" bash scripts/install_ascat_pyclone.sh
 [[ "$INSTALL_FUSION" == "1" ]] && { need_download_ok "fusion tool git clones/conda packages"; run "install fusion tools" bash scripts/install_fusion_tools.sh; }
-sync_assets_if_requested
 stage_bigmhc_models_if_requested
 
 if [[ "$RUN_VERIFY" == "1" ]]; then
