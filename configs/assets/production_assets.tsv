@@ -16,3 +16,11 @@ netmhcpan_install	/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/predictors
 netmhcstabpan_install	/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/predictors/netMHCstabpan	/root/neo/licensed_tools/netMHCstabpan	dir	0	-	netMHCstabpan
 polysolver_distribution	/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/lohhla/polysolver	/root/neo/licensed_tools/polysolver	dir	0	-	shell_call_hla_type
 novoalign_license	/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/lohhla/novoalign.lic	/root/neo/licensed_tools/novoalign/novoalign.lic	file	0	-	-
+vep_plugins	/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/work/vep_plugins	/root/neo/neodata4git/work/vep_plugins	dir	0	-	Wildtype.pm
+hla_la_graph	/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/hla/PRG_MHC_GRCh38_withIMGT	/root/neo/neodata4git/data/hla/PRG_MHC_GRCh38_withIMGT	dir	0	-	serializedGRAPH
+spechla_db	/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/hla/spechla_db	/root/neo/neodata4git/data/hla/spechla_db	dir	0	-	ref/hla.ref.extend.fa
+sequenza_reference	/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/sequenza/reference	/root/neo/neodata4git/data/sequenza/reference	dir	0	-	GRCh38.primary_assembly.chr.fa
+hmf_purple_reference	/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/hmf/purple_reference	/root/neo/neodata4git/data/hmf/purple_reference	dir	0	-	amber/GermlineHetPon.38.vcf.gz
+spechla_container_image	/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/work/container_images/neoag-spechla_ubuntu22.04.tar	/root/neo/env_tool/container_images/neoag-spechla_ubuntu22.04.tar	file	0	-	-
+hla_la_container_image	/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/work/container_images/neoag-hla-la_ubuntu22.04.tar	/root/neo/env_tool/container_images/neoag-hla-la_ubuntu22.04.tar	file	0	-	-
+hmf_purple_container_image	/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/work/container_images/neoag-purple-suite_ubuntu22.04.tar	/root/neo/env_tool/container_images/neoag-purple-suite_ubuntu22.04.tar	file	0	-	-

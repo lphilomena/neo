@@ -81,13 +81,52 @@ Fix:
 ### NetMHCpan Exists But Is Not Runnable
 
 Cause: copied wrappers may hard-code an old conda sysroot or old host paths.
+Observed error:
+
+```text
+netMHCpan: conda sysroot loader missing at /home/na/miniforge3/envs/neoag-tools/x86_64-conda-linux-gnu/sysroot/lib/ld-linux-x86-64.so.2
+```
 
 Fix:
 
 - create a target-machine wrapper under `env_tool/bin/netMHCpan`;
 - set `NEOAG_NETMHCPAN_HOME` to the licensed local install;
+- rewrite copied licensed frontend defaults so `CONDA_BASE` points to the target
+  machine, usually `/root/neo/env_tool/miniforge3`;
 - set temp dir to a writable location, usually `/tmp`;
 - validate with `netMHCpan -h` and a small prediction smoke test.
+
+`scripts/install_netmhcpan.sh --repair` must rewrite tcsh launchers and any
+frontend containing stale `/home/na/miniforge3` or other old-machine conda
+defaults.
+
+### MHCflurry Fails With Keras Cannot Be Imported
+
+Observed error:
+
+```text
+ImportError: Keras cannot be imported. Check that it is installed.
+```
+
+Cause: MHCflurry 2.x runs against modern TensorFlow/Keras and needs the matching
+legacy `tf-keras` shim with `TF_USE_LEGACY_KERAS=1`.
+
+Fix:
+
+```bash
+source /root/neo/env_tool/miniforge3/etc/profile.d/conda.sh
+conda activate neoag-tools
+TF_KERAS_SPEC="$(python - <<'PY'
+import tensorflow as tf
+major, minor, *_ = tf.__version__.split(".")
+print(f"tf-keras>={major}.{minor},<{major}.{int(minor) + 1}")
+PY
+)"
+pip install "$TF_KERAS_SPEC"
+```
+
+The consolidated installer now performs this repair automatically after the core
+environment exists.
 
 ### PRIME Appears To Run Forever And Writes Only A One-Byte Output
 
@@ -121,3 +160,51 @@ Fix: validate these imports in the env used by `neoag-v03`:
 python -c 'import torch,numpy,pandas,scipy,sklearn,psutil'
 ```
 
+Observed error during real VCF smoke:
+
+```text
+ModuleNotFoundError: No module named 'torch'
+```
+
+Fix:
+
+- full `--all-open` / `--all` installs must install torch by default because
+  BigMHC is included by default;
+- prefer CPU torch on new machines:
+  `pip install --index-url https://download.pytorch.org/whl/cpu torch`;
+- if an approved local wheel cache is provided, pass `--torch-wheel-dir <dir>`;
+- if a CUDA torch wheel is used, install all matching `nvidia-*-cu12`,
+  `nvidia-nvjitlink-cu12`, `triton`, `filelock`, and `sympy==1.13.1`;
+- use `--skip-real-vcf-bigmhc` only as a temporary smoke-test fallback, not as
+  production readiness.
+
+### Asset Symlinks Resolve On Source But Not Target
+
+Observed with VEP plugins and SpecHLA DB: `/mnt/.../neodata4git` entries were
+absolute symlinks to `/home/na/...`. They resolved on the source host but not on
+the new machine.
+
+Fix:
+
+- `15_sync_asset_manifest.sh` uses `rsync -aL` so source symlinks are
+  dereferenced and the target receives real files/directories;
+- use `--asset-source-host` when the symlink target only exists on the source
+  host;
+- use real marker files, such as `ref/hla.ref.extend.fa` for SpecHLA DB, rather
+  than a bare directory marker.
+
+### VEP Plugin Directory Present But Plugin Files Missing
+
+Observed error:
+
+```text
+VEP Wildtype plugin missing
+VEP Frameshift plugin missing
+```
+
+Cause: the manifest path existed but resolved to an empty or broken symlink on
+the target.
+
+Fix: copy real `Wildtype.pm` and `Frameshift.pm` into
+`<reference-root>/work/vep_plugins`, and keep `env_tool/work/vep_plugins` linked
+there.

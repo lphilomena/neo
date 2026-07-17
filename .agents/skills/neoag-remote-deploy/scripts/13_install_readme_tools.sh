@@ -26,11 +26,16 @@ INSTALL_OPTITYPE=0
 INSTALL_FACETS=0
 INSTALL_ASCAT_PYCLONE=0
 INSTALL_FUSION=0
+INSTALL_SPECHLA=0
+INSTALL_HLALA=0
+INSTALL_SEQUENZA=0
+INSTALL_HMF_PURPLE=0
 RUN_VERIFY=0
 STRICT_VERIFY=0
 RUN_REAL_VCF_SMOKE=0
 REAL_VCF_SMOKE_TOP_N=50
 REAL_VCF_SMOKE_SKIP_MHCFLURRY=0
+REAL_VCF_SMOKE_SKIP_BIGMHC=0
 REAL_VCF_RAW=""
 REAL_VCF_ANNOTATED=""
 REAL_VCF_HLA_ALLELES=""
@@ -43,6 +48,8 @@ SYNC_ASSETS=0
 ASSET_SOURCE_HOST=""
 CORE_ENV_LITE=1
 SKIP_TORCH_INSTALL=1
+TORCH_WHEEL_DIR="${TORCH_WHEEL_DIR:-}"
+TORCH_INDEX_URL="${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cpu}"
 
 NETMHCPAN_TAR=""
 NETMHCPAN_DIR=""
@@ -80,6 +87,9 @@ Common options:
   --execute                   Actually run installation commands
   --full-core-env             Use full core env instead of default lite env
   --install-torch             Let immunogenicity installer install torch if missing
+  --skip-torch-install        Skip torch even when installing BigMHC (BigMHC smoke will be partial)
+  --torch-wheel-dir DIR       Optional local torch/nvidia wheel directory for offline BigMHC runtime repair
+  --torch-index-url URL       PyTorch package index when torch download is approved (default: CPU wheel index)
 
 Tool groups:
   --core-env                  pVACtools/MHCflurry core conda env via scripts/setup_tools_env.sh
@@ -96,6 +106,10 @@ Tool groups:
   --facets                   FACETS via scripts/install_facets.sh
   --ascat-pyclone            ASCAT + PyClone-VI via scripts/install_ascat_pyclone.sh
   --fusion                   Arriba/Nextflow fusion env plus STAR-Fusion/FusionCatcher clones
+  --spechla                  Register/load SpecHLA container assets and database if present
+  --hla-la                   Register/load HLA-LA container assets and PRG graph if present
+  --sequenza                 Install Sequenza conda env and reference hooks
+  --hmf-purple               Register/load HMF PURPLE/AMBER/COBALT container assets and references
   --all-open                 Install open/conda/git tools except very large VEP cache and licensed packages
   --all                      Install all supported groups, including VEP cache; licensed packages still need sources/URLs
   --verify                   Run scripts/verify_all_tools_and_refs.sh after installs
@@ -103,6 +117,7 @@ Tool groups:
   --run-real-vcf-smoke       Run default M1ML150017383 real VCF top-N smoke test
   --real-vcf-smoke-top-n N   Number of unique peptides for real VCF smoke (default: 50)
   --skip-real-vcf-mhcflurry Skip MHCflurry only for the real VCF smoke fallback
+  --skip-real-vcf-bigmhc    Skip BigMHC_IM only for the real VCF smoke fallback
   --real-vcf FILE           Override raw VCF path for real VCF smoke
   --real-annotated-vcf FILE Override VEP-annotated VCF path for real VCF smoke
   --real-vcf-hla-alleles L  Override comma-separated HLA alleles for real VCF smoke
@@ -161,6 +176,9 @@ while [[ $# -gt 0 ]]; do
     --execute) EXECUTE=1; shift ;;
     --full-core-env) CORE_ENV_LITE=0; shift ;;
     --install-torch) SKIP_TORCH_INSTALL=0; shift ;;
+    --skip-torch-install) SKIP_TORCH_INSTALL=1; shift ;;
+    --torch-wheel-dir) TORCH_WHEEL_DIR="$2"; shift 2 ;;
+    --torch-index-url) TORCH_INDEX_URL="$2"; shift 2 ;;
     --core-env) INSTALL_CORE_ENV=1; shift ;;
     --vep) INSTALL_VEP=1; shift ;;
     --vep-cache) INSTALL_VEP=1; INSTALL_VEP_CACHE=1; shift ;;
@@ -175,21 +193,30 @@ while [[ $# -gt 0 ]]; do
     --facets) INSTALL_FACETS=1; shift ;;
     --ascat-pyclone) INSTALL_ASCAT_PYCLONE=1; shift ;;
     --fusion) INSTALL_FUSION=1; shift ;;
+    --spechla) INSTALL_SPECHLA=1; shift ;;
+    --hla-la) INSTALL_HLALA=1; shift ;;
+    --sequenza) INSTALL_SEQUENZA=1; shift ;;
+    --hmf-purple) INSTALL_HMF_PURPLE=1; shift ;;
     --all-open)
       INSTALL_CORE_ENV=1; INSTALL_VEP=1; INSTALL_GATK=1; INSTALL_IMMUNOGENICITY=1
       INSTALL_DEEPIMMUNO=1; INSTALL_NETMHCSTABPAN=1; INSTALL_LOHHLA=1
       INSTALL_OPTITYPE=1; INSTALL_FACETS=1; INSTALL_ASCAT_PYCLONE=1; INSTALL_FUSION=1
+      INSTALL_SPECHLA=1; INSTALL_HLALA=1; INSTALL_SEQUENZA=1; INSTALL_HMF_PURPLE=1
+      SKIP_TORCH_INSTALL=0
       shift ;;
     --all)
       INSTALL_CORE_ENV=1; INSTALL_VEP=1; INSTALL_VEP_CACHE=1; INSTALL_GATK=1; INSTALL_IMMUNOGENICITY=1
       INSTALL_DEEPIMMUNO=1; INSTALL_NETMHCSTABPAN=1; INSTALL_LOHHLA=1
       INSTALL_OPTITYPE=1; INSTALL_FACETS=1; INSTALL_ASCAT_PYCLONE=1; INSTALL_FUSION=1
+      INSTALL_SPECHLA=1; INSTALL_HLALA=1; INSTALL_SEQUENZA=1; INSTALL_HMF_PURPLE=1
+      SKIP_TORCH_INSTALL=0
       shift ;;
     --verify) RUN_VERIFY=1; shift ;;
     --strict-verify) RUN_VERIFY=1; STRICT_VERIFY=1; shift ;;
     --run-real-vcf-smoke) RUN_REAL_VCF_SMOKE=1; shift ;;
     --real-vcf-smoke-top-n) REAL_VCF_SMOKE_TOP_N="$2"; shift 2 ;;
     --skip-real-vcf-mhcflurry) REAL_VCF_SMOKE_SKIP_MHCFLURRY=1; shift ;;
+    --skip-real-vcf-bigmhc) REAL_VCF_SMOKE_SKIP_BIGMHC=1; shift ;;
     --real-vcf) REAL_VCF_RAW="$2"; shift 2 ;;
     --real-annotated-vcf) REAL_VCF_ANNOTATED="$2"; shift 2 ;;
     --real-vcf-hla-alleles) REAL_VCF_HLA_ALLELES="$2"; shift 2 ;;
@@ -322,6 +349,163 @@ stage_bigmhc_models_if_requested() {
   fi
 }
 
+load_container_image_if_present() {
+  local label="$1" image="$2" tarball="$3"
+  [[ -s "$tarball" ]] || { log "WARN: $label image tar missing: $tarball"; return 0; }
+  if ! command -v docker >/dev/null 2>&1; then
+    log "WARN: docker not found; cannot load $label image from $tarball"
+    return 0
+  fi
+  if docker image inspect "$image" >/dev/null 2>&1; then
+    log "$label image already loaded: $image"
+    return 0
+  fi
+  run "load $label container image" docker load -i "$tarball"
+}
+
+register_spechla_if_requested() {
+  [[ "$INSTALL_SPECHLA" == "1" ]] || return 0
+  local home="$TOOLS_ROOT/tools/SpecHLA"
+  local image_tar="$TOOLS_ROOT/container_images/neoag-spechla_ubuntu22.04.tar"
+  if [[ "$EXECUTE" != "1" ]]; then
+    log ""
+    log "==> [DRY_RUN] register SpecHLA container wrappers and DB link"
+    log "+ create $home, link $home/db to $REFERENCE_ROOT/data/hla/spechla_db, load $image_tar if present"
+    return 0
+  fi
+  mkdir -p "$home" "$TOOLS_ROOT/bin"
+  [[ -d "$REFERENCE_ROOT/data/hla/spechla_db" && ! -e "$home/db" && ! -L "$home/db" ]] && ln -s "$REFERENCE_ROOT/data/hla/spechla_db" "$home/db"
+  mkdir -p "$home/script/whole"
+  if [[ ! -x "$home/script/whole/SpecHLA.sh" ]]; then
+    cat > "$home/script/whole/SpecHLA.sh" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+exec "$PROJECT_ROOT/scripts/run_spechla_container.sh" "\$@"
+EOF
+    chmod +x "$home/script/whole/SpecHLA.sh"
+  fi
+  if [[ ! -x "$TOOLS_ROOT/bin/SpecHLA" ]]; then
+    cat > "$TOOLS_ROOT/bin/SpecHLA" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+export SPECHLA_HOME="\${SPECHLA_HOME:-$home}"
+exec "$PROJECT_ROOT/scripts/run_spechla_container.sh" "\$@"
+EOF
+    chmod +x "$TOOLS_ROOT/bin/SpecHLA"
+  fi
+  load_container_image_if_present "SpecHLA" "neoag-spechla:ubuntu22.04" "$image_tar"
+}
+
+register_hlala_if_requested() {
+  [[ "$INSTALL_HLALA" == "1" ]] || return 0
+  local home="$TOOLS_ROOT/tools/HLA-LA"
+  local image_tar="$TOOLS_ROOT/container_images/neoag-hla-la_ubuntu22.04.tar"
+  if [[ "$EXECUTE" != "1" ]]; then
+    log ""
+    log "==> [DRY_RUN] register HLA-LA container wrapper and graph path"
+    log "+ create $home/bin/HLA-LA.pl, link $TOOLS_ROOT/bin/HLA-LA.pl, load $image_tar if present"
+    return 0
+  fi
+  mkdir -p "$home/bin" "$TOOLS_ROOT/bin"
+  cat > "$home/bin/HLA-LA.pl" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+export HLALA_HOME="\${HLALA_HOME:-$home}"
+export HLALA_GRAPH="\${HLALA_GRAPH:-$REFERENCE_ROOT/data/hla/PRG_MHC_GRCh38_withIMGT}"
+exec "$PROJECT_ROOT/scripts/run_hla_la_container.sh" "\$@"
+EOF
+  chmod +x "$home/bin/HLA-LA.pl"
+  ln -sf "$home/bin/HLA-LA.pl" "$TOOLS_ROOT/bin/HLA-LA.pl"
+  load_container_image_if_present "HLA-LA" "neoag-hla-la:ubuntu22.04" "$image_tar"
+}
+
+install_sequenza_if_requested() {
+  [[ "$INSTALL_SEQUENZA" == "1" ]] || return 0
+  local env_path="$CONDA_BASE/envs/neoag-sequenza"
+  if [[ ! -x "$env_path/bin/sequenza-utils" ]]; then
+    if [[ -d "$env_path" ]]; then
+      run "repair Sequenza conda env" bash -lc "source '$CONDA_BASE/etc/profile.d/conda.sh' && conda env update -n neoag-sequenza -f '$PROJECT_ROOT/conda/env.neoag-sequenza.yml' --prune"
+    else
+      run "install Sequenza conda env" bash -lc "source '$CONDA_BASE/etc/profile.d/conda.sh' && conda env create -f '$PROJECT_ROOT/conda/env.neoag-sequenza.yml'"
+    fi
+  else
+    log "Sequenza env already present: $env_path"
+  fi
+}
+
+register_hmf_purple_if_requested() {
+  [[ "$INSTALL_HMF_PURPLE" == "1" ]] || return 0
+  local image_tar="$TOOLS_ROOT/container_images/neoag-purple-suite_ubuntu22.04.tar"
+  if [[ "$EXECUTE" != "1" ]]; then
+    log ""
+    log "==> [DRY_RUN] register HMF PURPLE/AMBER/COBALT container image"
+    log "+ load $image_tar if present"
+    return 0
+  fi
+  load_container_image_if_present "HMF PURPLE suite" "neoag-purple-suite:ubuntu22.04" "$image_tar"
+}
+
+ensure_tf_keras_runtime() {
+  [[ "$EXECUTE" == "1" ]] || return 0
+  local py="$CONDA_BASE/envs/neoag-tools/bin/python"
+  [[ -x "$py" ]] || return 0
+  if "$py" - <<'PY' >/dev/null 2>&1
+import os
+os.environ["TF_USE_LEGACY_KERAS"] = "1"
+import tf_keras
+PY
+  then
+    log "tf-keras legacy shim already available in neoag-tools"
+    return 0
+  fi
+  run "install tf-keras legacy shim for MHCflurry" bash -lc "source '$CONDA_BASE/etc/profile.d/conda.sh' && conda activate neoag-tools && spec=\$(python - <<'PY'
+import tensorflow as tf
+major, minor, *_ = tf.__version__.split('.')
+print(f'tf-keras>={major}.{minor},<{major}.{int(minor) + 1}')
+PY
+) && pip install -q \"\$spec\""
+}
+
+repair_netmhcpan_frontend() {
+  [[ "$EXECUTE" == "1" ]] || return 0
+  local nm="$LICENSED_ROOT/netMHCpan/netMHCpan"
+  [[ -f "$nm" ]] || return 0
+  if grep -q '/home/na/miniforge3' "$nm" || grep -q 'CONDA_BASE=.*miniforge3' "$nm"; then
+    run "repair NetMHCpan frontend conda sysroot path" bash -lc "cp '$nm' '$nm.bak_\$(date +%Y%m%d_%H%M%S)' && perl -0pi -e 's#CONDA_BASE=\"\\\$\\{CONDA_BASE:-[^}]+\\}\"#CONDA_BASE=\"\\\${CONDA_BASE:-$CONDA_BASE}\"#' '$nm'"
+  fi
+  run "validate NetMHCpan frontend" bash -lc "CONDA_BASE='$CONDA_BASE' '$nm' -h >/dev/null"
+}
+
+ensure_bigmhc_torch_runtime() {
+  [[ "$EXECUTE" == "1" ]] || return 0
+  [[ "$SKIP_TORCH_INSTALL" == "0" ]] || return 0
+  local py="$CONDA_BASE/envs/neoag-tools/bin/python"
+  [[ -x "$py" ]] || return 0
+  if "$py" - <<'PY' >/dev/null 2>&1
+import torch
+PY
+  then
+    log "torch already available in neoag-tools for BigMHC"
+    return 0
+  fi
+  if [[ -n "$TORCH_WHEEL_DIR" && -d "$TORCH_WHEEL_DIR" ]] && compgen -G "$TORCH_WHEEL_DIR/torch-*.whl" >/dev/null; then
+    run "install torch from local wheel cache for BigMHC" bash -lc "source '$CONDA_BASE/etc/profile.d/conda.sh' && conda activate neoag-tools && pip install --no-index --no-deps '$TORCH_WHEEL_DIR'/torch-*.whl && if compgen -G '$TORCH_WHEEL_DIR/nvidia_*.whl' >/dev/null || compgen -G '$TORCH_WHEEL_DIR/triton-*.whl' >/dev/null; then pip install --no-index --no-deps '$TORCH_WHEEL_DIR'/nvidia_*.whl '$TORCH_WHEEL_DIR'/triton-*.whl 2>/dev/null || true; fi"
+  else
+    need_download_ok "PyTorch for BigMHC"
+    run "install CPU torch from approved package index for BigMHC" bash -lc "source '$CONDA_BASE/etc/profile.d/conda.sh' && conda activate neoag-tools && pip install --index-url '$TORCH_INDEX_URL' torch"
+  fi
+  run "install/repair common torch dependencies" bash -lc "source '$CONDA_BASE/etc/profile.d/conda.sh' && conda activate neoag-tools && pip install filelock 'sympy==1.13.1'"
+  if ! "$py" - <<'PY' >/dev/null 2>&1
+import torch
+PY
+  then
+    if [[ "$ALLOW_DOWNLOAD" == "1" ]]; then
+      run "install missing CUDA nvJitLink runtime for torch" bash -lc "source '$CONDA_BASE/etc/profile.d/conda.sh' && conda activate neoag-tools && pip install nvidia-nvjitlink-cu12"
+    fi
+  fi
+  run "validate torch import for BigMHC" "$py" -c "import torch; print(torch.__version__)"
+}
+
 install_miniforge_if_needed() {
   if CONDA_BASE_FOUND="$(find_conda_base 2>/dev/null)"; then
     CONDA_BASE="$CONDA_BASE_FOUND"
@@ -341,7 +525,7 @@ install_miniforge_if_needed() {
 cd "$PROJECT_ROOT"
 [[ -f "pyproject.toml" || -f "setup.py" ]] || { echo "PROJECT_ROOT_INVALID: $PROJECT_ROOT" >&2; exit 30; }
 
-if [[ "$INSTALL_CORE_ENV$INSTALL_VEP$INSTALL_GATK$INSTALL_IMMUNOGENICITY$INSTALL_DEEPIMMUNO$INSTALL_NETMHCSTABPAN$INSTALL_LOHHLA$INSTALL_POLYSOLVER$INSTALL_OPTITYPE$INSTALL_FACETS$INSTALL_ASCAT_PYCLONE$INSTALL_FUSION" =~ 1 ]]; then
+if [[ "$INSTALL_CORE_ENV$INSTALL_VEP$INSTALL_GATK$INSTALL_IMMUNOGENICITY$INSTALL_DEEPIMMUNO$INSTALL_NETMHCSTABPAN$INSTALL_LOHHLA$INSTALL_POLYSOLVER$INSTALL_OPTITYPE$INSTALL_FACETS$INSTALL_ASCAT_PYCLONE$INSTALL_FUSION$INSTALL_SPECHLA$INSTALL_HLALA$INSTALL_SEQUENZA$INSTALL_HMF_PURPLE" =~ 1 ]]; then
   install_miniforge_if_needed
   export NEOAG_CONDA_BASE="$CONDA_BASE"
   export PATH="$CONDA_BASE/bin:$PATH"
@@ -355,7 +539,19 @@ export NETMHCSTABPAN_HOME="$LICENSED_ROOT/netMHCstabpan"
 export PRIME_HOME="$TOOLS_ROOT/tools/prime"
 export MIXMHCPRED_HOME="$LICENSED_ROOT/mixMHCpred_install"
 export BIGMHC_DIR="$TOOLS_ROOT/tools/bigmhc"
+export BIGMHC_PYTHON="$CONDA_BASE/envs/neoag-tools/bin/python"
 export DEEPIMMUNO_DIR="$TOOLS_ROOT/tools/DeepImmuno"
+export SPECHLA_HOME="$TOOLS_ROOT/tools/SpecHLA"
+export HLALA_HOME="$TOOLS_ROOT/tools/HLA-LA"
+export HLA_LA_HOME="$HLALA_HOME"
+export HLALA_GRAPH="$REFERENCE_ROOT/data/hla/PRG_MHC_GRCh38_withIMGT"
+export HLA_LA_GRAPH="$HLALA_GRAPH"
+export HMFTOOLS_HOME="$TOOLS_ROOT/tools/HMFTOOLS"
+export HMFTOOLS_AMBER_LOCI="$REFERENCE_ROOT/data/hmf/purple_reference/amber/GermlineHetPon.38.vcf.gz"
+export HMFTOOLS_GC_PROFILE="$REFERENCE_ROOT/data/hmf/purple_reference/cobalt/GC_profile.1000bp.38.cnp"
+export HMFTOOLS_ENSEMBL_DATA_DIR="$REFERENCE_ROOT/data/hmf/purple_reference/ensembl_data_cache_38"
+export SEQUENZA_FASTA="$REFERENCE_ROOT/data/sequenza/reference/GRCh38.primary_assembly.chr.fa"
+export SEQUENZA_GC_WIG="$REFERENCE_ROOT/data/sequenza/reference/gc.wig.gz"
 
 sync_assets_if_requested
 
@@ -376,6 +572,8 @@ if [[ -n "$NETMHCPAN_TAR$NETMHCPAN_DIR$NETMHCPAN_URL$MIXMHCPRED_DIR$MIXMHCPRED_A
 fi
 
 [[ "$INSTALL_CORE_ENV" == "1" ]] && run "install core pVACtools/MHCflurry env" env NEOAG_TOOLS_LITE="$CORE_ENV_LITE" bash scripts/setup_tools_env.sh
+ensure_tf_keras_runtime
+repair_netmhcpan_frontend
 [[ "$INSTALL_VEP" == "1" ]] && run "install VEP env" env NEOAG_VEP_VERSION="$VEP_VERSION" bash scripts/install_vep.sh
 [[ "$INSTALL_VEP_CACHE" == "1" ]] && { need_download_ok "VEP cache"; run "install VEP cache" env NEOAG_VEP_CACHE_VERSION="$VEP_VERSION" bash scripts/install_vep_cache.sh; }
 [[ "$INSTALL_GATK" == "1" ]] && run "install GATK4" bash scripts/install_gatk.sh
@@ -384,6 +582,7 @@ IMMUNO_PYTHON="${CONDA_BASE}/envs/neoag-tools/bin/python"
 [[ -x "$IMMUNO_PYTHON" ]] || IMMUNO_PYTHON="${CONDA_BASE}/bin/python"
 [[ -x "$IMMUNO_PYTHON" ]] || IMMUNO_PYTHON="$(command -v python3)"
 [[ "$INSTALL_IMMUNOGENICITY" == "1" ]] && run "install PRIME/MixMHCpred/BigMHC" env NEOAG_SKIP_TORCH_INSTALL="$SKIP_TORCH_INSTALL" NEOAG_IMMUNO_PYTHON="$IMMUNO_PYTHON" bash scripts/install_immunogenicity_tools.sh
+ensure_bigmhc_torch_runtime
 if [[ "$INSTALL_NETMHCSTABPAN" == "1" ]]; then
   if [[ -n "$NETMHCSTABPAN_ARCHIVE" && -f "$NETMHCSTABPAN_ARCHIVE" ]]; then
     run "install NetMHCstabpan from archive" bash scripts/install_netmhcstabpan.sh "$NETMHCSTABPAN_ARCHIVE"
@@ -413,6 +612,10 @@ fi
 [[ "$INSTALL_FACETS" == "1" ]] && run "install FACETS" bash scripts/install_facets.sh
 [[ "$INSTALL_ASCAT_PYCLONE" == "1" ]] && run "install ASCAT/PyClone-VI" bash scripts/install_ascat_pyclone.sh
 [[ "$INSTALL_FUSION" == "1" ]] && { need_download_ok "fusion tool git clones/conda packages"; run "install fusion tools" bash scripts/install_fusion_tools.sh; }
+register_spechla_if_requested
+register_hlala_if_requested
+install_sequenza_if_requested
+register_hmf_purple_if_requested
 stage_bigmhc_models_if_requested
 
 if [[ "$RUN_VERIFY" == "1" ]]; then
@@ -436,6 +639,7 @@ if [[ "$RUN_REAL_VCF_SMOKE" == "1" ]]; then
   [[ -n "$REAL_VCF_HLA_ALLELES" ]] && real_vcf_args+=(--hla-alleles "$REAL_VCF_HLA_ALLELES")
   [[ -n "$REAL_VCF_HLA_FILE" ]] && real_vcf_args+=(--hla-file "$REAL_VCF_HLA_FILE")
   [[ "$REAL_VCF_SMOKE_SKIP_MHCFLURRY" == "1" ]] && real_vcf_args+=(--skip-mhcflurry)
+  [[ "$REAL_VCF_SMOKE_SKIP_BIGMHC" == "1" ]] && real_vcf_args+=(--skip-bigmhc-im)
   run "run default real VCF smoke test" bash .agents/skills/neoag-remote-deploy/scripts/14_run_real_vcf_smoke.sh "${real_vcf_args[@]}"
 fi
 
@@ -457,6 +661,7 @@ fi
     "netmhcstabpan:$INSTALL_NETMHCSTABPAN" "deepimmuno:$INSTALL_DEEPIMMUNO" \
     "lohhla:$INSTALL_LOHHLA" "polysolver:$INSTALL_POLYSOLVER" "optitype:$INSTALL_OPTITYPE" \
     "facets:$INSTALL_FACETS" "ascat-pyclone:$INSTALL_ASCAT_PYCLONE" "fusion:$INSTALL_FUSION" \
+    "spechla:$INSTALL_SPECHLA" "hla-la:$INSTALL_HLALA" "sequenza:$INSTALL_SEQUENZA" "hmf-purple:$INSTALL_HMF_PURPLE" \
     "verify:$RUN_VERIFY" "real-vcf-smoke:$RUN_REAL_VCF_SMOKE" "sync-assets:$SYNC_ASSETS" "reference-manifest:${REFERENCE_MANIFEST:+1}" "bigmhc-models:${BIGMHC_MODELS_DIR:+1}"; do
     name="${item%%:*}"; enabled="${item##*:}"
     [[ "$enabled" == "1" ]] && echo "- $name"
@@ -464,6 +669,7 @@ fi
   if [[ "$RUN_REAL_VCF_SMOKE" == "1" ]]; then
     echo "- real-vcf-smoke-mhcflurry-default-on"
     [[ "$REAL_VCF_SMOKE_SKIP_MHCFLURRY" == "1" ]] && echo "- real-vcf-smoke-mhcflurry-skipped"
+    [[ "$REAL_VCF_SMOKE_SKIP_BIGMHC" == "1" ]] && echo "- real-vcf-smoke-bigmhc-skipped"
   fi
   echo
   if [[ "$EXECUTE" != "1" ]]; then

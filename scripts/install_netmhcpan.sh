@@ -71,7 +71,10 @@ EOF
   done
 
   # Bash frontend (replaces tcsh launcher when present).
-  if [[ ! -f "${home}/netMHCpan" ]] || grep -q 'tcsh' "${home}/netMHCpan" 2>/dev/null; then
+  if [[ ! -f "${home}/netMHCpan" ]] \
+    || grep -q 'tcsh' "${home}/netMHCpan" 2>/dev/null \
+    || grep -q '/home/na/miniforge3' "${home}/netMHCpan" 2>/dev/null \
+    || grep -q 'CONDA_BASE="${CONDA_BASE:-/' "${home}/netMHCpan" 2>/dev/null; then
     cat > "${home}/netMHCpan" <<'LAUNCHER'
 #!/usr/bin/env bash
 # NetMHCpan 4.2 frontend (conda sysroot for bundled binaries).

@@ -13,7 +13,8 @@ Usage: 15_sync_asset_manifest.sh [options]
 
 Synchronize large deployment assets listed in a TSV manifest. Default mode is
 dry-run; add --execute to copy. The manifest is intentionally data-only so large
-models/references stay out of Git.
+models/references stay out of Git. Source symlinks are dereferenced so manifests
+can point at stable /mnt links while targets receive real files/directories.
 
 Options:
   --project-root DIR       Project checkout (default: current directory)
@@ -147,9 +148,9 @@ while IFS= read -r line || [[ -n "$line" ]]; do
 
   spec="$(source_spec "$src")"
   if [[ "$kind" == "file" ]]; then
-    cmd="mkdir -p '$(dirname "$dst")' && rsync -a '$spec' '$dst'"
+    cmd="mkdir -p '$(dirname "$dst")' && rsync -aL '$spec' '$dst'"
   else
-    cmd="mkdir -p '$dst' && rsync -a '$spec/' '$dst/'"
+    cmd="mkdir -p '$dst' && rsync -aL '$spec/' '$dst/'"
   fi
   log ""
   log "==> [$MODE] sync asset $name"

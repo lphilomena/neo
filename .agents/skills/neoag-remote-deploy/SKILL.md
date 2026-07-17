@@ -130,11 +130,27 @@ running many installer scripts manually. It defaults to Miniforge3 under
 Use `--allow-download` for Miniforge, conda packages, git clones, VEP cache, or
 approved tool URLs.
 
+`--all-open` and `--all` also enable the production-adjacent open/containerized
+tooling used by copy-number and HLA workflows: SpecHLA, HLA-LA, Sequenza, and
+HMF PURPLE/AMBER/COBALT. The installer expects their large databases and
+container image tarballs to come from `configs/assets/production_assets.tsv`
+when `--sync-assets` is used. Sequenza is installed as a conda env from
+`conda/env.neoag-sequenza.yml`; SpecHLA, HLA-LA, and HMF PURPLE are registered
+by loading staged container images when Docker is available and by writing
+portable wrappers/environment variables into the production activation script.
+Because `--all-open` includes BigMHC, it also installs/repairs torch by default.
+Use `--skip-torch-install` only for a deliberately lightweight install, and then
+run real VCF smoke with `--skip-real-vcf-bigmhc` until torch is installed.
+
 VEP is pinned to release 105 by default (`--vep-version 105`) and must match the bundled `homo_sapiens/105_GRCh38` cache.
 
 The core environment installer must keep MHCflurry compatible with modern
 TensorFlow/Keras by installing the matching `tf-keras` shim and exporting
 `TF_USE_LEGACY_KERAS=1` in generated activation files.
+
+NetMHCpan repair must rewrite any copied frontend that still defaults to an old
+conda prefix such as `/home/na/miniforge3`; after repair, `netMHCpan -h` must
+work with `CONDA_BASE=<target-env_tool>/miniforge3`.
 
 `13_install_readme_tools.sh --run-real-vcf-smoke` runs the default
 M1ML150017383 VCF smoke test after installation. The smoke test runs
@@ -142,6 +158,8 @@ MHCflurry by default, skips NetMHCstabpan by default because it is slow,
 and accepts `--real-vcf-smoke-top-n <N>` for a smaller or larger test.
 Use `--skip-real-vcf-mhcflurry` only as a temporary fallback on hosts with
 unresolved TensorFlow/Keras compatibility issues.
+Use `--skip-real-vcf-bigmhc` only as a temporary fallback on hosts where torch
+or BigMHC models are not ready; this is not a full production predictor smoke.
 
 External assets are not bundled in the skill, but the installer accepts staged
 asset locations so a new machine can prepare itself reproducibly:
@@ -155,6 +173,12 @@ asset locations so a new machine can prepare itself reproducibly:
   `--asset-manifest configs/assets/production_assets.tsv --sync-assets
   --asset-source-host <user@host>`. The manifest stores paths and markers only,
   not the asset payloads.
+- SpecHLA, HLA-LA, Sequenza, and HMF PURPLE/AMBER/COBALT assets are part of the
+  production asset manifest. Asset sync dereferences source symlinks (`rsync
+  -L`), so stable `/mnt` links can point at real source directories while the
+  target receives concrete files/directories. When a `/mnt` symlink only
+  resolves on the source host, use `--asset-source-host` so rsync resolves it
+  there.
 - Licensed tools remain explicit inputs via `--netmhcpan-tar`,
   `--netmhcpan-dir`, `--netmhcpan-url`, `--mixmhcpred-dir`,
   `--mixmhcpred-archive`, and `--mixmhcpred-url`; do not bundle or download

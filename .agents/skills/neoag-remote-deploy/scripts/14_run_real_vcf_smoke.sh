@@ -13,6 +13,7 @@ ANNOTATED_VCF="/mnt/zzb/peixunban/gl/data/chenxiaoliang_data/work/neoag_sliding/
 HLA_ALLELES="HLA-A*02:06,HLA-A*30:01,HLA-B*13:02,HLA-B*48:01,HLA-C*06:02,HLA-C*08:01"
 HLA_FILE=""
 SKIP_MHCFLURRY=0
+SKIP_BIGMHC_IM=0
 SKIP_STABPAN=1
 SKIP_EXTRACTION=0
 
@@ -39,6 +40,7 @@ Options:
   --top-n N                Number of unique peptides to predict (default: 50)
   --skip-extraction        Reuse outdir/variant_peptides.annotated.tsv
   --skip-mhcflurry         Skip MHCflurry
+  --skip-bigmhc-im         Skip BigMHC_IM when torch/model runtime is not ready
   --run-stabpan            Do not skip NetMHCstabpan
   -h, --help               Show help
 
@@ -62,6 +64,7 @@ while [[ $# -gt 0 ]]; do
     --top-n) TOP_N="$2"; shift 2 ;;
     --skip-extraction) SKIP_EXTRACTION=1; shift ;;
     --skip-mhcflurry) SKIP_MHCFLURRY=1; shift ;;
+    --skip-bigmhc-im) SKIP_BIGMHC_IM=1; shift ;;
     --run-stabpan) SKIP_STABPAN=0; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "ERROR: unknown option: $1" >&2; usage >&2; exit 2 ;;
@@ -169,6 +172,7 @@ PYPAIRS
 PREDICT_OUT="$OUTDIR/peptide_predict_top${TOP_N}"
 args=(peptide-predict -i "$PAIR_TSV" -o "$PREDICT_OUT" --sample-id "$SAMPLE_ID")
 [[ "$SKIP_MHCFLURRY" == "1" ]] && args+=(--skip-mhcflurry)
+[[ "$SKIP_BIGMHC_IM" == "1" ]] && args+=(--skip-bigmhc-im)
 [[ "$SKIP_STABPAN" == "1" ]] && args+=(--skip-stabpan)
 
 log "==> peptide-predict ${args[*]}"
