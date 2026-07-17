@@ -41,6 +41,13 @@ references:
     marker: BEFORE_EXECUTING_EASYFUSE
     required: false
 
+  hla_la_graph:
+    path: /root/neo/neodata4git/data/hla/PRG_MHC_GRCh38_withIMGT
+    source: HLA-LA graph bundle
+    version: PRG_MHC_GRCh38_withIMGT
+    marker: serializedGRAPH
+    required: false
+
   facets_common_snp_vcf:
     path: /root/neo/neodata4git/data/facets/reference/common_snp.hg38.vcf.gz
     source: FACETS common SNP reference

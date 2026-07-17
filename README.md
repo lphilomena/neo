@@ -760,6 +760,24 @@ For this deployment line, the canonical large-asset source root is:
 /mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git
 ```
 
+
+Current synchronized assets larger than 1G are:
+
+| Asset | Current size | Source path | Install target | Required by default |
+| --- | ---: | --- | --- | --- |
+| EasyFuse reference | 104G | `/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/easyfuse/easyfuse_ref_v4` | `/root/neo/neodata4git/data/easyfuse/easyfuse_ref_v4` | No |
+| HLA-LA graph | 29G | `/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/hla/PRG_MHC_GRCh38_withIMGT` | `/root/neo/neodata4git/data/hla/PRG_MHC_GRCh38_withIMGT` | No |
+| VEP cache | 16G | `/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/vep` | `/root/neo/neodata4git/data/vep` | Yes |
+| Sequenza reference | 3.2G | `/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/sequenza/reference` | `/root/neo/neodata4git/data/sequenza/reference` | No |
+| GRCh38 FASTA | 3.0G | `/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/easyfuse/easyfuse_ref_v4/Homo_sapiens.GRCh38.dna.primary_assembly.fa` | `/root/neo/neodata4git/data/ref/hg38/Homo_sapiens_assembly38.fasta` | Yes |
+| BigMHC models | 2.4G | `/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/predictors/bigmhc/models` | `/root/neo/env_tool/tools/bigmhc/models` | Yes |
+| Polysolver distribution | 1.7G | `/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/lohhla/polysolver` | `/root/neo/licensed_tools/polysolver` | No |
+| GENCODE GTF | 1.4G | `/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/easyfuse/easyfuse_ref_v4/Homo_sapiens.GRCh38.110.gtf` | `/root/neo/neodata4git/data/ref/hg38/gencode.gtf` | Yes |
+
+Smaller assets are still kept in `production_assets.tsv` when they are needed
+for automated installation or validation, but they are intentionally omitted
+from this size-focused checklist.
+
 The installer reads `configs/assets/production_assets.tsv` and can sync large
 assets from that root via:
 
