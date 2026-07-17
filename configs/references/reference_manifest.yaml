@@ -50,12 +50,12 @@ references:
 
   normal_proteome:
     path: /root/neo/neodata4git/data/normal/proteome/Homo_sapiens.GRCh38.pep.all.fa
-    source: UniProt_or_GENCODE
-    version: project_default
-    required: false
+    source: Ensembl peptide reference
+    version: GRCh38.110
+    required: true
 
   normal_ligandome:
     path: /root/neo/neodata4git/data/normal/ligandome/normal_ms_ligands.tsv
-    source: curated
-    version: project_default
-    required: false
+    source: HLA Ligand Atlas
+    version: 2020.12 peptide_only
+    required: true

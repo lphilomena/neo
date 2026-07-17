@@ -1,6 +1,8 @@
 # Large deployable assets. Keep data out of Git; this file only records locations.
 # source_path can be local, absolute on --asset-source-host, or user@host:/path.
 asset_name	source_path	target_path	kind	required	sha256	marker
+normal_ligandome	/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/normal/ligandome/normal_ms_ligands.tsv	/root/neo/neodata4git/data/normal/ligandome/normal_ms_ligands.tsv	file	1	-	-
+normal_proteome	/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/normal/proteome/Homo_sapiens.GRCh38.pep.all.fa	/root/neo/neodata4git/data/normal/proteome/Homo_sapiens.GRCh38.pep.all.fa	file	1	-	-
 facets_common_snp_tbi	/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/facets/reference/common_snp.hg38.vcf.gz.tbi	/root/neo/neodata4git/data/facets/reference/common_snp.hg38.vcf.gz.tbi	file	1	-	-
 facets_common_snp_vcf	/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/facets/reference/common_snp.hg38.vcf.gz	/root/neo/neodata4git/data/facets/reference/common_snp.hg38.vcf.gz	file	1	-	-
 gencode_gtf	/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/easyfuse/easyfuse_ref_v4/Homo_sapiens.GRCh38.110.gtf	/root/neo/neodata4git/data/ref/hg38/gencode.gtf	file	1	-	-
