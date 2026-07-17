@@ -161,6 +161,35 @@ fi
 
 echo
 
+echo "==> RNA expression quantification"
+salmon_bin="${SALMON_BIN:-}"
+[[ -z "$salmon_bin" ]] && salmon_bin="$(command -v salmon 2>/dev/null || true)"
+if [[ -n "$salmon_bin" && -x "$salmon_bin" ]]; then
+  pass "Salmon executable: $salmon_bin"
+  "$salmon_bin" --version >/dev/null 2>&1 || warn "salmon --version returned non-zero"
+else
+  warn "Salmon executable missing; RNA FASTQ to gene TPM via scripts/run_salmon_fastq_to_tpm.sh will not run"
+fi
+if [[ -n "${SALMON_INDEX:-}" ]]; then
+  check_dir "$SALMON_INDEX" "Salmon index"
+else
+  [[ -d "${NEOAG_REF_BUNDLE:-}/data/rna/salmon_index" ]] && pass "Salmon index: ${NEOAG_REF_BUNDLE}/data/rna/salmon_index" || warn "SALMON_INDEX unset and default data/rna/salmon_index missing"
+fi
+if [[ -n "${SALMON_TX2GENE:-}" ]]; then
+  check_file "$SALMON_TX2GENE" "Salmon tx2gene"
+else
+  [[ -f "${NEOAG_REF_BUNDLE:-}/data/rna/tx2gene.tsv" ]] && pass "Salmon tx2gene: ${NEOAG_REF_BUNDLE}/data/rna/tx2gene.tsv" || warn "SALMON_TX2GENE unset and default data/rna/tx2gene.tsv missing"
+fi
+rsem_bin="${RSEM_BIN:-}"
+[[ -z "$rsem_bin" ]] && rsem_bin="$(command -v rsem-calculate-expression 2>/dev/null || true)"
+if [[ -n "$rsem_bin" && -x "$rsem_bin" ]]; then
+  pass "RSEM executable: $rsem_bin"
+else
+  warn "RSEM executable missing; scripts/run_rsem_fastq_to_tpm.sh will not run"
+fi
+
+echo
+
 echo "==> NetMHCpan"
 netmhcpan_bin="${NEOAG_NETMHCPAN_BIN:-${NETMHCPAN_HOME:-}/netMHCpan}"
 [[ ! -x "$netmhcpan_bin" ]] && netmhcpan_bin="$(command -v netMHCpan 2>/dev/null || true)"

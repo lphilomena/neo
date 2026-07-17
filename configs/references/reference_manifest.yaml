@@ -59,3 +59,23 @@ references:
     source: HLA Ligand Atlas
     version: 2020.12 peptide_only
     required: true
+
+  salmon_index:
+    path: /root/neo/neodata4git/data/rna/salmon_index
+    source: transcriptome Salmon index
+    version: GRCh38_matching_project_gtf
+    marker: versionInfo.json
+    required: false
+
+  salmon_tx2gene:
+    path: /root/neo/neodata4git/data/rna/tx2gene.tsv
+    source: transcript-to-gene mapping
+    version: GRCh38_matching_project_gtf
+    required: false
+
+  rsem_reference:
+    path: /root/neo/neodata4git/data/rna/rsem_reference
+    source: RSEM reference prefix directory
+    version: GRCh38_matching_project_gtf
+    marker: grp
+    required: false

@@ -15,6 +15,8 @@ profiles:
       - pvacfuse
       - pvacsplice
       - mhcflurry
+      - salmon
+      - rsem
       - vep
       - gatk
       - prime
@@ -104,6 +106,29 @@ tools:
     license_required: false
     distributable: true
     smoke_command: "mhcflurry-predict --help"
+
+  salmon:
+    category: rna_expression
+    executable: salmon
+    env: env.neoag-tools
+    container: combinelab/salmon:1.10.3
+    index: salmon_index
+    tx2gene: salmon_tx2gene
+    required: false
+    recommended: true
+    license_required: false
+    distributable: true
+    smoke_command: "salmon --version"
+
+  rsem:
+    category: rna_expression
+    executable: rsem-calculate-expression
+    env: env.neoag-tools
+    reference: rsem_reference
+    required: false
+    license_required: false
+    distributable: true
+    smoke_command: "rsem-calculate-expression --version"
 
   netmhcpan:
     category: presentation

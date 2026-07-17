@@ -17,6 +17,7 @@ INSTALL_VEP=0
 INSTALL_VEP_CACHE=0
 VEP_VERSION="105"
 INSTALL_GATK=0
+INSTALL_RNA_EXPRESSION=0
 INSTALL_IMMUNOGENICITY=0
 INSTALL_DEEPIMMUNO=0
 INSTALL_NETMHCSTABPAN=0
@@ -97,6 +98,7 @@ Tool groups:
   --vep-cache                VEP cache via scripts/install_vep_cache.sh (large download)
   --vep-version VERSION      Ensembl VEP/cache release to install/use (default: 105)
   --gatk                     GATK4 / Mutect2 via scripts/install_gatk.sh
+  --rna-expression           Install Salmon/RSEM in neoag-tools for RNA FASTQ to gene TPM scripts
   --immunogenicity           PRIME + MixMHCpred + BigMHC via scripts/install_immunogenicity_tools.sh
   --deepimmuno               DeepImmuno via scripts/install_deepimmuno.sh
   --netmhcstabpan            NetMHCstabpan or IEDB shim via scripts/install_netmhcstabpan.sh
@@ -184,6 +186,7 @@ while [[ $# -gt 0 ]]; do
     --vep-cache) INSTALL_VEP=1; INSTALL_VEP_CACHE=1; shift ;;
     --vep-version) VEP_VERSION="$2"; shift 2 ;;
     --gatk) INSTALL_GATK=1; shift ;;
+    --rna-expression) INSTALL_RNA_EXPRESSION=1; INSTALL_CORE_ENV=1; shift ;;
     --immunogenicity) INSTALL_IMMUNOGENICITY=1; shift ;;
     --deepimmuno) INSTALL_DEEPIMMUNO=1; shift ;;
     --netmhcstabpan) INSTALL_NETMHCSTABPAN=1; shift ;;
@@ -198,14 +201,14 @@ while [[ $# -gt 0 ]]; do
     --sequenza) INSTALL_SEQUENZA=1; shift ;;
     --hmf-purple) INSTALL_HMF_PURPLE=1; shift ;;
     --all-open)
-      INSTALL_CORE_ENV=1; INSTALL_VEP=1; INSTALL_GATK=1; INSTALL_IMMUNOGENICITY=1
+      INSTALL_CORE_ENV=1; INSTALL_VEP=1; INSTALL_GATK=1; INSTALL_RNA_EXPRESSION=1; INSTALL_IMMUNOGENICITY=1
       INSTALL_DEEPIMMUNO=1; INSTALL_NETMHCSTABPAN=1; INSTALL_LOHHLA=1
       INSTALL_OPTITYPE=1; INSTALL_FACETS=1; INSTALL_ASCAT_PYCLONE=1; INSTALL_FUSION=1
       INSTALL_SPECHLA=1; INSTALL_HLALA=1; INSTALL_SEQUENZA=1; INSTALL_HMF_PURPLE=1
       SKIP_TORCH_INSTALL=0
       shift ;;
     --all)
-      INSTALL_CORE_ENV=1; INSTALL_VEP=1; INSTALL_VEP_CACHE=1; INSTALL_GATK=1; INSTALL_IMMUNOGENICITY=1
+      INSTALL_CORE_ENV=1; INSTALL_VEP=1; INSTALL_VEP_CACHE=1; INSTALL_GATK=1; INSTALL_RNA_EXPRESSION=1; INSTALL_IMMUNOGENICITY=1
       INSTALL_DEEPIMMUNO=1; INSTALL_NETMHCSTABPAN=1; INSTALL_LOHHLA=1
       INSTALL_OPTITYPE=1; INSTALL_FACETS=1; INSTALL_ASCAT_PYCLONE=1; INSTALL_FUSION=1
       INSTALL_SPECHLA=1; INSTALL_HLALA=1; INSTALL_SEQUENZA=1; INSTALL_HMF_PURPLE=1
@@ -525,7 +528,7 @@ install_miniforge_if_needed() {
 cd "$PROJECT_ROOT"
 [[ -f "pyproject.toml" || -f "setup.py" ]] || { echo "PROJECT_ROOT_INVALID: $PROJECT_ROOT" >&2; exit 30; }
 
-if [[ "$INSTALL_CORE_ENV$INSTALL_VEP$INSTALL_GATK$INSTALL_IMMUNOGENICITY$INSTALL_DEEPIMMUNO$INSTALL_NETMHCSTABPAN$INSTALL_LOHHLA$INSTALL_POLYSOLVER$INSTALL_OPTITYPE$INSTALL_FACETS$INSTALL_ASCAT_PYCLONE$INSTALL_FUSION$INSTALL_SPECHLA$INSTALL_HLALA$INSTALL_SEQUENZA$INSTALL_HMF_PURPLE" =~ 1 ]]; then
+if [[ "$INSTALL_CORE_ENV$INSTALL_VEP$INSTALL_GATK$INSTALL_RNA_EXPRESSION$INSTALL_IMMUNOGENICITY$INSTALL_DEEPIMMUNO$INSTALL_NETMHCSTABPAN$INSTALL_LOHHLA$INSTALL_POLYSOLVER$INSTALL_OPTITYPE$INSTALL_FACETS$INSTALL_ASCAT_PYCLONE$INSTALL_FUSION$INSTALL_SPECHLA$INSTALL_HLALA$INSTALL_SEQUENZA$INSTALL_HMF_PURPLE" =~ 1 ]]; then
   install_miniforge_if_needed
   export NEOAG_CONDA_BASE="$CONDA_BASE"
   export PATH="$CONDA_BASE/bin:$PATH"
@@ -657,7 +660,7 @@ fi
   echo "Selected groups:"
   for item in \
     "core-env:$INSTALL_CORE_ENV" "core-env-lite:$CORE_ENV_LITE" "skip-torch-install:$SKIP_TORCH_INSTALL" "vep:$INSTALL_VEP" "vep-cache:$INSTALL_VEP_CACHE" "vep-version:$VEP_VERSION" \
-    "gatk:$INSTALL_GATK" "immunogenicity:$INSTALL_IMMUNOGENICITY" \
+    "gatk:$INSTALL_GATK" "rna-expression:$INSTALL_RNA_EXPRESSION" "immunogenicity:$INSTALL_IMMUNOGENICITY" \
     "netmhcstabpan:$INSTALL_NETMHCSTABPAN" "deepimmuno:$INSTALL_DEEPIMMUNO" \
     "lohhla:$INSTALL_LOHHLA" "polysolver:$INSTALL_POLYSOLVER" "optitype:$INSTALL_OPTITYPE" \
     "facets:$INSTALL_FACETS" "ascat-pyclone:$INSTALL_ASCAT_PYCLONE" "fusion:$INSTALL_FUSION" \
