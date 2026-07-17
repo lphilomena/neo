@@ -12,7 +12,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-CONDA_BASE="${NEOAG_CONDA_BASE:-$(conda info --base)}"
+CONDA_BASE="${NEOAG_CONDA_BASE:-$(command conda info --base)}"
 ASCAT_ENV="${NEOAG_ASCAT_ENV:-neoag-ascat}"
 PYCLONE_ENV="${NEOAG_PYCLONE_ENV:-neoag-pyclone}"
 ASCAT_YML="${ROOT}/conda/env.neoag-ascat.yml"
@@ -23,8 +23,18 @@ if ! command -v conda >/dev/null 2>&1; then
   echo "ERROR: conda not found" >&2
   exit 1
 fi
+conda_safe() {
+  set +u
+  conda "$@"
+  local rc=$?
+  set -u
+  return "$rc"
+}
+
 # shellcheck disable=SC1091
+set +u
 source "${CONDA_BASE}/etc/profile.d/conda.sh"
+set -u
 
 if [[ "${NEOAG_USE_MAMBA:-0}" == "1" ]] && command -v mamba >/dev/null 2>&1 && mamba --version >/dev/null 2>&1; then
   CONDA_RUNNER=mamba
@@ -32,7 +42,7 @@ else
   CONDA_RUNNER=conda
 fi
 
-env_exists() { conda env list | awk '{print $1}' | grep -qx "$1"; }
+env_exists() { conda_safe env list | awk '{print $1}' | grep -qx "$1"; }
 
 create_or_update_env() {
   local env_name="$1" yml="$2"
@@ -45,12 +55,12 @@ create_or_update_env() {
 }
 
 env_has_ascat() {
-  conda run -n "$1" Rscript -e 'quit(status=ifelse(requireNamespace("ASCAT", quietly=TRUE),0,1))' >/dev/null 2>&1
+  conda_safe run -n "$1" Rscript -e 'quit(status=ifelse(requireNamespace("ASCAT", quietly=TRUE),0,1))' >/dev/null 2>&1
 }
 
 env_has_pyclone() {
   [[ -x "${CONDA_BASE}/envs/$1/bin/pyclone-vi" ]] || \
-    conda run -n "$1" pyclone-vi --version >/dev/null 2>&1
+    conda_safe run -n "$1" pyclone-vi --version >/dev/null 2>&1
 }
 
 ascat_ready() {
@@ -70,7 +80,7 @@ else
     echo "==> ASCAT package present in ${ASCAT_ENV}; skipping env update"
   else
     echo "==> ${ASCAT_ENV} exists but ASCAT R package missing; recreating env"
-    conda env remove -n "${ASCAT_ENV}" -y
+    conda_safe env remove -n "${ASCAT_ENV}" -y
     create_or_update_env "${ASCAT_ENV}" "${ASCAT_YML}"
   fi
 
@@ -89,14 +99,14 @@ cat > "${ROOT}/bin/ascat.R" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
 if [[ "\${1:-}" == "--version" || "\${1:-}" == "-v" ]]; then
-  conda run -n "${ASCAT_ENV}" Rscript -e 'cat(as.character(utils::packageVersion("ASCAT")), "\\n")'
+  "${CONDA_BASE}/bin/conda" run -n "${ASCAT_ENV}" Rscript -e 'cat(as.character(utils::packageVersion("ASCAT")), "\\n")'
   exit 0
 fi
 if [[ "\$#" -eq 0 ]]; then
   echo "ASCAT wrapper. For custom analyses, run: conda activate ${ASCAT_ENV}; Rscript your_ascat_script.R" >&2
   exit 0
 fi
-conda run -n "${ASCAT_ENV}" Rscript "\$@"
+"${CONDA_BASE}/bin/conda" run -n "${ASCAT_ENV}" Rscript "\$@"
 EOF
 chmod +x "${ROOT}/bin/ascat.R"
 
@@ -106,7 +116,7 @@ set -euo pipefail
 if command -v "${CONDA_BASE}/envs/${PYCLONE_ENV}/bin/pyclone-vi" >/dev/null 2>&1; then
   exec "${CONDA_BASE}/envs/${PYCLONE_ENV}/bin/pyclone-vi" "\$@"
 fi
-exec conda run -n "${PYCLONE_ENV}" pyclone-vi "\$@"
+exec "${CONDA_BASE}/bin/conda" run -n "${PYCLONE_ENV}" pyclone-vi "\$@"
 EOF
 chmod +x "${ROOT}/bin/pyclone"
 

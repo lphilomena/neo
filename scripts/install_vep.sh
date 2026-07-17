@@ -26,7 +26,7 @@ if ! command -v conda >/dev/null 2>&1; then
   exit 1
 fi
 
-CONDA_BASE="${NEOAG_CONDA_BASE:-$(conda info --base)}"
+CONDA_BASE="${NEOAG_CONDA_BASE:-$(command conda info --base)}"
 TOOLS_ROOT="${NEOAG_TOOLS_ROOT:-$(dirname "$CONDA_BASE")}"
 CONDA_PKGS_DIR="${NEOAG_CONDA_PKGS_DIR:-$TOOLS_ROOT/conda_pkgs}"
 mkdir -p "$CONDA_PKGS_DIR"
@@ -38,15 +38,17 @@ source "$CONDA_BASE/etc/profile.d/conda.sh"
 
 if [[ ! -x "$CONDA_BASE/envs/${ENV_NAME}/bin/vep" ]]; then
   echo "==> Creating ${ENV_NAME} from conda/env.neoag-vep.yml ..."
-  conda create -n "${ENV_NAME}" --override-channels -c conda-forge -c bioconda -y "ensembl-vep=${VEP_VERSION}.*"
+  conda_safe create -n "${ENV_NAME}" --override-channels -c conda-forge -c bioconda -y "ensembl-vep=${VEP_VERSION}.*"
 fi
 
+set +u
 conda activate "${ENV_NAME}"
+set -u
 
 CURRENT_VEP_VERSION="$(conda list -n "${ENV_NAME}" ensembl-vep 2>/dev/null | awk '$1=="ensembl-vep" {print $2; exit}')"
 if ! command -v vep >/dev/null 2>&1 || [[ "${CURRENT_VEP_VERSION}" != ${VEP_VERSION}* ]]; then
   echo "==> Installing ensembl-vep ${VEP_VERSION}.* into ${ENV_NAME} ..."
-  conda install --override-channels -c conda-forge -c bioconda -y "ensembl-vep=${VEP_VERSION}.*"
+  conda_safe install --override-channels -c conda-forge -c bioconda -y "ensembl-vep=${VEP_VERSION}.*"
 fi
 
 echo "==> VEP version:"
@@ -61,7 +63,8 @@ else
   echo "NOTE: neoag upstream uses --cache --offline by default."
   echo "Run cache install when ready:"
   echo "  export NEOAG_VEP_VERSION=${VEP_VERSION}"
-  echo "  conda activate ${ENV_NAME}"
+  echo "  set +u
+conda activate ${ENV_NAME}"
   echo "  vep_install -a cf -s homo_sapiens -y"
   echo ""
   echo "Or use online VEP (set NEOAG_VEP_ONLINE=1 in run config / see docs/TOOLS_SETUP.md)."
@@ -84,7 +87,7 @@ if [[ ! -f "${TOOLS_ENV}" ]]; then
   cat > "${TOOLS_ENV}" <<EOF
 export NEOAG_PROJECT_ROOT="${ROOT}"
 export NEOAG_TOOLS_ROOT="${TOOLS_ROOT}"
-export NEOAG_CONDA_BASE="${NEOAG_CONDA_BASE:-$(conda info --base)}"
+export NEOAG_CONDA_BASE="${CONDA_BASE}"
 export NEOAG_CONDA_ENV="neoag-tools"
 EOF
 fi
@@ -101,4 +104,5 @@ else
   echo "==> conf/tools.env.sh already contains a VEP install block; check NEOAG_VEP_BIN if needed."
 fi
 
-echo "==> Done. Test: conda activate ${ENV_NAME} && vep --help | head"
+echo "==> Done. Test: set +u
+conda activate ${ENV_NAME} && vep --help | head"

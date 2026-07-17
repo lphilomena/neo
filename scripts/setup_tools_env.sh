@@ -16,24 +16,47 @@ NETMHCPAN_HOME="${NEOAG_NETMHCPAN_HOME:-${NETMHCPAN_HOME:-${ROOT}/tools/netMHCpa
 echo "==> Project: ${ROOT}"
 echo "==> Conda env: ${ENV_NAME}"
 
+if [[ -n "${NEOAG_CONDA_BASE:-}" ]]; then
+  export PATH="${NEOAG_CONDA_BASE}/bin:${PATH}"
+fi
 if ! command -v conda >/dev/null 2>&1; then
   echo "ERROR: conda not found. Install Miniconda/Mambaforge first." >&2
   exit 1
 fi
 
-# shellcheck disable=SC1091
-CONDA_BASE="$(conda info --base)"
-source "${CONDA_BASE}/etc/profile.d/conda.sh"
-
-if conda env list | awk '{print $1}' | grep -qx "${ENV_NAME}"; then
-  echo "==> Env '${ENV_NAME}' exists; updating..."
-  conda env update -n "${ENV_NAME}" -f "${YML}" --prune
-else
-  echo "==> Creating env from ${YML} (may take 10–30 min)..."
-  conda env create -n "${ENV_NAME}" -f "${YML}"
+CONDA_BASE="${NEOAG_CONDA_BASE:-$(command conda info --base)}"
+CONDA_BIN="${CONDA_BASE}/bin/conda"
+if [[ ! -x "${CONDA_BIN}" ]]; then
+  echo "ERROR: conda executable not found at ${CONDA_BIN}" >&2
+  exit 1
 fi
 
+# Some conda activation/deactivation hooks reference unset CONDA_BACKUP_*
+# variables. Keep nounset off only while calling conda shell machinery.
+conda_safe() {
+  set +u
+  "${CONDA_BIN}" "$@"
+  local rc=$?
+  set -u
+  return "$rc"
+}
+
+# shellcheck disable=SC1091
+set +u
+source "${CONDA_BASE}/etc/profile.d/conda.sh"
+set -u
+
+if conda_safe env list | awk '{print $1}' | grep -qx "${ENV_NAME}"; then
+  echo "==> Env '${ENV_NAME}' exists; updating..."
+  conda_safe env update -n "${ENV_NAME}" -f "${YML}" --prune
+else
+  echo "==> Creating env from ${YML} (may take 10–30 min)..."
+  conda_safe env create -n "${ENV_NAME}" -f "${YML}"
+fi
+
+set +u
 conda activate "${ENV_NAME}"
+set -u
 # Prefer conda C++ runtime during smoke tests; avoids system libstdc++/CXXABI mismatches.
 export LD_LIBRARY_PATH="${CONDA_PREFIX}/lib:${LD_LIBRARY_PATH:-}"
 
@@ -71,7 +94,7 @@ if ! command -v vep >/dev/null 2>&1; then
   echo "  - or provide pre-computed vep_appm.tsv in run config"
 fi
 
-PREFIX="$(conda env list | awk -v n="${ENV_NAME}" '$1==n {print $NF}')"
+PREFIX="$(conda_safe env list | awk -v n="${ENV_NAME}" '$1==n {print $NF}')"
 if [[ -z "${PREFIX}" || ! -d "${PREFIX}" ]]; then
   echo "ERROR: could not resolve conda prefix for ${ENV_NAME}" >&2
   exit 1
@@ -111,7 +134,9 @@ echo ""
 echo "NetMHCpan (manual, academic license):"
 echo "  NEOAG_NETMHCPAN_HOME=${NETMHCPAN_HOME} bash scripts/install_netmhcpan.sh /path/to/netMHCpan-4.2c.Linux.tar.gz"
 
+set +u
 conda activate "${ENV_NAME}"
+set -u
 echo ""
 echo "==> Quick check in env '${ENV_NAME}':"
 for cmd in pvacseq pvacfuse mhcflurry-predict vep; do

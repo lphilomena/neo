@@ -8,7 +8,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-CONDA_BASE="${NEOAG_CONDA_BASE:-$(conda info --base)}"
+CONDA_BASE="${NEOAG_CONDA_BASE:-$(command conda info --base)}"
 export PATH="${CONDA_BASE}/bin:${PATH}"
 ENV_NAME="${NEOAG_FACETS_ENV:-neoag-facets}"
 TOOLS_ENV="${ROOT}/conf/tools.env.sh"
@@ -19,12 +19,22 @@ if ! command -v conda >/dev/null 2>&1; then
   echo "ERROR: conda not found" >&2
   exit 1
 fi
-# shellcheck disable=SC1091
-source "${CONDA_BASE}/etc/profile.d/conda.sh"
+conda_safe() {
+  set +u
+  conda "$@"
+  local rc=$?
+  set -u
+  return "$rc"
+}
 
-env_exists() { conda env list | awk '{print $1}' | grep -qx "$1"; }
+# shellcheck disable=SC1091
+set +u
+source "${CONDA_BASE}/etc/profile.d/conda.sh"
+set -u
+
+env_exists() { conda_safe env list | awk '{print $1}' | grep -qx "$1"; }
 env_has_facets() {
-  conda run -n "$1" Rscript -e 'quit(status=ifelse(requireNamespace("facets", quietly=TRUE),0,1))' >/dev/null 2>&1
+  conda_safe run -n "$1" Rscript -e 'quit(status=ifelse(requireNamespace("facets", quietly=TRUE),0,1))' >/dev/null 2>&1
 }
 
 if [[ -x "${BIN_DIR}/runFACETS.R" ]] && "${BIN_DIR}/runFACETS.R" --version >/dev/null 2>&1; then
@@ -45,13 +55,13 @@ done
 
 if ! env_has_facets "${FACETS_ENV}"; then
   if env_exists "${ENV_NAME}"; then
-    conda install -n "${ENV_NAME}" -c conda-forge -c bioconda -y r-base r-optparse r-devtools r-remotes htslib || true
+    conda_safe install -n "${ENV_NAME}" -c conda-forge -c bioconda -y r-base r-optparse r-devtools r-remotes htslib || true
   else
-    conda create -n "${ENV_NAME}" -c conda-forge -c bioconda -y r-base r-optparse r-devtools r-remotes htslib
+    conda_safe create -n "${ENV_NAME}" -c conda-forge -c bioconda -y r-base r-optparse r-devtools r-remotes htslib
   fi
   FACETS_ENV="${ENV_NAME}"
   if ! env_has_facets "${FACETS_ENV}"; then
-    if ! conda install -n "${FACETS_ENV}" -c conda-forge -c bioconda -y r-facets; then
+    if ! conda_safe install -n "${FACETS_ENV}" -c conda-forge -c bioconda -y r-facets; then
       SRC_ROOT="${NEOAG_TOOLS_SRC_ROOT:-$(dirname "${CONDA_BASE}")/tools/src}"
       mkdir -p "${SRC_ROOT}"
       if [[ ! -d "${SRC_ROOT}/pctGCdata/.git" ]]; then

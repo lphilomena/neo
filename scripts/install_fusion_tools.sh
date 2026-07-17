@@ -8,7 +8,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-CONDA_BASE="${NEOAG_CONDA_BASE:-$(conda info --base)}"
+CONDA_BASE="${NEOAG_CONDA_BASE:-$(command conda info --base)}"
 ENV_NAME="${NEOAG_FUSION_ENV:-neoag-fusion}"
 FUSION_YML="${ROOT}/conda/env.neoag-fusion.yml"
 TOOLS_ROOT="${NEOAG_TOOLS_ROOT:-${ROOT}}"
@@ -19,8 +19,18 @@ if ! command -v conda >/dev/null 2>&1; then
   echo "ERROR: conda not found" >&2
   exit 1
 fi
+conda_safe() {
+  set +u
+  conda "$@"
+  local rc=$?
+  set -u
+  return "$rc"
+}
+
 # shellcheck disable=SC1091
+set +u
 source "${CONDA_BASE}/etc/profile.d/conda.sh"
+set -u
 
 if [[ "${NEOAG_USE_MAMBA:-0}" == "1" ]] && command -v mamba >/dev/null 2>&1; then
   CONDA_RUNNER=mamba
@@ -28,10 +38,10 @@ else
   CONDA_RUNNER=conda
 fi
 
-env_exists() { conda env list | awk '{print $1}' | grep -qx "$1"; }
+env_exists() { conda_safe env list | awk '{print $1}' | grep -qx "$1"; }
 
 fusion_env_has_arriba() {
-  env_exists "${ENV_NAME}" && conda run -n "${ENV_NAME}" arriba -h >/dev/null 2>&1
+  env_exists "${ENV_NAME}" && conda_safe run -n "${ENV_NAME}" arriba -h >/dev/null 2>&1
 }
 
 if [[ "${NEOAG_FORCE_ENV_UPDATE:-0}" == "1" ]]; then
@@ -69,7 +79,7 @@ fi
 
 echo "==> Smoke tests"
 if fusion_env_has_arriba; then
-  conda run -n "${ENV_NAME}" arriba -h | head -6
+  conda_safe run -n "${ENV_NAME}" arriba -h | head -6
 elif command -v arriba >/dev/null 2>&1; then
   arriba -h | head -6
 else
