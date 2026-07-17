@@ -1,0 +1,291 @@
+manifest_version: 1
+created_at: 2026-07-17
+owner: neoag
+
+policy:
+  standard_profile: "Install open tools and sync required production assets; licensed tools are installed only when licensed assets are present."
+  download_policy: "Network downloads require --allow-download and official/user-approved URLs. License-protected tools are never auto-downloaded from unofficial mirrors."
+  path_policy: "New machines should resolve paths through install skill variables and asset manifests, not through old-machine symlinks."
+
+profiles:
+  standard:
+    description: "Default production install for SNV/InDel, immunogenicity, HLA LOH, CNV, and fusion smoke tests."
+    tools:
+      - pvacseq
+      - pvacfuse
+      - pvacsplice
+      - mhcflurry
+      - vep
+      - gatk
+      - prime
+      - mixmhcpred
+      - bigmhc_im
+      - deepimmuno
+      - lohhla
+      - facets
+      - ascat
+      - pyclone
+      - star_fusion
+      - fusioncatcher
+      - easyfuse
+  licensed:
+    description: "Tools requiring registration, institutional license, or non-redistributable assets."
+    tools:
+      - netmhcpan
+      - netmhcstabpan
+      - polysolver
+      - novoalign_license
+  optional:
+    description: "Useful for specialized workflows; not required for the default real-VCF smoke."
+    tools:
+      - arriba
+
+tools:
+  pvacseq:
+    category: neoantigen
+    executable: pvacseq
+    env: env.neoag-tools
+    container: griffithlab/pvactools:6.1.1
+    required: true
+    license_required: false
+    distributable: true
+    smoke_command: "pvacseq --help"
+
+  pvacfuse:
+    category: neoantigen
+    executable: pvacfuse
+    env: env.neoag-tools
+    container: griffithlab/pvactools:6.1.1
+    required: true
+    license_required: false
+    distributable: true
+    smoke_command: "pvacfuse --help"
+
+  pvacsplice:
+    category: neoantigen
+    executable: pvacsplice
+    env: env.neoag-tools
+    container: griffithlab/pvactools:6.1.1
+    required: true
+    license_required: false
+    distributable: true
+    smoke_command: "pvacsplice --help"
+
+  vep:
+    category: annotation
+    executable: vep
+    env: env.neoag-vep
+    container: ensemblorg/ensembl-vep:release_115.2
+    version_required: "105"
+    cache_version_required: "105_GRCh38"
+    cache_reference: vep_cache
+    required: true
+    license_required: false
+    distributable: true
+    smoke_command: "vep --help"
+
+  gatk:
+    category: variant
+    executable: gatk
+    env: env.neoag-gatk
+    container: broadinstitute/gatk:4.6.2.0
+    reference_fasta: reference_fasta
+    required: true
+    license_required: false
+    distributable: true
+    smoke_command: "gatk --version"
+
+  mhcflurry:
+    category: presentation
+    executable: mhcflurry-predict
+    env: env.neoag-tools
+    model_dir: /root/neo/env_tool/miniforge3/envs/neoag-tools/share/mhcflurry
+    required: true
+    license_required: false
+    distributable: true
+    smoke_command: "mhcflurry-predict --help"
+
+  netmhcpan:
+    category: presentation
+    executable: /root/neo/licensed_tools/netMHCpan/netMHCpan
+    env: env.neoag-mhc
+    container: neoag-netmhcpan:4.2c-ubuntu22.04
+    asset: netmhcpan_install
+    target_path: /root/neo/licensed_tools/netMHCpan
+    required: false
+    recommended: true
+    license_required: true
+    distributable: false
+    smoke_command: "netMHCpan -h"
+    source_policy: "Use institutional/local DTU package or registered DTU download only."
+
+  netmhcstabpan:
+    category: presentation
+    executable: /root/neo/licensed_tools/netMHCstabpan/netMHCstabpan
+    env: env.neoag-mhc
+    container: neoag-netmhcstabpan:1.0-ubuntu22.04
+    asset: netmhcstabpan_install
+    target_path: /root/neo/licensed_tools/netMHCstabpan
+    required: false
+    license_required: true
+    distributable: false
+    smoke_command: "netMHCstabpan -h"
+
+  prime:
+    category: immunogenicity
+    executable: PRIME
+    env: env.neoag-tools
+    install_root: /root/neo/env_tool/tools/prime
+    required: true
+    license_required: false
+    distributable: true
+    smoke_command: "PRIME --help"
+
+  mixmhcpred:
+    category: immunogenicity
+    executable: MixMHCpred
+    env: env.neoag-tools
+    install_root: /root/neo/env_tool/tools/mixMHCpred_install
+    required: true
+    license_required: false
+    distributable: true
+    smoke_command: "MixMHCpred -h"
+
+  bigmhc_im:
+    category: immunogenicity
+    executable: bigmhc_predict
+    env: env.neoag-tools
+    install_root: /root/neo/env_tool/tools/bigmhc
+    model_dir: /root/neo/env_tool/tools/bigmhc/models
+    asset: bigmhc_models
+    required: true
+    license_required: false
+    distributable: true
+    smoke_command: "bigmhc_predict --help"
+
+  deepimmuno:
+    category: immunogenicity
+    executable: deepimmuno-cnn.py
+    env: env.neoag-tools
+    install_root: /root/neo/env_tool/tools/DeepImmuno
+    asset: deepimmuno_source
+    required_markers:
+      - deepimmuno-cnn.py
+      - data/after_pca.txt
+      - data/hla2paratopeTable_aligned.txt
+      - models/cnn_model_331_3_7
+    required: true
+    license_required: false
+    distributable: true
+    smoke_command: "deepimmuno-cnn.py --help"
+
+  lohhla:
+    category: hla_loh
+    executable: LOHHLA
+    env: env.neoag-facets
+    container: quay.io/biocontainers/lohhla:20171108--hdfd78af_3
+    install_root: /root/neo/env_tool/tools/lohhla
+    asset: lohhla_source
+    reference_dir: /root/neo/env_tool/tools/lohhla
+    required: true
+    license_required: false
+    distributable: true
+    smoke_command: "LOHHLA --help"
+
+  facets:
+    category: cnv
+    executable: runFACETS.R
+    env: env.neoag-facets
+    container: neoag-purple-suite:ubuntu22.04
+    snp_vcf: facets_common_snp_vcf
+    required: true
+    license_required: false
+    distributable: true
+    smoke_command: "runFACETS.R --help"
+
+  ascat:
+    category: cnv
+    executable: ascat.R
+    env: env.neoag-ascat
+    container: quay.io/biocontainers/ascat:2.5.2--r40hdfd78af_3
+    required: true
+    license_required: false
+    distributable: true
+    smoke_command: "ascat.R --version"
+
+  pyclone:
+    category: clonality
+    executable: pyclone
+    env: env.neoag-pyclone
+    required: true
+    license_required: false
+    distributable: true
+    smoke_command: "pyclone --version"
+
+  star_fusion:
+    category: fusion
+    executable: star-fusion-neoag
+    env: env.neoag-fusion
+    container: quay.io/biocontainers/star-fusion:1.15.1--hdfd78af_1
+    reference_dir: easyfuse_ref
+    required: true
+    license_required: false
+    distributable: true
+    smoke_command: "star-fusion-neoag --version"
+
+  fusioncatcher:
+    category: fusion
+    executable: fusioncatcher-neoag
+    env: env.neoag-fusion
+    container: quay.io/biocontainers/fusioncatcher:1.33b--hdfd78af_0
+    reference_dir: easyfuse_ref
+    required: true
+    license_required: false
+    distributable: true
+    smoke_command: "fusioncatcher-neoag --help"
+
+  easyfuse:
+    category: fusion
+    executable: easyfuse-neoag
+    env: env.neoag-fusion
+    container: tronbioinformatics/easyfuse:1.3.7
+    reference_dir: easyfuse_ref
+    required: true
+    license_required: false
+    distributable: true
+    smoke_command: "easyfuse-neoag --help"
+
+  arriba:
+    category: fusion
+    executable: arriba
+    env: env.neoag-fusion
+    container: uhrigs/arriba:2.5.1
+    wrapper: /root/neo/src/na0707_upload_release/bin/arriba
+    required: false
+    license_required: false
+    distributable: true
+    smoke_command: "arriba -h"
+
+  polysolver:
+    category: hla_typing
+    executable: /root/neo/licensed_tools/polysolver/scripts/shell_call_hla_type
+    env: env.neoag-hla
+    asset: polysolver_distribution
+    target_path: /root/neo/licensed_tools/polysolver
+    required: false
+    license_required: true
+    distributable: false
+    companion_assets:
+      - novoalign_license
+    smoke_command: "/root/neo/licensed_tools/polysolver/scripts/shell_call_hla_type --help"
+
+  novoalign_license:
+    category: hla_typing
+    executable: /root/neo/licensed_tools/novoalign/novoalign.lic
+    env: env.neoag-hla
+    asset: novoalign_license
+    target_path: /root/neo/licensed_tools/novoalign/novoalign.lic
+    required: false
+    license_required: true
+    distributable: false
+    smoke_command: "test -s /root/neo/licensed_tools/novoalign/novoalign.lic"
