@@ -52,55 +52,107 @@ Add `--standard` for a broader common tool set, and add `--run-real-vcf-smoke --
 
 ## New Machine Migration
 
-For a fresh target machine, clone this branch and run the consolidated installer:
+Use the machine-readable manifests as the source of truth. README is only the
+human navigation layer:
+
+- `configs/assets/production_assets.tsv`: large assets to synchronize, including
+  references, VEP cache, BigMHC/DeepImmuno models, EasyFuse references, LOHHLA,
+  and licensed-tool assets.
+- `configs/references/reference_manifest.yaml`: reference paths, genome build,
+  required markers, and VEP cache version checks.
+- `configs/tools/tools_manifest.yaml`: tools, environments, containers,
+  license/distribution flags, and smoke commands.
+
+For a fresh target machine, clone this branch and run the consolidated installer
+from the checkout:
 
 ```bash
-git clone --branch na0707_upload_release https://github.com/lphilomena/neo.git /root/neo/src/na0707_upload_release
+mkdir -p /root/neo/src
+
+git clone --branch na0707_upload_release \
+  https://github.com/lphilomena/neo.git \
+  /root/neo/src/na0707_upload_release
+
 cd /root/neo/src/na0707_upload_release
+```
 
-bash .agents/skills/neoag-remote-deploy/scripts/16_install_new_machine.sh \
+Recommended production-like install:
+
+```bash
+bash .agents/skills/neoag-remote-deploy/scripts/13_install_readme_tools.sh \
+  --project-root /root/neo/src/na0707_upload_release \
+  --tools-root /root/neo/env_tool \
+  --licensed-root /root/neo/licensed_tools \
+  --reference-root /root/neo/neodata4git \
+  --conda-base /root/neo/env_tool/miniforge3 \
+  --asset-manifest configs/assets/production_assets.tsv \
+  --reference-manifest configs/references/reference_manifest.yaml \
+  --sync-assets \
   --asset-source-host na@10.200.50.134 \
+  --all-open \
+  --verify \
   --allow-download \
   --execute
 ```
 
-Use `--standard` when the machine should also prepare common production tools
-such as VEP, GATK, OptiType, FACETS, and ASCAT/PyClone:
+To run the default real VCF smoke test after installation, add
+`--run-real-vcf-smoke`:
 
 ```bash
-bash .agents/skills/neoag-remote-deploy/scripts/16_install_new_machine.sh \
-  --standard \
+bash .agents/skills/neoag-remote-deploy/scripts/13_install_readme_tools.sh \
+  --project-root /root/neo/src/na0707_upload_release \
+  --tools-root /root/neo/env_tool \
+  --licensed-root /root/neo/licensed_tools \
+  --reference-root /root/neo/neodata4git \
+  --conda-base /root/neo/env_tool/miniforge3 \
+  --asset-manifest configs/assets/production_assets.tsv \
+  --reference-manifest configs/references/reference_manifest.yaml \
+  --sync-assets \
   --asset-source-host na@10.200.50.134 \
-  --allow-download \
-  --execute
-```
-
-To run a small post-install real VCF smoke test:
-
-```bash
-bash .agents/skills/neoag-remote-deploy/scripts/16_install_new_machine.sh \
-  --standard \
+  --all-open \
+  --verify \
   --run-real-vcf-smoke \
-  --real-vcf-smoke-top-n 1 \
-  --asset-source-host na@10.200.50.134 \
   --allow-download \
   --execute
 ```
 
-Large assets are synchronized from `configs/assets/production_assets.tsv`, whose
-current source root is `/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git`.
-Licensed tools such as NetMHCpan and MixMHCpred are not bundled in Git; provide
-approved local directories, archives, or URLs through the installer pass-through
-options, for example after `--`:
+The default asset source is:
+
+```bash
+/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git
+```
+
+The installer defaults to Miniforge3 and pins VEP to Ensembl release 105 to
+match `homo_sapiens/105_GRCh38` in the VEP cache. Licensed tools such as
+NetMHCpan, NetMHCstabpan, Polysolver, and Novoalign are represented in the asset
+and tools manifests, but the operator must confirm the license permits use on
+the new machine.
+
+After installation, verify the machine explicitly:
+
+```bash
+source /root/neo/src/na0707_upload_release/conf/tools.env.sh
+
+neoag-v03 check-tools
+
+python3 scripts/verify_reference_manifest.py \
+  configs/references/reference_manifest.yaml \
+  --vep-version 105
+```
+
+The older wrapper remains available for short-form installs:
 
 ```bash
 bash .agents/skills/neoag-remote-deploy/scripts/16_install_new_machine.sh \
   --standard \
   --asset-source-host na@10.200.50.134 \
   --allow-download \
-  --execute \
-  -- --netmhcpan-dir /path/to/netMHCpan --mixmhcpred-dir /path/to/mixMHCpred_install
+  --execute
 ```
+
+Prefer the explicit `13_install_readme_tools.sh` command above when recording a
+production migration, because it names the tool root, licensed-tool root,
+reference root, and manifest files directly.
 
 ## Quick Start
 
