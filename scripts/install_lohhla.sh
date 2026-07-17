@@ -16,6 +16,14 @@ TOOLS_ROOT="${NEOAG_TOOLS_ROOT:-${ROOT}}"
 TARGET="${LOHHLA_HOME:-${TOOLS_ROOT}/tools/lohhla}"
 TOOLS_ENV="${ROOT}/conf/tools.env.sh"
 BIN_DIR="${ROOT}/bin"
+CONDA_BASE="${NEOAG_CONDA_BASE:-${TOOLS_ROOT}/miniforge3}"
+RSCRIPT_BIN="${NEOAG_LOHHLA_RSCRIPT:-}"
+if [[ -z "$RSCRIPT_BIN" && -x "${CONDA_BASE}/envs/neoag-facets/bin/Rscript" ]]; then
+  RSCRIPT_BIN="${CONDA_BASE}/envs/neoag-facets/bin/Rscript"
+fi
+if [[ -z "$RSCRIPT_BIN" ]]; then
+  RSCRIPT_BIN="$(command -v Rscript || true)"
+fi
 REPO="${LOHHLA_GIT_URL:-https://bitbucket.org/mcferrine/lohhla.git}"
 mkdir -p "$(dirname "${TARGET}")" "${BIN_DIR}"
 
@@ -30,7 +38,7 @@ if [[ "\${1:-}" == "--version" || "\${1:-}" == "-v" || "\${1:-}" == "-h" || "\${
   echo "LOHHLA wrapper for ${TARGET}/LOHHLAscript.R"
   exit 0
 fi
-exec Rscript "${TARGET}/LOHHLAscript.R" "\$@"
+exec "${RSCRIPT_BIN}" "${TARGET}/LOHHLAscript.R" "\$@"
 EOF
 chmod +x "${BIN_DIR}/LOHHLA"
 
@@ -46,6 +54,7 @@ if ! grep -q 'LOHHLA — installed via scripts/install_lohhla.sh' "${TOOLS_ENV}"
 
 # LOHHLA — installed via scripts/install_lohhla.sh
 export LOHHLA_HOME="${TARGET}"
+export NEOAG_LOHHLA_RSCRIPT="${RSCRIPT_BIN}"
 export PATH="${BIN_DIR}:${TARGET}:\${PATH}"
 # Set these in conf/tools.env.local.sh for real runs:
 export POLYSOLVER_HOME="\${POLYSOLVER_HOME:-}"
