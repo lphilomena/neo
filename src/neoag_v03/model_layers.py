@@ -186,8 +186,13 @@ def default_l3_weights(profile: Mapping[str, Any]) -> dict[str, float]:
         "hla_binding": float(vw.get("binding_evidence", 0.20)),
         "hla_presentation": float(vw.get("presentation_evidence", 0.25)),
         "rna_junction_support": 0.05,
-        "normal_tissue_safety": 0.05,
-        "apm_integrity": 0.05,
+        # normal_tissue_safety / apm_integrity are intentionally 0.0 here: both
+        # signals are already applied as independent multiplicative gates
+        # (safety_multiplier, appm_multiplier) further down the pipeline, so
+        # giving them nonzero weight in the L3 weighted average double-counts
+        # the same underlying value (scoring audit fix #1).
+        "normal_tissue_safety": 0.0,
+        "apm_integrity": 0.0,
         "immunogenicity": float(vw.get("immunogenicity", 0.15)),
     }
 

@@ -80,7 +80,8 @@ def cmd_run_v03(args):
     for k,v in out.items(): print(f"  {k}: {v}")
 
 def cmd_parse_pvac(args):
-    parse_pvactools_outputs(args.pvac, args.sample_id, load_profile(args.profile)["_profile_name"], args.events_out, args.peptides_out)
+    _prof = load_profile(args.profile)
+    parse_pvactools_outputs(args.pvac, args.sample_id, _prof["_profile_name"], args.events_out, args.peptides_out, profile=_prof)
     print("Parsed pVACtools outputs.")
 
 def cmd_parse_netmhcpan(args):

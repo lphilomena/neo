@@ -7,6 +7,8 @@ from pathlib import Path
 from ..model_layers import enrich_event_layers, infer_mutation_source, infer_peptide_consequence
 from ..schemas import EVENT_FIELDS
 from ..utils import first, read_tsv, safe_id, to_float, write_tsv
+from ..driver_gene_db import lookup_driver_relevance
+from ..tumor_specificity import compute_tumor_specificity
 
 
 def _base_event(
@@ -41,7 +43,7 @@ def _base_event(
         "rna_junction_reads": str(rna_reads),
         "event_confidence": "0.7",
         "event_expression": f"{expression:.4f}",
-        "driver_relevance": "0.0",
+        "driver_relevance": str(lookup_driver_relevance(gene)),
         "tumor_vaf": "0.0",
         "tumor_depth": "",
         "tumor_alt_count": "",
@@ -50,7 +52,7 @@ def _base_event(
         "rna_depth": "",
         "clonality": "0.5",
         "persistence": "0.5",
-        "tumor_specificity": "0.7",
+        "tumor_specificity": str(compute_tumor_specificity(gene, expression)),
         "source": source,
     }
     return enrich_event_layers(base)

@@ -3,6 +3,8 @@ from pathlib import Path
 from ..model_layers import enrich_peptide_layers
 from ..utils import read_tsv, write_tsv, first, safe_id, to_float
 from ..schemas import EVENT_FIELDS, PEPTIDE_FIELDS
+from ..driver_gene_db import lookup_driver_relevance
+from ..tumor_specificity import compute_tumor_specificity
 
 def discover_tsvs(paths: list[str | Path]) -> list[Path]:
     found = []
@@ -41,13 +43,14 @@ def infer_event_type(row: dict[str, str], tool: str) -> str:
         return "Splice"
     return "SNV"
 
-def event_from_row(row: dict[str, str], sample_id: str, profile_name: str, tool: str) -> dict[str, str]:
+def event_from_row(row: dict[str, str], sample_id: str, profile_name: str, tool: str, profile: dict | None = None) -> dict[str, str]:
     gene = first(row, ["Gene", "Gene Name", "Hugo_Symbol", "gene"], "UNKNOWN")
     event_type = infer_event_type(row, tool)
     event_name = first(row, ["Mutation", "Variant", "Protein Change", "HGVSp", "Fusion", "fusion_gene", "Event"], gene)
     event_id = first(row, ["event_id", "Index", "Mutation", "Variant"], "")
     if not event_id:
         event_id = safe_id(f"{sample_id}_{event_type}_{gene}_{event_name}")
+    expression = to_float(first(row, ["Transcript Expression", "Gene Expression", "Expression", "TPM", "RNA Expr", "Allele Expr"], "0"), 0.0)
     return {
         "event_id": event_id,
         "sample_id": sample_id,
@@ -62,8 +65,9 @@ def event_from_row(row: dict[str, str], sample_id: str, profile_name: str, tool:
         "transcript_id": first(row, ["Transcript", "Feature", "transcript_id"], ""),
         "consequence": first(row, ["Consequence", "consequence"], ""),
         "event_confidence": first(row, ["event_confidence", "Variant Confidence"], "0.7"),
-        "event_expression": str(to_float(first(row, ["Transcript Expression", "Gene Expression", "Expression", "TPM", "RNA Expr", "Allele Expr"], "0"), 0.0)),
-        "driver_relevance": first(row, ["driver_relevance", "Driver Relevance", "driver"], "0.0"),
+        "event_expression": str(expression),
+        "driver_relevance": first(row, ["driver_relevance", "Driver Relevance", "driver"], "")
+            or str(lookup_driver_relevance(gene, profile)),
         "tumor_vaf": str(to_float(first(row, ["DNA VAF", "dna_vaf", "VAF", "tumor_vaf"], "0"), 0.0)),
         "tumor_depth": first(row, ["Tumor DNA Depth", "tumor_depth", "DP"], ""),
         "tumor_alt_count": first(row, ["Tumor DNA Alt Count", "tumor_alt_count", "AD_ALT"], ""),
@@ -72,7 +76,8 @@ def event_from_row(row: dict[str, str], sample_id: str, profile_name: str, tool:
         "rna_depth": first(row, ["RNA Depth", "Tumor RNA Depth", "rna_depth"], ""),
         "clonality": first(row, ["clonality", "CCF", "ccf"], "0.5"),
         "persistence": first(row, ["persistence", "MRD Persistence", "relapse_retained"], "0.5"),
-        "tumor_specificity": first(row, ["tumor_specificity", "Tumor Specificity"], "0.7"),
+        "tumor_specificity": first(row, ["tumor_specificity", "Tumor Specificity"], "")
+            or str(compute_tumor_specificity(gene, expression, profile)),
         "source": tool,
     }
 
@@ -138,13 +143,13 @@ def peptide_from_row(row: dict[str, str], sample_id: str, event: dict[str, str],
             base[field] = value
     return enrich_peptide_layers(base, event)
 
-def parse_pvactools_outputs(paths, sample_id, profile_name, out_events=None, out_peptides=None):
+def parse_pvactools_outputs(paths, sample_id, profile_name, out_events=None, out_peptides=None, profile=None):
     events = {}
     peptides = []
     for tsv in discover_tsvs(paths):
         tool = infer_tool(tsv)
         for row in read_tsv(tsv):
-            ev = event_from_row(row, sample_id, profile_name, tool)
+            ev = event_from_row(row, sample_id, profile_name, tool, profile=profile)
             if ev["event_id"] not in events:
                 events[ev["event_id"]] = ev
             peptides.append(peptide_from_row(row, sample_id, events[ev["event_id"]], tool))
