@@ -14,5 +14,5 @@ vep_cache	/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/vep	/root/neo/neod
 deepimmuno_source	/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/predictors/DeepImmuno	/root/neo/env_tool/tools/DeepImmuno	dir	1	-	deepimmuno-cnn.py
 netmhcpan_install	/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/predictors/netMHCpan	/root/neo/licensed_tools/netMHCpan	dir	0	-	netMHCpan
 netmhcstabpan_install	/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/predictors/netMHCstabpan	/root/neo/licensed_tools/netMHCstabpan	dir	0	-	netMHCstabpan
-polysolver_distribution	/home/na/project/neoantigen/software/polysolver	/root/neo/licensed_tools/polysolver	dir	0	-	shell_call_hla_type
-novoalign_license	/home/na/project/neoantigen/wbscript/novoalign.lic	/root/neo/licensed_tools/novoalign/novoalign.lic	file	0	-	-
+polysolver_distribution	/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/lohhla/polysolver	/root/neo/licensed_tools/polysolver	dir	0	-	shell_call_hla_type
+novoalign_license	/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/lohhla/novoalign.lic	/root/neo/licensed_tools/novoalign/novoalign.lic	file	0	-	-
