@@ -1,6 +1,7 @@
 # Large deployable assets. Keep data out of Git; this file only records locations.
 # source_path can be local, absolute on --asset-source-host, or user@host:/path.
 asset_name	source_path	target_path	kind	required	sha256	marker
+lohhla_source	/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/tools/lohhla	/root/neo/env_tool/tools/lohhla	dir	1	-	LOHHLAscript.R
 normal_ligandome	/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/normal/ligandome/normal_ms_ligands.tsv	/root/neo/neodata4git/data/normal/ligandome/normal_ms_ligands.tsv	file	1	-	-
 normal_proteome	/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/normal/proteome/Homo_sapiens.GRCh38.pep.all.fa	/root/neo/neodata4git/data/normal/proteome/Homo_sapiens.GRCh38.pep.all.fa	file	1	-	-
 facets_common_snp_tbi	/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/facets/reference/common_snp.hg38.vcf.gz.tbi	/root/neo/neodata4git/data/facets/reference/common_snp.hg38.vcf.gz.tbi	file	1	-	-
