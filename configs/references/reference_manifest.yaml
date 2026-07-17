@@ -1,0 +1,61 @@
+manifest_version: 1
+genome_build: GRCh38
+created_at: 2026-07-16
+owner: neoag
+
+references:
+  reference_fasta:
+    path: /root/neo/neodata4git/data/ref/hg38/Homo_sapiens_assembly38.fasta
+    source: GATK Resource Bundle
+    version: hg38_v0
+    sha256: "-"
+    marker: .fai
+    required: false
+
+  gencode_gtf:
+    path: /root/neo/neodata4git/data/ref/hg38/gencode.gtf
+    source: GENCODE
+    version: project_default
+    sha256: "-"
+    required: false
+
+  vep_cache:
+    path: /root/neo/neodata4git/data/vep/homo_sapiens/105_GRCh38
+    source: Ensembl VEP
+    version: 105_GRCh38
+    vep_version_required: "105"
+    marker: info.txt
+    required: true
+
+  bigmhc_models:
+    path: /root/neo/env_tool/tools/bigmhc/models
+    source: BigMHC
+    version: project_default
+    marker: bat512/im
+    required: true
+
+  easyfuse_ref:
+    path: /root/neo/neodata4git/data/easyfuse/easyfuse_ref_v4
+    source: EasyFuse
+    version: v4
+    marker: BEFORE_EXECUTING_EASYFUSE
+    required: false
+
+  facets_common_snp_vcf:
+    path: /root/neo/neodata4git/data/facets/reference/common_snp.hg38.vcf.gz
+    source: FACETS common SNP reference
+    version: hg38
+    marker: .tbi
+    required: false
+
+  normal_proteome:
+    path: /root/neo/neodata4git/data/normal/proteome/Homo_sapiens.GRCh38.pep.all.fa
+    source: UniProt_or_GENCODE
+    version: project_default
+    required: false
+
+  normal_ligandome:
+    path: /root/neo/neodata4git/data/normal/ligandome/normal_ms_ligands.tsv
+    source: curated
+    version: project_default
+    required: false

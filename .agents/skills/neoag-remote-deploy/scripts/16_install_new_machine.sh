@@ -8,6 +8,7 @@ LICENSED_ROOT="/root/neo/licensed_tools"
 CONDA_BASE=""
 OUTDIR="work/agent_deploy/new_machine_install"
 ASSET_MANIFEST="configs/assets/production_assets.tsv"
+REFERENCE_MANIFEST="configs/references/reference_manifest.yaml"
 ASSET_SOURCE_HOST="na@10.200.50.134"
 VEP_VERSION="105"
 EXECUTE=0
@@ -46,6 +47,7 @@ Common options:
   --conda-base DIR            Miniforge/conda base (default: tools-root/miniforge3)
   --outdir DIR                Work/report directory
   --asset-manifest FILE       Large asset manifest (default: configs/assets/production_assets.tsv)
+  --reference-manifest FILE   YAML reference manifest verified after asset sync
   --asset-source-host HOST    Source host for asset paths (default: na@10.200.50.134)
   --allow-download            Permit official/user-approved network downloads
   --vep-version VERSION       Ensembl VEP/cache release to install/use (default: 105)
@@ -97,6 +99,7 @@ while [[ $# -gt 0 ]]; do
     --conda-base) CONDA_BASE="$2"; shift 2 ;;
     --outdir) OUTDIR="$2"; shift 2 ;;
     --asset-manifest) ASSET_MANIFEST="$2"; shift 2 ;;
+    --reference-manifest) REFERENCE_MANIFEST="$2"; shift 2 ;;
     --asset-source-host) ASSET_SOURCE_HOST="$2"; shift 2 ;;
     --allow-download) ALLOW_DOWNLOAD=1; shift ;;
     --vep-version) VEP_VERSION="$2"; shift 2 ;;
@@ -155,7 +158,7 @@ install_args=(
 [[ "$ALLOW_DOWNLOAD" == "1" ]] && install_args+=(--allow-download)
 [[ "$EXECUTE" == "1" ]] && install_args+=(--execute)
 if [[ "$SYNC_ASSETS" == "1" ]]; then
-  install_args+=(--asset-manifest "$ASSET_MANIFEST" --sync-assets)
+  install_args+=(--asset-manifest "$ASSET_MANIFEST" --reference-manifest "$REFERENCE_MANIFEST" --sync-assets)
   [[ -n "$ASSET_SOURCE_HOST" ]] && install_args+=(--asset-source-host "$ASSET_SOURCE_HOST")
 fi
 if [[ "$RUN_VERIFY" == "1" ]]; then
@@ -193,6 +196,7 @@ fi
   echo "Reference root: \`$REFERENCE_ROOT\`"
   echo "Licensed root: \`$LICENSED_ROOT\`"
   echo "Asset manifest: \`$ASSET_MANIFEST\`"
+  echo "Reference manifest: \`$REFERENCE_MANIFEST\`"
   echo "Asset source host: \`${ASSET_SOURCE_HOST:-none}\`"
   echo "Log: \`$LOG\`"
   echo

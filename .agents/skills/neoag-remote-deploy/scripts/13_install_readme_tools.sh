@@ -38,6 +38,7 @@ REAL_VCF_HLA_FILE=""
 BIGMHC_MODELS_DIR=""
 BIGMHC_MODELS_HOST=""
 ASSET_MANIFEST="configs/assets/production_assets.tsv"
+REFERENCE_MANIFEST="configs/references/reference_manifest.yaml"
 SYNC_ASSETS=0
 ASSET_SOURCE_HOST=""
 CORE_ENV_LITE=1
@@ -109,6 +110,8 @@ Tool groups:
   --bigmhc-models-dir DIR   Copy BigMHC models from local/source directory into tools-root
   --bigmhc-models-host HOST Optional source host for --bigmhc-models-dir, e.g. na@10.200.50.134
   --asset-manifest FILE    TSV manifest for large assets (default: configs/assets/production_assets.tsv)
+  --reference-manifest FILE
+                          YAML reference manifest verified after asset sync
   --sync-assets            Sync large assets from manifest (dry-run unless --execute)
   --asset-source-host HOST Default source host for manifest source_path values
 
@@ -194,6 +197,7 @@ while [[ $# -gt 0 ]]; do
     --bigmhc-models-dir) BIGMHC_MODELS_DIR="$2"; shift 2 ;;
     --bigmhc-models-host) BIGMHC_MODELS_HOST="$2"; shift 2 ;;
     --asset-manifest) ASSET_MANIFEST="$2"; shift 2 ;;
+    --reference-manifest) REFERENCE_MANIFEST="$2"; shift 2 ;;
     --sync-assets) SYNC_ASSETS=1; shift ;;
     --asset-source-host) ASSET_SOURCE_HOST="$2"; shift 2 ;;
     --netmhcpan-tar) NETMHCPAN_TAR="$2"; shift 2 ;;
@@ -257,6 +261,13 @@ sync_assets_if_requested() {
   [[ -n "$ASSET_SOURCE_HOST" ]] && args+=(--asset-source-host "$ASSET_SOURCE_HOST")
   [[ "$EXECUTE" == "1" ]] && args+=(--execute)
   run "sync large assets from manifest" bash .agents/skills/neoag-remote-deploy/scripts/15_sync_asset_manifest.sh "${args[@]}"
+  if [[ -f "$REFERENCE_MANIFEST" ]]; then
+    verify_ref_args=("$REFERENCE_MANIFEST" --vep-version "$VEP_VERSION")
+    [[ "$STRICT_VERIFY" == "1" ]] && verify_ref_args+=(--strict)
+    run "verify reference manifest" python3 scripts/verify_reference_manifest.py "${verify_ref_args[@]}"
+  else
+    log "WARN: reference manifest not found: $REFERENCE_MANIFEST"
+  fi
 }
 
 stage_bigmhc_models_if_requested() {
@@ -401,7 +412,7 @@ fi
     "netmhcstabpan:$INSTALL_NETMHCSTABPAN" "deepimmuno:$INSTALL_DEEPIMMUNO" \
     "lohhla:$INSTALL_LOHHLA" "polysolver:$INSTALL_POLYSOLVER" "optitype:$INSTALL_OPTITYPE" \
     "facets:$INSTALL_FACETS" "ascat-pyclone:$INSTALL_ASCAT_PYCLONE" "fusion:$INSTALL_FUSION" \
-    "verify:$RUN_VERIFY" "real-vcf-smoke:$RUN_REAL_VCF_SMOKE" "sync-assets:$SYNC_ASSETS" "bigmhc-models:${BIGMHC_MODELS_DIR:+1}"; do
+    "verify:$RUN_VERIFY" "real-vcf-smoke:$RUN_REAL_VCF_SMOKE" "sync-assets:$SYNC_ASSETS" "reference-manifest:${REFERENCE_MANIFEST:+1}" "bigmhc-models:${BIGMHC_MODELS_DIR:+1}"; do
     name="${item%%:*}"; enabled="${item##*:}"
     [[ "$enabled" == "1" ]] && echo "- $name"
   done
