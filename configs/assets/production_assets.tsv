@@ -1,6 +1,10 @@
 # Large deployable assets. Keep data out of Git; this file only records locations.
 # source_path can be local, absolute on --asset-source-host, or user@host:/path.
 asset_name	source_path	target_path	kind	required	sha256	marker
+facets_common_snp_tbi	/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/facets/reference/common_snp.hg38.vcf.gz.tbi	/root/neo/neodata4git/data/facets/reference/common_snp.hg38.vcf.gz.tbi	file	1	-	-
+facets_common_snp_vcf	/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/facets/reference/common_snp.hg38.vcf.gz	/root/neo/neodata4git/data/facets/reference/common_snp.hg38.vcf.gz	file	1	-	-
+gencode_gtf	/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/easyfuse/easyfuse_ref_v4/Homo_sapiens.GRCh38.110.gtf	/root/neo/neodata4git/data/ref/hg38/gencode.gtf	file	1	-	-
+reference_fasta	/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/easyfuse/easyfuse_ref_v4/Homo_sapiens.GRCh38.dna.primary_assembly.fa	/root/neo/neodata4git/data/ref/hg38/Homo_sapiens_assembly38.fasta	file	1	-	-
 bigmhc_models	/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/predictors/bigmhc/models	/root/neo/env_tool/tools/bigmhc/models	dir	1	-	bat512/im
 easyfuse_ref	/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/easyfuse/easyfuse_ref_v4	/root/neo/neodata4git/data/easyfuse/easyfuse_ref_v4	dir	0	-	BEFORE_EXECUTING_EASYFUSE
 vep_cache	/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/vep	/root/neo/neodata4git/data/vep	dir	1	-	homo_sapiens/105_GRCh38/info.txt

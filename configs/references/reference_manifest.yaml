@@ -6,18 +6,18 @@ owner: neoag
 references:
   reference_fasta:
     path: /root/neo/neodata4git/data/ref/hg38/Homo_sapiens_assembly38.fasta
-    source: GATK Resource Bundle
-    version: hg38_v0
+    source: Ensembl/EasyFuse reference bundle
+    version: GRCh38.110
     sha256: "-"
     marker: .fai
-    required: false
+    required: true
 
   gencode_gtf:
     path: /root/neo/neodata4git/data/ref/hg38/gencode.gtf
-    source: GENCODE
-    version: project_default
+    source: Ensembl/EasyFuse reference bundle
+    version: GRCh38.110
     sha256: "-"
-    required: false
+    required: true
 
   vep_cache:
     path: /root/neo/neodata4git/data/vep/homo_sapiens/105_GRCh38
@@ -46,7 +46,7 @@ references:
     source: FACETS common SNP reference
     version: hg38
     marker: .tbi
-    required: false
+    required: true
 
   normal_proteome:
     path: /root/neo/neodata4git/data/normal/proteome/Homo_sapiens.GRCh38.pep.all.fa

@@ -255,12 +255,24 @@ set_local_conda_pkg_cache() {
 
 
 
+ensure_reference_indexes_after_asset_sync() {
+  local fasta="$REFERENCE_ROOT/data/ref/hg38/Homo_sapiens_assembly38.fasta"
+  if [[ -s "$fasta" && ! -s "$fasta.fai" ]]; then
+    if command -v samtools >/dev/null 2>&1; then
+      run "index reference FASTA" samtools faidx "$fasta"
+    else
+      log "WARN: samtools not found; cannot create FASTA index: $fasta.fai"
+    fi
+  fi
+}
+
 sync_assets_if_requested() {
   [[ "$SYNC_ASSETS" == "1" ]] || return 0
   args=(--project-root "$PROJECT_ROOT" --asset-manifest "$ASSET_MANIFEST" --outdir "$OUTDIR/assets")
   [[ -n "$ASSET_SOURCE_HOST" ]] && args+=(--asset-source-host "$ASSET_SOURCE_HOST")
   [[ "$EXECUTE" == "1" ]] && args+=(--execute)
   run "sync large assets from manifest" bash .agents/skills/neoag-remote-deploy/scripts/15_sync_asset_manifest.sh "${args[@]}"
+  ensure_reference_indexes_after_asset_sync
   if [[ -f "$REFERENCE_MANIFEST" ]]; then
     verify_ref_args=("$REFERENCE_MANIFEST" --vep-version "$VEP_VERSION")
     [[ "$STRICT_VERIFY" == "1" ]] && verify_ref_args+=(--strict)
