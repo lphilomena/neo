@@ -2,7 +2,7 @@ process GATK_MUTECT2 {
     tag "${sample_id}"
     label 'huge'
     container params.neoag_container ?: null
-    time '72.h'
+    time '168.h'
     publishDir "${params.outdir}/calling/mutect2", mode: 'copy'
 
     input:

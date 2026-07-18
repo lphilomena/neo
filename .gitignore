@@ -27,6 +27,8 @@ FusionInspector.log
 # External tools and local environment bundles
 /tools/
 conda_packs/
+# Licensed tool tarballs for container builds (DTU / academic license required)
+/vendor/
 
 # Large or controlled external data; keep only lightweight fixtures in Git
 data/examples/

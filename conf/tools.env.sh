@@ -193,8 +193,9 @@ if [[ -f "${NEOAG_PROJECT_ROOT}/conf/tools.env.local.sh" ]]; then
 fi
 
 # NetMHCpan — installed via scripts/install_netmhcpan.sh
-export NETMHCPAN_HOME="/home/na/project/neo/tools/netMHCpan"
-export NETMHCpan="/home/na/project/neo/tools/netMHCpan"
-export NEOAG_NETMHCPAN_BIN="/home/na/project/neo/tools/netMHCpan/netMHCpan"
-export NEOAG_NETMHCPAN_TMPDIR="/home/na/project/neo/tools/netMHCpan/tmp"
-export PATH="/home/na/project/neo/tools/netMHCpan:/home/na/project/neo/tools/netMHCpan/bin:${PATH}"
+# 默认路径（仅在未通过 tools.env.local.sh 覆盖时生效）
+export NETMHCPAN_HOME="${NETMHCPAN_HOME:-/home/na/project/neo/tools/netMHCpan}"
+export NETMHCpan="${NETMHCpan:-${NETMHCPAN_HOME}}"
+export NEOAG_NETMHCPAN_BIN="${NEOAG_NETMHCPAN_BIN:-${NETMHCPAN_HOME}/netMHCpan}"
+export NEOAG_NETMHCPAN_TMPDIR="${NEOAG_NETMHCPAN_TMPDIR:-${NETMHCPAN_HOME}/tmp}"
+export PATH="${NETMHCPAN_HOME}:${NETMHCPAN_HOME}/bin:${PATH}"
