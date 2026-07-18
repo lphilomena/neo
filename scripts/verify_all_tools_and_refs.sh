@@ -242,6 +242,17 @@ else
 fi
 [[ -d "$bigmhc_dir/models" ]] && pass "BigMHC models: $bigmhc_dir/models" || warn "BigMHC models directory missing; predictions may fail"
 
+sherpa_py="${CONDA_BASE:-${NEOAG_CONDA_BASE:-}}/envs/neoag-tools/bin/python"
+[[ ! -x "$sherpa_py" ]] && sherpa_py="$(command -v python3 2>/dev/null || true)"
+if [[ -n "$sherpa_py" ]] && "$sherpa_py" - <<'PY' >/dev/null 2>&1
+import sherpa
+PY
+then
+  pass "SHERPA Python package importable"
+else
+  soft_fail "SHERPA Python package missing; install with --sherpa or set neoag-tools Python on PATH"
+fi
+
 echo
 
 echo "==> EasyFuse / Nextflow"

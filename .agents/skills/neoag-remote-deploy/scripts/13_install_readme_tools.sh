@@ -20,6 +20,7 @@ INSTALL_GATK=0
 INSTALL_RNA_EXPRESSION=0
 INSTALL_IMMUNOGENICITY=0
 INSTALL_DEEPIMMUNO=0
+INSTALL_SHERPA=0
 INSTALL_NETMHCSTABPAN=0
 INSTALL_LOHHLA=0
 INSTALL_POLYSOLVER=0
@@ -64,6 +65,8 @@ NETMHCSTABPAN_URL=""
 POLYSOLVER_HOME_ARG=""
 NOVOALIGN_LICENSE_FILE_ARG=""
 DEEPIMMUNO_SOURCE=""
+SHERPA_PACKAGE="parameter-sherpa GPy"
+SHERPA_SOURCE=""
 
 usage() {
   cat <<'USAGE'
@@ -101,6 +104,7 @@ Tool groups:
   --rna-expression           Install Salmon/RSEM in neoag-tools for RNA FASTQ to gene TPM scripts
   --immunogenicity           PRIME + MixMHCpred + BigMHC via scripts/install_immunogenicity_tools.sh
   --deepimmuno               DeepImmuno via scripts/install_deepimmuno.sh
+  --sherpa                   SHERPA/parameter-sherpa Python package in existing neoag-tools
   --netmhcstabpan            NetMHCstabpan or IEDB shim via scripts/install_netmhcstabpan.sh
   --lohhla                   LOHHLA source wrapper via scripts/install_lohhla.sh
   --polysolver               Configure existing Polysolver; requires --polysolver-home
@@ -145,6 +149,8 @@ Licensed/restricted source options:
   --polysolver-home DIR      Existing Polysolver distribution
   --novoalign-license-file FILE
   --deepimmuno-source DIR    Existing DeepImmuno checkout; otherwise script clones official repo
+  --sherpa-package SPEC      Pip package spec(s) or approved Git URL for SHERPA (default: parameter-sherpa GPy)
+  --sherpa-source DIR        Existing SHERPA source checkout/directory to pip install
 
 Examples:
   bash .agents/skills/neoag-remote-deploy/scripts/13_install_readme_tools.sh \
@@ -189,6 +195,7 @@ while [[ $# -gt 0 ]]; do
     --rna-expression) INSTALL_RNA_EXPRESSION=1; INSTALL_CORE_ENV=1; shift ;;
     --immunogenicity) INSTALL_IMMUNOGENICITY=1; shift ;;
     --deepimmuno) INSTALL_DEEPIMMUNO=1; shift ;;
+    --sherpa) INSTALL_SHERPA=1; shift ;;
     --netmhcstabpan) INSTALL_NETMHCSTABPAN=1; shift ;;
     --lohhla) INSTALL_LOHHLA=1; shift ;;
     --polysolver) INSTALL_POLYSOLVER=1; shift ;;
@@ -202,14 +209,14 @@ while [[ $# -gt 0 ]]; do
     --hmf-purple) INSTALL_HMF_PURPLE=1; shift ;;
     --all-open)
       INSTALL_CORE_ENV=1; INSTALL_VEP=1; INSTALL_GATK=1; INSTALL_RNA_EXPRESSION=1; INSTALL_IMMUNOGENICITY=1
-      INSTALL_DEEPIMMUNO=1; INSTALL_NETMHCSTABPAN=1; INSTALL_LOHHLA=1
+      INSTALL_DEEPIMMUNO=1; INSTALL_SHERPA=1; INSTALL_NETMHCSTABPAN=1; INSTALL_LOHHLA=1
       INSTALL_OPTITYPE=1; INSTALL_FACETS=1; INSTALL_ASCAT_PYCLONE=1; INSTALL_FUSION=1
       INSTALL_SPECHLA=1; INSTALL_HLALA=1; INSTALL_SEQUENZA=1; INSTALL_HMF_PURPLE=1
       SKIP_TORCH_INSTALL=0
       shift ;;
     --all)
       INSTALL_CORE_ENV=1; INSTALL_VEP=1; INSTALL_VEP_CACHE=1; INSTALL_GATK=1; INSTALL_RNA_EXPRESSION=1; INSTALL_IMMUNOGENICITY=1
-      INSTALL_DEEPIMMUNO=1; INSTALL_NETMHCSTABPAN=1; INSTALL_LOHHLA=1
+      INSTALL_DEEPIMMUNO=1; INSTALL_SHERPA=1; INSTALL_NETMHCSTABPAN=1; INSTALL_LOHHLA=1
       INSTALL_OPTITYPE=1; INSTALL_FACETS=1; INSTALL_ASCAT_PYCLONE=1; INSTALL_FUSION=1
       INSTALL_SPECHLA=1; INSTALL_HLALA=1; INSTALL_SEQUENZA=1; INSTALL_HMF_PURPLE=1
       SKIP_TORCH_INSTALL=0
@@ -242,6 +249,8 @@ while [[ $# -gt 0 ]]; do
     --polysolver-home) POLYSOLVER_HOME_ARG="$2"; shift 2 ;;
     --novoalign-license-file) NOVOALIGN_LICENSE_FILE_ARG="$2"; shift 2 ;;
     --deepimmuno-source) DEEPIMMUNO_SOURCE="$2"; shift 2 ;;
+    --sherpa-package) SHERPA_PACKAGE="$2"; shift 2 ;;
+    --sherpa-source) SHERPA_SOURCE="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "ERROR: unknown option: $1" >&2; usage >&2; exit 2 ;;
   esac
@@ -479,6 +488,34 @@ repair_netmhcpan_frontend() {
   run "validate NetMHCpan frontend" bash -lc "CONDA_BASE='$CONDA_BASE' '$nm' -h >/dev/null"
 }
 
+install_sherpa_if_requested() {
+  [[ "$INSTALL_SHERPA" == "1" ]] || return 0
+  if [[ "$EXECUTE" != "1" ]]; then
+    log ""
+    log "==> [DRY_RUN] install SHERPA Python package"
+    log "+ install ${SHERPA_SOURCE:-$SHERPA_PACKAGE} into neoag-tools and validate import sherpa"
+    return 0
+  fi
+  local py="$CONDA_BASE/envs/neoag-tools/bin/python"
+  [[ -x "$py" ]] || py="$CONDA_BASE/bin/python"
+  [[ -x "$py" ]] || { echo "SHERPA_PYTHON_MISSING: install --core-env first" >&2; exit 47; }
+  if "$py" - <<'PY' >/dev/null 2>&1
+import sherpa
+PY
+  then
+    log "SHERPA already importable in neoag-tools"
+    return 0
+  fi
+  if [[ -n "$SHERPA_SOURCE" ]]; then
+    [[ -e "$SHERPA_SOURCE" ]] || { echo "SHERPA_SOURCE_MISSING: $SHERPA_SOURCE" >&2; exit 48; }
+    run "install SHERPA from local/source directory" bash -lc "source '$CONDA_BASE/etc/profile.d/conda.sh' && conda activate neoag-tools && python -m pip install '$SHERPA_SOURCE'"
+  else
+    need_download_ok "SHERPA Python package ($SHERPA_PACKAGE)"
+    run "install SHERPA Python package" bash -lc "source '$CONDA_BASE/etc/profile.d/conda.sh' && conda activate neoag-tools && python -m pip install $SHERPA_PACKAGE"
+  fi
+  run "validate SHERPA import" "$py" -c "import sherpa; print(getattr(sherpa, '__version__', 'unknown'))"
+}
+
 ensure_bigmhc_torch_runtime() {
   [[ "$EXECUTE" == "1" ]] || return 0
   [[ "$SKIP_TORCH_INSTALL" == "0" ]] || return 0
@@ -528,7 +565,7 @@ install_miniforge_if_needed() {
 cd "$PROJECT_ROOT"
 [[ -f "pyproject.toml" || -f "setup.py" ]] || { echo "PROJECT_ROOT_INVALID: $PROJECT_ROOT" >&2; exit 30; }
 
-if [[ "$INSTALL_CORE_ENV$INSTALL_VEP$INSTALL_GATK$INSTALL_RNA_EXPRESSION$INSTALL_IMMUNOGENICITY$INSTALL_DEEPIMMUNO$INSTALL_NETMHCSTABPAN$INSTALL_LOHHLA$INSTALL_POLYSOLVER$INSTALL_OPTITYPE$INSTALL_FACETS$INSTALL_ASCAT_PYCLONE$INSTALL_FUSION$INSTALL_SPECHLA$INSTALL_HLALA$INSTALL_SEQUENZA$INSTALL_HMF_PURPLE" =~ 1 ]]; then
+if [[ "$INSTALL_CORE_ENV$INSTALL_VEP$INSTALL_GATK$INSTALL_RNA_EXPRESSION$INSTALL_IMMUNOGENICITY$INSTALL_DEEPIMMUNO$INSTALL_SHERPA$INSTALL_NETMHCSTABPAN$INSTALL_LOHHLA$INSTALL_POLYSOLVER$INSTALL_OPTITYPE$INSTALL_FACETS$INSTALL_ASCAT_PYCLONE$INSTALL_FUSION$INSTALL_SPECHLA$INSTALL_HLALA$INSTALL_SEQUENZA$INSTALL_HMF_PURPLE" =~ 1 ]]; then
   install_miniforge_if_needed
   export NEOAG_CONDA_BASE="$CONDA_BASE"
   export PATH="$CONDA_BASE/bin:$PATH"
@@ -544,6 +581,7 @@ export MIXMHCPRED_HOME="$LICENSED_ROOT/mixMHCpred_install"
 export BIGMHC_DIR="$TOOLS_ROOT/tools/bigmhc"
 export BIGMHC_PYTHON="$CONDA_BASE/envs/neoag-tools/bin/python"
 export DEEPIMMUNO_DIR="$TOOLS_ROOT/tools/DeepImmuno"
+export SHERPA_PACKAGE="$SHERPA_PACKAGE"
 export SPECHLA_HOME="$TOOLS_ROOT/tools/SpecHLA"
 export HLALA_HOME="$TOOLS_ROOT/tools/HLA-LA"
 export HLA_LA_HOME="$HLALA_HOME"
@@ -593,6 +631,7 @@ if [[ "$INSTALL_NETMHCSTABPAN" == "1" ]]; then
     run "install NetMHCstabpan IEDB shim" bash scripts/install_netmhcstabpan.sh --iedb
   fi
 fi
+install_sherpa_if_requested
 if [[ "$INSTALL_DEEPIMMUNO" == "1" ]]; then
   if [[ -z "$DEEPIMMUNO_SOURCE" && -f "$TOOLS_ROOT/tools/DeepImmuno/deepimmuno-cnn.py" ]]; then
     DEEPIMMUNO_SOURCE="$TOOLS_ROOT/tools/DeepImmuno"
@@ -661,7 +700,7 @@ fi
   for item in \
     "core-env:$INSTALL_CORE_ENV" "core-env-lite:$CORE_ENV_LITE" "skip-torch-install:$SKIP_TORCH_INSTALL" "vep:$INSTALL_VEP" "vep-cache:$INSTALL_VEP_CACHE" "vep-version:$VEP_VERSION" \
     "gatk:$INSTALL_GATK" "rna-expression:$INSTALL_RNA_EXPRESSION" "immunogenicity:$INSTALL_IMMUNOGENICITY" \
-    "netmhcstabpan:$INSTALL_NETMHCSTABPAN" "deepimmuno:$INSTALL_DEEPIMMUNO" \
+    "netmhcstabpan:$INSTALL_NETMHCSTABPAN" "deepimmuno:$INSTALL_DEEPIMMUNO" "sherpa:$INSTALL_SHERPA" \
     "lohhla:$INSTALL_LOHHLA" "polysolver:$INSTALL_POLYSOLVER" "optitype:$INSTALL_OPTITYPE" \
     "facets:$INSTALL_FACETS" "ascat-pyclone:$INSTALL_ASCAT_PYCLONE" "fusion:$INSTALL_FUSION" \
     "spechla:$INSTALL_SPECHLA" "hla-la:$INSTALL_HLALA" "sequenza:$INSTALL_SEQUENZA" "hmf-purple:$INSTALL_HMF_PURPLE" \
