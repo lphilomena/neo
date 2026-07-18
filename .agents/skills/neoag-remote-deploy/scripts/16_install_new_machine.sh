@@ -14,7 +14,7 @@ VEP_VERSION="105"
 EXECUTE=0
 ALLOW_DOWNLOAD=0
 
-INSTALL_TOOL_GROUPS=(--core-env --immunogenicity --sherpa)
+INSTALL_TOOL_GROUPS=(--core-env --immunogenicity)
 SYNC_ASSETS=1
 RUN_VERIFY=1
 STRICT_VERIFY=0
@@ -54,8 +54,8 @@ Common options:
   --execute                   Actually run installation/sync/rewrite
 
 Tool group shortcuts:
-  --minimal                   Install core env + immunogenicity + SHERPA (default)
-  --standard                  Add VEP, GATK, SHERPA, OptiType, FACETS, ASCAT/PyClone, LOHHLA
+  --minimal                   Install core env + immunogenicity only (default)
+  --standard                  Add VEP, GATK, OptiType, FACETS, ASCAT/PyClone, LOHHLA
   --all-open                  Pass --all-open to 13_install_readme_tools.sh
   --all                      Pass --all to 13_install_readme_tools.sh
   --add-tool-group FLAG       Add any 13_install_readme_tools.sh group flag, e.g. --vep
@@ -104,8 +104,8 @@ while [[ $# -gt 0 ]]; do
     --allow-download) ALLOW_DOWNLOAD=1; shift ;;
     --vep-version) VEP_VERSION="$2"; shift 2 ;;
     --execute) EXECUTE=1; shift ;;
-    --minimal) INSTALL_TOOL_GROUPS=(--core-env --immunogenicity --sherpa); shift ;;
-    --standard) INSTALL_TOOL_GROUPS=(--core-env --vep --gatk --immunogenicity --sherpa --optitype --facets --ascat-pyclone --lohhla); shift ;;
+    --minimal) INSTALL_TOOL_GROUPS=(--core-env --immunogenicity); shift ;;
+    --standard) INSTALL_TOOL_GROUPS=(--core-env --vep --gatk --immunogenicity --optitype --facets --ascat-pyclone --lohhla); shift ;;
     --all-open) INSTALL_TOOL_GROUPS=(--all-open); shift ;;
     --all) INSTALL_TOOL_GROUPS=(--all); shift ;;
     --add-tool-group) EXTRA_INSTALL_ARGS+=("$2"); shift 2 ;;

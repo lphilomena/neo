@@ -65,8 +65,10 @@ NETMHCSTABPAN_URL=""
 POLYSOLVER_HOME_ARG=""
 NOVOALIGN_LICENSE_FILE_ARG=""
 DEEPIMMUNO_SOURCE=""
-SHERPA_PACKAGE="parameter-sherpa GPy"
 SHERPA_SOURCE=""
+SHERPA_ARCHIVE=""
+SHERPA_CONTAINER_IMAGE=""
+SHERPA_SMOKE_COMMAND=""
 
 usage() {
   cat <<'USAGE'
@@ -104,7 +106,7 @@ Tool groups:
   --rna-expression           Install Salmon/RSEM in neoag-tools for RNA FASTQ to gene TPM scripts
   --immunogenicity           PRIME + MixMHCpred + BigMHC via scripts/install_immunogenicity_tools.sh
   --deepimmuno               DeepImmuno via scripts/install_deepimmuno.sh
-  --sherpa                   SHERPA/parameter-sherpa Python package in existing neoag-tools
+  --sherpa                   Register/install SHERPA-Presentation from a local authorized source/archive/container
   --netmhcstabpan            NetMHCstabpan or IEDB shim via scripts/install_netmhcstabpan.sh
   --lohhla                   LOHHLA source wrapper via scripts/install_lohhla.sh
   --polysolver               Configure existing Polysolver; requires --polysolver-home
@@ -149,8 +151,11 @@ Licensed/restricted source options:
   --polysolver-home DIR      Existing Polysolver distribution
   --novoalign-license-file FILE
   --deepimmuno-source DIR    Existing DeepImmuno checkout; otherwise script clones official repo
-  --sherpa-package SPEC      Pip package spec(s) or approved Git URL for SHERPA (default: parameter-sherpa GPy)
-  --sherpa-source DIR        Existing SHERPA source checkout/directory to pip install
+  --sherpa-source DIR        Existing SHERPA-Presentation checkout/directory to copy/register
+  --sherpa-archive FILE      Existing SHERPA-Presentation tar/zip/wheel archive
+  --sherpa-container-image FILE
+                              Existing SHERPA-Presentation container image tarball
+  --sherpa-smoke-command CMD Optional command to validate the registered SHERPA-Presentation install
 
 Examples:
   bash .agents/skills/neoag-remote-deploy/scripts/13_install_readme_tools.sh \
@@ -209,14 +214,14 @@ while [[ $# -gt 0 ]]; do
     --hmf-purple) INSTALL_HMF_PURPLE=1; shift ;;
     --all-open)
       INSTALL_CORE_ENV=1; INSTALL_VEP=1; INSTALL_GATK=1; INSTALL_RNA_EXPRESSION=1; INSTALL_IMMUNOGENICITY=1
-      INSTALL_DEEPIMMUNO=1; INSTALL_SHERPA=1; INSTALL_NETMHCSTABPAN=1; INSTALL_LOHHLA=1
+      INSTALL_DEEPIMMUNO=1; INSTALL_NETMHCSTABPAN=1; INSTALL_LOHHLA=1
       INSTALL_OPTITYPE=1; INSTALL_FACETS=1; INSTALL_ASCAT_PYCLONE=1; INSTALL_FUSION=1
       INSTALL_SPECHLA=1; INSTALL_HLALA=1; INSTALL_SEQUENZA=1; INSTALL_HMF_PURPLE=1
       SKIP_TORCH_INSTALL=0
       shift ;;
     --all)
       INSTALL_CORE_ENV=1; INSTALL_VEP=1; INSTALL_VEP_CACHE=1; INSTALL_GATK=1; INSTALL_RNA_EXPRESSION=1; INSTALL_IMMUNOGENICITY=1
-      INSTALL_DEEPIMMUNO=1; INSTALL_SHERPA=1; INSTALL_NETMHCSTABPAN=1; INSTALL_LOHHLA=1
+      INSTALL_DEEPIMMUNO=1; INSTALL_NETMHCSTABPAN=1; INSTALL_LOHHLA=1
       INSTALL_OPTITYPE=1; INSTALL_FACETS=1; INSTALL_ASCAT_PYCLONE=1; INSTALL_FUSION=1
       INSTALL_SPECHLA=1; INSTALL_HLALA=1; INSTALL_SEQUENZA=1; INSTALL_HMF_PURPLE=1
       SKIP_TORCH_INSTALL=0
@@ -249,8 +254,10 @@ while [[ $# -gt 0 ]]; do
     --polysolver-home) POLYSOLVER_HOME_ARG="$2"; shift 2 ;;
     --novoalign-license-file) NOVOALIGN_LICENSE_FILE_ARG="$2"; shift 2 ;;
     --deepimmuno-source) DEEPIMMUNO_SOURCE="$2"; shift 2 ;;
-    --sherpa-package) SHERPA_PACKAGE="$2"; shift 2 ;;
     --sherpa-source) SHERPA_SOURCE="$2"; shift 2 ;;
+    --sherpa-archive) SHERPA_ARCHIVE="$2"; shift 2 ;;
+    --sherpa-container-image) SHERPA_CONTAINER_IMAGE="$2"; shift 2 ;;
+    --sherpa-smoke-command) SHERPA_SMOKE_COMMAND="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "ERROR: unknown option: $1" >&2; usage >&2; exit 2 ;;
   esac
@@ -490,30 +497,59 @@ repair_netmhcpan_frontend() {
 
 install_sherpa_if_requested() {
   [[ "$INSTALL_SHERPA" == "1" ]] || return 0
+  local home="$TOOLS_ROOT/tools/SHERPA-Presentation"
+  local bin="$TOOLS_ROOT/bin/sherpa-presentation"
   if [[ "$EXECUTE" != "1" ]]; then
     log ""
-    log "==> [DRY_RUN] install SHERPA Python package"
-    log "+ install ${SHERPA_SOURCE:-$SHERPA_PACKAGE} into neoag-tools and validate import sherpa"
+    log "==> [DRY_RUN] register/install SHERPA-Presentation"
+    log "+ require one of --sherpa-source, --sherpa-archive, or --sherpa-container-image; install/register under $home"
     return 0
   fi
-  local py="$CONDA_BASE/envs/neoag-tools/bin/python"
-  [[ -x "$py" ]] || py="$CONDA_BASE/bin/python"
-  [[ -x "$py" ]] || { echo "SHERPA_PYTHON_MISSING: install --core-env first" >&2; exit 47; }
-  if "$py" - <<'PY' >/dev/null 2>&1
-import sherpa
-PY
-  then
-    log "SHERPA already importable in neoag-tools"
-    return 0
+  if [[ -z "$SHERPA_SOURCE$SHERPA_ARCHIVE$SHERPA_CONTAINER_IMAGE" ]]; then
+    echo "SHERPA_PRESENTATION_SOURCE_REQUIRED: provide authorized --sherpa-source, --sherpa-archive, or --sherpa-container-image. SHERPA-Presentation is not publicly auto-downloadable by this installer." >&2
+    exit 49
   fi
+  mkdir -p "$home" "$TOOLS_ROOT/bin"
   if [[ -n "$SHERPA_SOURCE" ]]; then
     [[ -e "$SHERPA_SOURCE" ]] || { echo "SHERPA_SOURCE_MISSING: $SHERPA_SOURCE" >&2; exit 48; }
-    run "install SHERPA from local/source directory" bash -lc "source '$CONDA_BASE/etc/profile.d/conda.sh' && conda activate neoag-tools && python -m pip install '$SHERPA_SOURCE'"
-  else
-    need_download_ok "SHERPA Python package ($SHERPA_PACKAGE)"
-    run "install SHERPA Python package" bash -lc "source '$CONDA_BASE/etc/profile.d/conda.sh' && conda activate neoag-tools && python -m pip install $SHERPA_PACKAGE"
+    run "copy/register SHERPA-Presentation source" bash -lc "mkdir -p '$home' && rsync -a --delete '$SHERPA_SOURCE/' '$home/'"
+    if [[ -f "$home/pyproject.toml" || -f "$home/setup.py" ]]; then
+      run "install SHERPA-Presentation Python package from source" bash -lc "source '$CONDA_BASE/etc/profile.d/conda.sh' && conda activate neoag-tools && python -m pip install '$home'"
+    fi
   fi
-  run "validate SHERPA import" "$py" -c "import sherpa; print(getattr(sherpa, '__version__', 'unknown'))"
+  if [[ -n "$SHERPA_ARCHIVE" ]]; then
+    [[ -f "$SHERPA_ARCHIVE" ]] || { echo "SHERPA_ARCHIVE_MISSING: $SHERPA_ARCHIVE" >&2; exit 50; }
+    case "$SHERPA_ARCHIVE" in
+      *.whl) run "install SHERPA-Presentation wheel" bash -lc "source '$CONDA_BASE/etc/profile.d/conda.sh' && conda activate neoag-tools && python -m pip install '$SHERPA_ARCHIVE'" ;;
+      *.tar|*.tar.gz|*.tgz|*.zip) run "extract SHERPA-Presentation archive" bash -lc "rm -rf '$home' && mkdir -p '$home' && tar -xf '$SHERPA_ARCHIVE' -C '$home' --strip-components=1 2>/dev/null || unzip -q '$SHERPA_ARCHIVE' -d '$home'" ;;
+      *) echo "SHERPA_ARCHIVE_UNSUPPORTED: $SHERPA_ARCHIVE" >&2; exit 51 ;;
+    esac
+  fi
+  if [[ -n "$SHERPA_CONTAINER_IMAGE" ]]; then
+    [[ -f "$SHERPA_CONTAINER_IMAGE" ]] || { echo "SHERPA_CONTAINER_IMAGE_MISSING: $SHERPA_CONTAINER_IMAGE" >&2; exit 52; }
+    load_container_image_if_present "SHERPA-Presentation" "neoag-sherpa-presentation:latest" "$SHERPA_CONTAINER_IMAGE"
+  fi
+  cat > "$bin" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+export SHERPA_PRESENTATION_HOME="\${SHERPA_PRESENTATION_HOME:-$home}"
+if [[ -x "\$SHERPA_PRESENTATION_HOME/sherpa-presentation" ]]; then
+  exec "\$SHERPA_PRESENTATION_HOME/sherpa-presentation" "\$@"
+elif [[ -x "\$SHERPA_PRESENTATION_HOME/bin/sherpa-presentation" ]]; then
+  exec "\$SHERPA_PRESENTATION_HOME/bin/sherpa-presentation" "\$@"
+elif command -v sherpa-presentation >/dev/null 2>&1 && [[ "\$(command -v sherpa-presentation)" != "$bin" ]]; then
+  exec sherpa-presentation "\$@"
+else
+  echo "SHERPA-Presentation is registered at \$SHERPA_PRESENTATION_HOME, but no executable named sherpa-presentation was found." >&2
+  exit 127
+fi
+EOF
+  chmod +x "$bin"
+  if [[ -n "$SHERPA_SMOKE_COMMAND" ]]; then
+    run "validate SHERPA-Presentation smoke command" bash -lc "$SHERPA_SMOKE_COMMAND"
+  elif [[ -e "$home" || -f "$SHERPA_CONTAINER_IMAGE" ]]; then
+    log "SHERPA-Presentation registered: $home"
+  fi
 }
 
 ensure_bigmhc_torch_runtime() {
@@ -581,7 +617,8 @@ export MIXMHCPRED_HOME="$LICENSED_ROOT/mixMHCpred_install"
 export BIGMHC_DIR="$TOOLS_ROOT/tools/bigmhc"
 export BIGMHC_PYTHON="$CONDA_BASE/envs/neoag-tools/bin/python"
 export DEEPIMMUNO_DIR="$TOOLS_ROOT/tools/DeepImmuno"
-export SHERPA_PACKAGE="$SHERPA_PACKAGE"
+export SHERPA_PRESENTATION_HOME="$TOOLS_ROOT/tools/SHERPA-Presentation"
+export SHERPA_PRESENTATION_BIN="$TOOLS_ROOT/bin/sherpa-presentation"
 export SPECHLA_HOME="$TOOLS_ROOT/tools/SpecHLA"
 export HLALA_HOME="$TOOLS_ROOT/tools/HLA-LA"
 export HLA_LA_HOME="$HLALA_HOME"

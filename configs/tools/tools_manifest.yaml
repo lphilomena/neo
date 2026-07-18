@@ -23,7 +23,6 @@ profiles:
       - mixmhcpred
       - bigmhc_im
       - deepimmuno
-      - sherpa
       - lohhla
       - facets
       - ascat
@@ -205,15 +204,15 @@ tools:
     distributable: true
     smoke_command: "deepimmuno-cnn.py --help"
 
-  sherpa:
+  sherpa_presentation:
     category: immunogenicity
-    executable: python -c "import sherpa"
+    executable: /root/neo/env_tool/bin/sherpa-presentation
     env: env.neoag-tools
-    package: parameter-sherpa GPy
-    required: true
-    license_required: false
-    distributable: true
-    smoke_command: "python -c 'import sherpa; print(getattr(sherpa, \"__version__\", \"unknown\"))'"
+    install_root: /root/neo/env_tool/tools/SHERPA-Presentation
+    required: false
+    license_required: true
+    distributable: false
+    smoke_command: "sherpa-presentation --help"
 
   lohhla:
     category: hla_loh

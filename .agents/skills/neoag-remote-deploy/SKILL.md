@@ -83,7 +83,7 @@ extension before running real data:
     target machine, use the consolidated installer. It defaults to Miniforge3 at
     `<target-env_tool>/miniforge3`, supports open conda/git tools by group, and
     delegates licensed/local archives to `12_install_local_licensed_tools.sh`:
-    `scripts/13_install_readme_tools.sh --project-root <root> --tools-root <target-env_tool> --licensed-root <target-licensed-root> --reference-root <target-reference-root> --core-env --vep --gatk --immunogenicity --sherpa --allow-download --execute`.
+    `scripts/13_install_readme_tools.sh --project-root <root> --tools-root <target-env_tool> --licensed-root <target-licensed-root> --reference-root <target-reference-root> --core-env --vep --gatk --immunogenicity --allow-download --execute`.
 12. When licensed tools are available as files or directories already visible
     on the target machine, install them into the target licensed-tool root without
     creating `/mnt`, `/home`, or old-machine symlinks:
@@ -138,7 +138,7 @@ when `--sync-assets` is used. Sequenza is installed as a conda env from
 `conda/env.neoag-sequenza.yml`; SpecHLA, HLA-LA, and HMF PURPLE are registered
 by loading staged container images when Docker is available and by writing
 portable wrappers/environment variables into the production activation script.
-Because `--all-open` includes BigMHC, it also installs/repairs torch by default. It also installs SHERPA/`parameter-sherpa` into `neoag-tools` unless a local `--sherpa-source` is provided.
+Because `--all-open` includes BigMHC, it also installs/repairs torch by default. SHERPA-Presentation is not publicly auto-downloadable; install it only with an authorized `--sherpa-source`, `--sherpa-archive`, or `--sherpa-container-image`.
 Use `--skip-torch-install` only for a deliberately lightweight install, and then
 run real VCF smoke with `--skip-real-vcf-bigmhc` until torch is installed.
 
@@ -174,7 +174,7 @@ asset locations so a new machine can prepare itself reproducibly:
   --asset-source-host <user@host>`. The manifest stores paths and markers only,
   not the asset payloads.
 - SpecHLA, HLA-LA, Sequenza, and HMF PURPLE/AMBER/COBALT assets are part of the
-  production asset manifest. SHERPA is installed into `neoag-tools` from PyPI or a local source. Asset sync dereferences source symlinks (`rsync
+  production asset manifest. SHERPA-Presentation is registered only from authorized local source/archive/container assets. Asset sync dereferences source symlinks (`rsync
   -L`), so stable `/mnt` links can point at real source directories while the
   target receives concrete files/directories. When a `/mnt` symlink only
   resolves on the source host, use `--asset-source-host` so rsync resolves it

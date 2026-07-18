@@ -27,3 +27,4 @@ hmf_purple_container_image	/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/work/c
 salmon_index	/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/rna/salmon_index	/root/neo/neodata4git/data/rna/salmon_index	dir	0	-	versionInfo.json
 salmon_tx2gene	/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/rna/tx2gene.tsv	/root/neo/neodata4git/data/rna/tx2gene.tsv	file	0	-	-
 rsem_reference	/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/rna/rsem_reference	/root/neo/neodata4git/data/rna/rsem_reference	dir	0	-	grp
+sherpa_presentation	/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git/data/predictors/SHERPA-Presentation	/root/neo/env_tool/tools/SHERPA-Presentation	dir	0	-	-

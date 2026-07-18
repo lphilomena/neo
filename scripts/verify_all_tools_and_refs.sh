@@ -242,17 +242,16 @@ else
 fi
 [[ -d "$bigmhc_dir/models" ]] && pass "BigMHC models: $bigmhc_dir/models" || warn "BigMHC models directory missing; predictions may fail"
 
-sherpa_py="${CONDA_BASE:-${NEOAG_CONDA_BASE:-}}/envs/neoag-tools/bin/python"
-[[ ! -x "$sherpa_py" ]] && sherpa_py="$(command -v python3 2>/dev/null || true)"
-if [[ -n "$sherpa_py" ]] && "$sherpa_py" - <<'PY' >/dev/null 2>&1
-import sherpa
-PY
-then
-  pass "SHERPA Python package importable"
+sherpa_home="${SHERPA_PRESENTATION_HOME:-${NEOAG_TOOLS_ROOT:-$ROOT}/tools/SHERPA-Presentation}"
+sherpa_bin="${SHERPA_PRESENTATION_BIN:-}"
+[[ -z "$sherpa_bin" ]] && sherpa_bin="$(command -v sherpa-presentation 2>/dev/null || true)"
+if [[ -n "$sherpa_bin" && -x "$sherpa_bin" ]]; then
+  pass "SHERPA-Presentation wrapper: $sherpa_bin"
+elif [[ -d "$sherpa_home" ]]; then
+  warn "SHERPA-Presentation directory registered without executable wrapper: $sherpa_home"
 else
-  soft_fail "SHERPA Python package missing; install with --sherpa or set neoag-tools Python on PATH"
+  warn "SHERPA-Presentation not installed; provide authorized source/archive/container and install with --sherpa"
 fi
-
 echo
 
 echo "==> EasyFuse / Nextflow"
