@@ -109,6 +109,54 @@ pytest -q
 
 完整依赖关系和验收标准见 `docs/PRODUCTION_WORKFLOW.md`。完整阶段执行使用 `configs/workflows/production_workflow.example.toml` 和 `neoag-production-run`；已有分支结果时使用 `conf/run.production_multisource.example.toml` 合并。缺少 fusion/splice 来源时流程继续运行并标记 `LOW_CONFIDENCE`；缺少必需呈递预测结果时才会失败。
 
+下面的脚本用于运行 manifest 驱动的完整生产流程。首次运行会创建 private manifest 并停止，必须先填入真实的样本路径、HLA 分型、BAM/FASTQ/VCF、参考数据和授权工具配置，才能再次执行。
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+PROJECT_ROOT="${PROJECT_ROOT:-/root/neo/src/na0707_upload_release}"
+SAMPLE_ID="${SAMPLE_ID:-SAMPLE001}"
+MANIFEST="${MANIFEST:-${PROJECT_ROOT}/configs/workflows/production_workflow.private.toml}"
+OUTDIR="${OUTDIR:-${PROJECT_ROOT}/results/${SAMPLE_ID}_production}"
+
+cd "$PROJECT_ROOT"
+source conf/tools.env.sh
+python -m pip install --no-deps -e .
+
+if [[ ! -f "$MANIFEST" ]]; then
+  cp configs/workflows/production_workflow.example.toml "$MANIFEST"
+  echo "已创建 $MANIFEST"
+  echo "请填写所有 /path/... 路径和各阶段命令，然后重新运行本脚本。"
+  exit 2
+fi
+
+# 环境/工具预检，然后生成只展示命令的生产执行计划。
+neoag check-tools
+neoag-production-run \
+  --project-root "$PROJECT_ROOT" \
+  --manifest "$MANIFEST" \
+  --outdir "$OUTDIR"
+
+# 执行缺失阶段；已经存在声明输出的阶段会自动复用。
+neoag-production-run \
+  --project-root "$PROJECT_ROOT" \
+  --manifest "$MANIFEST" \
+  --outdir "$OUTDIR" \
+  --execute
+
+# 完整生产结果的最低验收条件。
+test -s "$OUTDIR/production_run_summary.json"
+test -s "$OUTDIR/production_stage_status.tsv"
+test -s "$OUTDIR/final/scoring/ranked_peptides.tsv"
+test -s "$OUTDIR/final/scoring/comprehensive_peptide_evidence.tsv"
+test -s "$OUTDIR/final/reports/evidence_report.html"
+
+python -m json.tool "$OUTDIR/production_run_summary.json"
+```
+
+常规断点续跑不要添加 `--force`；只有明确需要重算已有输出的阶段时才使用。最终状态为 `LOW_CONFIDENCE` 表示排序已经完成，但 fusion、splice 等一个或多个可选来源缺失或失败；解释排序前应检查 `production_stage_status.tsv`。
+
 ### 从已有 pVAC-like 表运行
 
 当你已有 pVACseq/pVACfuse/pVACsplice-like aggregated tables 时使用：

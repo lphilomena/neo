@@ -222,6 +222,54 @@ The production flow runs HLA typing, purity/CNV/CCF, HLA LOH/APPM, and RNA expre
 
 See `docs/PRODUCTION_WORKFLOW.md`. Use `configs/workflows/production_workflow.example.toml` with `neoag-production-run` for full stage execution, or `conf/run.production_multisource.example.toml` for merge-only runs. Missing fusion/splice sources are reported as `LOW_CONFIDENCE` without stopping the run; missing required presentation predictors still fail clearly.
 
+The following script runs the complete manifest-driven workflow. On first use it creates a private manifest and stops so that sample paths, HLA typing, BAM/FASTQ/VCF inputs, references, and licensed tools can be configured before execution.
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+PROJECT_ROOT="${PROJECT_ROOT:-/root/neo/src/na0707_upload_release}"
+SAMPLE_ID="${SAMPLE_ID:-SAMPLE001}"
+MANIFEST="${MANIFEST:-${PROJECT_ROOT}/configs/workflows/production_workflow.private.toml}"
+OUTDIR="${OUTDIR:-${PROJECT_ROOT}/results/${SAMPLE_ID}_production}"
+
+cd "$PROJECT_ROOT"
+source conf/tools.env.sh
+python -m pip install --no-deps -e .
+
+if [[ ! -f "$MANIFEST" ]]; then
+  cp configs/workflows/production_workflow.example.toml "$MANIFEST"
+  echo "Created $MANIFEST"
+  echo "Edit every /path/... value and stage command, then rerun this script."
+  exit 2
+fi
+
+# Environment/tool preflight, followed by a command-only production plan.
+neoag check-tools
+neoag-production-run \
+  --project-root "$PROJECT_ROOT" \
+  --manifest "$MANIFEST" \
+  --outdir "$OUTDIR"
+
+# Execute missing stages and reuse stages whose declared outputs already exist.
+neoag-production-run \
+  --project-root "$PROJECT_ROOT" \
+  --manifest "$MANIFEST" \
+  --outdir "$OUTDIR" \
+  --execute
+
+# Minimum acceptance checks for the unified production result.
+test -s "$OUTDIR/production_run_summary.json"
+test -s "$OUTDIR/production_stage_status.tsv"
+test -s "$OUTDIR/final/scoring/ranked_peptides.tsv"
+test -s "$OUTDIR/final/scoring/comprehensive_peptide_evidence.tsv"
+test -s "$OUTDIR/final/reports/evidence_report.html"
+
+python -m json.tool "$OUTDIR/production_run_summary.json"
+```
+
+Do not add `--force` for routine resumes. It is only for intentionally recomputing stages whose declared outputs already exist. A final `LOW_CONFIDENCE` status means ranking completed but one or more optional sources, commonly fusion or splice, were unavailable or failed; inspect `production_stage_status.tsv` before interpreting the ranking.
+
 ### Run From Existing pVAC-like Tables
 
 Use this when you already have pVACseq/pVACfuse/pVACsplice-like aggregated tables:
