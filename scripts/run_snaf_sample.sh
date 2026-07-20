@@ -10,7 +10,7 @@ usage() {
 Usage: bash scripts/run_snaf_sample.sh --workflow workflow.py --outdir OUT [--bam-dir DIR] [--hla-file HLA.tsv] [--sample-id ID]
 
 Install first:
-  NEOAG_INSTALL_SNAF=1 bash scripts/install_splice_tools.sh
+  bash scripts/install_splice_tools.sh
 USAGE
 }
 
@@ -30,8 +30,8 @@ done
 [[ -n "$OUTDIR" ]] || { echo "ERROR: --outdir required" >&2; exit 2; }
 SNAF_PY="${SNAF_PYTHON:-}"
 if [[ -z "$SNAF_PY" ]]; then
-  if [[ -n "${NEOAG_CONDA_BASE:-}" && -n "${NEOAG_SPLICE_ENV:-}" ]]; then
-    SNAF_PY="${NEOAG_CONDA_BASE}/bin/conda run -n ${NEOAG_SPLICE_ENV} python"
+  if [[ -n "${NEOAG_CONDA_BASE:-}" ]]; then
+    SNAF_PY="${NEOAG_CONDA_BASE}/bin/conda run -n ${NEOAG_SNAF_ENV:-neoag-snaf} python"
   else
     SNAF_PY="python"
   fi

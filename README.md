@@ -503,7 +503,7 @@ Tools are optional for the fixture demo but required by specific real-data modes
 | ASCAT | CNV/LOH evidence | Optional | `bash scripts/install_ascat_pyclone.sh` | `NEOAG_ASCAT_ENV`, `ASCAT_HOME` | `neoag-v03 check-tools` |
 | PyClone-VI | Clonality context | Optional | `bash scripts/install_ascat_pyclone.sh` | `NEOAG_PYCLONE_ENV`, `NEOAG_PYCLONE_BIN` | `neoag-v03 check-tools` |
 | STAR-Fusion / FusionCatcher / Arriba / EasyFuse | Fusion discovery | Optional; required for corresponding fusion workflows | Install/mount externally; seed EasyFuse envs only when a Nextflow conda cache exists | `NEOAG_FUSION_ENV`, `NEOAG_STAR_FUSION_HOME`, `NEOAG_CTAT_LIB_DIR`, `NEOAG_EASYFUSE_HOME`, `NEOAG_EASYFUSE_REF` | `neoag-v03 check-tools` |
-| pVACsplice / RegTools / SNAF | Splice-derived neoantigen discovery | Optional; required for splice-junction workflows | `bash scripts/install_splice_tools.sh`; optional `NEOAG_INSTALL_SNAF=1` | `NEOAG_SPLICE_ENV`, `NEOAG_REGTOOLS_BIN`, `NEOAG_PVACSPLICE_BIN` | `bash scripts/run_splice_tool_smoke.sh` |
+| pVACsplice / RegTools / SNAF | Splice-derived neoantigen discovery | Optional; required for splice-junction workflows | `bash scripts/install_splice_tools.sh` installs all three by default; SNAF uses a Python 3.8 compatibility env and tested GitHub/PyPI mirrors, both overridable with `NEOAG_SNAF_PACKAGE_URL` and `NEOAG_SNAF_PIP_INDEX_URL`; set `NEOAG_INSTALL_SNAF=0` to opt out | `NEOAG_SPLICE_ENV`, `NEOAG_SNAF_ENV`, `NEOAG_REGTOOLS_BIN`, `NEOAG_PVACSPLICE_BIN` | `bash scripts/run_splice_tool_smoke.sh` |
 | Manta / GRIDSS / SvABA / Sniffles2 | SV discovery | Optional upstream SV callers | Install externally or via site conda/modules | `NEOAG_SV_ENV`, `NEOAG_MANTA_ENV` | `neoag-v03 check-tools` |
 | PURPLE / AMBER / COBALT | Purity, ploidy, CNV, LOH evidence | Optional | See `docs/TOOLS_SETUP.md` and local wrappers | `HMFTOOLS_HOME`, site-specific references | Tool-specific wrapper `--help` |
 | DASH | HLA LOH / allele-specific deletion evidence | Optional | See `docs/TOOLS_SETUP.md`; model may need to be provided separately | DASH env/model path | Tool-specific wrapper |
@@ -857,7 +857,7 @@ For a detailed local path inventory, see `docs/PROJECT_DATA_PATHS.md`.
 | SV score: `sv-score-v03` | Raw events/peptides | NetMHCpan/MHCflurry unless `--binding-stub` | HLA alleles, optional evidence tables |
 | Long-read SV wrapper | FASTQ/BAM or Sniffles2 VCF | minimap2/samtools/Sniffles2 as selected | Reference FASTA, GTF, HLA |
 | Fusion discovery | FASTQ/BAM or caller outputs | STAR-Fusion, FusionCatcher, Arriba, EasyFuse as selected | CTAT/EasyFuse/fusion caller references |
-| Splice discovery | RNA BAM/junctions + annotated VCF | pVACsplice, RegTools, optional SNAF/ASNEO/NeoSplice/splice2neo | GRCh38 FASTA/GTF, HLA alleles, normal-junction background when available |
+| Splice discovery | RNA BAM/junctions + annotated VCF | pVACsplice, RegTools, SNAF; optional ASNEO/NeoSplice/splice2neo | GRCh38 FASTA/GTF, HLA alleles, normal-junction background when available |
 | Immune escape evidence: `immune-escape` | Raw peptides, APPM/CCF/LOH evidence | Optional LOHHLA/FACETS upstream | HLA LOH, CNV, VEP/APM/JAK/B2M evidence |
 | Nextflow fixture | Bundled pVAC fixture | Java/Nextflow runtime | Bundled fixtures; writable `NXF_HOME` |
 

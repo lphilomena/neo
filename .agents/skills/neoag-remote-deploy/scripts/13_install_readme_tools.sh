@@ -29,6 +29,7 @@ INSTALL_FACETS=0
 INSTALL_ASCAT_PYCLONE=0
 INSTALL_FUSION=0
 INSTALL_SPLICE=0
+INSTALL_SNAF=1
 INSTALL_SPECHLA=0
 INSTALL_HLALA=0
 INSTALL_SEQUENZA=0
@@ -115,7 +116,8 @@ Tool groups:
   --facets                   FACETS via scripts/install_facets.sh
   --ascat-pyclone            ASCAT + PyClone-VI via scripts/install_ascat_pyclone.sh
   --fusion                   Arriba/Nextflow fusion env plus STAR-Fusion/FusionCatcher clones
-  --splice                   RegTools + pVACsplice wrappers and optional SNAF/source-registered splice tools
+  --splice                   RegTools + pVACsplice + SNAF (default) and optional source-registered splice tools
+  --skip-snaf                Skip SNAF when installing the splice group
   --spechla                  Register/load SpecHLA container assets and database if present
   --hla-la                   Register/load HLA-LA container assets and PRG graph if present
   --sequenza                 Install Sequenza conda env and reference hooks
@@ -211,6 +213,7 @@ while [[ $# -gt 0 ]]; do
     --ascat-pyclone) INSTALL_ASCAT_PYCLONE=1; shift ;;
     --fusion) INSTALL_FUSION=1; shift ;;
     --splice) INSTALL_SPLICE=1; shift ;;
+    --skip-snaf) INSTALL_SNAF=0; shift ;;
     --spechla) INSTALL_SPECHLA=1; shift ;;
     --hla-la) INSTALL_HLALA=1; shift ;;
     --sequenza) INSTALL_SEQUENZA=1; shift ;;
@@ -694,7 +697,12 @@ fi
 [[ "$INSTALL_FACETS" == "1" ]] && run "install FACETS" bash scripts/install_facets.sh
 [[ "$INSTALL_ASCAT_PYCLONE" == "1" ]] && run "install ASCAT/PyClone-VI" bash scripts/install_ascat_pyclone.sh
 [[ "$INSTALL_FUSION" == "1" ]] && { need_download_ok "fusion tool git clones/conda packages"; run "install fusion tools" bash scripts/install_fusion_tools.sh; }
-[[ "$INSTALL_SPLICE" == "1" ]] && run "install splice tools" bash scripts/install_splice_tools.sh
+if [[ "$INSTALL_SPLICE" == "1" ]]; then
+  if [[ "$INSTALL_SNAF" == "1" && "$EXECUTE" == "1" ]]; then
+    need_download_ok "SNAF pinned Git source"
+  fi
+  run "install splice tools" env NEOAG_INSTALL_SNAF="$INSTALL_SNAF" bash scripts/install_splice_tools.sh
+fi
 register_spechla_if_requested
 register_hlala_if_requested
 install_sequenza_if_requested

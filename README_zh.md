@@ -387,6 +387,7 @@ Fixture demo 不需要多数外部工具；真实数据模式按 workflow 需要
 | ASCAT | CNV/LOH evidence | 可选 | `bash scripts/install_ascat_pyclone.sh` | `NEOAG_ASCAT_ENV`, `ASCAT_HOME` | `neoag-v03 check-tools` |
 | PyClone-VI | Clonality context | 可选 | `bash scripts/install_ascat_pyclone.sh` | `NEOAG_PYCLONE_ENV`, `NEOAG_PYCLONE_BIN` | `neoag-v03 check-tools` |
 | STAR-Fusion / FusionCatcher / Arriba / EasyFuse | Fusion discovery | 可选；对应 fusion workflow 需要 | 外部安装/挂载；仅当已有 Nextflow conda cache 时 seed EasyFuse env | `NEOAG_FUSION_ENV`, `NEOAG_STAR_FUSION_HOME`, `NEOAG_CTAT_LIB_DIR`, `NEOAG_EASYFUSE_HOME`, `NEOAG_EASYFUSE_REF` | `neoag-v03 check-tools` |
+| pVACsplice / RegTools / SNAF | Splice 来源新抗原发现 | Splice workflow 需要 | `bash scripts/install_splice_tools.sh` 默认安装三者；SNAF 使用独立 Python 3.8 兼容环境和已测速的 GitHub/PyPI 镜像，可用 `NEOAG_SNAF_PACKAGE_URL`、`NEOAG_SNAF_PIP_INDEX_URL` 覆盖；仅在明确需要时设置 `NEOAG_INSTALL_SNAF=0` 跳过 | `NEOAG_SPLICE_ENV`, `NEOAG_SNAF_ENV`, `NEOAG_REGTOOLS_BIN`, `NEOAG_PVACSPLICE_BIN` | `bash scripts/run_splice_tool_smoke.sh` |
 | Manta / GRIDSS / SvABA / Sniffles2 | SV discovery | 可选 upstream SV caller | 外部安装或站点 conda/module 提供 | `NEOAG_SV_ENV`, `NEOAG_MANTA_ENV` | `neoag-v03 check-tools` |
 | PURPLE / AMBER / COBALT | Purity、ploidy、CNV、LOH evidence | 可选 | 见 `docs/TOOLS_SETUP.md` 和本地 wrapper | `HMFTOOLS_HOME`、站点参考库 | 工具 wrapper `--help` |
 | DASH | HLA LOH / allele-specific deletion evidence | 可选 | 见 `docs/TOOLS_SETUP.md`；模型可能需另行提供 | DASH env/model path | 工具 wrapper |

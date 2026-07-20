@@ -272,7 +272,7 @@ fi
 if command -v snaf-neoag >/dev/null 2>&1; then
   pass "SNAF wrapper: $(command -v snaf-neoag)"
 else
-  warn "SNAF optional wrapper missing; install with NEOAG_INSTALL_SNAF=1 scripts/install_splice_tools.sh when needed"
+  soft_fail "SNAF wrapper missing; splice installation includes SNAF by default (use --skip-snaf only intentionally)"
 fi
 
 echo
