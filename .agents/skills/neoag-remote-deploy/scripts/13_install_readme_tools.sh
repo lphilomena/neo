@@ -28,6 +28,7 @@ INSTALL_OPTITYPE=0
 INSTALL_FACETS=0
 INSTALL_ASCAT_PYCLONE=0
 INSTALL_FUSION=0
+INSTALL_SPLICE=0
 INSTALL_SPECHLA=0
 INSTALL_HLALA=0
 INSTALL_SEQUENZA=0
@@ -114,6 +115,7 @@ Tool groups:
   --facets                   FACETS via scripts/install_facets.sh
   --ascat-pyclone            ASCAT + PyClone-VI via scripts/install_ascat_pyclone.sh
   --fusion                   Arriba/Nextflow fusion env plus STAR-Fusion/FusionCatcher clones
+  --splice                   RegTools + pVACsplice wrappers and optional SNAF/source-registered splice tools
   --spechla                  Register/load SpecHLA container assets and database if present
   --hla-la                   Register/load HLA-LA container assets and PRG graph if present
   --sequenza                 Install Sequenza conda env and reference hooks
@@ -208,6 +210,7 @@ while [[ $# -gt 0 ]]; do
     --facets) INSTALL_FACETS=1; shift ;;
     --ascat-pyclone) INSTALL_ASCAT_PYCLONE=1; shift ;;
     --fusion) INSTALL_FUSION=1; shift ;;
+    --splice) INSTALL_SPLICE=1; shift ;;
     --spechla) INSTALL_SPECHLA=1; shift ;;
     --hla-la) INSTALL_HLALA=1; shift ;;
     --sequenza) INSTALL_SEQUENZA=1; shift ;;
@@ -215,14 +218,14 @@ while [[ $# -gt 0 ]]; do
     --all-open)
       INSTALL_CORE_ENV=1; INSTALL_VEP=1; INSTALL_GATK=1; INSTALL_RNA_EXPRESSION=1; INSTALL_IMMUNOGENICITY=1
       INSTALL_DEEPIMMUNO=1; INSTALL_NETMHCSTABPAN=1; INSTALL_LOHHLA=1
-      INSTALL_OPTITYPE=1; INSTALL_FACETS=1; INSTALL_ASCAT_PYCLONE=1; INSTALL_FUSION=1
+      INSTALL_OPTITYPE=1; INSTALL_FACETS=1; INSTALL_ASCAT_PYCLONE=1; INSTALL_FUSION=1; INSTALL_SPLICE=1
       INSTALL_SPECHLA=1; INSTALL_HLALA=1; INSTALL_SEQUENZA=1; INSTALL_HMF_PURPLE=1
       SKIP_TORCH_INSTALL=0
       shift ;;
     --all)
       INSTALL_CORE_ENV=1; INSTALL_VEP=1; INSTALL_VEP_CACHE=1; INSTALL_GATK=1; INSTALL_RNA_EXPRESSION=1; INSTALL_IMMUNOGENICITY=1
       INSTALL_DEEPIMMUNO=1; INSTALL_NETMHCSTABPAN=1; INSTALL_LOHHLA=1
-      INSTALL_OPTITYPE=1; INSTALL_FACETS=1; INSTALL_ASCAT_PYCLONE=1; INSTALL_FUSION=1
+      INSTALL_OPTITYPE=1; INSTALL_FACETS=1; INSTALL_ASCAT_PYCLONE=1; INSTALL_FUSION=1; INSTALL_SPLICE=1
       INSTALL_SPECHLA=1; INSTALL_HLALA=1; INSTALL_SEQUENZA=1; INSTALL_HMF_PURPLE=1
       SKIP_TORCH_INSTALL=0
       shift ;;
@@ -601,7 +604,7 @@ install_miniforge_if_needed() {
 cd "$PROJECT_ROOT"
 [[ -f "pyproject.toml" || -f "setup.py" ]] || { echo "PROJECT_ROOT_INVALID: $PROJECT_ROOT" >&2; exit 30; }
 
-if [[ "$INSTALL_CORE_ENV$INSTALL_VEP$INSTALL_GATK$INSTALL_RNA_EXPRESSION$INSTALL_IMMUNOGENICITY$INSTALL_DEEPIMMUNO$INSTALL_SHERPA$INSTALL_NETMHCSTABPAN$INSTALL_LOHHLA$INSTALL_POLYSOLVER$INSTALL_OPTITYPE$INSTALL_FACETS$INSTALL_ASCAT_PYCLONE$INSTALL_FUSION$INSTALL_SPECHLA$INSTALL_HLALA$INSTALL_SEQUENZA$INSTALL_HMF_PURPLE" =~ 1 ]]; then
+if [[ "$INSTALL_CORE_ENV$INSTALL_VEP$INSTALL_GATK$INSTALL_RNA_EXPRESSION$INSTALL_IMMUNOGENICITY$INSTALL_DEEPIMMUNO$INSTALL_SHERPA$INSTALL_NETMHCSTABPAN$INSTALL_LOHHLA$INSTALL_POLYSOLVER$INSTALL_OPTITYPE$INSTALL_FACETS$INSTALL_ASCAT_PYCLONE$INSTALL_FUSION$INSTALL_SPLICE$INSTALL_SPECHLA$INSTALL_HLALA$INSTALL_SEQUENZA$INSTALL_HMF_PURPLE" =~ 1 ]]; then
   install_miniforge_if_needed
   export NEOAG_CONDA_BASE="$CONDA_BASE"
   export PATH="$CONDA_BASE/bin:$PATH"
@@ -691,6 +694,7 @@ fi
 [[ "$INSTALL_FACETS" == "1" ]] && run "install FACETS" bash scripts/install_facets.sh
 [[ "$INSTALL_ASCAT_PYCLONE" == "1" ]] && run "install ASCAT/PyClone-VI" bash scripts/install_ascat_pyclone.sh
 [[ "$INSTALL_FUSION" == "1" ]] && { need_download_ok "fusion tool git clones/conda packages"; run "install fusion tools" bash scripts/install_fusion_tools.sh; }
+[[ "$INSTALL_SPLICE" == "1" ]] && run "install splice tools" bash scripts/install_splice_tools.sh
 register_spechla_if_requested
 register_hlala_if_requested
 install_sequenza_if_requested
@@ -739,7 +743,7 @@ fi
     "gatk:$INSTALL_GATK" "rna-expression:$INSTALL_RNA_EXPRESSION" "immunogenicity:$INSTALL_IMMUNOGENICITY" \
     "netmhcstabpan:$INSTALL_NETMHCSTABPAN" "deepimmuno:$INSTALL_DEEPIMMUNO" "sherpa:$INSTALL_SHERPA" \
     "lohhla:$INSTALL_LOHHLA" "polysolver:$INSTALL_POLYSOLVER" "optitype:$INSTALL_OPTITYPE" \
-    "facets:$INSTALL_FACETS" "ascat-pyclone:$INSTALL_ASCAT_PYCLONE" "fusion:$INSTALL_FUSION" \
+    "facets:$INSTALL_FACETS" "ascat-pyclone:$INSTALL_ASCAT_PYCLONE" "fusion:$INSTALL_FUSION" "splice:$INSTALL_SPLICE" \
     "spechla:$INSTALL_SPECHLA" "hla-la:$INSTALL_HLALA" "sequenza:$INSTALL_SEQUENZA" "hmf-purple:$INSTALL_HMF_PURPLE" \
     "verify:$RUN_VERIFY" "real-vcf-smoke:$RUN_REAL_VCF_SMOKE" "sync-assets:$SYNC_ASSETS" "reference-manifest:${REFERENCE_MANIFEST:+1}" "bigmhc-models:${BIGMHC_MODELS_DIR:+1}"; do
     name="${item%%:*}"; enabled="${item##*:}"

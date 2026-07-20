@@ -30,6 +30,7 @@ profiles:
       - star_fusion
       - fusioncatcher
       - easyfuse
+      - regtools
   licensed:
     description: "Tools requiring registration, institutional license, or non-redistributable assets."
     tools:
@@ -41,6 +42,10 @@ profiles:
     description: "Useful for specialized workflows; not required for the default real-VCF smoke."
     tools:
       - arriba
+      - snaf
+      - asneo
+      - neosplice
+      - splice2neo
 
 tools:
   pvacseq:
@@ -72,6 +77,55 @@ tools:
     license_required: false
     distributable: true
     smoke_command: "pvacsplice --help"
+
+  regtools:
+    category: splice
+    executable: regtools-neoag
+    env: env.neoag-splice
+    required: true
+    license_required: false
+    distributable: true
+    smoke_command: "regtools junctions extract -h"
+
+  snaf:
+    category: splice
+    executable: snaf-neoag
+    env: env.neoag-splice
+    install_root: /root/neo/env_tool/tools/SNAF
+    required: false
+    license_required: false
+    distributable: true
+    smoke_command: "snaf-neoag --help"
+
+  asneo:
+    category: splice
+    executable: asneo-neoag
+    env: env.neoag-splice
+    install_root: /root/neo/env_tool/tools/ASNEO
+    required: false
+    license_required: false
+    distributable: true
+    smoke_command: "asneo-neoag --help"
+
+  neosplice:
+    category: splice
+    executable: neosplice-neoag
+    env: env.neoag-splice
+    install_root: /root/neo/env_tool/tools/NeoSplice
+    required: false
+    license_required: false
+    distributable: true
+    smoke_command: "neosplice-neoag --help"
+
+  splice2neo:
+    category: splice
+    executable: splice2neo-neoag
+    env: env.neoag-splice
+    install_root: /root/neo/env_tool/tools/splice2neo
+    required: false
+    license_required: false
+    distributable: true
+    smoke_command: "splice2neo-neoag --help"
 
   vep:
     category: annotation

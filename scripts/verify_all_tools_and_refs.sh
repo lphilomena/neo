@@ -254,6 +254,29 @@ else
 fi
 echo
 
+echo "==> Splice tools"
+pvacsplice_bin="${NEOAG_PVACSPLICE_BIN:-}"
+[[ -z "$pvacsplice_bin" ]] && pvacsplice_bin="$(command -v pvacsplice-neoag 2>/dev/null || command -v pvacsplice 2>/dev/null || true)"
+if [[ -n "$pvacsplice_bin" && -x "$pvacsplice_bin" ]]; then
+  pass "pVACsplice executable: $pvacsplice_bin"
+else
+  soft_fail "pVACsplice missing; install core pVACtools env and/or scripts/install_splice_tools.sh"
+fi
+regtools_bin="${NEOAG_REGTOOLS_BIN:-}"
+[[ -z "$regtools_bin" ]] && regtools_bin="$(command -v regtools-neoag 2>/dev/null || command -v regtools 2>/dev/null || true)"
+if [[ -n "$regtools_bin" && -x "$regtools_bin" ]]; then
+  pass "RegTools executable: $regtools_bin"
+else
+  warn "RegTools missing; RNA BAM to junction extraction will not run"
+fi
+if command -v snaf-neoag >/dev/null 2>&1; then
+  pass "SNAF wrapper: $(command -v snaf-neoag)"
+else
+  warn "SNAF optional wrapper missing; install with NEOAG_INSTALL_SNAF=1 scripts/install_splice_tools.sh when needed"
+fi
+
+echo
+
 echo "==> EasyFuse / Nextflow"
 if [[ -n "${NEOAG_EASYFUSE_HOME:-}" ]]; then
   check_dir "$NEOAG_EASYFUSE_HOME" "EasyFuse home"

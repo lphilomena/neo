@@ -135,7 +135,7 @@ tooling used by copy-number and HLA workflows: SpecHLA, HLA-LA, Sequenza, and
 HMF PURPLE/AMBER/COBALT. The installer expects their large databases and
 container image tarballs to come from `configs/assets/production_assets.tsv`
 when `--sync-assets` is used. Sequenza is installed as a conda env from
-`conda/env.neoag-sequenza.yml`; SpecHLA, HLA-LA, and HMF PURPLE are registered
+`conda/env.neoag-sequenza.yml`; splice helpers are installed from `conda/env.neoag-splice.yml`; SpecHLA, HLA-LA, and HMF PURPLE are registered
 by loading staged container images when Docker is available and by writing
 portable wrappers/environment variables into the production activation script.
 Because `--all-open` includes BigMHC, it also installs/repairs torch by default. SHERPA-Presentation is not publicly auto-downloadable; install it only with an authorized `--sherpa-source`, `--sherpa-archive`, or `--sherpa-container-image`.

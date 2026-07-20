@@ -55,7 +55,7 @@ Common options:
 
 Tool group shortcuts:
   --minimal                   Install core env + immunogenicity only (default)
-  --standard                  Add VEP, GATK, OptiType, FACETS, ASCAT/PyClone, LOHHLA
+  --standard                  Add VEP, GATK, OptiType, FACETS, ASCAT/PyClone, splice, LOHHLA
   --all-open                  Pass --all-open to 13_install_readme_tools.sh
   --all                      Pass --all to 13_install_readme_tools.sh
   --add-tool-group FLAG       Add any 13_install_readme_tools.sh group flag, e.g. --vep
@@ -105,7 +105,7 @@ while [[ $# -gt 0 ]]; do
     --vep-version) VEP_VERSION="$2"; shift 2 ;;
     --execute) EXECUTE=1; shift ;;
     --minimal) INSTALL_TOOL_GROUPS=(--core-env --immunogenicity); shift ;;
-    --standard) INSTALL_TOOL_GROUPS=(--core-env --vep --gatk --immunogenicity --optitype --facets --ascat-pyclone --lohhla); shift ;;
+    --standard) INSTALL_TOOL_GROUPS=(--core-env --vep --gatk --immunogenicity --optitype --facets --ascat-pyclone --splice --lohhla); shift ;;
     --all-open) INSTALL_TOOL_GROUPS=(--all-open); shift ;;
     --all) INSTALL_TOOL_GROUPS=(--all); shift ;;
     --add-tool-group) EXTRA_INSTALL_ARGS+=("$2"); shift 2 ;;
