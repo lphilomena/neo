@@ -42,11 +42,73 @@ DEFAULT_DRIVER_GENE_PATH = ROOT / "resources" / "driver_genes.tsv"
 # passenger" into the same 0.0 score is exactly the bug this fix removes.
 DEFAULT_UNKNOWN_GENE_RELEVANCE = 0.3
 
+# OncoKB cancerGeneList.tsv boolean/curation columns used to derive a
+# consensus-strength score. "OncoKB Annotated" is included alongside the six
+# underlying source databases because OncoKB's own curation counts as a
+# resource in its own right in the exported "# of occurrence" column.
+_ONCOKB_SOURCE_COLUMNS = [
+    "OncoKB Annotated", "MSK-IMPACT", "MSK-HEME",
+    "FOUNDATION ONE", "FOUNDATION ONE HEME", "Vogelstein",
+]
+_ONCOKB_COSMIC_PREFIX = "COSMIC CGC"  # column name carries a version suffix, e.g. "COSMIC CGC (v99)"
+
 _CACHE: dict[str, dict[str, float]] = {}
 
 
+def _parse_simple_driver_tsv(rows: list[dict[str, str]]) -> dict[str, float]:
+    """Bundled-resource format: gene\tcategory\tdriver_relevance\tsource_note."""
+    table: dict[str, float] = {}
+    for row in rows:
+        gene = (row.get("gene") or "").strip().upper()
+        if not gene:
+            continue
+        table[gene] = to_float(row.get("driver_relevance"), DEFAULT_UNKNOWN_GENE_RELEVANCE)
+    return table
+
+
+def _parse_oncokb_gene_list(rows: list[dict[str, str]]) -> dict[str, float]:
+    """Official OncoKB ``cancerGeneList.tsv`` export.
+
+    Columns of interest: ``Hugo Symbol``, ``Gene Type`` (ONCOGENE/TSG),
+    ``OncoKB Annotated`` plus the five other curated-resource Yes/No columns
+    (MSK-IMPACT, MSK-HEME, FOUNDATION ONE, FOUNDATION ONE HEME, Vogelstein,
+    COSMIC CGC <version>). ``driver_relevance`` is derived from how many of
+    those independent, curated resources list the gene as cancer-relevant
+    (consensus strength), rather than trusted as a single binary flag:
+
+        driver_relevance = 0.3 + 0.65 * (n_sources_agreeing / n_source_columns)
+
+    A gene absent from every source column but still present in the file
+    (edge case) lands at 0.3 -- the same neutral value used for genes not in
+    the table at all -- while a gene confirmed across every source (e.g.
+    TP53, KRAS) lands at 0.95. The occurrence count is recomputed directly
+    from the Yes/No columns rather than trusted from the file's own
+    "# of occurrence" column, so this stays correct even if that column's
+    exact definition changes between OncoKB export versions.
+    """
+    table: dict[str, float] = {}
+    for row in rows:
+        gene = (row.get("Hugo Symbol") or "").strip().upper()
+        if not gene:
+            continue
+        cosmic_col = next((k for k in row if k.startswith(_ONCOKB_COSMIC_PREFIX)), None)
+        source_cols = list(_ONCOKB_SOURCE_COLUMNS) + ([cosmic_col] if cosmic_col else [])
+        if not source_cols:
+            continue
+        hits = sum(1 for c in source_cols if str(row.get(c, "")).strip().lower() == "yes")
+        score = 0.3 + 0.65 * (hits / len(source_cols))
+        table[gene] = max(0.0, min(1.0, score))
+    return table
+
+
 def load_driver_gene_table(path: str | Path | None = None) -> dict[str, float]:
-    """Load {gene_symbol: driver_relevance} from a driver-gene TSV.
+    """Load {gene_symbol: driver_relevance} from a driver-gene reference file.
+
+    Auto-detects two formats so an official OncoKB ``cancerGeneList.tsv``
+    export can be dropped in without any manual conversion step:
+      - the bundled simplified resource format (header starts with "gene");
+      - the official OncoKB gene list (header includes "Hugo Symbol" and
+        "Gene Type" -- see https://www.oncokb.org/cancer-genes).
 
     Results are cached per resolved path so repeated per-row lookups during
     adapter parsing don't re-read the file from disk.
@@ -57,11 +119,11 @@ def load_driver_gene_table(path: str | Path | None = None) -> dict[str, float]:
         return _CACHE[key]
     table: dict[str, float] = {}
     if p.exists():
-        for row in read_tsv(p):
-            gene = (row.get("gene") or "").strip().upper()
-            if not gene:
-                continue
-            table[gene] = to_float(row.get("driver_relevance"), DEFAULT_UNKNOWN_GENE_RELEVANCE)
+        rows = read_tsv(p)
+        if rows and "Hugo Symbol" in rows[0] and "Gene Type" in rows[0]:
+            table = _parse_oncokb_gene_list(rows)
+        else:
+            table = _parse_simple_driver_tsv(rows)
     _CACHE[key] = table
     return table
 

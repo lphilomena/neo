@@ -52,12 +52,78 @@ DEFAULT_UNKNOWN_GENE_SPECIFICITY = 0.5
 _CACHE: dict[str, dict[str, list[float]]] = {}
 
 
-def load_gtex_median_tpm(path: str | Path | None = None) -> dict[str, list[float]]:
-    """Load {gene_symbol: [median_tpm_per_tissue, ...]} from a GTEx-style TSV.
+def _parse_simple_tsv(lines: list[str]) -> dict[str, list[float]]:
+    """Bundled-resource format: header 'gene<TAB>tissue1<TAB>tissue2...',
+    one row per gene, values already collapsed to one number per tissue."""
+    reader = csv.DictReader(lines, delimiter="\t")
+    tissue_cols = [c for c in (reader.fieldnames or []) if c and c != "gene"]
+    table: dict[str, list[float]] = {}
+    for row in reader:
+        gene = (row.get("gene") or "").strip().upper()
+        if not gene:
+            continue
+        values: list[float] = []
+        for col in tissue_cols:
+            raw = row.get(col)
+            if raw in (None, ""):
+                continue
+            try:
+                values.append(float(raw))
+            except ValueError:
+                continue
+        if values:
+            table[gene] = values
+    return table
 
-    Lines starting with ``#`` are treated as documentation/comments and
-    skipped, so the bundled resource file can carry a human-readable header
-    explaining its provenance without breaking the parser.
+
+def _parse_gtex_gct(fh) -> dict[str, list[float]]:
+    """Official GTEx 'gene median TPM' .gct export.
+
+    Layout: line 1 is a version tag ("#1.2"), line 2 is "<n_rows>\\t<n_cols>",
+    line 3 is the real header ("Name<TAB>Description<TAB>tissue1<TAB>...").
+    "Name" is the versioned Ensembl gene ID (unused here); "Description" is
+    the gene symbol used for lookup. Multiple rows can share the same
+    symbol (e.g. duplicated/legacy annotations for paralogs or read-through
+    loci) -- per tissue, we take the max TPM across those rows, so a single
+    genuinely active locus isn't diluted by co-mapped near-silent entries.
+    """
+    fh.readline()  # "#1.2" version line
+    fh.readline()  # "<n_rows>\t<n_cols>" dimensions line
+    reader = csv.DictReader(fh, delimiter="\t")
+    tissue_cols = [c for c in (reader.fieldnames or []) if c not in ("Name", "Description")]
+    raw: dict[str, list[list[float]]] = {}
+    for row in reader:
+        gene = (row.get("Description") or "").strip().upper()
+        if not gene:
+            continue
+        values: list[float] = []
+        for col in tissue_cols:
+            v = row.get(col)
+            if v in (None, ""):
+                continue
+            try:
+                values.append(float(v))
+            except ValueError:
+                continue
+        if values:
+            raw.setdefault(gene, []).append(values)
+    table: dict[str, list[float]] = {}
+    for gene, rows in raw.items():
+        width = max(len(r) for r in rows)
+        table[gene] = [max((r[i] for r in rows if i < len(r)), default=0.0) for i in range(width)]
+    return table
+
+
+def load_gtex_median_tpm(path: str | Path | None = None) -> dict[str, list[float]]:
+    """Load {gene_symbol: [median_tpm_per_tissue, ...]} from a GTEx TPM file.
+
+    Auto-detects two formats so an official GTEx download can be dropped in
+    without any manual conversion step:
+      - the bundled simplified resource format (first header cell "gene",
+        remaining columns one per tissue, optional leading "#" comment lines);
+      - the official GTEx "gene_median_tpm.gct" export (version line "#1.2",
+        a "<n_rows>\\t<n_cols>" dimensions line, then a "Name/Description/
+        tissue..." header -- see https://gtexportal.org/home/downloads/adult-gtex#bulk_tissue_expression).
     """
     p = Path(path) if path else DEFAULT_GTEX_PATH
     key = str(p)
@@ -66,24 +132,13 @@ def load_gtex_median_tpm(path: str | Path | None = None) -> dict[str, list[float
     table: dict[str, list[float]] = {}
     if p.exists():
         with p.open("r", encoding="utf-8", newline="") as fh:
-            lines = [ln for ln in fh if not ln.lstrip().startswith("#") and ln.strip()]
-        reader = csv.DictReader(lines, delimiter="\t")
-        tissue_cols = [c for c in (reader.fieldnames or []) if c and c != "gene"]
-        for row in reader:
-            gene = (row.get("gene") or "").strip().upper()
-            if not gene:
-                continue
-            values: list[float] = []
-            for col in tissue_cols:
-                raw = row.get(col)
-                if raw in (None, ""):
-                    continue
-                try:
-                    values.append(float(raw))
-                except ValueError:
-                    continue
-            if values:
-                table[gene] = values
+            first_line = fh.readline()
+            fh.seek(0)
+            if first_line.startswith("#1.2"):
+                table = _parse_gtex_gct(fh)
+            else:
+                lines = [ln for ln in fh if not ln.lstrip().startswith("#") and ln.strip()]
+                table = _parse_simple_tsv(lines)
     _CACHE[key] = table
     return table
 
