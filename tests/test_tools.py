@@ -4,6 +4,7 @@ import pytest
 from neoag_v03.tools import check_tool, run_tool, run_upstream, load_run_config
 from neoag_v03.tools.registry import RunContext, ROOT
 from neoag_v03.tools.runner import RUNNERS
+from neoag_v03.utils import read_tsv
 from neoag_v03.tools.prep import unique_peptide_hla_pairs, netmhcpan_allele_string
 from neoag_v03.pipeline_v03 import run_v03
 from neoag_v03.cli import main
@@ -38,6 +39,72 @@ def test_run_full_cli_stub(tmp_path):
     outdir = tmp_path / "full"
     main(["run-full", "--config", str(ROOT / "conf/run.stub.toml"), "--outdir", str(outdir)])
     assert (outdir / "scoring/ranked_peptides.v03.tsv").exists()
+
+
+def test_multisource_peptides_all_enter_presentation_prediction(tmp_path):
+    cfg = tmp_path / "multisource.toml"
+    cfg.write_text(
+        f'''[sample]
+id = "MULTISOURCE"
+profile = "default"
+
+[tools]
+stub = true
+enabled = ["netmhcpan", "mhcflurry"]
+
+[inputs]
+entry_mode = "e2e"
+hla_alleles = ["HLA-A*02:01"]
+pvac_files = [
+  "{ROOT / 'data/fixtures/pvacseq_aggregated.tsv'}",
+  "{ROOT / 'data/fixtures/pvacfuse_aggregated.tsv'}",
+  "{ROOT / 'data/fixtures/pvacsplice_aggregated.tsv'}",
+]
+expected_peptide_sources = ["pVACseq", "pVACfuse", "pVACsplice"]
+required_presentation_predictors = ["netmhcpan", "mhcflurry"]
+extract_appm_from_vcf = false
+''',
+        encoding="utf-8",
+    )
+
+    outputs = run_upstream(cfg, tmp_path / "upstream")
+    peptides = read_tsv(outputs["raw_peptides"])
+
+    assert {row["source_tool"] for row in peptides} == {"pVACseq", "pVACfuse", "pVACsplice"}
+    assert outputs["peptide_sources"] == "pVACfuse,pVACseq,pVACsplice"
+    coverage = read_tsv(outputs["peptide_source_coverage"])[0]
+    assert coverage["status"] == "COMPLETE"
+    assert Path(outputs["netmhcpan"]).is_file()
+    assert Path(outputs["mhcflurry"]).is_file()
+
+
+def test_multisource_missing_fusion_reports_low_confidence(tmp_path, capsys):
+    cfg = tmp_path / "missing_fusion.toml"
+    cfg.write_text(
+        f'''[sample]
+id = "INCOMPLETE"
+profile = "default"
+
+[tools]
+stub = true
+enabled = []
+
+[inputs]
+entry_mode = "e2e"
+pvac_files = ["{ROOT / 'data/fixtures/pvacseq_aggregated.tsv'}"]
+expected_peptide_sources = ["pVACseq", "pVACfuse"]
+extract_appm_from_vcf = false
+''',
+        encoding="utf-8",
+    )
+
+    outputs = run_upstream(cfg, tmp_path / "upstream")
+
+    assert outputs["peptide_source_completeness"] == "LOW_CONFIDENCE"
+    assert outputs["missing_peptide_sources"] == "pVACfuse"
+    assert "confidence is LOW" in capsys.readouterr().out
+    coverage = read_tsv(outputs["peptide_source_coverage"])[0]
+    assert coverage["missing_sources"] == "pVACfuse"
 
 def test_fusion_tools_in_registry():
     from neoag_v03.tools.registry import TOOL_REGISTRY

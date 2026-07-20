@@ -103,6 +103,12 @@ python -m pip install -e '.[test]'
 pytest -q
 ```
 
+### 完整生产流程
+
+生产流程并行执行 HLA 分型、纯度/CNV/CCF、HLA LOH/APPM 和 RNA 表达分析，再合并 SNV/InDel、fusion、splice 三类候选肽，统一进行呈递预测和排序。Fusion 或 splice 事件只有在跨断点/异常 junction 肽经过 NetMHCpan、MHCflurry 以及共同的免疫原性和安全性证据层后，才算完成新抗原评估。
+
+完整依赖关系和验收标准见 `docs/PRODUCTION_WORKFLOW.md`，机器可读运行模板见 `conf/run.production_multisource.example.toml`。缺少 fusion/splice 来源时流程继续运行，但会明确标记 `LOW_CONFIDENCE` 和缺失来源；缺少必需呈递预测结果时才会失败。
+
 ### 从已有 pVAC-like 表运行
 
 当你已有 pVACseq/pVACfuse/pVACsplice-like aggregated tables 时使用：

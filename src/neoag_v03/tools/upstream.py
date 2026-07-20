@@ -16,6 +16,7 @@ from ..input_router import resolve_entry_mode
 from ..preflight import vcf_preflight
 from .registry import RunContext, ROOT
 from .runner import run_tool
+from ..utils import write_tsv
 from .postprocess import lohhla_to_hla_loh_tsv, spechla_to_hla_loh_tsv, facets_to_cnv_tsv
 
 
@@ -269,7 +270,7 @@ def run_upstream(config_path: str | Path, outdir: str | Path | None = None) -> d
     pvac_paths.extend([str(_path_or_none(p)) for p in pre_pvac if _path_or_none(p)])
 
     if pvac_paths and not use_variant_peptides:
-        parse_pvactools_outputs(
+        _, parsed_peptides = parse_pvactools_outputs(
             pvac_paths,
             sample_id,
             profile_name,
@@ -278,6 +279,41 @@ def run_upstream(config_path: str | Path, outdir: str | Path | None = None) -> d
         )
         ctx.raw_peptides = parsed / "raw_peptides.tsv"
         outputs["peptide_source"] = "pvactools"
+        peptide_sources = sorted(
+            {str(row.get("source_tool") or "") for row in parsed_peptides if row.get("source_tool")}
+        )
+        outputs["peptide_sources"] = ",".join(peptide_sources)
+
+        expected_sources = inputs_cfg.get("expected_peptide_sources") or []
+        detected_sources = {source.casefold() for source in peptide_sources}
+        missing_sources = [
+            str(source) for source in expected_sources if str(source).casefold() not in detected_sources
+        ]
+        if missing_sources:
+            outputs["peptide_source_completeness"] = "LOW_CONFIDENCE"
+            outputs["missing_peptide_sources"] = ",".join(missing_sources)
+            print(
+                "WARNING: incomplete peptide source coverage; confidence is LOW. Missing: "
+                + ", ".join(missing_sources)
+                + "; detected: " + (", ".join(peptide_sources) or "none"),
+                flush=True,
+            )
+        elif expected_sources:
+            outputs["peptide_source_completeness"] = "COMPLETE"
+
+        if expected_sources:
+            coverage_path = tools_dir / "peptide_source_coverage.tsv"
+            write_tsv(
+                coverage_path,
+                [{
+                    "status": outputs["peptide_source_completeness"],
+                    "expected_sources": ",".join(str(source) for source in expected_sources),
+                    "detected_sources": ",".join(peptide_sources),
+                    "missing_sources": ",".join(missing_sources),
+                }],
+                ["status", "expected_sources", "detected_sources", "missing_sources"],
+            )
+            outputs["peptide_source_coverage"] = str(coverage_path)
 
     if "netmhcpan" in enabled:
         p = tools_dir / "netmhcpan.xls"
@@ -304,6 +340,13 @@ def run_upstream(config_path: str | Path, outdir: str | Path | None = None) -> d
         cached = _path_or_none(_cfg_get(cfg, "inputs", input_key))
         if cached and cached.is_file():
             outputs[tool_key] = str(cached)
+
+    required_predictors = inputs_cfg.get("required_presentation_predictors") or []
+    missing_predictors = [str(tool) for tool in required_predictors if str(tool) not in outputs]
+    if missing_predictors:
+        raise ValueError(
+            "Missing required presentation predictor outputs: " + ", ".join(missing_predictors)
+        )
 
     pvacseq_agg_path = outputs.get("pvacseq")
     if (
