@@ -45,6 +45,7 @@ check reference_fasta_fai test -f "${NEOAG_REFERENCE_FASTA:-}.fai"
 check vep_cache test -d "${NEOAG_VEP_CACHE:-}/homo_sapiens/${NEOAG_VEP_CACHE_VERSION:-105}_GRCh38"
 check netmhcpan netMHCpan -h
 check mixmhcpred "${MIXMHCPRED_BIN:-$TOOLS_ROOT/wrappers/mixMHCpred_install/MixMHCpred}" -h
+check prime_temp test -w "${PRIME_HOME:-$TOOLS_ROOT/tools/prime}/temp"
 check prime_help "${NEOAG_PRIME_BIN:-$TOOLS_ROOT/tools/prime/PRIME}" -h
 if [[ "$MINI_PRIME" == "1" ]]; then
   PEPS="$OUTDIR/prime_smoke_peptides.txt"

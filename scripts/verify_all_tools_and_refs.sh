@@ -221,6 +221,13 @@ prime_bin="${NEOAG_PRIME_BIN:-${PRIME_HOME:-}/PRIME}"
 [[ ! -x "$prime_bin" ]] && prime_bin="$(command -v PRIME 2>/dev/null || true)"
 if [[ -n "$prime_bin" && -x "$prime_bin" ]]; then
   pass "PRIME executable: $prime_bin"
+  prime_home="${PRIME_HOME:-$(cd "$(dirname "$prime_bin")" && pwd)}"
+  prime_temp="$prime_home/temp"
+  if [[ -d "$prime_temp" && -w "$prime_temp" ]]; then
+    pass "PRIME runtime temp is writable: $prime_temp"
+  else
+    soft_fail "PRIME runtime temp missing or not writable: $prime_temp; run scripts/fix_prime_temp.sh"
+  fi
 else
   soft_fail "PRIME executable missing; set PRIME_HOME or NEOAG_PRIME_BIN"
 fi

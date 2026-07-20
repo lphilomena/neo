@@ -41,7 +41,14 @@ if [[ ! -x "${PRIME_DIR}/PRIME" ]]; then
   curl -fsSL https://raw.githubusercontent.com/GfellerLab/PRIME/master/PRIME -o "${PRIME_DIR}/PRIME"
 fi
 chmod +x "${PRIME_DIR}/PRIME"
-mkdir -p "${PRIME_DIR}/lib/temp"
+PRIME_TEMP_DIR="${PRIME_DIR}/temp"
+mkdir -p "${PRIME_TEMP_DIR}"
+if [[ ! -d "${PRIME_TEMP_DIR}" || ! -w "${PRIME_TEMP_DIR}" ]]; then
+  echo "ERROR: PRIME runtime temp directory is not writable: ${PRIME_TEMP_DIR}" >&2
+  echo "Run: NEOAG_PRIME_RUNTIME_USER=<runtime-user> bash scripts/fix_prime_temp.sh" >&2
+  exit 1
+fi
+echo "PRIME runtime temp: ${PRIME_TEMP_DIR} (writable)"
 if [[ -f "${PRIME_DIR}/lib/PRIME.cc" ]]; then
   echo "[1b/4] Compile PRIME lib/PRIME.x"
   (cd "${PRIME_DIR}/lib" && g++ -O3 PRIME.cc -o PRIME.x)

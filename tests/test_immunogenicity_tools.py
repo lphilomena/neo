@@ -1,5 +1,10 @@
+from pathlib import Path
+
 from neoag.adapters.bigmhc_im import parse_bigmhc_im
 from neoag.adapters.prime import extract_prime_pair, prime_allele_tag, read_prime_wide_rows
+
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_prime_allele_tag():
@@ -44,3 +49,22 @@ def test_parse_bigmhc_im_uses_bigmhc_im_column(tmp_path):
     rows = parse_bigmhc_im(path, "HCC1395")
     assert rows
     assert rows[0]["bigmhc_im_score"] == "0.8123"
+
+
+def test_prime_install_and_repair_use_real_runtime_temp():
+    installer = (ROOT / "scripts/install_immunogenicity_tools.sh").read_text(encoding="utf-8")
+    repair = (ROOT / "scripts/fix_prime_temp.sh").read_text(encoding="utf-8")
+    verify = (ROOT / "scripts/verify_external_tools.sh").read_text(encoding="utf-8")
+    deploy_verify = (
+        ROOT / ".agents/skills/neoag-remote-deploy/scripts/11_validate_production_runtime.sh"
+    ).read_text(encoding="utf-8")
+
+    assert 'PRIME_TEMP_DIR="${PRIME_DIR}/temp"' in installer
+    assert 'PRIME_TEMP_DIR="${PRIME_DIR}/temp"' in repair
+    assert '${PRIME_DIR}/lib/temp' not in installer
+    assert '${PRIME_DIR}/lib/temp' not in repair
+    assert 'PRIME_DIR="${PRIME_HOME:-' in repair
+    assert 'NEOAG_PRIME_RUNTIME_USER' in repair
+    assert 'test -s /tmp/prime_fix_smoke.tsv' in repair
+    assert 'PRIME runtime temp missing or not writable' in verify
+    assert 'check prime_temp test -w "${PRIME_HOME:-$TOOLS_ROOT/tools/prime}/temp"' in deploy_verify

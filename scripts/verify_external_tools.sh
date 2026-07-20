@@ -55,6 +55,11 @@ fi
 
 if [[ -n "${NEOAG_PRIME_BIN:-}" && -x "${NEOAG_PRIME_BIN}" ]]; then
   pass "PRIME: ${NEOAG_PRIME_BIN}"
+  if [[ -d "${PRIME_HOME:-}/temp" && -w "${PRIME_HOME:-}/temp" ]]; then
+    pass "PRIME runtime temp: ${PRIME_HOME}/temp"
+  else
+    fail "PRIME runtime temp missing or not writable: ${PRIME_HOME:-unset}/temp; run scripts/fix_prime_temp.sh"
+  fi
   [[ -x "${MIXMHCPRED_BIN:-}" ]] || warn "MIXMHCPRED_BIN missing; PRIME runs require MixMHCpred"
 else
   fail "PRIME not executable; run bash scripts/install_immunogenicity_tools.sh"
