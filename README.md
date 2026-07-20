@@ -220,7 +220,7 @@ pytest -q
 
 The production flow runs HLA typing, purity/CNV/CCF, HLA LOH/APPM, and RNA expression in parallel, then merges SNV/InDel, fusion, and splice peptides before presentation prediction and ranking. Fusion and splice events are not considered complete until their junction-derived peptides pass NetMHCpan/MHCflurry and the shared immunogenicity and safety layers.
 
-See `docs/PRODUCTION_WORKFLOW.md` and the machine-readable run template `conf/run.production_multisource.example.toml`. Missing fusion/splice sources are reported as `LOW_CONFIDENCE` without stopping the run; missing required presentation predictors still fail clearly.
+See `docs/PRODUCTION_WORKFLOW.md`. Use `configs/workflows/production_workflow.example.toml` with `neoag-production-run` for full stage execution, or `conf/run.production_multisource.example.toml` for merge-only runs. Missing fusion/splice sources are reported as `LOW_CONFIDENCE` without stopping the run; missing required presentation predictors still fail clearly.
 
 ### Run From Existing pVAC-like Tables
 

@@ -42,6 +42,30 @@ A production splice peptide must similarly cross the abnormal exon junction, ret
 
 ## 4. Unified presentation and ranking
 
+### Executable production orchestrator
+
+Copy the complete stage manifest and replace sample/site paths:
+
+```bash
+cp configs/workflows/production_workflow.example.toml \
+  configs/workflows/production_workflow.private.toml
+
+neoag-production-run \
+  --manifest configs/workflows/production_workflow.private.toml
+
+neoag-production-run \
+  --manifest configs/workflows/production_workflow.private.toml \
+  --execute
+```
+
+The first command is a dry-run. `--execute` runs missing stages and reuses stages whose declared outputs already exist. Use `--force` only when a completed stage must be recomputed.
+
+The executor writes per-stage logs and status, normalizes pVAC or raw candidate outputs, merges all peptide sources, writes source coverage, creates `run.production.generated.toml`, and invokes `run-full` once on the merged peptide set. Required stage failures block the run. Optional fusion/splice failures continue with `LOW_CONFIDENCE`.
+
+Site-specific HLA consensus, caller arguments, licensed paths, and cluster submission commands remain explicit manifest commands. This keeps the execution code stable while allowing WGS, WES, BAM, FASTQ, local, container, or scheduler-backed implementations.
+
+### Merge-only template
+
 Use `conf/run.production_multisource.example.toml` after the three peptide branches finish:
 
 ```bash

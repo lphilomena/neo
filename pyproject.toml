@@ -24,6 +24,7 @@ neoag-gateway = "neoag_v03.controlled_execution.gateway:main"
 neoag-pipeline-full = "neoag_v03.controlled_execution.pipeline_runner:main"
 neoag-release-audit = "neoag_v03.controlled_execution.release_audit:main"
 neoag-skill = "neoag_v03.skill_taxonomy.cli:main"
+neoag-production-run = "neoag_v03.production_runner:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
