@@ -39,6 +39,7 @@ def test_run_full_cli_stub(tmp_path):
     outdir = tmp_path / "full"
     main(["run-full", "--config", str(ROOT / "conf/run.stub.toml"), "--outdir", str(outdir)])
     assert (outdir / "scoring/ranked_peptides.v03.tsv").exists()
+    assert (outdir / "scoring/comprehensive_peptide_evidence.tsv").exists()
 
 
 def test_multisource_peptides_all_enter_presentation_prediction(tmp_path):

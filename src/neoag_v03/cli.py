@@ -48,6 +48,7 @@ from .vep.extract_peptides import extract_variant_peptides_from_vcf, parse_pepti
 from .peptide_safety_gate import build_peptide_safety_gate
 from .immune_escape import build_immune_escape_evidence
 from .hla_loh_crosscheck import write_hla_loh_crosscheck
+from .comprehensive_evidence import build_comprehensive_peptide_evidence
 
 ROOT = Path(__file__).resolve().parents[2]
 def fixture(x): return ROOT/"data"/"fixtures"/x
@@ -887,6 +888,22 @@ def cmd_run_full(args):
             output_tsv=outdir / "upstream" / "tools" / "variant_peptides.annotated.tsv",
         )
         final["variant_peptides_annotated"] = ann["output_tsv"]
+        comprehensive = build_comprehensive_peptide_evidence(
+            output_tsv=final["comprehensive_peptide_evidence"],
+            annotated_peptides=ann["output_tsv"],
+            ranked_peptides=final["ranked_peptides"],
+            raw_peptides=final["raw_peptides"],
+            raw_events=final["raw_events"],
+            presentation_evidence=final["presentation_evidence"],
+            appm_peptide_modifiers=final["appm_peptide_modifiers"],
+            ccf_2=final["ccf_2"],
+            expression_evidence=final["expression_evidence"],
+            rna_junction_evidence=final["rna_junction_evidence"],
+            peptide_safety=final["peptide_safety"],
+            peptide_escape_flags=final["peptide_escape_flags"],
+            validation_plan=final["validation_plan"],
+        )
+        final["comprehensive_peptide_evidence_rows"] = str(comprehensive["rows"])
     print("Full pipeline completed. Ranked outputs use v03 schema-compatible file names.")
     for k, v in final.items():
         print(f"  {k}: {v}")

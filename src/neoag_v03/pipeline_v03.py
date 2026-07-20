@@ -18,6 +18,7 @@ from .evidence_layer import build_standard_evidence_layer
 from .peptide_safety_gate import build_peptide_safety_gate
 from .immune_escape import build_immune_escape_evidence
 from .schemas import PRESENTATION_FIELDS
+from .comprehensive_evidence import build_comprehensive_peptide_evidence
 from .tools.registry import RunContext
 from .utils import copy_if_different, read_tsv, write_tsv, write_json
 import shutil
@@ -214,6 +215,21 @@ def run_v03(
     report_paths = make_dual_reports(reports, report_bundle)
     report_path = report_paths["evidence_report"]
     prov = outdir / "provenance.v03.json"
+    comprehensive_path = scoring / "comprehensive_peptide_evidence.tsv"
+    build_comprehensive_peptide_evidence(
+        output_tsv=comprehensive_path,
+        ranked_peptides=ranked_peptides,
+        raw_peptides=raw_peptides_path,
+        raw_events=raw_events_path,
+        presentation_evidence=pres_path,
+        appm_peptide_modifiers=appm / "appm_peptide_modifiers.tsv",
+        ccf_2=ccf_path,
+        expression_evidence=evidence_paths["expression_evidence"],
+        rna_junction_evidence=evidence_paths["rna_junction_evidence"],
+        peptide_safety=peptide_safety_path,
+        peptide_escape_flags=immune_paths["peptide_escape_flags"],
+        validation_plan=val_path,
+    )
     write_json(prov, prov_payload)
     return {
         "raw_events": str(raw_events_path),
@@ -239,6 +255,7 @@ def run_v03(
         "ccf_lite": str(ccf_lite_alias),
         "ranked_events": str(ranked_events),
         "ranked_peptides": str(ranked_peptides),
+        "comprehensive_peptide_evidence": str(comprehensive_path),
         "validation_plan": str(val_path),
         "evidence_report": str(report_path),
         "evidence_report_patient": report_paths["evidence_report_patient"],

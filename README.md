@@ -295,6 +295,7 @@ Key outputs:
 - `results/SAMPLE001_sliding/upstream/parsed/raw_peptides.tsv`
 - `results/SAMPLE001_sliding/scoring/ranked_events.v03.tsv`
 - `results/SAMPLE001_sliding/scoring/ranked_peptides.v03.tsv`
+- `results/SAMPLE001_sliding/scoring/comprehensive_peptide_evidence.tsv` (all annotation, predictor, RNA, APPM, CCF, safety, escape, ranking, and validation evidence)
 - `results/SAMPLE001_sliding/scoring/validation_plan.v03.tsv`
 - `results/SAMPLE001_sliding/reports/evidence_report.v03.html`
 - `results/SAMPLE001_sliding/reports/evidence_report.patient.html`

@@ -182,6 +182,7 @@ neoag-v03 run-full \
 - `results/SAMPLE001_sliding/upstream/parsed/raw_peptides.tsv`
 - `results/SAMPLE001_sliding/scoring/ranked_events.v03.tsv`
 - `results/SAMPLE001_sliding/scoring/ranked_peptides.v03.tsv`
+- `results/SAMPLE001_sliding/scoring/comprehensive_peptide_evidence.tsv`（合并全部注释、预测器、RNA、APPM、CCF、安全性、免疫逃逸、排序与验证证据）
 - `results/SAMPLE001_sliding/scoring/validation_plan.v03.tsv`
 - `results/SAMPLE001_sliding/reports/evidence_report.v03.html`
 - `results/SAMPLE001_sliding/reports/evidence_report.patient.html`
