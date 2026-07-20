@@ -15,7 +15,7 @@ enabled = ["pvacseq", "netmhcpan", "mhcflurry", "vep"]
 [inputs]
 hla_alleles = ["HLA-A*02:01", "HLA-B*07:02", "HLA-DRB1*04:01"]
 
-# Set after Mutect2 FilterMutectCalls (or point neoag-v03 snv-call-wes output here)
+# Set after Mutect2 FilterMutectCalls (or point neoag snv-call-wes output here)
 tumor_vcf = "/path/P001.mutect2.filtered.vcf.gz"
 tumor_sample_name = "P001_TUMOR"
 normal_sample_name = "P001_NORMAL"

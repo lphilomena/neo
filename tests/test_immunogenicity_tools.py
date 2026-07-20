@@ -1,5 +1,5 @@
-from neoag_v03.adapters.bigmhc_im import parse_bigmhc_im
-from neoag_v03.adapters.prime import extract_prime_pair, prime_allele_tag, read_prime_wide_rows
+from neoag.adapters.bigmhc_im import parse_bigmhc_im
+from neoag.adapters.prime import extract_prime_pair, prime_allele_tag, read_prime_wide_rows
 
 
 def test_prime_allele_tag():

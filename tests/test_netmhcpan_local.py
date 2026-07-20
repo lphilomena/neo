@@ -1,9 +1,9 @@
-from neoag_v03.adapters.netmhcpan import (
+from neoag.adapters.netmhcpan import (
     parse_netmhcpan_local_stdout,
     write_netmhcpan_standard_xls,
     _hla_with_star,
 )
-from neoag_v03.tools.runner import resolve_netmhcpan_backend
+from neoag.tools.runner import resolve_netmhcpan_backend
 
 
 SAMPLE_OUT = """

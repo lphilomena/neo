@@ -19,7 +19,7 @@ netmhcpan_ba = 0.25
 netmhcpan_el = 0.35
 mhcflurry_presentation = 0.30
 mhcflurry_processing = 0.10
-[v03_score_weights]
+[score_weights]
 event_score = 0.35
 binding_evidence = 0.20
 presentation_evidence = 0.25

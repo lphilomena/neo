@@ -2,7 +2,7 @@
 # Use for CI/demo when NetMHCpan, pVACtools, etc. are not installed.
 
 [sample]
-id = "DEMO_V03"
+id = "DEMO"
 profile = "leukemia"
 outdir = "results/full_stub"
 

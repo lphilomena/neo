@@ -4,7 +4,7 @@
 # Usage:
 #   bash scripts/install_facets.sh
 #   source conf/tools.env.sh
-#   neoag-v03 check-tools | grep facets
+#   neoag check-tools | grep facets
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -40,7 +40,7 @@ env_has_facets() {
 if [[ -x "${BIN_DIR}/runFACETS.R" ]] && "${BIN_DIR}/runFACETS.R" --version >/dev/null 2>&1; then
   echo "==> FACETS wrapper already present: ${BIN_DIR}/runFACETS.R"
   "${BIN_DIR}/runFACETS.R" --version || true
-  echo "==> Done. Run: source conf/tools.env.sh && neoag-v03 check-tools | grep facets"
+  echo "==> Done. Run: source conf/tools.env.sh && neoag check-tools | grep facets"
   exit 0
 fi
 
@@ -115,4 +115,4 @@ EOF
 fi
 
 "${BIN_DIR}/runFACETS.R" --version || true
-echo "==> Done. Run: source conf/tools.env.sh && neoag-v03 check-tools | grep facets"
+echo "==> Done. Run: source conf/tools.env.sh && neoag check-tools | grep facets"

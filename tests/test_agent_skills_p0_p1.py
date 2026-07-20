@@ -27,7 +27,7 @@ def test_ranking_compare_skill(tmp_path: Path):
     write_tsv(rec, rows_rec)
     write_tsv(net, rows_net)
     out = tmp_path / "out"
-    rc = subprocess.run([sys.executable, "-m", "neoag_v03.agent_skills.ranking_compare", "--recommendation", str(rec), "--netmhcpan42", str(net), "--outdir", str(out)], text=True, capture_output=True)
+    rc = subprocess.run([sys.executable, "-m", "neoag.agent_skills.ranking_compare", "--recommendation", str(rec), "--netmhcpan42", str(net), "--outdir", str(out)], text=True, capture_output=True)
     assert rc.returncode == 0, rc.stderr
     assert (out / "ranking_compare_report.md").exists()
     assert "Spearman" in (out / "ranking_compare_report.md").read_text(encoding="utf-8")
@@ -44,7 +44,7 @@ def test_ranking_compare_without_peptide_id(tmp_path: Path):
     write_tsv(rec, rows_rec)
     write_tsv(net, rows_net)
     out = tmp_path / "out_no_id"
-    rc = subprocess.run([sys.executable, "-m", "neoag_v03.agent_skills.ranking_compare", "--recommendation", str(rec), "--netmhcpan42", str(net), "--outdir", str(out)], text=True, capture_output=True)
+    rc = subprocess.run([sys.executable, "-m", "neoag.agent_skills.ranking_compare", "--recommendation", str(rec), "--netmhcpan42", str(net), "--outdir", str(out)], text=True, capture_output=True)
     assert rc.returncode == 0, rc.stderr
     report = (out / "ranking_compare_report.md").read_text(encoding="utf-8")
     assert "Common candidate IDs" in report
@@ -55,7 +55,7 @@ def test_input_qc_detects_result_files(tmp_path: Path):
     (tmp_path / "ranked_peptides.recommendation.tsv").write_text("peptide_id\nP1\n", encoding="utf-8")
     (tmp_path / "evidence_report.v041.html").write_text("<html></html>", encoding="utf-8")
     out = tmp_path / "qc"
-    rc = subprocess.run([sys.executable, "-m", "neoag_v03.agent_skills.input_qc", "--result-dir", str(tmp_path), "--outdir", str(out)], text=True, capture_output=True)
+    rc = subprocess.run([sys.executable, "-m", "neoag.agent_skills.input_qc", "--result-dir", str(tmp_path), "--outdir", str(out)], text=True, capture_output=True)
     assert rc.returncode == 0, rc.stderr
     status = json.loads((out / "input_status.json").read_text(encoding="utf-8"))
     assert status["features"]["has_ranked_peptides_recommendation"] is True
@@ -68,7 +68,7 @@ def test_coordinator_plans_ranking_compare(tmp_path: Path):
     write_tsv(rec, [{"peptide_id": "p1", "gene": "G", "peptide": "AAAA", "hla_allele": "HLA-A*02:01", "event_type": "SNV", "final_priority": "B", "recommended_use": ""}])
     write_tsv(net, [{"peptide_id": "p1", "gene": "G", "peptide": "AAAA", "hla_allele": "HLA-A*02:01", "event_type": "SNV", "final_priority": "B", "recommended_use": ""}])
     out = tmp_path / "agent"
-    rc = subprocess.run([sys.executable, "-m", "neoag_v03.agents.coordinator", "--message", "比较 recommendation 和 NetMHCpan42 排序差异", "--file", str(rec), "--file", str(net), "--outdir", str(out), "--execute"], text=True, capture_output=True)
+    rc = subprocess.run([sys.executable, "-m", "neoag.agents.coordinator", "--message", "比较 recommendation 和 NetMHCpan42 排序差异", "--file", str(rec), "--file", str(net), "--outdir", str(out), "--execute"], text=True, capture_output=True)
     assert rc.returncode == 0, rc.stderr
     state = json.loads((out / "case_state.json").read_text(encoding="utf-8"))
     assert state["intent"] == "ranking_compare"
@@ -78,7 +78,7 @@ def test_coordinator_plans_ranking_compare(tmp_path: Path):
 
 def test_coordinator_plans_sliding_run(tmp_path: Path):
     out = tmp_path / "agent_sliding"
-    rc = subprocess.run([sys.executable, "-m", "neoag_v03.agents.coordinator", "--message", "run sliding-window SNV/InDel VEP workflow from somatic VCF", "--outdir", str(out)], text=True, capture_output=True)
+    rc = subprocess.run([sys.executable, "-m", "neoag.agents.coordinator", "--message", "run sliding-window SNV/InDel VEP workflow from somatic VCF", "--outdir", str(out)], text=True, capture_output=True)
     assert rc.returncode == 0, rc.stderr
     state = json.loads((out / "case_state.json").read_text(encoding="utf-8"))
     assert state["intent"] == "sliding_run"

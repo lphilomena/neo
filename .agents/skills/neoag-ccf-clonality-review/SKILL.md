@@ -23,7 +23,7 @@ See the command wrapper and `references/INPUTS.md`. Missing inputs must be repor
 ## Primary command
 
 ```bash
-python -m neoag_v03.agent_skills.ccf_review --ranked-peptides ranked_peptides.recommendation.tsv --outdir <OUTDIR>
+python -m neoag.agent_skills.ccf_review --ranked-peptides ranked_peptides.recommendation.tsv --outdir <OUTDIR>
 ```
 
 ## Outputs

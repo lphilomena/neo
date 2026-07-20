@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from neoag_v03.adapters.easyfuse_variant_peptide import (
+from neoag.adapters.easyfuse_variant_peptide import (
     EasyFusePeptideConfig,
     build_easyfuse_catalog,
     build_fusion_centered_minigene,
@@ -10,7 +10,7 @@ from neoag_v03.adapters.easyfuse_variant_peptide import (
     sliding_fusion_neo_peptides,
     write_easyfuse_qc_tables,
 )
-from neoag_v03.adapters.variant_peptide_adapter import (
+from neoag.adapters.variant_peptide_adapter import (
     _catalog_rows_to_raw_peptides,
     run_variant_peptide_upstream,
 )

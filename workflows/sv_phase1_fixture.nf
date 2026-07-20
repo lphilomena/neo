@@ -1,7 +1,7 @@
 nextflow.enable.dsl=2
 
 include { SV_BUILD_RAW } from '../modules/sv_build_raw/main.nf'
-include { NEOAG_SV_SCORE_V03 } from './sv_score_v03.nf'
+include { NEOAG_SV_SCORE } from './sv_score.nf'
 
 /*
  * SV Phase 1 end-to-end on pre-built SV VCFs (no BAM callers).
@@ -42,7 +42,7 @@ workflow {
 
     SV_BUILD_RAW(sample_ch, sv_list, ref_ch, gtf_ch)
 
-    NEOAG_SV_SCORE_V03(
+    NEOAG_SV_SCORE(
         params.sample_id,
         params.profile_name,
         SV_BUILD_RAW.out.raw_events,

@@ -8,7 +8,7 @@
 # Usage:
 #   bash scripts/install_ascat_pyclone.sh
 #   source conf/tools.env.sh
-#   neoag-v03 check-tools | grep -E 'ascat|pyclone'
+#   neoag check-tools | grep -E 'ascat|pyclone'
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -149,4 +149,4 @@ export PATH="${ROOT}/bin:\${PATH}"
 EOF
 fi
 
-echo "==> Done. Run: source conf/tools.env.sh && neoag-v03 check-tools | grep -E 'ascat|pyclone'"
+echo "==> Done. Run: source conf/tools.env.sh && neoag check-tools | grep -E 'ascat|pyclone'"

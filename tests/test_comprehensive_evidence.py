@@ -1,7 +1,7 @@
 from pathlib import Path
 
-from neoag_v03.comprehensive_evidence import build_comprehensive_peptide_evidence
-from neoag_v03.utils import read_tsv, write_tsv
+from neoag.comprehensive_evidence import build_comprehensive_peptide_evidence
+from neoag.utils import read_tsv, write_tsv
 
 
 def test_comprehensive_evidence_preserves_annotation_and_adds_all_layers(tmp_path):

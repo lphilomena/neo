@@ -1,10 +1,10 @@
 from pathlib import Path
 
-from neoag_v03.adapters.variant_peptide_adapter import (
+from neoag.adapters.variant_peptide_adapter import (
     variant_peptide_extraction_enabled,
     variant_peptide_rows_to_raw_tables,
 )
-from neoag_v03.tools.upstream import run_upstream
+from neoag.tools.upstream import run_upstream
 
 CSQ_HEADER = (
     '##INFO=<ID=CSQ,Number=.,Type=String,Description="Consequence annotations from Ensembl VEP. '
@@ -96,8 +96,8 @@ extract_appm_from_vcf = false
 
 
 def test_unique_peptide_hla_pairs_includes_wildtype_peptides(tmp_path):
-    from neoag_v03.tools.prep import unique_peptide_hla_pairs
-    from neoag_v03.utils import write_tsv
+    from neoag.tools.prep import unique_peptide_hla_pairs
+    from neoag.utils import write_tsv
 
     raw = tmp_path / "raw_peptides.tsv"
     write_tsv(

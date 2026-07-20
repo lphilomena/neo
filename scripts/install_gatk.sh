@@ -5,7 +5,7 @@
 #   bash scripts/install_gatk.sh
 #   source conf/tools.env.sh
 #   gatk --help
-#   neoag-v03 check-tools | grep gatk
+#   neoag check-tools | grep gatk
 #
 set -euo pipefail
 
@@ -61,4 +61,4 @@ else
   echo "==> conf/tools.env.sh already references NEOAG_GATK_ENV (edit PATH manually if needed)"
 fi
 
-echo "==> Done. Run: source conf/tools.env.sh && neoag-v03 check-tools"
+echo "==> Done. Run: source conf/tools.env.sh && neoag check-tools"

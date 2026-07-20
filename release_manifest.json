@@ -24,7 +24,7 @@
       " M RELEASE_REFRESH_20260615.md",
       " M bin/ascat-v3",
       " M bin/neoag-llm-agent",
-      " M bin/neoag-v03",
+      " M bin/neoag",
       " M bin/snp-pileup",
       " M bin/vep-neoag",
       " M conf/run.conda.toml",
@@ -39,11 +39,11 @@
       " M scripts/start_agent_web.sh",
       " M scripts/start_vllm_qwen_example.sh",
       " M scripts/verify_hla_la_container.sh",
-      " M src/neoag_v03/agent_skills/input_qc.py",
-      " M src/neoag_v03/agent_skills/sliding_run.py",
-      " M src/neoag_v03/agents/guardrails.py",
-      " M src/neoag_v03/llm_coordinator/input_state.py",
-      " M src/neoag_v03/web/agent_app.py",
+      " M src/neoag/agent_skills/input_qc.py",
+      " M src/neoag/agent_skills/sliding_run.py",
+      " M src/neoag/agents/guardrails.py",
+      " M src/neoag/llm_coordinator/input_state.py",
+      " M src/neoag/web/agent_app.py",
       "?? bin/hla-hed",
       "?? scripts/hla_hed.py"
     ]
@@ -63,7 +63,7 @@
     },
     "run_demo": {
       "status": "pass",
-      "summary": "neoag-v03 run-demo produced ranked_peptides.v03.tsv and evidence_report.v03.html"
+      "summary": "neoag run-demo produced ranked_peptides.tsv and evidence_report.html"
     },
     "package_forbidden_entry_scan": {
       "status": "pass",

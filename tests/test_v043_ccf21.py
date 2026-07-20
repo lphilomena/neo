@@ -1,9 +1,9 @@
 import json
 from pathlib import Path
 
-from neoag_v03.ccf_v2 import build_ccf_2
-from neoag_v03.config import load_profile
-from neoag_v03.utils import read_tsv, write_tsv
+from neoag.ccf_v2 import build_ccf_2
+from neoag.config import load_profile
+from neoag.utils import read_tsv, write_tsv
 
 
 def test_ccf21_writes_input_qc_and_confidence_fields(tmp_path):

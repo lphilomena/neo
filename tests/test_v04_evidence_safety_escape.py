@@ -1,9 +1,9 @@
 from pathlib import Path
 
-from neoag_v03.sv.phase1 import build_sv_phase1_raw
-from neoag_v03.utils import read_tsv, write_tsv
-from neoag_v03.peptide_safety_gate import build_peptide_safety_gate
-from neoag_v03.immune_escape import build_immune_escape_evidence
+from neoag.sv.phase1 import build_sv_phase1_raw
+from neoag.utils import read_tsv, write_tsv
+from neoag.peptide_safety_gate import build_peptide_safety_gate
+from neoag.immune_escape import build_immune_escape_evidence
 
 ROOT = Path(__file__).resolve().parents[1]
 FX = ROOT / "data" / "fixtures_sv"

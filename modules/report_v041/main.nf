@@ -24,7 +24,7 @@ process REPORT_V041 {
 
   script:
   """
-  neoag-v03 report-v041 \
+  neoag report-v041 \
     --profile '${profile_name}' \
     --ranked-events '${ranked_events}' \
     --ranked-peptides '${ranked_peptides}' \
@@ -42,6 +42,6 @@ process REPORT_V041 {
     --out evidence_report.v041.html
 
   echo "REPORT_V041:" > versions.yml
-  echo "  neoag-v03: \$(python -c 'import neoag_v03; print(neoag_v03.__version__)')" >> versions.yml
+  echo "  neoag: \$(python -c 'import neoag; print(neoag.__version__)')" >> versions.yml
   """
 }

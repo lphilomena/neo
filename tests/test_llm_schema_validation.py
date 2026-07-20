@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import pytest
 
-from neoag_v03.llm_coordinator.schema_validation import (
+from neoag.llm_coordinator.schema_validation import (
     SchemaValidationError,
     validate_plan_payload,
     validate_skill_result,
     validate_task_payload,
 )
-from neoag_v03.llm_coordinator.schemas import SkillCallResult
+from neoag.llm_coordinator.schemas import SkillCallResult
 
 
 def test_plan_schema_rejects_unregistered_skill() -> None:

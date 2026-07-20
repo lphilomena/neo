@@ -1,8 +1,8 @@
 from pathlib import Path
 
-from neoag_v03.config import load_profile
-from neoag_v03.scoring_v03 import resolve_appm_peptide_modifiers_tsv, score_v03
-from neoag_v03.utils import write_tsv
+from neoag.config import load_profile
+from neoag.scoring import resolve_appm_peptide_modifiers_tsv, score
+from neoag.utils import write_tsv
 
 
 def test_resolve_appm_peptide_modifiers_from_summary_sibling(tmp_path):
@@ -16,7 +16,7 @@ def test_resolve_appm_peptide_modifiers_from_summary_sibling(tmp_path):
     assert resolved == str(modifiers)
 
 
-def test_score_v03_applies_appm_peptide_modifiers(tmp_path):
+def test_score_applies_appm_peptide_modifiers(tmp_path):
     events = tmp_path / "events.tsv"
     peptides = tmp_path / "peptides.tsv"
     presentation = tmp_path / "presentation.tsv"
@@ -53,7 +53,7 @@ def test_score_v03_applies_appm_peptide_modifiers(tmp_path):
     }])
     out_events = tmp_path / "ranked_events.tsv"
     out_peptides = tmp_path / "ranked_peptides.tsv"
-    _, peps = score_v03(
+    _, peps = score(
         events, peptides, presentation, appm / "appm_summary.tsv", None, None, None,
         load_profile("default"), out_events, out_peptides,
         appm_peptide_modifiers_tsv=appm / "appm_peptide_modifiers.tsv",

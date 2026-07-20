@@ -22,7 +22,7 @@ find bin -maxdepth 1 -type f -exec chmod +x {} \;
 find scripts -maxdepth 1 -type f -name '*.sh' -exec chmod +x {} \;
 python -m pip install -e '.[test]'
 pytest -q
-neoag-v03 run-demo --outdir work/demo_v043 --sample-id DEMO001
+neoag run-demo --outdir work/demo_v043 --sample-id DEMO001
 ```
 
 Migration-test reference result: `175 passed, 95 skipped` for the light test suite. Skips are expected for external tools and benchmark tests.
@@ -34,7 +34,7 @@ Create or update the primary tool env:
 ```bash
 bash scripts/setup_tools_env.sh
 source conf/tools.env.sh
-neoag-v03 check-tools
+neoag check-tools
 ```
 
 If `mhcflurry-downloads fetch` fails with a `CXXABI` or `libstdc++` error:
@@ -55,7 +55,7 @@ mhcflurry-downloads fetch
 ```bash
 bash scripts/install_gatk.sh
 source conf/tools.env.sh
-neoag-v03 check-tools
+neoag check-tools
 ```
 
 ### 4.2 VEP
@@ -63,7 +63,7 @@ neoag-v03 check-tools
 ```bash
 bash scripts/install_vep.sh
 source conf/tools.env.sh
-neoag-v03 check-tools
+neoag check-tools
 ```
 
 VEP cache may be slow to download. Either run:
@@ -97,7 +97,7 @@ cp /path/to/netMHCpan-4.2c.Linux.tar.gz vendor/
 export NEOAG_CONDA_BASE="$(conda info --base)"
 bash scripts/install_netmhcpan.sh vendor/netMHCpan-4.2c.Linux.tar.gz
 source conf/tools.env.sh
-neoag-v03 check-tools
+neoag check-tools
 netMHCpan -h | head
 ```
 
@@ -114,7 +114,7 @@ The previous hardcoded `${NEOAG_CONDA_BASE}` path was removed. Use `NEOAG_CONDA_
 ```bash
 bash scripts/install_netmhcstabpan.sh --iedb
 source conf/tools.env.sh
-neoag-v03 check-tools
+neoag check-tools
 ```
 
 ### 4.5 DeepImmuno
@@ -122,7 +122,7 @@ neoag-v03 check-tools
 ```bash
 bash scripts/install_deepimmuno.sh
 source conf/tools.env.sh
-neoag-v03 check-tools
+neoag check-tools
 ```
 
 ### 4.6 PRIME / MixMHCpred / BigMHC
@@ -130,7 +130,7 @@ neoag-v03 check-tools
 ```bash
 bash scripts/install_immunogenicity_tools.sh
 source conf/tools.env.sh
-neoag-v03 check-tools
+neoag check-tools
 ```
 
 Fixes incorporated after migration testing:
@@ -147,7 +147,7 @@ If BigMHC cloning fails due to network interruption, rerun the script or pre-sta
 ```bash
 bash scripts/install_facets.sh
 source conf/tools.env.sh
-neoag-v03 check-tools
+neoag check-tools
 ```
 
 This installs the R package/wrapper. Real FACETS analysis still needs pileup input, common-SNP VCF, and sample-specific fit/export settings.
@@ -157,7 +157,7 @@ This installs the R package/wrapper. Real FACETS analysis still needs pileup inp
 ```bash
 bash scripts/install_ascat_pyclone.sh
 source conf/tools.env.sh
-neoag-v03 check-tools
+neoag check-tools
 ```
 
 Do **not** run `pip install mamba` to satisfy this script. That installs a Python test framework named `mamba`, not the conda-forge solver. The updated script uses `conda` by default.
@@ -167,7 +167,7 @@ Do **not** run `pip install mamba` to satisfy this script. That installs a Pytho
 ```bash
 bash scripts/install_lohhla.sh
 source conf/tools.env.sh
-neoag-v03 check-tools
+neoag check-tools
 ```
 
 For real LOHHLA runs, also configure in `conf/tools.env.local.sh`:
@@ -184,7 +184,7 @@ LOHHLA also requires patient HLA calls, HLA FASTA/resources, tumor/normal BAM, a
 ```bash
 bash scripts/install_fusion_tools.sh
 source conf/tools.env.sh
-neoag-v03 check-tools > results/check-tools.fusion.txt
+neoag check-tools > results/check-tools.fusion.txt
 grep -E 'arriba|star-fusion|fusioncatcher' results/check-tools.fusion.txt
 ```
 
@@ -220,11 +220,11 @@ Per-tool closed loop:
 
 | Tool | Install | Example run | Convert to neoag evidence |
 | --- | --- | --- | --- |
-| LOHHLA | `bash scripts/install_lohhla.sh` | `bash scripts/run_lohhla_example.sh` or `bash scripts/run_lohhla_sample.sh` | `neoag-v03 convert-lohhla -i <HLAlossPrediction_CI*> -o hla_loh.tsv` |
-| FACETS | `bash scripts/install_facets.sh` | `PATIENT_ID=S1 TUMOR_BAM=... NORMAL_BAM=... bash scripts/run_facets_sample.sh` | `neoag-v03 convert-facets --purity-input facets_purity.txt --purity-output purity.tsv` |
-| ASCAT | `bash scripts/install_ascat_pyclone.sh` | `PILEUP=... PATIENT_ID=S1 bash scripts/run_ascat_sample.sh` | `neoag-v03 convert-ascat --summary-input ascat_summary.tsv --purity-output purity.tsv` |
+| LOHHLA | `bash scripts/install_lohhla.sh` | `bash scripts/run_lohhla_example.sh` or `bash scripts/run_lohhla_sample.sh` | `neoag convert-lohhla -i <HLAlossPrediction_CI*> -o hla_loh.tsv` |
+| FACETS | `bash scripts/install_facets.sh` | `PATIENT_ID=S1 TUMOR_BAM=... NORMAL_BAM=... bash scripts/run_facets_sample.sh` | `neoag convert-facets --purity-input facets_purity.txt --purity-output purity.tsv` |
+| ASCAT | `bash scripts/install_ascat_pyclone.sh` | `PILEUP=... PATIENT_ID=S1 bash scripts/run_ascat_sample.sh` | `neoag convert-ascat --summary-input ascat_summary.tsv --purity-output purity.tsv` |
 | Arriba | `bash scripts/install_fusion_tools.sh` | `PATIENT_ID=S1 INPUT_BAM=... bash scripts/run_arriba_sample.sh` | ingest fusion TSV into EasyFuse/event catalog workflows |
-| PRIME | `bash scripts/install_immunogenicity_tools.sh` | `neoag-v03 peptide-predict -i peptides.tsv -o results/sample` | `presentation/prime_evidence.tsv` from scoring profile |
+| PRIME | `bash scripts/install_immunogenicity_tools.sh` | `neoag peptide-predict -i peptides.tsv -o results/sample` | `presentation/prime_evidence.tsv` from scoring profile |
 
 Licensed or site-specific dependencies still required outside Git:
 

@@ -8,7 +8,7 @@ v0.4.1 remains a computational triage system. It provides antigen presentation m
 
 ## APPM 2.0
 
-New module: `src/neoag_v03/appm_v2.py`.
+New module: `src/neoag/appm_v2.py`.
 
 Outputs:
 
@@ -31,7 +31,7 @@ Key improvements:
 CLI:
 
 ```bash
-neoag-v03 appm-2 \
+neoag appm-2 \
   --sample-id P001 \
   --vep-tsv vep_appm.tsv \
   --expression expression.tsv \
@@ -45,7 +45,7 @@ The legacy `appm-lite` command is backward compatible and now also writes APPM 2
 
 ## CCF 2.0
 
-New module: `src/neoag_v03/ccf_v2.py`.
+New module: `src/neoag/ccf_v2.py`.
 
 Output:
 
@@ -84,7 +84,7 @@ COPY_NUMBER_AWARE_APPROX
 CLI:
 
 ```bash
-neoag-v03 ccf-2 \
+neoag ccf-2 \
   --events parsed/raw_events.tsv \
   --purity purity.tsv \
   --cnv cnv_segments.tsv \
@@ -93,7 +93,7 @@ neoag-v03 ccf-2 \
 
 ## Immune Escape 2.0
 
-Updated module: `src/neoag_v03/immune_escape.py`.
+Updated module: `src/neoag/immune_escape.py`.
 
 Outputs:
 
@@ -117,7 +117,7 @@ Key improvements:
 CLI:
 
 ```bash
-neoag-v03 immune-escape \
+neoag immune-escape \
   --sample-id P001 \
   --raw-peptides parsed/raw_peptides.tsv \
   --appm-gene-status appm/appm_gene_status.tsv \
@@ -130,7 +130,7 @@ neoag-v03 immune-escape \
 
 ## End-to-end integration
 
-The existing `run-v03`, `sv-run-full`, and `sv-run-full-wes` flows now keep compatibility with v0.4 output while producing richer APPM/CCF/immune-escape evidence where inputs are available.
+The existing `run`, `sv-run-full`, and `sv-run-full-wes` flows now keep compatibility with v0.4 output while producing richer APPM/CCF/immune-escape evidence where inputs are available.
 
 Final scoring still consumes:
 

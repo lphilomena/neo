@@ -21,7 +21,7 @@ process IMMUNE_ESCAPE {
 
   script:
   """
-  neoag-v03 immune-escape \
+  neoag immune-escape \
     --sample-id '${sample_id}' \
     --raw-peptides '${raw_peptides}' \
     --profile '${profile_name}' \
@@ -35,6 +35,6 @@ process IMMUNE_ESCAPE {
     --outdir .
 
   echo "IMMUNE_ESCAPE:" > versions.yml
-  echo "  neoag-v03: \$(python -c 'import neoag_v03; print(neoag_v03.__version__)')" >> versions.yml
+  echo "  neoag: \$(python -c 'import neoag; print(neoag.__version__)')" >> versions.yml
   """
 }

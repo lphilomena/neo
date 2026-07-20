@@ -29,7 +29,7 @@ else
 fi
 
 echo "==> Splice-junction adapter fixture"
-PYTHONPATH=src "$PY" -m neoag_v03.cli build-intermediates   --entry-mode splice_junction   --splice-junction-tsv data/fixtures/regtools_splice_junctions.tsv   --sample-id SPLICE_SMOKE   --outdir "$OUTDIR/intermediates"
+PYTHONPATH=src "$PY" -m neoag.cli build-intermediates   --entry-mode splice_junction   --splice-junction-tsv data/fixtures/regtools_splice_junctions.tsv   --sample-id SPLICE_SMOKE   --outdir "$OUTDIR/intermediates"
 
 test -s "$OUTDIR/intermediates/parsed/raw_events.tsv"
 echo "PASS: splice smoke wrote $OUTDIR/intermediates/parsed/raw_events.tsv"

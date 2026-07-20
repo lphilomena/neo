@@ -2,17 +2,17 @@
 
 from pathlib import Path
 
-from neoag_v03.adapters.event_catalog import parse_splice_catalog
-from neoag_v03.adapters.splice_junction_adapter import (
+from neoag.adapters.event_catalog import parse_splice_catalog
+from neoag.adapters.splice_junction_adapter import (
     build_junction_support_index,
     build_splice_peptides_from_vcf,
     merge_splice_into_catalog,
     run_splice_junction_upstream,
 )
-from neoag_v03.evidence_layer import build_standard_evidence_layer
-from neoag_v03.input_router import build_raw_intermediates, resolve_entry_mode
-from neoag_v03.pipeline_v03 import run_v03
-from neoag_v03.utils import read_tsv
+from neoag.evidence_layer import build_standard_evidence_layer
+from neoag.input_router import build_raw_intermediates, resolve_entry_mode
+from neoag.pipeline import run
+from neoag.utils import read_tsv
 
 ROOT = Path(__file__).resolve().parents[1]
 REGTOOLS_FIXTURE = ROOT / "data/fixtures/regtools_splice_junctions.tsv"
@@ -123,7 +123,7 @@ def test_evidence_layer_rna_junction_from_splice_events(tmp_path):
 
 
 def test_merge_splice_with_pvacsplice_fixture():
-    from neoag_v03.adapters.pvactools_parser import parse_pvactools_outputs
+    from neoag.adapters.pvactools_parser import parse_pvactools_outputs
 
     _, pvac_peptides = parse_pvactools_outputs([PVACSPLICE_FIXTURE], "S1", "default")
     events, peptides = merge_splice_into_catalog(
@@ -193,7 +193,7 @@ def test_run_splice_junction_upstream_pvacsplice_stub(tmp_path):
     assert outputs["peptide_source"] == "pvacsplice"
 
 
-def test_e2e_run_v03_splice_junction(tmp_path):
+def test_e2e_run_splice_junction(tmp_path):
     layer = tmp_path / "layer"
     build_raw_intermediates(
         {
@@ -214,7 +214,7 @@ def test_e2e_run_v03_splice_junction(tmp_path):
         normal_hla_ligands=ROOT / "resources/normal_hla_ligands.example.tsv",
         sample_id="SJ6",
     )
-    out = run_v03(
+    out = run(
         tmp_path / "score",
         "default",
         "SJ6",
@@ -238,8 +238,8 @@ def test_e2e_run_v03_splice_junction(tmp_path):
 
 
 def test_evidence_layer_targeted_junction_validation_status(tmp_path):
-    from neoag_v03.evidence_layer import build_standard_evidence_layer
-    from neoag_v03.utils import read_tsv
+    from neoag.evidence_layer import build_standard_evidence_layer
+    from neoag.utils import read_tsv
 
     events = tmp_path / "raw_events.tsv"
     events.write_text(

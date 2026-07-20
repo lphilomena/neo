@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from neoag_v03 import cli
-from neoag_v03.cli import build_parser, main
+from neoag import cli
+from neoag.cli import build_parser, main
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -27,16 +27,16 @@ NEXTFLOW_COMMANDS = [
     ["parse-netmhcpan", "--sample-id", "S", "--input", "net.xls", "--out", "net.tsv"],
     ["parse-pvac", "--sample-id", "S", "--profile", "default", "--pvac", "pvac.tsv", "--events-out", "raw_events.tsv", "--peptides-out", "raw_peptides.tsv"],
     ["peptide-safety", "--raw-events", "raw_events.tsv", "--raw-peptides", "raw_peptides.tsv", "--profile", "default", "--normal-expression", "normal_expr.tsv", "--normal-hla-ligands", "normal_lig.tsv", "--out", "peptide_safety.tsv", "--event-out", "event_safety.tsv"],
-    ["report-v03", "--profile", "default", "--ranked-events", "ranked_events.tsv", "--ranked-peptides", "ranked_peptides.tsv", "--appm-summary", "appm_summary.tsv", "--validation-plan", "validation.tsv", "--outdir", "results", "--audience", "both", "--out", "report.html"],
+    ["report", "--profile", "default", "--ranked-events", "ranked_events.tsv", "--ranked-peptides", "ranked_peptides.tsv", "--appm-summary", "appm_summary.tsv", "--validation-plan", "validation.tsv", "--outdir", "results", "--audience", "both", "--out", "report.html"],
     ["report-v041", "--profile", "default", "--ranked-events", "ranked_events.tsv", "--ranked-peptides", "ranked_peptides.tsv", "--appm-summary", "appm_summary.tsv", "--appm-gene-status", "gene.tsv", "--appm-module-scores", "module.tsv", "--appm-submodule-scores", "submodule.tsv", "--appm-conflicts", "conflicts.tsv", "--appm-peptide-modifiers", "mods.tsv", "--immune-escape-summary", "escape_summary.tsv", "--peptide-escape-flags", "escape_flags.tsv", "--peptide-safety", "peptide_safety.tsv", "--ccf", "ccf_2.tsv", "--validation-plan", "validation.tsv", "--out", "report.html"],
     ["run-tool", "netmhcpan", "--sample-id", "S", "--raw-peptides", "raw_peptides.tsv", "--output", "net.xls", "--workdir", "."],
     ["run-tool", "mhcflurry", "--sample-id", "S", "--raw-peptides", "raw_peptides.tsv", "--output", "mhc.csv", "--workdir", "."],
     ["run-upstream", "--config", "conf/run.example.toml", "--outdir", "upstream"],
-    ["score-v03", "--raw-events", "raw_events.tsv", "--raw-peptides", "raw_peptides.tsv", "--presentation", "presentation.tsv", "--appm-summary", "appm_summary.tsv", "--ccf", "ccf_2.tsv", "--normal-expression", "normal_expr.tsv", "--normal-hla-ligands", "normal_lig.tsv", "--peptide-safety", "peptide_safety.tsv", "--peptide-escape-flags", "escape_flags.tsv", "--appm-peptide-modifiers", "mods.tsv", "--profile", "default", "--out-events", "ranked_events.tsv", "--out-peptides", "ranked_peptides.tsv"],
-    ["validation-plan-v03", "--ranked-peptides", "ranked_peptides.tsv", "--outdir", "results", "--out", "validation.tsv"],
+    ["score", "--raw-events", "raw_events.tsv", "--raw-peptides", "raw_peptides.tsv", "--presentation", "presentation.tsv", "--appm-summary", "appm_summary.tsv", "--ccf", "ccf_2.tsv", "--normal-expression", "normal_expr.tsv", "--normal-hla-ligands", "normal_lig.tsv", "--peptide-safety", "peptide_safety.tsv", "--peptide-escape-flags", "escape_flags.tsv", "--appm-peptide-modifiers", "mods.tsv", "--profile", "default", "--out-events", "ranked_events.tsv", "--out-peptides", "ranked_peptides.tsv"],
+    ["validation-plan", "--ranked-peptides", "ranked_peptides.tsv", "--outdir", "results", "--out", "validation.tsv"],
     ["sv-build-raw", "--sample-id", "S", "--profile", "default", "--sv-vcf", "sv.vcf", "--reference-fasta", "ref.fa", "--gencode-gtf", "genes.gtf", "--hla", "hla.txt", "--outdir", "out", "--merge-distance-bp", "200"],
     ["sv-build-raw-wes", "--sample-id", "S", "--profile", "default", "--sv-vcf", "sv.vcf", "--reference-fasta", "ref.fa", "--gencode-gtf", "genes.gtf", "--hla", "hla.txt", "--outdir", "out", "--capture-bed", "capture.bed"],
-    ["sv-score-v03", "--sample-id", "S", "--profile", "default", "--raw-events", "raw_events.tsv", "--raw-peptides", "raw_peptides.tsv", "--outdir", "out", "--binding-stub"],
+    ["sv-score", "--sample-id", "S", "--profile", "default", "--raw-events", "raw_events.tsv", "--raw-peptides", "raw_peptides.tsv", "--outdir", "out", "--binding-stub"],
     ["sv-run-full", "--sample-id", "S", "--profile", "default", "--sv-vcf", "sv.vcf", "--reference-fasta", "ref.fa", "--gencode-gtf", "genes.gtf", "--hla", "hla.txt", "--outdir", "out", "--binding-stub"],
     ["sv-run-full-wes", "--sample-id", "S", "--profile", "default", "--sv-vcf", "sv.vcf", "--reference-fasta", "ref.fa", "--gencode-gtf", "genes.gtf", "--hla", "hla.txt", "--outdir", "out", "--capture-bed", "capture.bed", "--binding-stub"],
 ]
@@ -58,14 +58,14 @@ def _collect_doc_commands() -> list[tuple[Path, list[str]]]:
         i = 0
         while i < len(lines):
             line = lines[i]
-            if "neoag-v03" not in line and "bin/neoag-v03" not in line:
+            if "neoag" not in line and "bin/neoag" not in line:
                 i += 1
                 continue
             chunk = line.strip()
             while chunk.endswith("\\") and i + 1 < len(lines):
                 i += 1
                 chunk = chunk[:-1] + " " + lines[i].strip()
-            for match in re.finditer(r"(?:bin/)?neoag-v03\s+([^`#]+)", chunk):
+            for match in re.finditer(r"(?:bin/)?neoag\s+([^`#]+)", chunk):
                 raw = match.group(1).strip()
                 raw = raw.strip("`")
                 raw = re.sub(r"\s+#.*$", "", raw)
@@ -75,7 +75,7 @@ def _collect_doc_commands() -> list[tuple[Path, list[str]]]:
                     argv = shlex.split(raw)
                 except ValueError:
                     continue
-                allowed = {"run-demo", "check-tools", "run-upstream", "run-full", "build-intermediates", "build-evidence-layer", "run-v03", "appm-2", "ccf-2", "immune-escape", "sv-build-raw", "sv-build-raw-wes", "sv-run-full", "sv-run-full-wes", "sv-score-v03", "snv-run-full-wes", "snv-call-wes", "vep-annotate", "report-v041"}
+                allowed = {"run-demo", "check-tools", "run-upstream", "run-full", "build-intermediates", "build-evidence-layer", "run", "appm-2", "ccf-2", "immune-escape", "sv-build-raw", "sv-build-raw-wes", "sv-run-full", "sv-run-full-wes", "sv-score", "snv-run-full-wes", "snv-call-wes", "vep-annotate", "report-v041"}
                 if not argv or argv[0] not in allowed:
                     continue
                 if len(argv) > 1 and not any(tok.startswith("-") for tok in argv[1:]):
@@ -96,7 +96,7 @@ def _collect_doc_commands() -> list[tuple[Path, list[str]]]:
 @pytest.mark.parametrize("path,argv", _collect_doc_commands(), ids=lambda x: str(x)[:80])
 def test_documented_cli_examples_parse(path, argv):
     args = _parse(argv)
-    assert callable(args.func), f"{path}: neoag-v03 {' '.join(argv)}"
+    assert callable(args.func), f"{path}: neoag {' '.join(argv)}"
 
 
 def test_cli_contract_core_parameter_passthrough(monkeypatch, tmp_path):
@@ -111,19 +111,19 @@ def test_cli_contract_core_parameter_passthrough(monkeypatch, tmp_path):
     main(["appm-2", "--sample-id", "S", "--outdir", str(tmp_path / "appm"), "--tumor-purity", "purity.tsv"])
     assert calls["appm_2"]["tumor_purity_tsv"] == "purity.tsv"
 
-    def fake_score_v03(*args, **kwargs):
-        calls["score_v03"] = {"args": args, "kwargs": kwargs}
+    def fake_score(*args, **kwargs):
+        calls["score"] = {"args": args, "kwargs": kwargs}
         return [], []
 
-    monkeypatch.setattr(cli, "score_v03", fake_score_v03)
-    import neoag_v03.scoring_v03 as scoring_v03
-    monkeypatch.setattr(scoring_v03, "resolve_appm_peptide_modifiers_tsv", lambda explicit, appm_summary_tsv=None: explicit)
+    monkeypatch.setattr(cli, "score", fake_score)
+    import neoag.scoring as scoring
+    monkeypatch.setattr(scoring, "resolve_appm_peptide_modifiers_tsv", lambda explicit, appm_summary_tsv=None: explicit)
     main([
-        "score-v03", "--raw-events", "events.tsv", "--raw-peptides", "peptides.tsv", "--presentation", "presentation.tsv",
+        "score", "--raw-events", "events.tsv", "--raw-peptides", "peptides.tsv", "--presentation", "presentation.tsv",
         "--appm-summary", "appm_summary.tsv", "--ccf", "ccf_2.tsv", "--appm-peptide-modifiers", "mods.tsv",
         "--out-events", "ranked_events.tsv", "--out-peptides", "ranked_peptides.tsv",
     ])
-    assert calls["score_v03"]["kwargs"]["appm_peptide_modifiers_tsv"] == "mods.tsv"
+    assert calls["score"]["kwargs"]["appm_peptide_modifiers_tsv"] == "mods.tsv"
 
     def fake_ccf_2(*args, **kwargs):
         calls["ccf_2"] = {"args": args, "kwargs": kwargs}
@@ -172,8 +172,8 @@ def test_cli_contract_core_parameter_passthrough(monkeypatch, tmp_path):
 
 def test_immunogenicity_stub_defaults_to_off_for_production_commands():
     commands = [
-        ["run-v03", "--sample-id", "S", "--outdir", "out", "--raw-events", "events.tsv", "--raw-peptides", "peptides.tsv"],
-        ["sv-score-v03", "--sample-id", "S", "--outdir", "out", "--raw-events", "events.tsv", "--raw-peptides", "peptides.tsv"],
+        ["run", "--sample-id", "S", "--outdir", "out", "--raw-events", "events.tsv", "--raw-peptides", "peptides.tsv"],
+        ["sv-score", "--sample-id", "S", "--outdir", "out", "--raw-events", "events.tsv", "--raw-peptides", "peptides.tsv"],
         ["sv-run-full", "--sample-id", "S", "--sv-vcf", "sv.vcf", "--reference-fasta", "ref.fa", "--gencode-gtf", "genes.gtf", "--hla", "hla.txt", "--outdir", "out"],
         ["sv-run-full-wes", "--sample-id", "S", "--sv-vcf", "sv.vcf", "--reference-fasta", "ref.fa", "--gencode-gtf", "genes.gtf", "--hla", "hla.txt", "--capture-bed", "capture.bed", "--outdir", "out"],
         ["snv-run-full-wes", "--sample-id", "S", "--outdir", "out", "--hla", "hla.txt", "--somatic-vcf", "somatic.vcf"],

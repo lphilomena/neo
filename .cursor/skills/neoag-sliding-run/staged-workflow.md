@@ -20,10 +20,10 @@ Before staged execution, verify the project package and tool environment:
 ```bash
 source conf/tools.env.sh
 python -m pip install -e .
-neoag-v03 check-tools
+neoag check-tools
 ```
 
-If `neoag-v03` or `neoag_v03.tools` cannot be imported, rerun the editable install from the repository root. If VEP or NetMHCpan is missing and the run needs real local tools, follow the bootstrap instructions in `SKILL.md` before continuing.
+If `neoag` or `neoag.tools` cannot be imported, rerun the editable install from the repository root. If VEP or NetMHCpan is missing and the run needs real local tools, follow the bootstrap instructions in `SKILL.md` before continuing.
 
 ## 1. VEP Annotation
 
@@ -32,7 +32,7 @@ Skip this stage only if the input VCF already contains VEP `CSQ` annotations.
 ```bash
 source conf/tools.env.sh
 
-neoag-v03 vep-annotate \
+neoag vep-annotate \
   --input-vcf <variants_vcf> \
   --output-vcf <outdir>/upstream/tools/<sample_id>.vep.annotated.vcf.gz \
   --sample-id <sample_id> \
@@ -61,7 +61,7 @@ Use the VEP-annotated VCF from stage 1, or the original VCF if it already has `C
 ```bash
 source conf/tools.env.sh
 
-neoag-v03 extract-variant-peptides \
+neoag extract-variant-peptides \
   --input-vcf <annotated_vcf> \
   --output <outdir>/upstream/tools/variant_peptides.tsv \
   --sample-id <sample_id> \
@@ -97,7 +97,7 @@ Use this route when peptide-HLA binding still needs to be generated:
 ```bash
 source conf/tools.env.sh
 
-neoag-v03 peptide-predict \
+neoag peptide-predict \
   --raw-peptides <outdir>/upstream/parsed/raw_peptides.tsv \
   --outdir <outdir>/presentation \
   --sample-id <sample_id> \
@@ -107,7 +107,7 @@ neoag-v03 peptide-predict \
 Then run ranking and reports from intermediates:
 
 ```bash
-neoag-v03 run-v03 \
+neoag run \
   --outdir <outdir> \
   --sample-id <sample_id> \
   --profile <profile> \
@@ -119,7 +119,7 @@ neoag-v03 run-v03 \
   --normal-hla-ligands resources/normal_hla_ligands.example.tsv
 ```
 
-If binding predictor outputs already exist, skip `peptide-predict` and provide the existing `--netmhcpan` and `--mhcflurry` paths to `run-v03`.
+If binding predictor outputs already exist, skip `peptide-predict` and provide the existing `--netmhcpan` and `--mhcflurry` paths to `run`.
 
 After scoring, refresh the annotated peptide catalog with NetMHCpan/MHCflurry and optional immunogenicity evidence. This makes `variant_peptides.annotated.tsv` the final review table rather than only the extraction sidecar.
 
@@ -140,20 +140,20 @@ The refresh script safely ignores optional evidence files that do not exist. Req
 
 Expected outputs:
 
-- `<outdir>/scoring/ranked_events.v03.tsv`
-- `<outdir>/scoring/ranked_peptides.v03.tsv`
-- `<outdir>/scoring/validation_plan.v03.tsv`
+- `<outdir>/scoring/ranked_events.tsv`
+- `<outdir>/scoring/ranked_peptides.tsv`
+- `<outdir>/scoring/validation_plan.tsv`
 - `<outdir>/upstream/tools/variant_peptides.annotated.tsv` (refreshed with tool scores)
-- `<outdir>/reports/evidence_report.v03.html`
+- `<outdir>/reports/evidence_report.html`
 - `<outdir>/reports/evidence_report.patient.html`
 - `<outdir>/reports/evidence_report.technical.html`
 
 Quick checks:
 
 ```bash
-test -s <outdir>/scoring/ranked_events.v03.tsv
-test -s <outdir>/scoring/ranked_peptides.v03.tsv
-test -s <outdir>/scoring/validation_plan.v03.tsv
+test -s <outdir>/scoring/ranked_events.tsv
+test -s <outdir>/scoring/ranked_peptides.tsv
+test -s <outdir>/scoring/validation_plan.tsv
 test -s <outdir>/upstream/tools/variant_peptides.annotated.tsv
 test -s <outdir>/reports/evidence_report.technical.html
 ```
@@ -163,4 +163,4 @@ test -s <outdir>/reports/evidence_report.technical.html
 - VEP/cache/plugin errors: rerun only stage 1 after fixing `NEOAG_VEP_BIN`, `NEOAG_VEP_CACHE`, `NEOAG_VEP_PLUGINS`, or `NEOAG_REFERENCE_FASTA`.
 - Peptide extraction errors: rerun only stage 2 after checking CSQ annotations, tumor sample name, HLA alleles, and normal proteome path.
 - NetMHCpan/MHCflurry errors: rerun stage 3 only; do not repeat VEP annotation or peptide extraction unless their inputs changed.
-- For smoke tests without licensed tools, use the one-command `run-full` path with `[tools].stub = true`, or use existing fixture predictor outputs with `run-v03`.
+- For smoke tests without licensed tools, use the one-command `run-full` path with `[tools].stub = true`, or use existing fixture predictor outputs with `run`.

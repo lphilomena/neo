@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Closed-loop deployment for external neoag-v03 tools.
+# Closed-loop deployment for external neoag tools.
 #
 # Designed for a fresh machine/release checkout:
 #   - finds conda even when it is not yet on PATH
@@ -103,7 +103,7 @@ ensure_layout() {
 
   if [[ ! -f "${ROOT}/conf/tools.env.sh" ]]; then
     cat > "${ROOT}/conf/tools.env.sh" <<EOF_ENV
-# Source before neoag-v03 runs: source conf/tools.env.sh
+# Source before neoag runs: source conf/tools.env.sh
 _NEOAG_TOOLS_ENV_DIR="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
 export NEOAG_PROJECT_ROOT="\$(cd "\${_NEOAG_TOOLS_ENV_DIR}/.." && pwd)"
 export NEOAG_TOOLS_ROOT="\${NEOAG_TOOLS_ROOT:-\${NEOAG_PROJECT_ROOT}}"
@@ -316,7 +316,7 @@ Next steps by tool:
   FACETS : stage bin/snp-pileup + SNP VCF, then PATIENT_ID=S1 TUMOR_BAM=... NORMAL_BAM=... bash scripts/run_facets_sample.sh
   ASCAT  : run FACETS pileup first, then PILEUP=... PATIENT_ID=S1 bash scripts/run_ascat_sample.sh
   Arriba : RNA BAM + references, then PATIENT_ID=S1 INPUT_BAM=... bash scripts/run_arriba_sample.sh
-  PRIME  : neoag-v03 peptide-predict -i peptides.tsv -o results/sample --profile default
+  PRIME  : neoag peptide-predict -i peptides.tsv -o results/sample --profile default
   OptiType: optitype run -i tumor_R1.fastq.gz -i tumor_R2.fastq.gz --dna -o results/optitype_sample --solver cbc --threads 8
 
 Reference bundle:
@@ -327,7 +327,7 @@ Full release acceptance:
   NEOAG_REF_BUNDLE=/path/to/neodata4git bash scripts/verify_all_tools_and_refs.sh --strict
 
 Convert tool outputs into neoag evidence:
-  neoag-v03 convert-lohhla -i <HLAlossPrediction_CI*> -o hla_loh.tsv
-  neoag-v03 convert-facets --purity-input facets_purity.txt --purity-output purity.tsv
-  neoag-v03 convert-ascat --summary-input ascat_summary.tsv --purity-output purity.tsv
+  neoag convert-lohhla -i <HLAlossPrediction_CI*> -o hla_loh.tsv
+  neoag convert-facets --purity-input facets_purity.txt --purity-output purity.tsv
+  neoag convert-ascat --summary-input ascat_summary.tsv --purity-output purity.tsv
 EOF_DONE

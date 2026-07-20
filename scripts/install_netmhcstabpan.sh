@@ -50,7 +50,7 @@ install_iedb_shim() {
   mkdir -p "${NETMHCSTABPAN_HOME}"
   cat > "${NETMHCSTABPAN_HOME}/netMHCstabpan" <<'PY'
 #!/usr/bin/env python3
-"""NetMHCstabpan CLI shim — calls IEDB MHCI API (same backend as neoag-v03 upstream)."""
+"""NetMHCstabpan CLI shim — calls IEDB MHCI API (same backend as neoag upstream)."""
 from __future__ import annotations
 
 import argparse
@@ -128,7 +128,7 @@ def load_pairs(path: str) -> list[tuple[str, str]]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="NetMHCstabpan (IEDB API shim for neoag-v03; DTU binary not required)."
+        description="NetMHCstabpan (IEDB API shim for neoag; DTU binary not required)."
     )
     parser.add_argument("--version", action="store_true", help="Print version")
     parser.add_argument("-f", "--file", help="TSV with peptide and HLA columns (no header or Peptide/HLA header)")
@@ -153,7 +153,7 @@ def main() -> int:
 
     if not pairs:
         print(
-            "NetMHCstabpan IEDB shim — neoag-v03 upstream uses this API by default.\n"
+            "NetMHCstabpan IEDB shim — neoag upstream uses this API by default.\n"
             "Usage: netMHCstabpan -f pairs.tsv -o out.tsv\n"
             "       netMHCstabpan -p SIINFEKL -a HLA-A*02:01",
             file=sys.stderr,
@@ -180,7 +180,7 @@ if __name__ == "__main__":
     raise SystemExit(main())
 PY
   chmod +x "${NETMHCSTABPAN_HOME}/netMHCstabpan"
-  echo "==> IEDB shim installed. neoag-v03 upstream already calls IEDB in runner.py."
+  echo "==> IEDB shim installed. neoag upstream already calls IEDB in runner.py."
 }
 
 install_dtu() {
@@ -241,7 +241,7 @@ else
   cat <<EOF
 NetMHCstabpan 安装包未找到。
 
-选项 A — IEDB API（与 neoag-v03 上游一致，无需 DTU 许可证）：
+选项 A — IEDB API（与 neoag 上游一致，无需 DTU 许可证）：
   bash scripts/install_netmhcstabpan.sh --iedb
 
 选项 B — DTU 本地二进制（学术用户）：

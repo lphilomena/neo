@@ -3,9 +3,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from neoag_v03.controlled_execution.doctor import run_doctor
-from neoag_v03.controlled_execution.pipeline_runner import run_pipeline_full, plan_pipeline
-from neoag_v03.controlled_execution.release_audit import scan_release_boundary
+from neoag.controlled_execution.doctor import run_doctor
+from neoag.controlled_execution.pipeline_runner import run_pipeline_full, plan_pipeline
+from neoag.controlled_execution.release_audit import scan_release_boundary
 
 
 def test_doctor_minimal_dry_run(tmp_path):
@@ -79,7 +79,7 @@ def test_doctor_mini_smoke_and_specific_checks(tmp_path):
     out = tmp_path / "doctor"
     res = run_doctor(project_root=Path.cwd(), outdir=out, reference_manifest=ref, release_audit=False, allow_execute=False, mini_smoke=True)
     names = {(r.category, r.name) for r in res.rows}
-    assert ("mini_smoke", "neoag_v03.cli") in names
+    assert ("mini_smoke", "neoag.cli") in names
     assert ("reference_specific", "reference_fasta.fai") in names
     assert ("reference_specific", "vep_cache_layout") in names
     assert ("entrypoint", "neoag-doctor") in names
@@ -87,7 +87,7 @@ def test_doctor_mini_smoke_and_specific_checks(tmp_path):
 
 
 def test_gateway_validation_and_risk_policy(tmp_path):
-    from neoag_v03.controlled_execution.gateway import _approval_required, _risk, _validate_request
+    from neoag.controlled_execution.gateway import _approval_required, _risk, _validate_request
 
     roots = [tmp_path]
     try:
@@ -109,7 +109,7 @@ def test_gateway_validation_and_risk_policy(tmp_path):
 
 
 def test_gateway_job_store_persists_status(tmp_path):
-    from neoag_v03.controlled_execution.gateway import JobStore
+    from neoag.controlled_execution.gateway import JobStore
 
     store = JobStore(tmp_path / "jobs")
     job_id = store.add({"route": "/health", "status": "QUEUED"})
@@ -120,7 +120,7 @@ def test_gateway_job_store_persists_status(tmp_path):
 
 
 def test_gateway_route_registry_includes_expected_routes():
-    from neoag_v03.controlled_execution.gateway import ROUTE_SPECS
+    from neoag.controlled_execution.gateway import ROUTE_SPECS
 
     for route in ["/doctor", "/input-qc", "/ranking-compare", "/appm-review", "/ccf-review", "/patient-report", "/pipeline-full"]:
         assert route in ROUTE_SPECS
@@ -130,7 +130,7 @@ def test_gateway_route_registry_includes_expected_routes():
 
 
 def test_pipeline_full_declared_ranked_outputs_do_not_block(tmp_path):
-    from neoag_v03.controlled_execution.pipeline_runner import run_pipeline_full
+    from neoag.controlled_execution.pipeline_runner import run_pipeline_full
 
     sample = tmp_path / "sample.json"
     sample.write_text(json.dumps({
@@ -154,7 +154,7 @@ def test_pipeline_full_declared_ranked_outputs_do_not_block(tmp_path):
 
 
 def test_pipeline_full_requires_execution_flag_for_vcf(tmp_path):
-    from neoag_v03.controlled_execution.pipeline_runner import plan_pipeline
+    from neoag.controlled_execution.pipeline_runner import plan_pipeline
 
     vcf = tmp_path / "tumor.vcf"
     vcf.write_text("##fileformat=VCFv4.2\n", encoding="utf-8")
@@ -166,7 +166,7 @@ def test_pipeline_full_requires_execution_flag_for_vcf(tmp_path):
 
 
 def test_gateway_request_metadata_has_mvp_audit_fields():
-    from neoag_v03.controlled_execution.gateway import _request_metadata
+    from neoag.controlled_execution.gateway import _request_metadata
 
     meta = _request_metadata(
         "/pipeline-full",
@@ -184,7 +184,7 @@ def test_gateway_request_metadata_has_mvp_audit_fields():
 
 
 def test_manifest_first_run_manifest_schema(tmp_path):
-    from neoag_v03.controlled_execution.pipeline_runner import run_pipeline_full
+    from neoag.controlled_execution.pipeline_runner import run_pipeline_full
 
     sample = tmp_path / "sample.json"
     ref = tmp_path / "reference.json"

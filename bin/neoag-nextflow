@@ -4,7 +4,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck disable=SC1091
 source "$ROOT/conf/tools.env.sh"
 
-# Prefer this checkout over any previously installed neoag-v03 console script.
+# Prefer this checkout over any previously installed neoag console script.
 export PYTHONPATH="$ROOT/src:${PYTHONPATH:-}"
 export PATH="$ROOT/bin:$PATH"
 

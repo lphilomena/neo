@@ -20,4 +20,4 @@ Updated according to migration tests on the 169 machine.
 - `bash -n` passed for updated shell scripts.
 - `python -m compileall -q src` passed.
 - `PYTHONPATH=src pytest -q` passed: `177 passed, 95 skipped`.
-- `PYTHONPATH=src python -m neoag_v03.cli run-demo --outdir ... --sample-id READMEDEMO` completed successfully.
+- `PYTHONPATH=src python -m neoag.cli run-demo --outdir ... --sample-id READMEDEMO` completed successfully.

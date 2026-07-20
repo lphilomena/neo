@@ -4,7 +4,7 @@
 # Usage:
 #   bash scripts/install_fusion_tools.sh
 #   source conf/tools.env.sh
-#   neoag-v03 check-tools | grep -E 'arriba|star-fusion|fusioncatcher'
+#   neoag check-tools | grep -E 'arriba|star-fusion|fusioncatcher'
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -120,4 +120,4 @@ else
   printf '%s\n' "${fusion_block}" > "${TOOLS_ENV}"
 fi
 
-echo "==> Done. Run: source conf/tools.env.sh && neoag-v03 check-tools | grep -E 'arriba|star-fusion|fusioncatcher'"
+echo "==> Done. Run: source conf/tools.env.sh && neoag check-tools | grep -E 'arriba|star-fusion|fusioncatcher'"

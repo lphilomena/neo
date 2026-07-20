@@ -1,6 +1,6 @@
 # SV Phase 1 WGS Neoantigen Adapter
 
-This extension adds first-phase support for structural-variant-derived neoantigens to `neoag-v03`.
+This extension adds first-phase support for structural-variant-derived neoantigens to `neoag`.
 
 It is designed for **paired tumor-normal WGS**. For WES samples, see [SV_PHASE1_5_WES.md](SV_PHASE1_5_WES.md).
 
@@ -40,7 +40,7 @@ Key limitations:
 ## Minimal command
 
 ```bash
-PYTHONPATH=src python -m neoag_v03.cli sv-build-raw \
+PYTHONPATH=src python -m neoag.cli sv-build-raw \
   --sample-id P001 \
   --profile sv_wgs_phase1 \
   --sv-vcf manta.somaticSV.vcf.gz svaba.somatic.sv.vcf gridss.vcf.gz \
@@ -58,7 +58,7 @@ PYTHONPATH=src python -m neoag_v03.cli sv-build-raw \
 ## Smoke test command
 
 ```bash
-PYTHONPATH=src python -m neoag_v03.cli sv-build-raw \
+PYTHONPATH=src python -m neoag.cli sv-build-raw \
   --sample-id SVMINI \
   --profile sv_wgs_phase1 \
   --sv-vcf data/fixtures_sv/mini_sv.vcf \
@@ -82,13 +82,13 @@ column -t -s $'\t' results/SVMINI_sv_phase1/parsed/raw_peptides.tsv | less -S
 
 ## Downstream scoring
 
-After `sv-build-raw`, run binding + score_v03 in one step:
+After `sv-build-raw`, run binding + score in one step:
 
 ```bash
 source conf/tools.env.sh
 
 # End-to-end (adapter + scoring) on fixture SV VCF
-neoag-v03 sv-run-full \
+neoag sv-run-full \
   --sample-id SVMINI \
   --profile sv_wgs_phase1 \
   --sv-vcf data/fixtures_sv/mini_sv.vcf \
@@ -104,7 +104,7 @@ neoag-v03 sv-run-full \
   --outdir results/SVMINI_sv_e2e
 
 # Or score an existing sv-build-raw output
-neoag-v03 sv-score-v03 \
+neoag sv-score \
   --sample-id SVMINI \
   --profile sv_wgs_phase1 \
   --sv-outdir results/SVMINI_sv_phase1/adapter \
@@ -134,7 +134,7 @@ Use `--run_scoring false` on `sv_phase1_wgs.nf` for adapter-only mode.
 
 ## Added files
 
-- `src/neoag_v03/sv/`
+- `src/neoag/sv/`
 - `profiles/sv_wgs_phase1.toml`
 - `conf/run.sv_wgs_phase1.example.toml`
 - `workflows/sv_phase1_wgs.nf`

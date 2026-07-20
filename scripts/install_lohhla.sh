@@ -8,7 +8,7 @@
 #   export POLYSOLVER_HOME=/path/to/polysolver
 #   export NOVOALIGN_LICENSE_FILE=/path/to/novoalign.lic
 #   source conf/tools.env.sh
-#   neoag-v03 check-tools | grep lohhla
+#   neoag check-tools | grep lohhla
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -63,4 +63,4 @@ EOF
 fi
 
 echo "==> LOHHLA source installed at ${TARGET}. Production runs still need Polysolver/Novoalign/HLA references."
-echo "==> Run: source conf/tools.env.sh && neoag-v03 check-tools | grep lohhla"
+echo "==> Run: source conf/tools.env.sh && neoag check-tools | grep lohhla"

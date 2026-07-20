@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from neoag_v03.reports_dual import ReportBundle, make_dual_reports, make_patient_report, make_technical_report
+from neoag.reports_dual import ReportBundle, make_dual_reports, make_patient_report, make_technical_report
 
 
 def _bundle():

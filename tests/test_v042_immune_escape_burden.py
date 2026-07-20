@@ -1,7 +1,7 @@
 
 from pathlib import Path
-from neoag_v03.immune_escape import build_immune_escape_evidence
-from neoag_v03.utils import read_tsv
+from neoag.immune_escape import build_immune_escape_evidence
+from neoag.utils import read_tsv
 
 
 def test_immune_escape_v042_affected_counts(tmp_path):

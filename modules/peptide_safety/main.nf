@@ -16,7 +16,7 @@ process PEPTIDE_SAFETY {
 
   script:
   """
-  neoag-v03 peptide-safety \
+  neoag peptide-safety \
     --raw-events '${raw_events}' \
     --raw-peptides '${raw_peptides}' \
     --profile '${profile_name}' \
@@ -26,6 +26,6 @@ process PEPTIDE_SAFETY {
     --event-out event_safety.tsv
 
   echo "PEPTIDE_SAFETY:" > versions.yml
-  echo "  neoag-v03: \$(python -c 'import neoag_v03; print(neoag_v03.__version__)')" >> versions.yml
+  echo "  neoag: \$(python -c 'import neoag; print(neoag.__version__)')" >> versions.yml
   """
 }

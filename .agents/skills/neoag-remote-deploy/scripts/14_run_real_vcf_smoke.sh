@@ -131,7 +131,7 @@ VARIANT_TSV="$OUTDIR/variant_peptides.annotated.tsv"
 if [[ "$SKIP_EXTRACTION" != "1" ]]; then
   [[ -f "$ANNOTATED_VCF" ]] || { echo "ANNOTATED_VCF_MISSING: $ANNOTATED_VCF" >&2; exit 42; }
   log "==> extract variant peptides"
-  "$PY" -m neoag_v03.cli extract-variant-peptides \
+  "$PY" -m neoag.cli extract-variant-peptides \
     --input-vcf "$ANNOTATED_VCF" \
     --output "$VARIANT_TSV" \
     --sample-id "$SAMPLE_ID" \
@@ -176,7 +176,7 @@ args=(peptide-predict -i "$PAIR_TSV" -o "$PREDICT_OUT" --sample-id "$SAMPLE_ID")
 [[ "$SKIP_STABPAN" == "1" ]] && args+=(--skip-stabpan)
 
 log "==> peptide-predict ${args[*]}"
-NEOAG_PRIME_JOBS="${NEOAG_PRIME_JOBS:-2}" "$PY" -m neoag_v03.cli "${args[@]}" 2>&1 | tee "$OUTDIR/peptide_predict_top${TOP_N}.log"
+NEOAG_PRIME_JOBS="${NEOAG_PRIME_JOBS:-2}" "$PY" -m neoag.cli "${args[@]}" 2>&1 | tee "$OUTDIR/peptide_predict_top${TOP_N}.log"
 
 log "==> summarize outputs"
 find "$OUTDIR" -maxdepth 3 -type f -printf "%p\t%s bytes\n" | sort | tee "$OUTDIR/output_files.tsv"

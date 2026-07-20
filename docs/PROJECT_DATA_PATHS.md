@@ -13,7 +13,7 @@ ${NEOAG_DATA_ROOT}
 Recommended environment setup:
 
 ```bash
-source /home/na/project/neoantigen/neoag_event_pipeline_v03_rc/conf/tools.env.sh
+source /home/na/project/neoantigen/neoag_event_pipeline/conf/tools.env.sh
 ```
 
 ## Reference Data
@@ -49,7 +49,7 @@ Priority tool containers are documented in [PRIORITY_TOOL_CONTAINERS.md](PRIORIT
 Typical mounted roots:
 
 ```bash
-/home/na/project/neoantigen/neoag_event_pipeline_v03_rc
+/home/na/project/neoantigen/neoag_event_pipeline
 ${NEOAG_DATA_ROOT}
 ${NEOAG_TOOLS_ROOT}
 ```

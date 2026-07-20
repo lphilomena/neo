@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Install PRIME + MixMHCpred + BigMHC_IM for neoag-v03 immunogenicity evidence.
+# Install PRIME + MixMHCpred + BigMHC_IM for neoag immunogenicity evidence.
 #
 # Usage:
 #   bash scripts/install_immunogenicity_tools.sh
 #   source conf/tools.env.sh
-#   neoag-v03 check-tools | grep -E 'prime|bigmhc'
+#   neoag check-tools | grep -E 'prime|bigmhc'
 #
 # Notes from deployment tests:
 # - PRIME must compile lib/PRIME.x, not a separate PRIME.x.bin, because the PRIME wrapper calls PRIME.x.
@@ -117,4 +117,4 @@ if [[ -f "${BIGMHC_DIR}/data/example1.csv" ]]; then
   }
 fi
 
-echo "OK if check-tools reports prime and bigmhc_im as OK. Run: source conf/tools.env.sh && neoag-v03 check-tools | grep -E 'prime|bigmhc'"
+echo "OK if check-tools reports prime and bigmhc_im as OK. Run: source conf/tools.env.sh && neoag check-tools | grep -E 'prime|bigmhc'"

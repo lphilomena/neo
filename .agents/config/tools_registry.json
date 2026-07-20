@@ -658,10 +658,10 @@
     "kind": "skill",
     "optional_inputs": [
       "result_dir",
-      "ranked_peptides.v03.tsv",
-      "ranked_events.v03.tsv",
-      "validation_plan.v03.tsv",
-      "evidence_report.v03.html"
+      "ranked_peptides.tsv",
+      "ranked_events.tsv",
+      "validation_plan.tsv",
+      "evidence_report.html"
     ],
     "outputs": [
       "result_inspection.md",
@@ -735,10 +735,10 @@
       "bigmhc"
     ],
     "outputs": [
-      "ranked_peptides.v03.tsv",
-      "ranked_events.v03.tsv",
-      "validation_plan.v03.tsv",
-      "evidence_report.v03.html"
+      "ranked_peptides.tsv",
+      "ranked_events.tsv",
+      "validation_plan.tsv",
+      "evidence_report.html"
     ],
     "required_inputs": [
       "somatic_vcf",

@@ -46,7 +46,7 @@ FACETS_CVAL_PROC="${FACETS_CVAL_PROC:-25}"
 FACETS_MIN_NHET="${FACETS_MIN_NHET:-5}"
 
 FACETS_HOME="${FACETS_HOME:-${NEOAG_TOOLS_ROOT}/tools/facets}"
-FACETS_QUARANTINE="${ROOT}/../neoag_event_pipeline_v03_rc_artifact_quarantine_20260622_091158/tools/facets"
+FACETS_QUARANTINE="${ROOT}/../neoag_event_pipeline_artifact_quarantine_20260622_091158/tools/facets"
 RUN_FACETS_R="${FACETS_HOME}/runFACETS.R"
 
 PILEUP="${OUT}/${PATIENT_ID}.${FACETS_SNPSET_NAME}.snponly.pileup.csv"
@@ -166,7 +166,7 @@ run_export() {
   [[ -s "${RDS}" ]] || { echo "ERROR: missing FACETS RDS: ${RDS}" >&2; exit 1; }
   echo "==> FACETS export $(date -Is)"
   if "${RSCRIPT}" "${RUN_FACETS_R}" "${RDS}" "${PURITY_TXT}" "${CNCF_TSV}"; then
-    "${ROOT}/bin/neoag-v03" convert-facets \
+    "${ROOT}/bin/neoag" convert-facets \
       --purity-input "${PURITY_TXT}" \
       --purity-output "${PURITY_TSV}" \
       --sample-id "${PATIENT_ID}" \

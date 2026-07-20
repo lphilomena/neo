@@ -7,7 +7,7 @@ from pathlib import Path
 
 CCF_FIELDS = ["ccf_estimate", "clonality_status", "ccf_confidence", "ccf_warning"]
 TARGETS = [
-    "scoring/ranked_peptides.v03.tsv",
+    "scoring/ranked_peptides.tsv",
     "scoring/ranked_peptides.recommendation.tsv",
     "scoring/ranked_peptides.netmhcpan42.tsv",
 ]

@@ -3,7 +3,7 @@
 Upload file:
 
 ```
-dist/neoag_event_pipeline_v03_rc_lite_<DATE>.tar.gz
+dist/neoag_event_pipeline_lite_<DATE>.tar.gz
 ```
 
 SHA256: see matching `.sha256` file alongside the tarball.
@@ -11,13 +11,13 @@ SHA256: see matching `.sha256` file alongside the tarball.
 ## Extract
 
 ```bash
-tar -xzf neoag_event_pipeline_v03_rc_lite_<DATE>.tar.gz
-cd neoag_event_pipeline_v03_rc
+tar -xzf neoag_event_pipeline_lite_<DATE>.tar.gz
+cd neoag_event_pipeline
 pip install -e ".[test]"
 source conf/tools.env.sh
 bash scripts/install_immunogenicity_tools.sh   # PRIME + BigMHC (~5 GB)
 bash scripts/install_deepimmuno.sh             # optional DeepImmuno-CNN
-neoag-v03 check-tools
+neoag check-tools
 ```
 
 ## Included
@@ -46,7 +46,7 @@ neoag-v03 check-tools
 ```bash
 pytest -q
 
-neoag-v03 benchmark-improve --dataset cedar --outdir results/bench_phase2 \
+neoag benchmark-improve --dataset cedar --outdir results/bench_phase2 \
   --skip-netmhcpan --skip-mhcflurry --skip-stabpan \
   --reuse-tools-dir results/benchmark_cedar_v2/tools
 ```

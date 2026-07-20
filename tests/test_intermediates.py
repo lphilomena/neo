@@ -2,9 +2,9 @@ from pathlib import Path
 
 import shutil
 
-from neoag_v03.evidence_layer import build_standard_evidence_layer
-from neoag_v03.input_router import build_raw_intermediates
-from neoag_v03.pipeline_v03 import run_v03
+from neoag.evidence_layer import build_standard_evidence_layer
+from neoag.input_router import build_raw_intermediates
+from neoag.pipeline import run
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -65,7 +65,7 @@ def test_evidence_layer_and_run_from_intermediates(tmp_path):
     src = tmp_path / "src"
     build_raw_intermediates(
         {
-            "sample": {"id": "DEMO_V03", "profile": "leukemia"},
+            "sample": {"id": "DEMO", "profile": "leukemia"},
             "inputs": {
                 "entry_mode": "snv_indel",
                 "pvac_files": [
@@ -82,15 +82,15 @@ def test_evidence_layer_and_run_from_intermediates(tmp_path):
         "leukemia",
         normal_expression=ROOT / "resources/normal_expression.example.tsv",
         normal_hla_ligands=ROOT / "resources/normal_hla_ligands.example.tsv",
-        sample_id="DEMO_V03",
+        sample_id="DEMO",
     )
     for key in ("expression_evidence", "rna_junction_evidence", "safety_evidence"):
         assert Path(evidence[key]).is_file()
 
-    out = run_v03(
+    out = run(
         tmp_path / "score",
         "leukemia",
-        "DEMO_V03",
+        "DEMO",
         pvac_paths=[],
         raw_events=src / "parsed/raw_events.tsv",
         raw_peptides=src / "parsed/raw_peptides.tsv",

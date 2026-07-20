@@ -4,7 +4,7 @@
 # pVAC/binding reuses cached HCC1395 upstream (cross-sample smoke test for scoring only).
 #
 #   source conf/tools.env.sh
-#   neoag-v03 run-full --config conf/run.hcc1143.tierb.toml --outdir results/hcc1143_tierb
+#   neoag run-full --config conf/run.hcc1143.tierb.toml --outdir results/hcc1143_tierb
 
 [sample]
 id = "hcc1143"

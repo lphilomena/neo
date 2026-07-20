@@ -1,7 +1,7 @@
 from pathlib import Path
 import csv
 
-from neoag_v03.vep.extract_peptides import (
+from neoag.vep.extract_peptides import (
     MULTI_AA_COMPLEX,
     MULTI_AA_FRAMESHIFT,
     MULTI_AA_INFRAME,
@@ -108,7 +108,7 @@ def test_parse_vaf_from_format():
 
 
 def test_parse_allele_metrics_from_format():
-    from neoag_v03.vep.extract_peptides import _parse_allele_metrics_from_format
+    from neoag.vep.extract_peptides import _parse_allele_metrics_from_format
 
     vaf, depth, alt = _parse_allele_metrics_from_format("GT:AD:AF:DP", "0/1:20,5:0.25:25")
     assert vaf == "0.2500"
@@ -249,7 +249,7 @@ def test_parse_peptide_lengths_range():
 
 
 def test_open_text_maybe_gz_plain_vcf_with_gz_suffix(tmp_path):
-    from neoag_v03.utils import is_gzip_file, open_text_maybe_gz
+    from neoag.utils import is_gzip_file, open_text_maybe_gz
 
     plain = tmp_path / "annot.vcf.gz"
     plain.write_text("##fileformat=VCFv4.2\n", encoding="utf-8")

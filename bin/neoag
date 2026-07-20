@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export PYTHONPATH="$ROOT/src:${PYTHONPATH:-}"
+export NEOAG_TOOLS_ROOT="${NEOAG_TOOLS_ROOT:-$ROOT}"
+if [[ -f "$ROOT/conf/tools.env.sh" && "${NEOAG_SKIP_TOOLS_ENV:-0}" != "1" ]]; then
+  # shellcheck source=/dev/null
+  source "$ROOT/conf/tools.env.sh"
+fi
+
+CONDA_BASE="$(conda info --base 2>/dev/null || echo)"
+PY="${NEOAG_PYTHON:-${CONDA_BASE}/envs/${NEOAG_CONDA_ENV:-neoag-tools}/bin/python}"
+if [[ ! -x "${PY}" && -x "$ROOT/.venv/bin/python" ]]; then
+  PY="$ROOT/.venv/bin/python"
+fi
+if [[ ! -x "${PY}" ]]; then
+  PY="$(command -v python3 || command -v python)"
+fi
+
+exec "${PY}" -m neoag.cli "$@"

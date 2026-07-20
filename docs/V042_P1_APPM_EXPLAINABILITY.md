@@ -89,9 +89,9 @@ If no external ligandome/MS data is provided, these outputs explicitly report `e
 New CLI:
 
 ```bash
-neoag-v03 report-v041 \
-  --ranked-events scoring/ranked_events.v03.tsv \
-  --ranked-peptides scoring/ranked_peptides.v03.tsv \
+neoag report-v041 \
+  --ranked-events scoring/ranked_events.tsv \
+  --ranked-peptides scoring/ranked_peptides.tsv \
   --appm-summary appm/appm_summary.tsv \
   --appm-gene-status appm/appm_gene_status.tsv \
   --appm-module-scores appm/appm_module_scores.tsv \
@@ -111,10 +111,10 @@ The report includes sample-level APPM cards, submodule scores, top APPM defects,
 ### Immune escape affected-top counts
 
 ```bash
-neoag-v03 immune-escape \
+neoag immune-escape \
   --sample-id P001 \
   --raw-peptides parsed/raw_peptides.tsv \
-  --ranked-peptides scoring/ranked_peptides.v03.tsv \
+  --ranked-peptides scoring/ranked_peptides.tsv \
   --top-priority-threshold B_CAUTION \
   --appm-gene-status appm/appm_gene_status.tsv \
   --appm-pathway-status appm/appm_pathway_status.tsv \
@@ -127,10 +127,10 @@ neoag-v03 immune-escape \
 ### APPM/MS benchmark harness
 
 ```bash
-neoag-v03 benchmark-system \
+neoag benchmark-system \
   --mode ligandome-ms \
   --ligandome-ms ligandome_ms.tsv \
-  --ranked-peptides scoring/ranked_peptides.v03.tsv \
+  --ranked-peptides scoring/ranked_peptides.tsv \
   --appm-summary appm/appm_summary.tsv \
   --appm-module-scores appm/appm_module_scores.tsv \
   --appm-submodule-scores appm/appm_submodule_scores.tsv \

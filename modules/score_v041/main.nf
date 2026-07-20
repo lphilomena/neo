@@ -16,13 +16,13 @@ process SCORE_V041 {
     val profile_name
 
   output:
-    path "ranked_events.v03.tsv", emit: ranked_events
-    path "ranked_peptides.v03.tsv", emit: ranked_peptides
+    path "ranked_events.tsv", emit: ranked_events
+    path "ranked_peptides.tsv", emit: ranked_peptides
     path "versions.yml", emit: versions
 
   script:
   """
-  neoag-v03 score-v03 \
+  neoag score \
     --raw-events '${raw_events}' \
     --raw-peptides '${raw_peptides}' \
     --presentation '${presentation_evidence}' \
@@ -34,10 +34,10 @@ process SCORE_V041 {
     --peptide-escape-flags '${peptide_escape_flags}' \
     --appm-peptide-modifiers '${appm_peptide_modifiers}' \
     --profile '${profile_name}' \
-    --out-events ranked_events.v03.tsv \
-    --out-peptides ranked_peptides.v03.tsv
+    --out-events ranked_events.tsv \
+    --out-peptides ranked_peptides.tsv
 
   echo "SCORE_V041:" > versions.yml
-  echo "  neoag-v03: \$(python -c 'import neoag_v03; print(neoag_v03.__version__)')" >> versions.yml
+  echo "  neoag: \$(python -c 'import neoag; print(neoag.__version__)')" >> versions.yml
   """
 }

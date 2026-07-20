@@ -38,7 +38,7 @@ export PYTHONPATH="$PROJECT_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
 PY="${NEOAG_CONDA_BASE:-$TOOLS_ROOT/miniforge3}/envs/neoag-core/bin/python"
 [[ -x "$PY" ]] || PY="$(command -v python3 || command -v python)"
 check python_deps "$PY" -c "import torch,numpy,pandas,scipy,sklearn,psutil"
-check neoag_doctor "$PY" -m neoag_v03.controlled_execution.doctor --help
+check neoag_doctor "$PY" -m neoag.controlled_execution.doctor --help
 check vep "${NEOAG_VEP_BIN:-vep}" --help
 check reference_fasta test -f "${NEOAG_REFERENCE_FASTA:-}"
 check reference_fasta_fai test -f "${NEOAG_REFERENCE_FASTA:-}.fai"

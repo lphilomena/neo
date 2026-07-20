@@ -4,7 +4,7 @@ This document defines the lightweight v04 release boundary for the current serve
 
 ## Bundled in v04 lightweight release
 
-- Python package source under `src/neoag_v03/`
+- Python package source under `src/neoag/`
 - Project entry points under `bin/` that are small wrappers/scripts
 - Profiles under `profiles/`
 - Example configs under `conf/`

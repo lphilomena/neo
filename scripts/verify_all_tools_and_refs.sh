@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Unified acceptance checks for neoag-v03 external tools and reference data.
+# Unified acceptance checks for neoag external tools and reference data.
 # This is a lightweight readiness check: it verifies executables, environment
 # variables, and key reference files. It does not run patient-scale workflows.
 set -uo pipefail

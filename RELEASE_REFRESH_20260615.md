@@ -25,7 +25,7 @@ After `source conf/tools.env.sh`:
 
 ## Remaining Note
 
-The directory `.venv/` is owned by root, so user `na` cannot rewrite the editable install pointer directly. The project-level test bootstrap and `bin/neoag-v03` wrapper both force the current checkout source path. For a fully clean environment, recreate `.venv/` as user `na` or change ownership before running `pip install -e ".[test]"`.
+The directory `.venv/` is owned by root, so user `na` cannot rewrite the editable install pointer directly. The project-level test bootstrap and `bin/neoag` wrapper both force the current checkout source path. For a fully clean environment, recreate `.venv/` as user `na` or change ownership before running `pip install -e ".[test]"`.
 
 ## Follow-up Optimization Applied
 

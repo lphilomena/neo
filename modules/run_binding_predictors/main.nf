@@ -18,14 +18,14 @@ process RUN_BINDING_PREDICTORS {
     """
     ${strict}
     mkdir -p tools
-    neoag-v03 run-tool netmhcpan \
+    neoag run-tool netmhcpan \
       --sample-id ${sample_id} \
       --raw-peptides '${raw_peptides}' \
       --output netmhcpan.xls \
       --workdir . \
       ${stub}
 
-    neoag-v03 run-tool mhcflurry \
+    neoag run-tool mhcflurry \
       --sample-id ${sample_id} \
       --raw-peptides '${raw_peptides}' \
       --output mhcflurry.csv \
@@ -33,6 +33,6 @@ process RUN_BINDING_PREDICTORS {
       ${stub}
 
     echo "RUN_BINDING_PREDICTORS:" > versions.yml
-    echo "  neoag-v03: \$(neoag-v03 run-demo --help >/dev/null 2>&1 && echo ok || echo unknown)" >> versions.yml
+    echo "  neoag: \$(neoag run-demo --help >/dev/null 2>&1 && echo ok || echo unknown)" >> versions.yml
     """
 }

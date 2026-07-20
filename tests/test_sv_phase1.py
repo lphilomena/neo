@@ -1,8 +1,8 @@
 from pathlib import Path
 
-from neoag_v03.sv.bnd_parser import parse_bnd_alt
-from neoag_v03.sv.phase1 import build_sv_phase1_raw
-from neoag_v03.utils import read_tsv
+from neoag.sv.bnd_parser import parse_bnd_alt
+from neoag.sv.phase1 import build_sv_phase1_raw
+from neoag.utils import read_tsv
 
 ROOT = Path(__file__).resolve().parents[1]
 FX = ROOT / "data" / "fixtures_sv"

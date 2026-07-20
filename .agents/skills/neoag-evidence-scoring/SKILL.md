@@ -1,6 +1,6 @@
 ---
 name: neoag-evidence-scoring
-description: Plan or run APPM/CCF/Safety/Escape/score-v03 evidence scoring from Project B intermediates.
+description: Plan or run APPM/CCF/Safety/Escape/score evidence scoring from Project B intermediates.
 ---
 
 # neoag-evidence-scoring
@@ -23,7 +23,7 @@ See the command wrapper and `references/INPUTS.md`. Missing inputs must be repor
 ## Primary command
 
 ```bash
-python -m neoag_v03.agent_skills.evidence_scoring --raw-events parsed/raw_events.tsv --raw-peptides parsed/raw_peptides.tsv --presentation presentation/presentation_evidence.tsv --outdir <OUTDIR>
+python -m neoag.agent_skills.evidence_scoring --raw-events parsed/raw_events.tsv --raw-peptides parsed/raw_peptides.tsv --presentation presentation/presentation_evidence.tsv --outdir <OUTDIR>
 ```
 
 ## Outputs

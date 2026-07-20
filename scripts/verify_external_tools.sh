@@ -24,7 +24,7 @@ fail() { echo "[FAIL] $*" >&2; FAILED=1; }
 FAILED=0
 
 echo "==> Registry check-tools"
-python -m neoag_v03.cli check-tools | grep -E 'lohhla|facets|ascat|arriba|prime|optitype' || warn "check-tools does not report every external helper; continuing with direct checks"
+python -m neoag.cli check-tools | grep -E 'lohhla|facets|ascat|arriba|prime|optitype' || warn "check-tools does not report every external helper; continuing with direct checks"
 
 if command -v LOHHLA >/dev/null 2>&1; then
   pass "LOHHLA executable: $(command -v LOHHLA)"

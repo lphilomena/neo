@@ -20,7 +20,7 @@ Evidence scope: `EXOME_CAPTURE_LIMITED` — intergenic and off-target SVs may be
 source conf/tools.env.sh
 
 # Adapter only
-neoag-v03 sv-build-raw-wes \
+neoag sv-build-raw-wes \
   --sample-id SVMINI \
   --profile sv_wes_phase1_5 \
   --sv-vcf data/fixtures_sv/mini_sv.vcf \
@@ -32,8 +32,8 @@ neoag-v03 sv-build-raw-wes \
   --rna-junctions data/fixtures_sv/rna_junctions.tsv \
   --outdir results/SVMINI_sv_wes_adapter
 
-# End-to-end (adapter + NetMHCpan/MHCflurry + score_v03)
-neoag-v03 sv-run-full-wes \
+# End-to-end (adapter + NetMHCpan/MHCflurry + score)
+neoag sv-run-full-wes \
   --sample-id SVMINI \
   --profile sv_wes_phase1_5 \
   --sv-vcf data/fixtures_sv/mini_sv.vcf \
@@ -52,7 +52,7 @@ neoag-v03 sv-run-full-wes \
 nextflow run workflows/sv_phase1_5_wes.nf -c conf/sv_wes_demo.config
 ```
 
-Uses `params.wes_mode = true` so `SV_BUILD_RAW` invokes `sv-build-raw-wes`, then runs `NEOAG_SV_SCORE_V03`.
+Uses `params.wes_mode = true` so `SV_BUILD_RAW` invokes `sv-build-raw-wes`, then runs `NEOAG_SV_SCORE`.
 
 ## Outputs
 

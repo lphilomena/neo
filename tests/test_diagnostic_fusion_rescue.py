@@ -1,12 +1,12 @@
 from pathlib import Path
 
-from neoag_v03.adapters.diagnostic_fusion_rescue import (
+from neoag.adapters.diagnostic_fusion_rescue import (
     build_diagnostic_fusion_rescue,
     diagnostic_rescue_rows_from_easyfuse,
     infer_unfiltered_easyfuse_path,
     normalize_fusion_label,
 )
-from neoag_v03.utils import read_tsv
+from neoag.utils import read_tsv
 
 
 def _write_easyfuse_pair(tmp_path: Path) -> tuple[Path, Path]:

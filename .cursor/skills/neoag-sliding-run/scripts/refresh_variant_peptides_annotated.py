@@ -7,7 +7,7 @@ import argparse
 import json
 from pathlib import Path
 
-from neoag_v03.adapters.peptide_netmhcpan import annotate_variant_peptide_tsv
+from neoag.adapters.peptide_netmhcpan import annotate_variant_peptide_tsv
 
 
 def existing(path: str | None) -> str | None:

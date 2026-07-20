@@ -14,7 +14,7 @@ The containers hold the operating-system runtime only. Licensed tools, Java jars
 ## Build Docker images
 
 ```bash
-cd /home/na/project/neoantigen/neoag_event_pipeline_v03_rc
+cd /home/na/project/neoantigen/neoag_event_pipeline
 ./scripts/build_priority_tool_containers.sh all
 ```
 

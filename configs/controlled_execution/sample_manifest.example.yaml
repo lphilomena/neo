@@ -23,7 +23,7 @@ inputs:
   cnv_segments: results/SAMPLE001/cnv/cnv_segments.tsv
   ranked_peptides_recommendation: results/SAMPLE001/scoring/ranked_peptides.recommendation.tsv
   ranked_peptides_netmhcpan42: results/SAMPLE001/scoring/ranked_peptides.netmhcpan42.tsv
-  evidence_report: results/SAMPLE001/reports/evidence_report.v03.html
+  evidence_report: results/SAMPLE001/reports/evidence_report.html
 
 notes:
   boundary: example manifest only; replace paths locally and do not commit patient-private paths

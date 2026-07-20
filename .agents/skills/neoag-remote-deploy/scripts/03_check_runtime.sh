@@ -18,7 +18,7 @@ export PYTHONPATH="$PROJECT_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
 LOG="$OUTDIR/runtime_check.log"
 {
   "$PYTHON_BIN" -m compileall -q src
-  if command -v neoag-v03 >/dev/null 2>&1; then neoag-v03 --help >/dev/null; else "$PYTHON_BIN" -m neoag_v03.cli --help >/dev/null; fi
-  if command -v neoag-skill >/dev/null 2>&1; then neoag-skill --help >/dev/null; else "$PYTHON_BIN" -m neoag_v03.skill_taxonomy.cli --help >/dev/null; fi
+  if command -v neoag >/dev/null 2>&1; then neoag --help >/dev/null; else "$PYTHON_BIN" -m neoag.cli --help >/dev/null; fi
+  if command -v neoag-skill >/dev/null 2>&1; then neoag-skill --help >/dev/null; else "$PYTHON_BIN" -m neoag.skill_taxonomy.cli --help >/dev/null; fi
 } >"$LOG" 2>&1 || { echo "CORE_INSTALL_FAILED: see $LOG" >&2; exit 12; }
 echo "runtime_check=$LOG"

@@ -1,11 +1,11 @@
 from pathlib import Path
-from neoag_v03.pipeline_v03 import run_v03
-from neoag_v03.cli import main
+from neoag.pipeline import run
+from neoag.cli import main
 
 ROOT = Path(__file__).resolve().parents[1]
 
 def test_validation_and_report_cli(tmp_path):
-    out = run_v03(
+    out = run(
         outdir=tmp_path/"run",
         profile_name_or_path="leukemia",
         sample_id="DEMO_RC",
@@ -21,10 +21,10 @@ def test_validation_and_report_cli(tmp_path):
         normal_hla_ligands=ROOT/"resources/normal_hla_ligands.example.tsv",
     )
     val = tmp_path/"validation.tsv"
-    main(["validation-plan-v03", "--ranked-peptides", out["ranked_peptides"], "--out", str(val)])
+    main(["validation-plan", "--ranked-peptides", out["ranked_peptides"], "--out", str(val)])
     assert val.exists()
     rep = tmp_path/"report.html"
-    main(["report-v03", "--profile", "leukemia", "--ranked-events", out["ranked_events"], "--ranked-peptides", out["ranked_peptides"], "--appm-summary", out["appm_summary"], "--validation-plan", str(val), "--outdir", str(tmp_path/"run"), "--out", str(rep)])
+    main(["report", "--profile", "leukemia", "--ranked-events", out["ranked_events"], "--ranked-peptides", out["ranked_peptides"], "--appm-summary", out["appm_summary"], "--validation-plan", str(val), "--outdir", str(tmp_path/"run"), "--out", str(rep)])
     assert rep.exists()
     patient = tmp_path/"evidence_report.patient.html"
     technical = tmp_path/"evidence_report.technical.html"

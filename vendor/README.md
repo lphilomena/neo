@@ -7,7 +7,7 @@ NetMHCpan **不能**通过 pip/conda 直接安装，需从 DTU 获取：
 3. 将文件放到本目录后执行：
 
 ```bash
-cd /path/to/neoag_event_pipeline_v03_rc
+cd /path/to/neoag_event_pipeline
 bash scripts/install_netmhcpan.sh vendor/netMHCpan-4.1b.linux.tar.gz
 ```
 

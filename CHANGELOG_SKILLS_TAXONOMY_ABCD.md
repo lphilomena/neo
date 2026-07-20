@@ -2,7 +2,7 @@
 
 ## Added
 
-- Added `neoag_v03.skill_taxonomy` package.
+- Added `neoag.skill_taxonomy` package.
 - Added A/B/C/D skill taxonomy registry with 27 skills.
 - Added `neoag-skill` CLI.
 - Added repo-scoped `.agents/skills/*/SKILL.md` definitions for all skills.

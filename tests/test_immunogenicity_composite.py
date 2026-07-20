@@ -1,5 +1,5 @@
-from neoag_v03.config import load_profile
-from neoag_v03.immunogenicity_composite import (
+from neoag.config import load_profile
+from neoag.immunogenicity_composite import (
     apply_immunogenicity_evidence,
     combine_component_scores,
     component_scores,

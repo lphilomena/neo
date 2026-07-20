@@ -1,10 +1,10 @@
 from pathlib import Path
 
-from neoag_v03.appm_v2 import build_appm_2
-from neoag_v03.ccf_v2 import build_ccf_2
-from neoag_v03.immune_escape import build_immune_escape_evidence
-from neoag_v03.utils import read_tsv, write_tsv
-from neoag_v03.config import load_profile
+from neoag.appm_v2 import build_appm_2
+from neoag.ccf_v2 import build_ccf_2
+from neoag.immune_escape import build_immune_escape_evidence
+from neoag.utils import read_tsv, write_tsv
+from neoag.config import load_profile
 
 
 def test_appm_2_b2m_biallelic_loss_caps_mhc_i_peptide(tmp_path):

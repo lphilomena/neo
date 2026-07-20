@@ -1,10 +1,10 @@
 from pathlib import Path
 
-from neoag_v03.adapters.pvactools_parser import parse_pvactools_outputs
-from neoag_v03.config import load_profile
-from neoag_v03.immune_escape_resistance import build_immune_escape_resistance
-from neoag_v03.scoring_v03 import score_v03
-from neoag_v03.utils import read_tsv, write_tsv
+from neoag.adapters.pvactools_parser import parse_pvactools_outputs
+from neoag.config import load_profile
+from neoag.immune_escape_resistance import build_immune_escape_resistance
+from neoag.scoring import score
+from neoag.utils import read_tsv, write_tsv
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -96,7 +96,7 @@ def test_scoring_uses_escape_flags(tmp_path):
     }])
 
     out_pep = tmp_path / "ranked_peptides.tsv"
-    score_v03(
+    score(
         ev_path,
         pep_path,
         pres,

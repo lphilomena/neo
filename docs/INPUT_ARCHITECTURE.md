@@ -31,27 +31,27 @@ Project B is an **event-level, multi-source neoantigen system**. It does not ass
 
 ```bash
 # Build raw layer only (any entry mode)
-neoag-v03 build-intermediates --config conf/run.example.toml --outdir results/P001/intermediates
+neoag build-intermediates --config conf/run.example.toml --outdir results/P001/intermediates
 
 # Build evidence sidecars from existing raw tables
-neoag-v03 build-evidence-layer --outdir results/P001 --profile leukemia \
+neoag build-evidence-layer --outdir results/P001 --profile leukemia \
   --rna-vaf results/P001/parsed/rna_vaf.tsv \
   --rna-junction results/P001/parsed/rna_junctions.tsv
 
 # Score from pre-built raw tables (no pVAC re-parse)
-neoag-v03 run-v03 --outdir results/P001 \
+neoag run --outdir results/P001 \
   --raw-events results/P001/parsed/raw_events.tsv \
   --raw-peptides results/P001/parsed/raw_peptides.tsv \
   --netmhcpan ... --expression ...
 
 # Full upstream + scoring (uses entry_mode from TOML)
-neoag-v03 run-full --config conf/run.example.toml --outdir results/P001
+neoag run-full --config conf/run.example.toml --outdir results/P001
 ```
 
 ## SV / SNV dedicated flows
 
 - **SV**: `sv-run-full` / `sv-run-full-wes` → copies adapter output to standard `parsed/` layout
-- **SNV WES**: `snv-run-full-wes` → Mutect2 + upstream + `run_v03`
+- **SNV WES**: `snv-run-full-wes` → Mutect2 + upstream + `run`
 
 These remain first-class entry paths; set `entry_mode = "sv"` or use `inputs.sv_raw_events` when composing multi-source runs.
 
@@ -62,7 +62,7 @@ EasyFuse is **not** a full neoantigen system. Use it as fusion discovery + RNA e
 ```text
 WTS RNA-seq FASTQ → EasyFuse → fusions.pass.csv
   → EasyFuseAdapter → raw_events / raw_peptides / fusion_evidence
-  → HLA binding + safety + score_v03
+  → HLA binding + safety + score
 ```
 
 Configure in TOML:
@@ -77,7 +77,7 @@ easyfuse_pass_csv = "/path/to/sample/fusions.pass.csv"
 CLI:
 
 ```bash
-neoag-v03 build-intermediates --entry-mode fusion \
+neoag build-intermediates --entry-mode fusion \
   --easyfuse-tsv data/fixtures/easyfuse_fusions.pass.tsv \
   --outdir results/EF1/intermediates
 ```
@@ -101,9 +101,9 @@ Peptide rows from `neo_peptide_sequence` are stubs (HLA filled by upstream netMH
 For immune-escape inputs, convert LOHHLA and SpecHLA independently, then cross-check them before passing the consensus table downstream:
 
 ```bash
-neoag-v03 convert-lohhla -i LOHHLA.HLAlossPrediction_CI.xls -o results/P001/tools/lohhla.hla_loh.tsv
-neoag-v03 convert-spechla -i merge.hla.copy.txt -o results/P001/tools/spechla.hla_loh.tsv
-neoag-v03 crosscheck-hla-loh \
+neoag convert-lohhla -i LOHHLA.HLAlossPrediction_CI.xls -o results/P001/tools/lohhla.hla_loh.tsv
+neoag convert-spechla -i merge.hla.copy.txt -o results/P001/tools/spechla.hla_loh.tsv
+neoag crosscheck-hla-loh \
   --lohhla-hla-loh results/P001/tools/lohhla.hla_loh.tsv \
   --spechla-hla-loh results/P001/tools/spechla.hla_loh.tsv \
   --out results/P001/tools/hla_loh.crosscheck.tsv \

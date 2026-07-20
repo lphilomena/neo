@@ -369,7 +369,7 @@ run_lohhla() {
   echo "    Polysolver:  ${WINNERS}"
   echo "    HLAfastaLoc: ${PATIENT_HLA_FASTA}"
   echo "    LOHHLA dir:  ${LOHHLA_OUT}"
-  echo "    Convert:     neoag-v03 convert-lohhla -i <*HLAlossPrediction_CI*> -o hla_loh.tsv"
+  echo "    Convert:     neoag convert-lohhla -i <*HLAlossPrediction_CI*> -o hla_loh.tsv"
 }
 
 if step_wanted polysolver; then

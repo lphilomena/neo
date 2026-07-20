@@ -5,10 +5,10 @@ from pathlib import Path
 
 import pytest
 
-from neoag_v03.adapters.facets import parse_facets_cncf, parse_facets_purity
-from neoag_v03.adapters.lohhla import parse_lohhla_prediction
-from neoag_v03.tools.postprocess import facets_to_cnv_tsv, facets_to_purity_tsv, lohhla_to_hla_loh_tsv
-from neoag_v03.tools.upstream import load_run_config, run_upstream
+from neoag.adapters.facets import parse_facets_cncf, parse_facets_purity
+from neoag.adapters.lohhla import parse_lohhla_prediction
+from neoag.tools.postprocess import facets_to_cnv_tsv, facets_to_purity_tsv, lohhla_to_hla_loh_tsv
+from neoag.tools.upstream import load_run_config, run_upstream
 
 ROOT = Path(__file__).resolve().parents[1]
 TOOLS_ROOT = Path(os.environ.get("NEOAG_TOOLS_ROOT", ROOT))

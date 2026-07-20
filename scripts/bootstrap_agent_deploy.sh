@@ -101,7 +101,7 @@ run_neoag_skill() {
   if command -v neoag-skill >/dev/null 2>&1; then
     neoag-skill "$@"
   else
-    "$PYTHON_BIN" -m neoag_v03.skill_taxonomy.cli "$@"
+    "$PYTHON_BIN" -m neoag.skill_taxonomy.cli "$@"
   fi
 }
 
@@ -109,7 +109,7 @@ run_neoag_doctor() {
   if command -v neoag-doctor >/dev/null 2>&1; then
     neoag-doctor "$@"
   else
-    "$PYTHON_BIN" -m neoag_v03.controlled_execution.doctor "$@"
+    "$PYTHON_BIN" -m neoag.controlled_execution.doctor "$@"
   fi
 }
 
@@ -117,7 +117,7 @@ run_neoag_pipeline_full() {
   if command -v neoag-pipeline-full >/dev/null 2>&1; then
     neoag-pipeline-full "$@"
   else
-    "$PYTHON_BIN" -m neoag_v03.controlled_execution.pipeline_runner "$@"
+    "$PYTHON_BIN" -m neoag.controlled_execution.pipeline_runner "$@"
   fi
 }
 

@@ -12,6 +12,6 @@ process RUN_UPSTREAM {
 
   script:
   """
-  neoag-v03 run-upstream --config '${run_config}' --outdir upstream
+  neoag run-upstream --config '${run_config}' --outdir upstream
   """
 }

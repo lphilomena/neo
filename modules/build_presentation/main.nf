@@ -14,7 +14,7 @@ process BUILD_PRESENTATION {
 
   script:
   """
-  neoag-v03 build-presentation-evidence \
+  neoag build-presentation-evidence \
     --raw-peptides '${raw_peptides}' \
     --netmhcpan '${netmhcpan_evidence}' \
     --mhcflurry '${mhcflurry_evidence}' \
@@ -22,6 +22,6 @@ process BUILD_PRESENTATION {
     --out presentation_evidence.tsv
 
   echo "BUILD_PRESENTATION:" > versions.yml
-  echo "  neoag-v03: \$(python -c 'import neoag_v03; print(neoag_v03.__version__)')" >> versions.yml
+  echo "  neoag: \$(python -c 'import neoag; print(neoag.__version__)')" >> versions.yml
   """
 }

@@ -4,8 +4,8 @@ import csv
 import json
 from pathlib import Path
 
-from neoag_v03.skill_taxonomy.registry import SKILLS_BY_NAME, registry_dict
-from neoag_v03.skill_taxonomy.runner import run_skill, validate_skill_dirs
+from neoag.skill_taxonomy.registry import SKILLS_BY_NAME, registry_dict
+from neoag.skill_taxonomy.runner import run_skill, validate_skill_dirs
 
 
 def test_abcd_registry_complete():

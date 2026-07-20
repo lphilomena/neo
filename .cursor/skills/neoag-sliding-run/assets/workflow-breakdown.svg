@@ -61,7 +61,7 @@
   <text x="955" y="429" class="small">Optional immunogenicity</text>
 
   <rect x="530" y="535" width="250" height="78" class="stage" />
-  <text x="555" y="560" class="text">5. run-v03 ranking</text>
+  <text x="555" y="560" class="text">5. run ranking</text>
   <text x="555" y="581" class="small">Evidence layers, ranked tables</text>
   <text x="555" y="599" class="small">Validation plan and reports</text>
 

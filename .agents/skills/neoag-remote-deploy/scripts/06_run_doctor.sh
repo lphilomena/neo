@@ -29,6 +29,6 @@ ARGS=(--project-root . --tools-manifest "$TOOLS" --reference-manifest "$REFS" --
 if command -v neoag-doctor >/dev/null 2>&1; then
   neoag-doctor "${ARGS[@]}" || true
 else
-  "$PYTHON_BIN" -m neoag_v03.controlled_execution.doctor "${ARGS[@]}" || true
+  "$PYTHON_BIN" -m neoag.controlled_execution.doctor "${ARGS[@]}" || true
 fi
 echo "doctor_outdir=$OUTDIR"

@@ -10,7 +10,7 @@ Acceptance:
 ```bash
 python -m pip install -e .
 neoag-skill validate --root . --outdir work/skill_validate
-neoag-v03 run-demo --outdir work/demo_v043 --sample-id DEMO001
+neoag run-demo --outdir work/demo_v043 --sample-id DEMO001
 ```
 
 ## Tier 1: core scoring
@@ -21,7 +21,7 @@ only needs recombination scoring and reports.
 Acceptance:
 
 ```bash
-neoag-v03 run-demo --outdir work/demo_v043 --sample-id DEMO001
+neoag run-demo --outdir work/demo_v043 --sample-id DEMO001
 pytest -q tests/test_skills_taxonomy_abcd.py
 ```
 
@@ -47,7 +47,7 @@ Full execution requires explicit human approval.
 Pre-execution acceptance:
 
 ```bash
-neoag-v03 pipeline-full \
+neoag pipeline-full \
   --sample-manifest configs/local/sample_manifest.yaml \
   --tools-manifest configs/local/tools_manifest.yaml \
   --reference-manifest configs/local/reference_manifest.yaml \

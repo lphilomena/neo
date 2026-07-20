@@ -91,7 +91,7 @@ High-risk operations include HPC submission, tool installation, deletion, overwr
 
 ## Framework recommendation
 
-The code is dependency-light by default. Optional LangGraph integration is provided in `neoag_v03.llm_coordinator.langgraph_app`. Use LangGraph when you want durable stateful orchestration, human-in-the-loop nodes, and deployment-grade graph runtime.
+The code is dependency-light by default. Optional LangGraph integration is provided in `neoag.llm_coordinator.langgraph_app`. Use LangGraph when you want durable stateful orchestration, human-in-the-loop nodes, and deployment-grade graph runtime.
 
 ## Clinical/research boundary
 

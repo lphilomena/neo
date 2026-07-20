@@ -2,7 +2,7 @@
 # Prerequisite: source conf/tools.env.sh
 #
 # Quick start (stub upstream + full scoring):
-#   neoag-v03 run-full --config conf/run.hcc1395.splice.toml --outdir results/HCC1395_splice
+#   neoag run-full --config conf/run.hcc1395.splice.toml --outdir results/HCC1395_splice
 
 [sample]
 id = "HCC1395"

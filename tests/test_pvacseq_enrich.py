@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from neoag_v03.adapters.pvacseq_enrich import (
+from neoag.adapters.pvacseq_enrich import (
     enrich_pvacseq_aggregated,
     filter_raw_peptides_normal_proteome,
     parse_pvac_variant_id,
@@ -9,8 +9,8 @@ from neoag_v03.adapters.pvacseq_enrich import (
     resolve_pvacseq_enrich_options,
     variant_lookup_keys,
 )
-from neoag_v03.schemas import PEPTIDE_FIELDS
-from neoag_v03.utils import read_tsv, write_tsv
+from neoag.schemas import PEPTIDE_FIELDS
+from neoag.utils import read_tsv, write_tsv
 
 CSQ_HEADER = (
     '##INFO=<ID=CSQ,Number=.,Type=String,Description="Consequence annotations from Ensembl VEP. '

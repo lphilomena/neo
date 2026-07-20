@@ -34,8 +34,8 @@ run_step() {
 }
 FAIL=0
 run_step compileall "$PYTHON_BIN" -m compileall -q src || FAIL=1
-run_step skill_validate "$PYTHON_BIN" -m neoag_v03.skill_taxonomy.cli validate --root . --outdir "$OUTDIR/skill_validate" || FAIL=1
-run_step run_demo "$PYTHON_BIN" -m neoag_v03.cli run-demo --outdir "$OUTDIR/demo_v043" --sample-id DEMO001 || FAIL=1
+run_step skill_validate "$PYTHON_BIN" -m neoag.skill_taxonomy.cli validate --root . --outdir "$OUTDIR/skill_validate" || FAIL=1
+run_step run_demo "$PYTHON_BIN" -m neoag.cli run-demo --outdir "$OUTDIR/demo_v043" --sample-id DEMO001 || FAIL=1
 if [[ "$TIER" != "tier0" ]]; then
   run_step pytest_skills "$PYTHON_BIN" -m pytest -q tests/test_skills_taxonomy_abcd.py || FAIL=1
 fi

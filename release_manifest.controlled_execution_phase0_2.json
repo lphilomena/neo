@@ -4,10 +4,10 @@
   "version": "0.4.3+controlled-execution-phase0-2",
   "description": "controlled-execution Phase 0 Doctor, Phase 1 Gateway, and Phase 2 pipeline-full runner for Project B",
   "added_modules": [
-    "src/neoag_v03/controlled_execution/doctor.py",
-    "src/neoag_v03/controlled_execution/gateway.py",
-    "src/neoag_v03/controlled_execution/pipeline_runner.py",
-    "src/neoag_v03/controlled_execution/release_audit.py"
+    "src/neoag/controlled_execution/doctor.py",
+    "src/neoag/controlled_execution/gateway.py",
+    "src/neoag/controlled_execution/pipeline_runner.py",
+    "src/neoag/controlled_execution/release_audit.py"
   ],
   "tests": {
     "pytest_default": "210 passed, 96 skipped",
@@ -18,9 +18,9 @@
     "neoag-gateway",
     "neoag-pipeline-full",
     "neoag-release-audit",
-    "neoag-v03 doctor",
-    "neoag-v03 pipeline-full",
-    "neoag-v03 release-audit"
+    "neoag doctor",
+    "neoag pipeline-full",
+    "neoag release-audit"
   ],
   "boundary": "Doctor and pipeline-full are safe-by-default; Gateway requires approval for high-risk execution; no licensed tools or patient data bundled."
 }

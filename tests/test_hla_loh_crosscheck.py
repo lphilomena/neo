@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from neoag_v03.hla_loh_crosscheck import crosscheck_hla_loh, write_hla_loh_crosscheck
-from neoag_v03.utils import read_tsv
+from neoag.hla_loh_crosscheck import crosscheck_hla_loh, write_hla_loh_crosscheck
+from neoag.utils import read_tsv
 
 
 def test_hla_loh_crosscheck_consensus_discordant_and_single_tool(tmp_path: Path):

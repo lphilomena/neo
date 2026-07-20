@@ -6,8 +6,8 @@ cd "$(dirname "$0")/.."
 git add -- \
   'CHANGELOG_V04_EVIDENCE_SAFETY_ESCAPE.md' \
   'tests/test_v041_appm_ccf_escape.py' \
-  'src/neoag_v03/ccf_v2.py' \
-  'src/neoag_v03/appm_v2.py' \
+  'src/neoag/ccf_v2.py' \
+  'src/neoag/appm_v2.py' \
   'docs/V041_APPM_CCF_IMMUNE_ESCAPE.md' \
   'CHANGELOG_V041_APPM_CCF_IMMUNE_ESCAPE.md' \
   'RELEASE_REFRESH_20260615.md' \
@@ -27,49 +27,49 @@ git add -- \
   'scripts/package_v04_release.py' \
   'docs/release_audit/V04_COMMIT_BOUNDARY_AUDIT.md' \
   'scripts/stage_v04_release_boundary.sh' \
-  'src/neoag_v03/adapters/bigmhc_im.py' \
-  'src/neoag_v03/adapters/deepimmuno.py' \
-  'src/neoag_v03/adapters/easyfuse_adapter.py' \
-  'src/neoag_v03/adapters/event_catalog.py' \
-  'src/neoag_v03/adapters/facets.py' \
-  'src/neoag_v03/adapters/iedb_immunogenicity.py' \
-  'src/neoag_v03/adapters/lohhla.py' \
-  'src/neoag_v03/adapters/mhcflurry.py' \
-  'src/neoag_v03/adapters/netmhcpan.py' \
-  'src/neoag_v03/adapters/netmhcstabpan.py' \
-  'src/neoag_v03/adapters/peptide_input.py' \
-  'src/neoag_v03/adapters/prime.py' \
-  'src/neoag_v03/appm_lite.py' \
-  'src/neoag_v03/ccf_lite.py' \
-  'src/neoag_v03/cli.py' \
-  'src/neoag_v03/config.py' \
-  'src/neoag_v03/evidence_layer.py' \
-  'src/neoag_v03/evidence_provenance.py' \
-  'src/neoag_v03/immune_escape.py' \
-  'src/neoag_v03/immune_escape_resistance.py' \
-  'src/neoag_v03/immunogenicity_composite.py' \
-  'src/neoag_v03/input_router.py' \
-  'src/neoag_v03/model_layers.py' \
-  'src/neoag_v03/peptide_safety_gate.py' \
-  'src/neoag_v03/pipeline_v03.py' \
-  'src/neoag_v03/preflight.py' \
-  'src/neoag_v03/presentation.py' \
-  'src/neoag_v03/schemas.py' \
-  'src/neoag_v03/scoring_v03.py' \
-  'src/neoag_v03/snv_call/__init__.py' \
-  'src/neoag_v03/snv_call/mutect2.py' \
-  'src/neoag_v03/snv_call/pipeline.py' \
-  'src/neoag_v03/sv/phase1.py' \
-  'src/neoag_v03/sv/schemas_sv.py' \
-  'src/neoag_v03/sv/score_pipeline.py' \
-  'src/neoag_v03/sv/wes_adapter.py' \
-  'src/neoag_v03/sv/wes_capture.py' \
-  'src/neoag_v03/sv/wes_filter.py' \
-  'src/neoag_v03/tools/registry.py' \
-  'src/neoag_v03/tools/runner.py' \
-  'src/neoag_v03/vep/__init__.py' \
-  'src/neoag_v03/vep/annotate.py' \
-  'src/neoag_v03/vep/extract_peptides.py' \
+  'src/neoag/adapters/bigmhc_im.py' \
+  'src/neoag/adapters/deepimmuno.py' \
+  'src/neoag/adapters/easyfuse_adapter.py' \
+  'src/neoag/adapters/event_catalog.py' \
+  'src/neoag/adapters/facets.py' \
+  'src/neoag/adapters/iedb_immunogenicity.py' \
+  'src/neoag/adapters/lohhla.py' \
+  'src/neoag/adapters/mhcflurry.py' \
+  'src/neoag/adapters/netmhcpan.py' \
+  'src/neoag/adapters/netmhcstabpan.py' \
+  'src/neoag/adapters/peptide_input.py' \
+  'src/neoag/adapters/prime.py' \
+  'src/neoag/appm_lite.py' \
+  'src/neoag/ccf_lite.py' \
+  'src/neoag/cli.py' \
+  'src/neoag/config.py' \
+  'src/neoag/evidence_layer.py' \
+  'src/neoag/evidence_provenance.py' \
+  'src/neoag/immune_escape.py' \
+  'src/neoag/immune_escape_resistance.py' \
+  'src/neoag/immunogenicity_composite.py' \
+  'src/neoag/input_router.py' \
+  'src/neoag/model_layers.py' \
+  'src/neoag/peptide_safety_gate.py' \
+  'src/neoag/pipeline.py' \
+  'src/neoag/preflight.py' \
+  'src/neoag/presentation.py' \
+  'src/neoag/schemas.py' \
+  'src/neoag/scoring.py' \
+  'src/neoag/snv_call/__init__.py' \
+  'src/neoag/snv_call/mutect2.py' \
+  'src/neoag/snv_call/pipeline.py' \
+  'src/neoag/sv/phase1.py' \
+  'src/neoag/sv/schemas_sv.py' \
+  'src/neoag/sv/score_pipeline.py' \
+  'src/neoag/sv/wes_adapter.py' \
+  'src/neoag/sv/wes_capture.py' \
+  'src/neoag/sv/wes_filter.py' \
+  'src/neoag/tools/registry.py' \
+  'src/neoag/tools/runner.py' \
+  'src/neoag/vep/__init__.py' \
+  'src/neoag/vep/annotate.py' \
+  'src/neoag/vep/extract_peptides.py' \
   'data/fixtures/easyfuse_fusions.pass.tsv' \
   'data/fixtures/hla_loh_lost.tsv' \
   'data/fixtures/vep_immune_escape.tsv' \
@@ -89,7 +89,7 @@ git add -- \
   'tests/test_preflight.py' \
   'tests/test_snv_phase1_wes.py' \
   'tests/test_tools.py' \
-  'tests/test_v03.py' \
+  'tests/test_pipeline.py' \
   'tests/test_v04_evidence_safety_escape.py' \
   'modules/gatk_filter_mutect_calls/main.nf' \
   'modules/gatk_mutect2/main.nf' \

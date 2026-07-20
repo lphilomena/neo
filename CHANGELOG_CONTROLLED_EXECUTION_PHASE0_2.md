@@ -2,7 +2,7 @@
 
 ## Added
 
-- `src/neoag_v03/controlled_execution/`
+- `src/neoag/controlled_execution/`
   - Phase 0: `doctor.py`, `release_audit.py`
   - Phase 1: `gateway.py`
   - Phase 2: `pipeline_runner.py`

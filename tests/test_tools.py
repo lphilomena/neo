@@ -2,13 +2,13 @@ import json
 from pathlib import Path
 import pytest
 
-from neoag_v03.tools import check_tool, run_tool, run_upstream, load_run_config
-from neoag_v03.tools.registry import RunContext, ROOT
-from neoag_v03.tools.runner import RUNNERS
-from neoag_v03.utils import read_tsv
-from neoag_v03.tools.prep import unique_peptide_hla_pairs, netmhcpan_allele_string
-from neoag_v03.pipeline_v03 import run_v03
-from neoag_v03.cli import main
+from neoag.tools import check_tool, run_tool, run_upstream, load_run_config
+from neoag.tools.registry import RunContext, ROOT
+from neoag.tools.runner import RUNNERS
+from neoag.utils import read_tsv
+from neoag.tools.prep import unique_peptide_hla_pairs, netmhcpan_allele_string
+from neoag.pipeline import run
+from neoag.cli import main
 
 def test_tool_registry_covers_runners():
     assert "netmhcpan" in RUNNERS
@@ -29,7 +29,7 @@ def test_run_upstream_stub(tmp_path):
 
 def test_run_tool_stub_netmhcpan(tmp_path):
     pep = ROOT / "data/fixtures/pvacseq_aggregated.tsv"
-    from neoag_v03.adapters.pvactools_parser import parse_pvactools_outputs
+    from neoag.adapters.pvactools_parser import parse_pvactools_outputs
     raw = tmp_path / "raw_peptides.tsv"
     parse_pvactools_outputs([pep], "S1", "default", None, raw)
     ctx = RunContext(sample_id="S1", outdir=tmp_path, stub=True, raw_peptides=raw, hla_alleles=["HLA-A*02:01"])
@@ -39,7 +39,7 @@ def test_run_tool_stub_netmhcpan(tmp_path):
 def test_run_full_cli_stub(tmp_path):
     outdir = tmp_path / "full"
     main(["run-full", "--config", str(ROOT / "conf/run.stub.toml"), "--outdir", str(outdir)])
-    assert (outdir / "scoring/ranked_peptides.v03.tsv").exists()
+    assert (outdir / "scoring/ranked_peptides.tsv").exists()
     assert (outdir / "scoring/comprehensive_peptide_evidence.tsv").exists()
 
 
@@ -140,7 +140,7 @@ extract_appm_from_vcf = false
     assert Path(outputs["facets_purity"]).is_file()
 
 def test_fusion_tools_in_registry():
-    from neoag_v03.tools.registry import TOOL_REGISTRY
+    from neoag.tools.registry import TOOL_REGISTRY
 
     for name in ("star_fusion", "arriba", "fusioncatcher", "easyfuse"):
         assert name in TOOL_REGISTRY

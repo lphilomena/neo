@@ -1,8 +1,8 @@
 from pathlib import Path
 
-from neoag_v03.production_runner import run_production
-from neoag_v03.tools.registry import ROOT
-from neoag_v03.utils import read_tsv
+from neoag.production_runner import run_production
+from neoag.tools.registry import ROOT
+from neoag.utils import read_tsv
 
 
 def _manifest(tmp_path: Path, *, include_fusion: bool = True, include_splice: bool = True) -> Path:
@@ -66,7 +66,7 @@ def test_production_runner_merges_all_sources_and_ranks(tmp_path):
     assert result.status == "PASS"
     assert result.source_status == "COMPLETE"
     assert set(result.detected_sources) == {"pVACseq", "pVACfuse", "pVACsplice"}
-    assert (tmp_path / "run/final/scoring/ranked_peptides.v03.tsv").is_file()
+    assert (tmp_path / "run/final/scoring/ranked_peptides.tsv").is_file()
     coverage = read_tsv(tmp_path / "run/peptide_source_coverage.tsv")[0]
     assert coverage["status"] == "COMPLETE"
 
@@ -82,7 +82,7 @@ def test_production_runner_missing_optional_sources_is_low_confidence(tmp_path):
     assert result.status == "LOW_CONFIDENCE"
     assert result.source_status == "LOW_CONFIDENCE"
     assert result.missing_sources == ["pVACfuse", "pVACsplice"]
-    assert (tmp_path / "run/final/scoring/ranked_peptides.v03.tsv").is_file()
+    assert (tmp_path / "run/final/scoring/ranked_peptides.tsv").is_file()
 
 
 def test_production_runner_dry_run_plans_commands(tmp_path):

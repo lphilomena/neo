@@ -17,7 +17,7 @@
 全流程2种使用方式：
 
   # Conda 模式（默认，行为不变）
-  neoag-v03 run-full --config run.toml --outdir output/
+  neoag run-full --config run.toml --outdir output/
 
   # Docker 模式（有镜像的用容器，无镜像的自动用 conda）
-  NEOAG_RUNNER_MODE=docker neoag-v03 run-full --config run.toml --outdir output/
+  NEOAG_RUNNER_MODE=docker neoag run-full --config run.toml --outdir output/

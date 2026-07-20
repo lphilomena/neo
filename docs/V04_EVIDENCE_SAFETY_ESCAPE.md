@@ -1,6 +1,6 @@
 # Project B v0.4: Evidence, Safety, and Escape Layer
 
-This release extends `neoag_event_pipeline_v03_rc` with three production-facing evidence layers:
+This release extends `neoag_event_pipeline` with three production-facing evidence layers:
 
 1. **WES SV Phase 1.5**: capture-aware WES-limited SV/Junction candidate triage.
 2. **Peptide safety gate**: reference proteome, normal ligandome, normal junction, WT/anchor-risk filters.
@@ -82,7 +82,7 @@ WT peptide binding / anchor-only mutation risk
 critical normal tissue expression
 ```
 
-Hard safety failures are carried into `score_v03` through `--peptide-safety`.
+Hard safety failures are carried into `score` through `--peptide-safety`.
 
 ## 3. Immune escape / HLA LOH
 
@@ -111,7 +111,7 @@ A peptide restricted by a lost HLA allele is marked with `escape_status=ESCAPE_R
 ### Build WES SV raw inputs
 
 ```bash
-PYTHONPATH=src python -m neoag_v03.cli sv-build-raw-wes \
+PYTHONPATH=src python -m neoag.cli sv-build-raw-wes \
   --sample-id P001 \
   --profile sv_wes_phase1_5 \
   --sv-vcf wes_manta.somaticSV.vcf.gz \
@@ -128,7 +128,7 @@ PYTHONPATH=src python -m neoag_v03.cli sv-build-raw-wes \
 ### Full WES SV scoring with safety and escape layers
 
 ```bash
-PYTHONPATH=src python -m neoag_v03.cli sv-run-full-wes \
+PYTHONPATH=src python -m neoag.cli sv-run-full-wes \
   --sample-id P001 \
   --profile sv_wes_phase1_5 \
   --sv-vcf wes_manta.somaticSV.vcf.gz \
@@ -151,14 +151,14 @@ PYTHONPATH=src python -m neoag_v03.cli sv-run-full-wes \
 ### Score from precomputed evidence sidecars
 
 ```bash
-PYTHONPATH=src python -m neoag_v03.cli score-v03 \
+PYTHONPATH=src python -m neoag.cli score \
   --raw-events parsed/raw_events.tsv \
   --raw-peptides parsed/raw_peptides.tsv \
   --presentation presentation/presentation_evidence.tsv \
   --peptide-safety safety/peptide_safety.tsv \
   --peptide-escape-flags immune_escape/peptide_escape_flags.tsv \
-  --out-events scoring/ranked_events.v03.tsv \
-  --out-peptides scoring/ranked_peptides.v03.tsv
+  --out-events scoring/ranked_events.tsv \
+  --out-peptides scoring/ranked_peptides.tsv
 ```
 
 ## 5. Interpretation boundaries

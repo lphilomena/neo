@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from neoag_v03.pipeline_v03 import run_v03
-from neoag_v03.utils import read_tsv, write_tsv
+from neoag.pipeline import run
+from neoag.utils import read_tsv, write_tsv
 
 ROOT = Path(__file__).resolve().parents[1]
 PVAC = ROOT / "data" / "fixtures" / "pvacseq_aggregated.tsv"
@@ -29,7 +29,7 @@ def _run(tmp_path, *, vep_rows=None, expr_rows=None, cnv_rows=None, hla_rows=Non
         write_tsv(cnv, cnv_rows)
     if hla_rows is not None:
         write_tsv(hla, hla_rows)
-    return run_v03(
+    return run(
         tmp_path / "run",
         "default",
         label,

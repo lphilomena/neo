@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from neoag_v03.adapters.easyfuse_adapter import (
+from neoag.adapters.easyfuse_adapter import (
     EasyFuseFilterConfig,
     _anchor_size,
     _tool_junction_reads,
@@ -11,8 +11,8 @@ from neoag_v03.adapters.easyfuse_adapter import (
     parse_easyfuse,
     read_easyfuse_table,
 )
-from neoag_v03.evidence_layer import build_standard_evidence_layer
-from neoag_v03.input_router import build_raw_intermediates
+from neoag.evidence_layer import build_standard_evidence_layer
+from neoag.input_router import build_raw_intermediates
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / "data/fixtures/easyfuse_fusions.pass.tsv"
@@ -33,7 +33,7 @@ def test_is_easyfuse_table(tmp_path):
 
 
 def test_filter_easyfuse_row():
-    rows = __import__("neoag_v03.utils", fromlist=["read_tsv"]).read_tsv(FIXTURE)
+    rows = __import__("neoag.utils", fromlist=["read_tsv"]).read_tsv(FIXTURE)
     by_gene = {r["Fusion_Gene"]: r for r in rows}
 
     ok, reason = filter_easyfuse_row(by_gene["EWSR1_FLI1"])
@@ -108,7 +108,7 @@ def test_build_intermediates_easyfuse_mode(tmp_path):
     assert Path(paths["raw_peptides"]).is_file()
     assert Path(paths["fusion_evidence"]).is_file()
 
-    events = __import__("neoag_v03.utils", fromlist=["read_tsv"]).read_tsv(paths["raw_events"])
+    events = __import__("neoag.utils", fromlist=["read_tsv"]).read_tsv(paths["raw_events"])
     assert len(events) == 2
 
 
@@ -120,6 +120,6 @@ def test_evidence_layer_uses_fusion_evidence(tmp_path):
     }
     build_raw_intermediates(cfg, layer, root=ROOT)
     evidence = build_standard_evidence_layer(layer, "default", sample_id="EF1")
-    rna_rows = __import__("neoag_v03.utils", fromlist=["read_tsv"]).read_tsv(evidence["rna_junction_evidence"])
+    rna_rows = __import__("neoag.utils", fromlist=["read_tsv"]).read_tsv(evidence["rna_junction_evidence"])
     ews = [r for r in rna_rows if "EWSR1" in r.get("gene", "")]
     assert ews and int(ews[0]["junction_reads"]) >= 12

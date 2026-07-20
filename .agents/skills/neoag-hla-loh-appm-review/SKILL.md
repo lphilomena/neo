@@ -23,7 +23,7 @@ See the command wrapper and `references/INPUTS.md`. Missing inputs must be repor
 ## Primary command
 
 ```bash
-python -m neoag_v03.agent_skills.appm_review --evidence-report reports/evidence_report.v041.html --outdir <OUTDIR>
+python -m neoag.agent_skills.appm_review --evidence-report reports/evidence_report.v041.html --outdir <OUTDIR>
 ```
 
 ## Outputs

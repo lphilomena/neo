@@ -16,4 +16,4 @@ if [[ -z "$PYTHON" || ! -x "$PYTHON" ]]; then
 fi
 export NEOAG_PROJECT_ROOT="$ROOT"
 export PYTHONPATH="$ROOT/src:${PYTHONPATH:-}"
-exec "$PYTHON" -m uvicorn neoag_v03.web.agent_app:app --host "$HOST" --port "$PORT"
+exec "$PYTHON" -m uvicorn neoag.web.agent_app:app --host "$HOST" --port "$PORT"

@@ -5,7 +5,7 @@
       "patient_report_update",
       "run_scoring"
     ],
-    "module": "neoag_v03.agent_skills.input_qc",
+    "module": "neoag.agent_skills.input_qc",
     "outputs": [
       "input_status.json",
       "input_qc_report.tsv",
@@ -17,7 +17,7 @@
     "intents": [
       "tool_check"
     ],
-    "module": "neoag_v03.agent_skills.tool_reference_qc",
+    "module": "neoag.agent_skills.tool_reference_qc",
     "outputs": [
       "tool_qc_report.tsv",
       "reference_qc_report.tsv",
@@ -29,7 +29,7 @@
       "demo_smoke",
       "tool_check"
     ],
-    "module": "neoag_v03.agent_skills.run_demo_smoke",
+    "module": "neoag.agent_skills.run_demo_smoke",
     "outputs": [
       "smoke_test_report.md"
     ]
@@ -38,10 +38,10 @@
     "intents": [
       "run_scoring"
     ],
-    "module": "neoag_v03.agent_skills.evidence_scoring",
+    "module": "neoag.agent_skills.evidence_scoring",
     "outputs": [
       "evidence_scoring_plan.md",
-      "scoring/ranked_peptides.v03.tsv"
+      "scoring/ranked_peptides.tsv"
     ]
   },
   "neoag-hla-loh-appm-review": {
@@ -49,7 +49,7 @@
       "appm_escape_review",
       "patient_report_update"
     ],
-    "module": "neoag_v03.agent_skills.appm_review",
+    "module": "neoag.agent_skills.appm_review",
     "outputs": [
       "appm_escape_review.md",
       "hla_loh_consensus.tsv",
@@ -61,7 +61,7 @@
       "ccf_review",
       "patient_report_update"
     ],
-    "module": "neoag_v03.agent_skills.ccf_review",
+    "module": "neoag.agent_skills.ccf_review",
     "outputs": [
       "ccf_clonality_review.md",
       "ccf_confidence_flags.tsv",
@@ -74,7 +74,7 @@
       "patient_report_update",
       "experiment_design"
     ],
-    "module": "neoag_v03.agent_skills.ranking_compare",
+    "module": "neoag.agent_skills.ranking_compare",
     "outputs": [
       "ranking_compare_report.md",
       "topn_overlap.tsv",
@@ -86,7 +86,7 @@
     "intents": [
       "patient_report_update"
     ],
-    "module": "neoag_v03.agent_skills.patient_report",
+    "module": "neoag.agent_skills.patient_report",
     "outputs": [
       "patient_report.md",
       "patient_report.html",
@@ -107,13 +107,13 @@
       "run-full/upstream/parsed/raw_events.tsv",
       "run-full/upstream/parsed/raw_peptides.tsv",
       "run-full/presentation/presentation_evidence.tsv",
-      "run-full/scoring/ranked_events.v03.tsv",
-      "run-full/scoring/ranked_peptides.v03.tsv",
-      "run-full/scoring/validation_plan.v03.tsv",
-      "run-full/reports/evidence_report.v03.html",
+      "run-full/scoring/ranked_events.tsv",
+      "run-full/scoring/ranked_peptides.tsv",
+      "run-full/scoring/validation_plan.tsv",
+      "run-full/reports/evidence_report.html",
       "run-full/reports/evidence_report.patient.html",
       "run-full/reports/evidence_report.technical.html",
-      "run-full/provenance.v03.json"
+      "run-full/provenance.json"
     ]
   },
   "neoag-result-inspector": {
@@ -121,7 +121,7 @@
       "inspect_results",
       "patient_report_update"
     ],
-    "module": "neoag_v03.agent_skills.result_inspector",
+    "module": "neoag.agent_skills.result_inspector",
     "outputs": [
       "result_inspection.md",
       "result_inspection.json"
@@ -132,7 +132,7 @@
       "purity_cnv_review",
       "inspect_results"
     ],
-    "module": "neoag_v03.agent_skills.purity_cnv_review",
+    "module": "neoag.agent_skills.purity_cnv_review",
     "outputs": [
       "purity_cnv_review.md",
       "purity_cnv_tool_summary.tsv",
@@ -145,7 +145,7 @@
       "hla_typing_compare",
       "inspect_results"
     ],
-    "module": "neoag_v03.agent_skills.hla_typing_compare",
+    "module": "neoag.agent_skills.hla_typing_compare",
     "outputs": [
       "hla_typing_compare.md",
       "hla_typing_tool_summary.tsv",
@@ -159,7 +159,7 @@
       "fusion_rna_run",
       "inspect_results"
     ],
-    "module": "neoag_v03.agent_skills.fusion_rna_run",
+    "module": "neoag.agent_skills.fusion_rna_run",
     "outputs": [
       "fusion_rna_review.md",
       "fusion_tool_summary.tsv",
@@ -173,7 +173,7 @@
       "rna_fastq_to_tpm",
       "inspect_results"
     ],
-    "module": "neoag_v03.agent_skills.rna_fastq_to_tpm",
+    "module": "neoag.agent_skills.rna_fastq_to_tpm",
     "outputs": [
       "rna_expression_summary.md",
       "expression_input_summary.tsv",

@@ -1,10 +1,10 @@
 nextflow.enable.dsl=2
 
 include { RUN_UPSTREAM } from '../modules/run_upstream/main.nf'
-include { NEOAG_V03_RC } from './neoag_v03_rc.nf'
+include { NEOAG } from './neoag_rc.nf'
 
 params.profile_name = params.profile_name ?: 'leukemia'
-params.sample_id = params.sample_id ?: 'DEMO_V03'
+params.sample_id = params.sample_id ?: 'DEMO'
 params.outdir = params.outdir ?: 'results/full'
 params.run_config = params.run_config ?: "${projectDir}/conf/run.stub.toml"
 params.run_upstream = true
@@ -26,7 +26,7 @@ workflow {
     "${up}/tools/pvacfuse_aggregated.tsv",
   ])
 
-  NEOAG_V03_RC(
+  NEOAG(
     params.sample_id,
     params.profile_name,
     pvac_ch.collect(),

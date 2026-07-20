@@ -75,7 +75,7 @@ The LLM agent uses higher-level skills that may call one or more tools. These sk
 pytest -q
 
 # Core tool availability check
-neoag-v03 check-tools
+neoag check-tools
 
 # Full tool/reference acceptance, warnings allowed by default
 NEOAG_REF_BUNDLE=/path/to/neodata4git bash scripts/verify_all_tools_and_refs.sh

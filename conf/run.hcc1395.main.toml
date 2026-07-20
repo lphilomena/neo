@@ -2,7 +2,7 @@
 # Skips VEP/APPM/CCF extras; uses placeholder cnv/normal_expression for safety gates.
 #
 #   source conf/tools.env.sh
-#   neoag-v03 run-full --config conf/run.hcc1395.main.toml --outdir results/HCC1395
+#   neoag run-full --config conf/run.hcc1395.main.toml --outdir results/HCC1395
 
 [sample]
 id = "HCC1395"

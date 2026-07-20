@@ -19,7 +19,7 @@ neoag-doctor \
   --dry-run \
   --mini-smoke
 
-neoag-v03 doctor \
+neoag doctor \
   --project-root . \
   --tools-manifest configs/controlled_execution/tools_manifest.example.yaml \
   --reference-manifest configs/controlled_execution/reference_manifest.example.yaml \
@@ -29,7 +29,7 @@ neoag-v03 doctor \
   --mini-smoke
 
 neoag-release-audit --root . --outdir work/release_audit
-neoag-v03 release-audit --root . --outdir work/release_audit
+neoag release-audit --root . --outdir work/release_audit
 ```
 
 Outputs:

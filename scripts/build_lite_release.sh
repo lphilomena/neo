@@ -51,12 +51,12 @@ echo "==> smoke unpack: ${PKG_DIR}"
   cd "${PKG_DIR}"
   python3 -m pip install -q -e .
   python3 -m pytest -q
-  neoag-v03 run-demo --outdir "${SMOKE_DIR}/demo" --sample-id LITE_RELEASE
-  test -s "${SMOKE_DIR}/demo/scoring/ranked_peptides.v03.tsv"
-  test -s "${SMOKE_DIR}/demo/reports/evidence_report.v03.html"
+  neoag run-demo --outdir "${SMOKE_DIR}/demo" --sample-id LITE_RELEASE
+  test -s "${SMOKE_DIR}/demo/scoring/ranked_peptides.tsv"
+  test -s "${SMOKE_DIR}/demo/reports/evidence_report.html"
 )
 
 echo "==> lite release OK"
 echo "    install: tar -xzf ${TARBALL} && cd <unpack> && pip install -e ."
-echo "    demo:    neoag-v03 run-demo --outdir work/demo --sample-id DEMO001"
+echo "    demo:    neoag run-demo --outdir work/demo --sample-id DEMO001"
 echo "    tools:   export NEOAG_TOOLS_ROOT=/path/to/artifact_bundle && source conf/tools.env.sh"

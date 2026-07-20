@@ -14,4 +14,4 @@ if [[ -z "$PYTHON" || ! -x "$PYTHON" ]]; then
   exit 127
 fi
 export PYTHONPATH="$ROOT/src:${PYTHONPATH:-}"
-exec "$PYTHON" -m neoag_v03.llm_coordinator.coordinator_agent "$@"
+exec "$PYTHON" -m neoag.llm_coordinator.coordinator_agent "$@"

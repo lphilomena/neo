@@ -44,7 +44,7 @@ tar -xzf work/releases/neoag_event_pipeline_v043_online_<date>.tar.gz -C "$tmpdi
 cd "$tmpdir"/neoag_event_pipeline_v043_online_<date>
 python -m pip install -e '.[test]'
 pytest -q
-neoag-v03 run-demo --outdir work/demo_v043 --sample-id DEMO001
+neoag run-demo --outdir work/demo_v043 --sample-id DEMO001
 ```
 
 For Nextflow fixture smoke:
@@ -62,7 +62,7 @@ For complete environment, tool, and reference-data setup, read `docs/INSTALL_AND
 ```bash
 export NEOAG_TOOLS_ROOT=/path/to/neoag_artifacts
 source conf/tools.env.sh
-neoag-v03 check-tools
+neoag check-tools
 ```
 
 ## Verification Performed For This Release
@@ -70,7 +70,7 @@ neoag-v03 check-tools
 The online release should pass, at minimum:
 
 - `pytest -q`
-- `neoag-v03 run-demo --outdir work/demo_v043 --sample-id DEMO001`
+- `neoag run-demo --outdir work/demo_v043 --sample-id DEMO001`
 - `bin/neoag-nextflow run workflows/main.nf` with lightweight fixture input
 - `scripts/check_release_boundary.sh`
 

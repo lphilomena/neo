@@ -43,7 +43,7 @@ Install Miniforge or Mambaforge first, then create the main tool environment:
 bash scripts/setup_tools_env.sh
 source conf/tools.env.sh
 python -m pip install -e '.[test]'
-neoag-v03 check-tools
+neoag check-tools
 ```
 
 For a smaller development/test environment that skips heavier optional stacks:
@@ -78,15 +78,15 @@ Then edit `conf/tools.env.local.sh`. This file is intentionally gitignored and s
 ### 2.2 Verify The Lightweight CLI
 
 ```bash
-neoag-v03 run-demo --outdir work/demo_v043 --sample-id DEMO001
+neoag run-demo --outdir work/demo_v043 --sample-id DEMO001
 # RNA VAF / junction evidence acceptance on your own raw tables
-neoag-v03 build-evidence-layer --outdir results/sample --profile default \
+neoag build-evidence-layer --outdir results/sample --profile default \
   --raw-events results/sample/parsed/raw_events.tsv \
   --raw-peptides results/sample/parsed/raw_peptides.tsv \
   --rna-vaf results/sample/parsed/rna_vaf.tsv \
   --rna-junction results/sample/parsed/rna_junctions.tsv
 # HLA LOH cross-check acceptance after converting LOHHLA and SpecHLA outputs
-neoag-v03 crosscheck-hla-loh \
+neoag crosscheck-hla-loh \
   --lohhla-hla-loh results/sample/tools/lohhla.hla_loh.tsv \
   --spechla-hla-loh results/sample/tools/spechla.hla_loh.tsv \
   --out results/sample/tools/hla_loh.crosscheck.tsv \
@@ -96,15 +96,15 @@ pytest -q
 
 Expected demo outputs include:
 
-- `work/demo_v043/scoring/ranked_peptides.v03.tsv`
-- `work/demo_v043/scoring/ranked_events.v03.tsv`
-- `work/demo_v043/scoring/validation_plan.v03.tsv`
-- `work/demo_v043/reports/evidence_report.v03.html`
-- `work/demo_v043/provenance.v03.json`
+- `work/demo_v043/scoring/ranked_peptides.tsv`
+- `work/demo_v043/scoring/ranked_events.tsv`
+- `work/demo_v043/scoring/validation_plan.tsv`
+- `work/demo_v043/reports/evidence_report.html`
+- `work/demo_v043/provenance.json`
 
 ## 3. Nextflow, Java, And Cache Setup
 
-Use the project wrapper rather than calling `nextflow` directly. The wrapper prioritizes the current checkout's `bin/neoag-v03`, sets `PYTHONPATH=src`, and stores Nextflow metadata outside the repository root.
+Use the project wrapper rather than calling `nextflow` directly. The wrapper prioritizes the current checkout's `bin/neoag`, sets `PYTHONPATH=src`, and stores Nextflow metadata outside the repository root.
 
 ```bash
 export NXF_HOME=/path/to/writable/nextflow_cache
@@ -132,23 +132,23 @@ Tools are optional for fixture demo but required by specific real-data modes. In
 
 | Tool | Needed for | Required? | Install/download command | Key variables | Verify |
 | --- | --- | --- | --- | --- | --- |
-| pVACtools (`pvacseq`, `pvacfuse`, `pvacsplice`) | Upstream SNV/fusion/splice candidate generation | Optional unless using `run-upstream` with pVACtools | `bash scripts/setup_tools_env.sh` or Docker via `scripts/pull_docker_tools.sh` | `NEOAG_PVAC_DOCKER`, `NEOAG_PVAC_WORKDIR` | `neoag-v03 check-tools` |
-| NetMHCpan | Binding/presentation prediction | Required for real binding runs unless using stub/API fallback | `bash scripts/install_netmhcpan.sh /path/to/netMHCpan-4.2*.tar.gz` | `NETMHCPAN_HOME`, `NETMHCpan`, `NEOAG_NETMHCPAN_BIN`, `NEOAG_NETMHCPAN_BACKEND` | `neoag-v03 check-tools` |
-| MHCflurry | Binding/presentation prediction | Optional alternative/complement to NetMHCpan | `bash scripts/setup_tools_env.sh`; then run `mhcflurry-downloads fetch` if needed | `NEOAG_CONDA_ENV`, `NEOAG_FORCE_CPU` | `neoag-v03 check-tools` |
-| NetMHCstabpan | Stability evidence | Optional | `bash scripts/install_netmhcstabpan.sh --iedb` or `bash scripts/install_netmhcstabpan.sh /path/to/netMHCstabpan*.tar.gz` | `NETMHCSTABPAN_HOME` | `neoag-v03 check-tools` |
-| PRIME / MixMHCpred / BigMHC | Immunogenicity evidence | Optional | `bash scripts/install_immunogenicity_tools.sh` | `PRIME_HOME`, `MIXMHCPRED_HOME`, `BIGMHC_DIR`, `NEOAG_PRIME_JOBS` | `neoag-v03 check-tools` |
-| DeepImmuno | Optional immunogenicity evidence | Optional | `bash scripts/install_deepimmuno.sh` | `DEEPIMMUNO_DIR` | `neoag-v03 check-tools` |
-| VEP | Variant annotation and peptide extraction | Required for `vep-annotate` / `extract-variant-peptides` | `bash scripts/install_vep.sh`; cache with `bash scripts/install_vep_cache.sh` | `NEOAG_VEP_ENV`, `NEOAG_VEP_BIN`, `NEOAG_VEP_CACHE`, `NEOAG_VEP_PLUGINS`, `NEOAG_VEP_ONLINE` | `neoag-v03 check-tools` |
-| GATK4 / Mutect2 | WES SNV calling | Required for `snv-call-wes` if not providing a somatic VCF | `bash scripts/install_gatk.sh` | `NEOAG_GATK_ENV` | `neoag-v03 check-tools` |
-| LOHHLA | HLA LOH evidence | Optional but recommended for immune escape evidence | `bash scripts/install_lohhla.sh`; configure Polysolver/Novoalign in local env | `LOHHLA_HOME`, `POLYSOLVER_HOME`, `NOVOALIGN_LICENSE_FILE` | `neoag-v03 check-tools` |
-| SpecHLA | HLA copy/LOH conversion and LOHHLA cross-check | Optional | Install externally; provide output to `convert-spechla` | Site-specific | `neoag-v03 convert-spechla ...`; `neoag-v03 crosscheck-hla-loh ...` |
+| pVACtools (`pvacseq`, `pvacfuse`, `pvacsplice`) | Upstream SNV/fusion/splice candidate generation | Optional unless using `run-upstream` with pVACtools | `bash scripts/setup_tools_env.sh` or Docker via `scripts/pull_docker_tools.sh` | `NEOAG_PVAC_DOCKER`, `NEOAG_PVAC_WORKDIR` | `neoag check-tools` |
+| NetMHCpan | Binding/presentation prediction | Required for real binding runs unless using stub/API fallback | `bash scripts/install_netmhcpan.sh /path/to/netMHCpan-4.2*.tar.gz` | `NETMHCPAN_HOME`, `NETMHCpan`, `NEOAG_NETMHCPAN_BIN`, `NEOAG_NETMHCPAN_BACKEND` | `neoag check-tools` |
+| MHCflurry | Binding/presentation prediction | Optional alternative/complement to NetMHCpan | `bash scripts/setup_tools_env.sh`; then run `mhcflurry-downloads fetch` if needed | `NEOAG_CONDA_ENV`, `NEOAG_FORCE_CPU` | `neoag check-tools` |
+| NetMHCstabpan | Stability evidence | Optional | `bash scripts/install_netmhcstabpan.sh --iedb` or `bash scripts/install_netmhcstabpan.sh /path/to/netMHCstabpan*.tar.gz` | `NETMHCSTABPAN_HOME` | `neoag check-tools` |
+| PRIME / MixMHCpred / BigMHC | Immunogenicity evidence | Optional | `bash scripts/install_immunogenicity_tools.sh` | `PRIME_HOME`, `MIXMHCPRED_HOME`, `BIGMHC_DIR`, `NEOAG_PRIME_JOBS` | `neoag check-tools` |
+| DeepImmuno | Optional immunogenicity evidence | Optional | `bash scripts/install_deepimmuno.sh` | `DEEPIMMUNO_DIR` | `neoag check-tools` |
+| VEP | Variant annotation and peptide extraction | Required for `vep-annotate` / `extract-variant-peptides` | `bash scripts/install_vep.sh`; cache with `bash scripts/install_vep_cache.sh` | `NEOAG_VEP_ENV`, `NEOAG_VEP_BIN`, `NEOAG_VEP_CACHE`, `NEOAG_VEP_PLUGINS`, `NEOAG_VEP_ONLINE` | `neoag check-tools` |
+| GATK4 / Mutect2 | WES SNV calling | Required for `snv-call-wes` if not providing a somatic VCF | `bash scripts/install_gatk.sh` | `NEOAG_GATK_ENV` | `neoag check-tools` |
+| LOHHLA | HLA LOH evidence | Optional but recommended for immune escape evidence | `bash scripts/install_lohhla.sh`; configure Polysolver/Novoalign in local env | `LOHHLA_HOME`, `POLYSOLVER_HOME`, `NOVOALIGN_LICENSE_FILE` | `neoag check-tools` |
+| SpecHLA | HLA copy/LOH conversion and LOHHLA cross-check | Optional | Install externally; provide output to `convert-spechla` | Site-specific | `neoag convert-spechla ...`; `neoag crosscheck-hla-loh ...` |
 | OptiType | HLA-A/B/C typing from DNA/RNA FASTQ or BAM | Optional HLA typing cross-check | `bash scripts/install_optitype.sh` | `OPTITYPE_ENV`, `OPTITYPE_BIN`, `OPTITYPE_REFERENCE` | `optitype check-deps` |
-| FACETS | Purity/CNV/LOH evidence | Optional but recommended for CCF/escape | `bash scripts/install_facets.sh` | `FACETS_HOME`, `NEOAG_DBSNP_VCF` | `neoag-v03 check-tools` |
-| ASCAT 2.5.2 | CNV/LOH evidence; legacy baseline | Optional | `bash scripts/install_ascat_pyclone.sh` or `conda env create -f conda/env.neoag-ascat.yml` | `NEOAG_ASCAT_ENV`, `ASCAT_HOME` | `neoag-v03 check-tools` |
+| FACETS | Purity/CNV/LOH evidence | Optional but recommended for CCF/escape | `bash scripts/install_facets.sh` | `FACETS_HOME`, `NEOAG_DBSNP_VCF` | `neoag check-tools` |
+| ASCAT 2.5.2 | CNV/LOH evidence; legacy baseline | Optional | `bash scripts/install_ascat_pyclone.sh` or `conda env create -f conda/env.neoag-ascat.yml` | `NEOAG_ASCAT_ENV`, `ASCAT_HOME` | `neoag check-tools` |
 | ASCAT 3.2.0 | CNV/LOH evidence cross-check and newer ASCAT runs | Optional | `conda env create -f conda/env.neoag-ascat-v3.yml` | `NEOAG_ASCAT_V3_ENV`, `NEOAG_ASCAT_V3_BIN` | `bin/ascat-v3 --check` |
-| PyClone-VI | Clonality context | Optional | `bash scripts/install_ascat_pyclone.sh` | `NEOAG_PYCLONE_ENV`, `NEOAG_PYCLONE_BIN` | `neoag-v03 check-tools` |
-| STAR-Fusion / FusionCatcher / Arriba / EasyFuse | Fusion discovery | Optional, required for corresponding fusion workflows | `bash scripts/install_fusion_tools.sh`; mount EasyFuse refs separately | `NEOAG_FUSION_ENV`, `NEOAG_STAR_FUSION_HOME`, `NEOAG_CTAT_LIB_DIR`, `NEOAG_EASYFUSE_HOME`, `NEOAG_EASYFUSE_REF` | `neoag-v03 check-tools` |
-| Manta / GRIDSS / SvABA | SV discovery | Optional upstream SV callers | Install externally or via site conda/modules | `NEOAG_SV_ENV`, `NEOAG_MANTA_ENV` | `neoag-v03 check-tools` |
+| PyClone-VI | Clonality context | Optional | `bash scripts/install_ascat_pyclone.sh` | `NEOAG_PYCLONE_ENV`, `NEOAG_PYCLONE_BIN` | `neoag check-tools` |
+| STAR-Fusion / FusionCatcher / Arriba / EasyFuse | Fusion discovery | Optional, required for corresponding fusion workflows | `bash scripts/install_fusion_tools.sh`; mount EasyFuse refs separately | `NEOAG_FUSION_ENV`, `NEOAG_STAR_FUSION_HOME`, `NEOAG_CTAT_LIB_DIR`, `NEOAG_EASYFUSE_HOME`, `NEOAG_EASYFUSE_REF` | `neoag check-tools` |
+| Manta / GRIDSS / SvABA | SV discovery | Optional upstream SV callers | Install externally or via site conda/modules | `NEOAG_SV_ENV`, `NEOAG_MANTA_ENV` | `neoag check-tools` |
 
 Licensed tools such as NetMHCpan, NetMHCstabpan, LOHHLA, and Novoalign/Polysolver components may require academic or institutional approval. Do not redistribute their binaries inside the online release.
 
@@ -212,7 +212,7 @@ bash scripts/verify_all_tools_and_refs.sh --smoke
 bash scripts/verify_all_tools_and_refs.sh --strict
 ```
 
-`verify_all_tools_and_refs.sh` wraps `verify_external_tools.sh`, `verify_reference_bundle.sh`, `neoag-v03 check-tools`, and dedicated checks for SpecHLA, HLA-LA, PURPLE/AMBER/COBALT, Sequenza, VEP, GATK, NetMHCpan, NetMHCstabpan, and EasyFuse.
+`verify_all_tools_and_refs.sh` wraps `verify_external_tools.sh`, `verify_reference_bundle.sh`, `neoag check-tools`, and dedicated checks for SpecHLA, HLA-LA, PURPLE/AMBER/COBALT, Sequenza, VEP, GATK, NetMHCpan, NetMHCstabpan, and EasyFuse.
 
 Recommended quick acceptance after staging P0/P1 references:
 
@@ -229,7 +229,7 @@ test -x "$NEOAG_NETMHCPAN_BIN" && test -d "$NETMHCPAN_HOME/data"
 test -z "${CTAT_GENOME_LIB:-}" || test -d "$CTAT_GENOME_LIB"
 test -z "${NEOAG_EASYFUSE_REF:-}" || test -d "$NEOAG_EASYFUSE_REF"
 # Tool visibility
-neoag-v03 check-tools
+neoag check-tools
 ```
 
 ### 5.2 Portable `neodata4git` Bundle Layout And Acceptance
@@ -293,9 +293,9 @@ neodata4git/
 
 | Workflow / command | Minimal inputs | Tools | Reference/data |
 | --- | --- | --- | --- |
-| Fixture demo: `neoag-v03 run-demo --outdir work/demo_v043 --sample-id DEMO001` | Bundled fixtures | None beyond Python package | Bundled fixtures/resources |
-| Parsed pVAC results: `neoag-v03 run-v03 --outdir results/sample --sample-id SAMPLE001 --pvac data/fixtures/pvacseq_aggregated.tsv --immunogenicity-stub` | pVAC-like TSVs | None if inputs already exist | Optional normal expression/ligand tables |
-| Full upstream run: `neoag-v03 run-upstream --config conf/run.stub.toml --outdir results/upstream` | Run config | Depends on enabled tools | Depends on enabled tools |
+| Fixture demo: `neoag run-demo --outdir work/demo_v043 --sample-id DEMO001` | Bundled fixtures | None beyond Python package | Bundled fixtures/resources |
+| Parsed pVAC results: `neoag run --outdir results/sample --sample-id SAMPLE001 --pvac data/fixtures/pvacseq_aggregated.tsv --immunogenicity-stub` | pVAC-like TSVs | None if inputs already exist | Optional normal expression/ligand tables |
+| Full upstream run: `neoag run-upstream --config conf/run.stub.toml --outdir results/upstream` | Run config | Depends on enabled tools | Depends on enabled tools |
 | Binding prediction only: `peptide-predict` | Peptide/HLA table | NetMHCpan, MHCflurry, PRIME/BigMHC/DeepImmuno as selected | HLA alleles; predictor model data |
 | VEP annotation: `vep-annotate` | VCF | VEP | VEP cache, reference FASTA, plugins |
 | Variant peptide extraction: `extract-variant-peptides` | VEP-annotated VCF | Python; optional VEP pre-step | Reference FASTA, optional normal proteome |
@@ -303,13 +303,13 @@ neodata4git/
 | WES SNV full: `snv-run-full-wes` | Somatic VCF or BAMs | GATK if BAM mode; pVAC/binding tools if enabled | GRCh38 FASTA, HLA, optional normal evidence |
 | SV WGS raw build: `sv-build-raw` | SV VCF, FASTA, GTF, HLA | Python | Reference FASTA, GTF, HLA file |
 | SV WES raw build: `sv-build-raw-wes` | SV VCF, FASTA, GTF, HLA, capture BED | Python | Reference FASTA, GTF, capture BED, HLA file |
-| SV score: `sv-score-v03` | raw events/peptides | NetMHCpan/MHCflurry unless `--binding-stub` | HLA alleles, optional evidence tables |
+| SV score: `sv-score` | raw events/peptides | NetMHCpan/MHCflurry unless `--binding-stub` | HLA alleles, optional evidence tables |
 | Fusion discovery | FASTQ/BAM or caller outputs | STAR-Fusion, FusionCatcher, Arriba, EasyFuse as selected | CTAT/EasyFuse/fusion caller references |
 | Immune escape evidence: `immune-escape` | raw peptides, APPM/CCF/LOH evidence | Optional LOHHLA/SpecHLA/FACETS upstream | HLA LOH consensus, CNV, VEP/APM/JAK/B2M evidence |
 | HLA LOH cross-check: `crosscheck-hla-loh` | normalized LOHHLA and/or SpecHLA `hla_loh.tsv` | LOHHLA and SpecHLA outputs already converted | Optional `hla_loh.consensus.tsv` for downstream APPM/immune escape |
 | Nextflow fixture: `bin/neoag-nextflow run workflows/main.nf -w /tmp/neoag_nf_work --pvac_files data/fixtures/pvacseq_aggregated.tsv --outdir results/demo_nf --sample_id NF_DEMO` | Bundled pVAC fixture | Java/Nextflow runtime | Bundled fixtures; writable `NXF_HOME` |
 
-Use `neoag-v03 <command> --help` locally for full argument details.
+Use `neoag <command> --help` locally for full argument details.
 
 ## 7. Installation Acceptance Commands
 
@@ -321,15 +321,15 @@ Run these from the project root after installation.
 source conf/tools.env.sh
 python -m pip install -e '.[test]'
 pytest -q
-neoag-v03 run-demo --outdir work/demo_v043 --sample-id DEMO001
+neoag run-demo --outdir work/demo_v043 --sample-id DEMO001
 # RNA VAF / junction evidence acceptance on your own raw tables
-neoag-v03 build-evidence-layer --outdir results/sample --profile default \
+neoag build-evidence-layer --outdir results/sample --profile default \
   --raw-events results/sample/parsed/raw_events.tsv \
   --raw-peptides results/sample/parsed/raw_peptides.tsv \
   --rna-vaf results/sample/parsed/rna_vaf.tsv \
   --rna-junction results/sample/parsed/rna_junctions.tsv
 # HLA LOH cross-check acceptance after converting LOHHLA and SpecHLA outputs
-neoag-v03 crosscheck-hla-loh \
+neoag crosscheck-hla-loh \
   --lohhla-hla-loh results/sample/tools/lohhla.hla_loh.tsv \
   --spechla-hla-loh results/sample/tools/spechla.hla_loh.tsv \
   --out results/sample/tools/hla_loh.crosscheck.tsv \
@@ -340,7 +340,7 @@ neoag-v03 crosscheck-hla-loh \
 
 ```bash
 source conf/tools.env.sh
-neoag-v03 check-tools
+neoag check-tools
 bash scripts/check_tools_env.sh
 ```
 
@@ -356,8 +356,8 @@ bin/neoag-nextflow run workflows/main.nf -w /tmp/neoag_nf_work --pvac_files data
 
 Expected outputs include:
 
-- `results/demo_nf/scoring/ranked_peptides.v03.tsv`
-- `results/demo_nf/scoring/ranked_events.v03.tsv`
+- `results/demo_nf/scoring/ranked_peptides.tsv`
+- `results/demo_nf/scoring/ranked_events.tsv`
 - `results/demo_nf/reports/evidence_report.v041.html`
 - `results/demo_nf/provenance/workflow_provenance.yml`
 
@@ -375,8 +375,8 @@ Run only the checks relevant to your selected workflow and configured paths.
 
 | Symptom | Likely cause | Fix |
 | --- | --- | --- |
-| `neoag-v03: command not found` | Package not installed or project `bin/` not on `PATH` | Run `source conf/tools.env.sh`, then `python -m pip install -e '.[test]'`. |
-| `No module named neoag_v03` | `PYTHONPATH` or editable install missing | Run `python -m pip install -e .` or execute with `PYTHONPATH=src python -m neoag_v03.cli ...`. |
+| `neoag: command not found` | Package not installed or project `bin/` not on `PATH` | Run `source conf/tools.env.sh`, then `python -m pip install -e '.[test]'`. |
+| `No module named neoag` | `PYTHONPATH` or editable install missing | Run `python -m pip install -e .` or execute with `PYTHONPATH=src python -m neoag.cli ...`. |
 | `pytest: command not found` | Test extra not installed | Run `python -m pip install -e '.[test]'`. |
 | `conda not found` | Miniforge/Mambaforge not installed or not initialized | Install Miniforge and open a new shell, or source its `etc/profile.d/conda.sh`. |
 | `mhcflurry-downloads fetch failed` | Network/model download issue | Activate the env and rerun `mhcflurry-downloads fetch`; for offline deploys, pre-stage model data. |

@@ -4,10 +4,10 @@ include { GATK_MUTECT2 } from '../modules/gatk_mutect2/main.nf'
 include { GATK_FILTER_MUTECT_CALLS } from '../modules/gatk_filter_mutect_calls/main.nf'
 include { SNV_WRITE_RUN_CONFIG } from '../modules/snv_write_run_config/main.nf'
 include { RUN_UPSTREAM } from '../modules/run_upstream/main.nf'
-include { NEOAG_V03_RC } from './neoag_v03_rc.nf'
+include { NEOAG } from './neoag_rc.nf'
 
 /*
- * WES SNV Phase 1: tumor-normal BAM → Mutect2 → FilterMutectCalls → pVAC → score_v03.
+ * WES SNV Phase 1: tumor-normal BAM → Mutect2 → FilterMutectCalls → pVAC → score.
  *
  *   nextflow run workflows/snv_phase1_wes.nf \
  *     --sample_id P001 \
@@ -88,7 +88,7 @@ workflow {
     mhc_ch = upstream_done.map { d -> file("${d}/tools/mhcflurry.csv") }
     vep_ch = upstream_done.map { d -> file("${d}/tools/vep_appm.tsv") }
 
-    NEOAG_V03_RC(
+    NEOAG(
         params.sample_id,
         params.profile_name,
         pvac_ch,

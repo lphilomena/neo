@@ -1,8 +1,8 @@
-from neoag_v03.config import load_profile
-from neoag_v03.gates import evaluate_presentation_gate
-from neoag_v03.scoring_v03 import (
+from neoag.config import load_profile
+from neoag.gates import evaluate_presentation_gate
+from neoag.scoring import (
     compute_peptide_efficacy,
-    effective_v03_weights,
+    effective_weights,
     is_placeholder_immunogenicity,
 )
 
@@ -35,10 +35,10 @@ def test_presentation_gate_fail_grade():
 def test_immunogenicity_placeholder_redistribution():
     profile = load_profile("default")
     peptide = {"immunogenicity_score": "0.5"}
-    w = effective_v03_weights(profile, peptide)
+    w = effective_weights(profile, peptide)
     assert w["immunogenicity"] == 0.0
-    assert w["presentation_evidence"] > profile["v03_score_weights"]["presentation_evidence"]
-    assert w["binding_evidence"] > profile["v03_score_weights"]["binding_evidence"]
+    assert w["presentation_evidence"] > profile["score_weights"]["presentation_evidence"]
+    assert w["binding_evidence"] > profile["score_weights"]["binding_evidence"]
 
 
 def test_efficacy_uses_immunogenicity_composite():

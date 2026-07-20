@@ -30,7 +30,7 @@ process SV_BUILD_RAW {
     else
       SV_VCFS=${sv_list}
     fi
-    neoag-v03 ${wes} \
+    neoag ${wes} \
       --sample-id ${sample_id} \
       --profile ${profile} \
       --sv-vcf \${SV_VCFS} \

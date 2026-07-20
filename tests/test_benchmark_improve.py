@@ -1,8 +1,8 @@
 from pathlib import Path
 
-from neoag_v03.adapters.iedb_immunogenicity import predict_immunogenicity
-from neoag_v03.adapters.netmhcstabpan import parse_netmhcstabpan
-from neoag_v03.benchmark_improve import (
+from neoag.adapters.iedb_immunogenicity import predict_immunogenicity
+from neoag.adapters.netmhcstabpan import parse_netmhcstabpan
+from neoag.benchmark_improve import (
     DEFAULT_CEDAR,
     TOOL_CACHE_FILES,
     _seed_tools_cache,

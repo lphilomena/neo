@@ -54,7 +54,7 @@ Fix:
 
 - install editable entry points with `python -m pip install -e .`; or
 - add a project-local `bin/neoag-doctor` wrapper that runs
-  `python -m neoag_v03.controlled_execution.doctor` with `PYTHONPATH=src`.
+  `python -m neoag.controlled_execution.doctor` with `PYTHONPATH=src`.
 
 ### `FileNotFoundError: vep`
 
@@ -154,7 +154,7 @@ Fix:
 Cause: BigMHC and immunogenicity code run in the runtime Python env, not always
 in the tool install env.
 
-Fix: validate these imports in the env used by `neoag-v03`:
+Fix: validate these imports in the env used by `neoag`:
 
 ```bash
 python -c 'import torch,numpy,pandas,scipy,sklearn,psutil'

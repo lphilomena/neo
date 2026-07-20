@@ -70,7 +70,7 @@ Use `conf/run.production_multisource.example.toml` after the three peptide branc
 
 ```bash
 source conf/tools.env.sh
-neoag-v03 run-full \
+neoag run-full \
   --config conf/run.production_multisource.example.toml \
   --outdir results/SAMPLE001_multisource
 ```

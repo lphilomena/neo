@@ -3,7 +3,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "neoag-event-pipeline-v03-rc"
+name = "neoag-event-pipeline"
 version = "0.4.3"
 description = "Neoantigen event prioritization pipeline with APPM 2.0, CCF 2.1, safety, immune-escape, and DNA SV-derived neoantigen P0 evidence layers"
 readme = "README.md"
@@ -16,15 +16,15 @@ test = ["pytest>=7", "pytest-timeout>=2.3"]
 agent-llm = ["litellm>=1.40", "langgraph>=0.2", "langchain-core>=0.2"]
 
 [project.scripts]
-neoag-v03 = "neoag_v03.cli:main"
-neoag-agent = "neoag_v03.agents.coordinator:main"
-neoag-llm-agent = "neoag_v03.llm_coordinator.coordinator_agent:main"
-neoag-doctor = "neoag_v03.controlled_execution.doctor:main"
-neoag-gateway = "neoag_v03.controlled_execution.gateway:main"
-neoag-pipeline-full = "neoag_v03.controlled_execution.pipeline_runner:main"
-neoag-release-audit = "neoag_v03.controlled_execution.release_audit:main"
-neoag-skill = "neoag_v03.skill_taxonomy.cli:main"
-neoag-production-run = "neoag_v03.production_runner:main"
+neoag = "neoag.cli:main"
+neoag-agent = "neoag.agents.coordinator:main"
+neoag-llm-agent = "neoag.llm_coordinator.coordinator_agent:main"
+neoag-doctor = "neoag.controlled_execution.doctor:main"
+neoag-gateway = "neoag.controlled_execution.gateway:main"
+neoag-pipeline-full = "neoag.controlled_execution.pipeline_runner:main"
+neoag-release-audit = "neoag.controlled_execution.release_audit:main"
+neoag-skill = "neoag.skill_taxonomy.cli:main"
+neoag-production-run = "neoag.production_runner:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -1,6 +1,6 @@
 # Resume HCC1395 after pVACseq completed (skip re-running pvacseq).
 #   source conf/tools.env.sh
-#   neoag-v03 run-full --config conf/run.hcc1395.resume.toml --outdir results/HCC1395
+#   neoag run-full --config conf/run.hcc1395.resume.toml --outdir results/HCC1395
 
 [sample]
 id = "HCC1395"

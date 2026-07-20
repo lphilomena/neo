@@ -231,7 +231,7 @@ def write_manifest(path: Path, package_name: str, files: list[Path], archive_sha
         "verification_hint": [
             "python -m pip install -e '.[test]'",
             "pytest -q",
-            "neoag-v03 run-demo --outdir work/demo_v043 --sample-id DEMO001",
+            "neoag run-demo --outdir work/demo_v043 --sample-id DEMO001",
             "bin/neoag-nextflow run workflows/main.nf --pvac_files data/fixtures/pvacseq_aggregated.tsv --outdir results/demo_nf",
         ],
         "interpretation_boundary": "Research triage and validation planning only; not clinical treatment recommendation software.",

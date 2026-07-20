@@ -47,4 +47,4 @@ fi
 
 echo "==> Done. Test:"
 echo "  source ${TOOLS_ENV}"
-echo "  neoag-v03 check-tools | grep deepimmuno"
+echo "  neoag check-tools | grep deepimmuno"

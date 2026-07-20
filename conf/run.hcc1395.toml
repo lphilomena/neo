@@ -5,8 +5,8 @@
 # Prerequisite: source conf/tools.env.sh  (neoag-tools + NetMHCpan on PATH)
 #
 # Quick start:
-#   neoag-v03 run-full --config conf/run.hcc1395.toml --outdir results/HCC1395
-#   neoag-v03 run-upstream --config conf/run.hcc1395.toml --outdir results/HCC1395/upstream
+#   neoag run-full --config conf/run.hcc1395.toml --outdir results/HCC1395
+#   neoag run-upstream --config conf/run.hcc1395.toml --outdir results/HCC1395/upstream
 
 [sample]
 id = "HCC1395"

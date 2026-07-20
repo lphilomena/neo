@@ -29,7 +29,7 @@ Never invent real patient paths or HLA alleles. Ask if they are missing.
 
 ## Environment Bootstrap
 
-Use this section only when the environment is not installed, `neoag-v03` is missing, imports fail, or the user explicitly asks to prepare the machine. Do not reinstall tools on every run.
+Use this section only when the environment is not installed, `neoag` is missing, imports fail, or the user explicitly asks to prepare the machine. Do not reinstall tools on every run.
 
 Before installing licensed or large tools, confirm the user's intended mode:
 
@@ -42,7 +42,7 @@ Before installing licensed or large tools, confirm the user's intended mode:
 ```bash
 source conf/tools.env.sh
 python -m pip install -e '.[test]'
-neoag-v03 --help
+neoag --help
 ```
 
 ### Lightweight conda bootstrap
@@ -53,7 +53,7 @@ Use this for development or smoke tests:
 NEOAG_TOOLS_LITE=1 bash scripts/setup_tools_env.sh
 source conf/tools.env.sh
 python -m pip install -e '.[test]'
-neoag-v03 check-tools
+neoag check-tools
 ```
 
 ### Production bootstrap
@@ -72,7 +72,7 @@ bash scripts/install_vep_cache.sh
 bash scripts/install_netmhcpan.sh /path/to/netMHCpan-4.2c.Linux.tar.gz
 source conf/tools.env.sh
 python -m pip install -e '.[test]'
-neoag-v03 check-tools
+neoag check-tools
 ```
 
 If the site already has references or licensed tools, prefer setting local paths in `conf/tools.env.local.sh` over reinstalling.
@@ -84,7 +84,7 @@ Run from the repository root:
 ```bash
 source conf/tools.env.sh
 python -m pip install -e .
-neoag-v03 check-tools
+neoag check-tools
 ```
 
 For production runs with auto VEP annotation, verify:
@@ -102,7 +102,7 @@ For VEP plugins, `NEOAG_VEP_PLUGINS` should contain `Wildtype.pm` and `Frameshif
 
 ### One-command path
 
-Use `neoag-v03 run-full` when the user wants a single command and accepts automatic VEP annotation if `CSQ` is missing.
+Use `neoag run-full` when the user wants a single command and accepts automatic VEP annotation if `CSQ` is missing.
 
 Create a private config:
 
@@ -132,7 +132,7 @@ TOML
 Then run:
 
 ```bash
-neoag-v03 run-full \
+neoag run-full \
   --config conf/run.<sample_id>.sliding.private.toml \
   --outdir results/<sample_id>_sliding
 ```
@@ -155,10 +155,10 @@ Report these paths at the end:
 - `<outdir>/upstream/tools/variant_peptides.annotated.tsv` (created during peptide extraction, then refreshed after tool scoring)
 - `<outdir>/upstream/parsed/raw_events.tsv`
 - `<outdir>/upstream/parsed/raw_peptides.tsv`
-- `<outdir>/scoring/ranked_events.v03.tsv`
-- `<outdir>/scoring/ranked_peptides.v03.tsv`
-- `<outdir>/scoring/validation_plan.v03.tsv`
-- `<outdir>/reports/evidence_report.v03.html`
+- `<outdir>/scoring/ranked_events.tsv`
+- `<outdir>/scoring/ranked_peptides.tsv`
+- `<outdir>/scoring/validation_plan.tsv`
+- `<outdir>/reports/evidence_report.html`
 - `<outdir>/reports/evidence_report.patient.html`
 - `<outdir>/reports/evidence_report.technical.html`
 
@@ -169,7 +169,7 @@ After running:
 ```bash
 test -s <outdir>/upstream/parsed/raw_events.tsv
 test -s <outdir>/upstream/parsed/raw_peptides.tsv
-test -s <outdir>/scoring/ranked_peptides.v03.tsv
+test -s <outdir>/scoring/ranked_peptides.tsv
 test -s <outdir>/reports/evidence_report.technical.html
 ```
 

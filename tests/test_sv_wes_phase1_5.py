@@ -1,8 +1,8 @@
 from pathlib import Path
 
-from neoag_v03.sv.wes_adapter import WESAdapter, build_sv_wes_phase1_5_raw
-from neoag_v03.sv.wes_filter import classify_wes_tier
-from neoag_v03.utils import read_tsv
+from neoag.sv.wes_adapter import WESAdapter, build_sv_wes_phase1_5_raw
+from neoag.sv.wes_filter import classify_wes_tier
+from neoag.utils import read_tsv
 
 ROOT = Path(__file__).resolve().parents[1]
 FX = ROOT / "data" / "fixtures_sv"

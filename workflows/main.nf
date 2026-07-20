@@ -1,10 +1,10 @@
 nextflow.enable.dsl=2
 
-include { NEOAG_V03_RC } from './neoag_v03_rc.nf'
+include { NEOAG } from './neoag_rc.nf'
 
 params.profile_name = params.profile_name ?: 'default'
 params.sample_id = params.sample_id ?: 'SAMPLE001'
-params.outdir = params.outdir ?: 'results/neoag_v03_rc'
+params.outdir = params.outdir ?: 'results/neoag_rc'
 params.strict_mode = params.strict_mode ?: false
 
 params.pvac_files = params.pvac_files ?: ''
@@ -34,7 +34,7 @@ workflow {
   normal_expression_ch = Channel.fromPath(params.normal_expression)
   normal_hla_ligands_ch = Channel.fromPath(params.normal_hla_ligands)
 
-  NEOAG_V03_RC(
+  NEOAG(
     params.sample_id,
     params.profile_name,
     pvac_ch.collect(),

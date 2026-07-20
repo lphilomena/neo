@@ -1,8 +1,8 @@
 from pathlib import Path
 
-from neoag_v03.tools import upstream
-from neoag_v03.tools import runner
-from neoag_v03.tools.registry import RunContext
+from neoag.tools import upstream
+from neoag.tools import runner
+from neoag.tools.registry import RunContext
 
 
 def test_vcf_has_csq_annotations_plain_file_with_gz_suffix(tmp_path):
@@ -41,7 +41,7 @@ def test_auto_annotates_unannotated_variant_peptide_vcf(tmp_path, monkeypatch):
         )
         return {"annotated_vcf": str(out), "command": "vep mock"}
 
-    monkeypatch.setattr("neoag_v03.vep.annotate.run_vep_pvacseq_annotate", fake_run_vep)
+    monkeypatch.setattr("neoag.vep.annotate.run_vep_pvacseq_annotate", fake_run_vep)
 
     annotated, outputs = upstream._auto_annotate_variants_vcf(
         {
@@ -118,7 +118,7 @@ extract_appm_from_vcf = false
             "raw_events": str(raw_events),
         }
 
-    monkeypatch.setattr("neoag_v03.vep.annotate.run_vep_pvacseq_annotate", fake_run_vep)
+    monkeypatch.setattr("neoag.vep.annotate.run_vep_pvacseq_annotate", fake_run_vep)
     monkeypatch.setattr(upstream, "run_variant_peptide_upstream", fake_variant_upstream)
 
     outputs = upstream.run_upstream(cfg, tmp_path / "out")

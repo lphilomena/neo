@@ -12,20 +12,20 @@ The current server runs Ubuntu 20.04 with glibc 2.31. The official NetMHCpan 4.2
 The official NetMHCpan directory must already exist and be configured with the correct `NMHOME` in the official launcher:
 
 ```bash
-/home/na/project/neoantigen/neoag_event_pipeline_v03_rc/tools/netMHCpan
+/home/na/project/neoantigen/neoag_event_pipeline/tools/netMHCpan
 ```
 
 The runtime uses:
 
 ```bash
-export NETMHCPAN_HOME=/home/na/project/neoantigen/neoag_event_pipeline_v03_rc/tools/netMHCpan
+export NETMHCPAN_HOME=/home/na/project/neoantigen/neoag_event_pipeline/tools/netMHCpan
 export NETMHCpan=$NETMHCPAN_HOME
 ```
 
 ## Build Docker image
 
 ```bash
-cd /home/na/project/neoantigen/neoag_event_pipeline_v03_rc
+cd /home/na/project/neoantigen/neoag_event_pipeline
 ./scripts/build_netmhcpan_container.sh docker
 ```
 
@@ -44,7 +44,7 @@ NEOAG_NETMHCPAN_IMAGE=my-netmhcpan:4.2c ./scripts/build_netmhcpan_container.sh d
 ## Run NetMHCpan through Docker
 
 ```bash
-cd /home/na/project/neoantigen/neoag_event_pipeline_v03_rc
+cd /home/na/project/neoantigen/neoag_event_pipeline
 ./scripts/run_netmhcpan_container.sh -p peptides.txt -a HLA-A02:06
 ```
 
@@ -66,7 +66,7 @@ NEOAG_NETMHCPAN_EXTRA_MOUNTS=/data:/data,/scratch:/scratch \
 ## Verify runtime
 
 ```bash
-cd /home/na/project/neoantigen/neoag_event_pipeline_v03_rc
+cd /home/na/project/neoantigen/neoag_event_pipeline
 ./scripts/verify_netmhcpan_container.sh
 ```
 

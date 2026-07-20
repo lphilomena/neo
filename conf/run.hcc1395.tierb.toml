@@ -8,7 +8,7 @@
 #
 # Quick start (LOHHLA example + cached upstream + FACETS from hcc1143 smoke test):
 #   source conf/tools.env.sh
-#   neoag-v03 run-full --config conf/run.hcc1395.tierb.toml --outdir results/HCC1395_tierb
+#   neoag run-full --config conf/run.hcc1395.tierb.toml --outdir results/HCC1395_tierb
 
 [sample]
 id = "HCC1395"

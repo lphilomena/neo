@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from neoag_v03.preflight import vcf_preflight
+from neoag.preflight import vcf_preflight
 
 
 def test_vcf_preflight_detects_csq_and_gt(tmp_path):

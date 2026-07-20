@@ -2,10 +2,10 @@ nextflow.enable.dsl=2
 
 include { SNV_WRITE_RUN_CONFIG } from '../modules/snv_write_run_config/main.nf'
 include { RUN_UPSTREAM } from '../modules/run_upstream/main.nf'
-include { NEOAG_V03_RC } from './neoag_v03_rc.nf'
+include { NEOAG } from './neoag_rc.nf'
 
 /*
- * WES SNV Phase 1 fixture: pre-built somatic VCF → pVAC stub → score_v03.
+ * WES SNV Phase 1 fixture: pre-built somatic VCF → pVAC stub → score.
  *
  *   nextflow run workflows/snv_phase1_wes_fixture.nf -c conf/snv_wes_demo.config
  */
@@ -45,7 +45,7 @@ workflow {
     mhc_ch = upstream_done.map { d -> file("${d}/tools/mhcflurry.csv") }
     vep_ch = upstream_done.map { d -> file("${d}/tools/vep_appm.tsv") }
 
-    NEOAG_V03_RC(
+    NEOAG(
         params.sample_id,
         params.profile_name,
         pvac_ch,

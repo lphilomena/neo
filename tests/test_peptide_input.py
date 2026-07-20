@@ -2,14 +2,14 @@ from pathlib import Path
 
 import pytest
 
-from neoag_v03.adapters.peptide_input import (
+from neoag.adapters.peptide_input import (
     convert_peptide_input,
     normalize_hla_allele,
     unique_peptide_hla_records,
     PeptideHlaRecord,
 )
-from neoag_v03.tools.prep import unique_peptide_hla_pairs
-from neoag_v03.cli import main
+from neoag.tools.prep import unique_peptide_hla_pairs
+from neoag.cli import main
 
 
 def test_normalize_hla_formats():

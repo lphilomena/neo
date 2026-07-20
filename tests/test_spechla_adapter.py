@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from neoag_v03.adapters.spechla import parse_spechla_loh_merge
-from neoag_v03.tools.postprocess import spechla_to_hla_loh_tsv
+from neoag.adapters.spechla import parse_spechla_loh_merge
+from neoag.tools.postprocess import spechla_to_hla_loh_tsv
 
 MERGE_NO_LOH = """\
 Sample\tHLA\tAllele1\tAllele2\tcopyratio\tKeptHLA\tLossHLA\tFreq1\tFreq2\tPurity\tHet_num\tLOH
@@ -51,7 +51,7 @@ def test_spechla_to_hla_loh_tsv(tmp_path: Path):
 
 
 def test_upstream_spechla_merge_passthrough(tmp_path: Path):
-    from neoag_v03.tools.upstream import run_upstream
+    from neoag.tools.upstream import run_upstream
 
     merge = tmp_path / "merge.hla.copy.txt"
     merge.write_text(MERGE_NO_LOH, encoding="utf-8")

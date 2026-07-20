@@ -20,7 +20,7 @@ flowchart TD
     B2 --> C[Preflight checks]
     B -- Yes --> C
 
-    C --> C1[Check neoag-v03 import and CLI]
+    C --> C1[Check neoag import and CLI]
     C --> C2[Check VEP, cache, plugins, reference FASTA]
     C --> C3[Check NetMHCpan/MHCflurry or precomputed predictor outputs]
     C1 --> D{VCF has VEP CSQ?}
@@ -42,14 +42,14 @@ flowchart TD
     I --> I1[NetMHCpan output]
     I --> I2[MHCflurry output]
     H -- Yes --> J[Use existing predictor outputs]
-    I1 --> K[run-v03 scoring and ranking]
+    I1 --> K[run scoring and ranking]
     I2 --> K
     J --> K
 
     K --> K1[Build presentation, APPM, CCF, safety, immune escape evidence]
-    K1 --> K2[Generate ranked_events.v03.tsv]
-    K1 --> K3[Generate ranked_peptides.v03.tsv]
-    K1 --> K4[Generate validation_plan.v03.tsv]
+    K1 --> K2[Generate ranked_events.tsv]
+    K1 --> K3[Generate ranked_peptides.tsv]
+    K1 --> K4[Generate validation_plan.tsv]
     K1 --> K5[Generate patient and technical reports]
 
     K2 --> L[Refresh annotated peptide catalog]
@@ -68,12 +68,12 @@ flowchart TD
 
 | Stage | Purpose | Main inputs | Main outputs | Notes |
 | --- | --- | --- | --- | --- |
-| 0. Environment bootstrap | Prepare a new machine or broken environment. | Repository checkout, conda, optional licensed tool installers. | Working `neoag-v03`, importable `neoag_v03.tools`, available tool wrappers. | Only run when needed. Do not reinstall tools on every sample run. |
+| 0. Environment bootstrap | Prepare a new machine or broken environment. | Repository checkout, conda, optional licensed tool installers. | Working `neoag`, importable `neoag.tools`, available tool wrappers. | Only run when needed. Do not reinstall tools on every sample run. |
 | 1. Preflight | Confirm the selected execution mode can run. | `conf/tools.env.sh`, local tool paths, sample paths, HLA alleles. | Pass/fail status for CLI, VEP, VEP cache/plugins, reference FASTA, NetMHCpan/MHCflurry. | If using precomputed predictor outputs, local NetMHCpan/MHCflurry can be skipped. |
 | 2. VEP annotation | Add VEP `CSQ` and plugin annotations to an unannotated VCF. | Somatic SNV/InDel VCF, reference FASTA, VEP cache, VEP plugins. | `<outdir>/upstream/tools/<sample_id>.vep.annotated.vcf.gz`. | Skip only if the input VCF already has valid `CSQ`. |
 | 3. Short peptide generation | Convert VEP-annotated variants into candidate peptide and raw event tables. | VEP-annotated VCF, tumor sample name, HLA alleles, optional normal proteome FASTA. | `variant_peptides.tsv`, initial `variant_peptides.annotated.tsv`, `raw_events.tsv`, `raw_peptides.tsv`. | `raw_peptides.tsv` is the scoring input; `variant_peptides.annotated.tsv` is an explorable catalog sidecar. |
 | 4. Tool scoring | Generate peptide-HLA predictor evidence. | `raw_peptides.tsv`, HLA alleles, NetMHCpan/MHCflurry tools or existing outputs. | `presentation/netmhcpan.xls`, `presentation/mhcflurry.csv`, optional immunogenicity outputs. | Re-run this stage when predictor settings or HLA alleles change. |
-| 5. Ranking and reports | Build evidence layers, rank candidates, and generate validation/report outputs. | `raw_events.tsv`, `raw_peptides.tsv`, predictor outputs, optional expression/LOH/purity/CNV evidence. | `ranked_events.v03.tsv`, `ranked_peptides.v03.tsv`, `validation_plan.v03.tsv`, HTML reports. | This is the main `run-v03` scoring and report stage. |
+| 5. Ranking and reports | Build evidence layers, rank candidates, and generate validation/report outputs. | `raw_events.tsv`, `raw_peptides.tsv`, predictor outputs, optional expression/LOH/purity/CNV evidence. | `ranked_events.tsv`, `ranked_peptides.tsv`, `validation_plan.tsv`, HTML reports. | This is the main `run` scoring and report stage. |
 | 6. Annotated catalog refresh | Update the candidate catalog with post-scoring tool evidence. | `variant_peptides.tsv`, HLA alleles, NetMHCpan/MHCflurry and optional immunogenicity outputs. | Final `variant_peptides.annotated.tsv`. | This is required in staged mode so the review catalog includes tool scores. `run-full` already performs this refresh automatically. |
 
 ## One-command Path
@@ -81,7 +81,7 @@ flowchart TD
 Use this path for simple runs and smoke tests:
 
 ```bash
-neoag-v03 run-full \
+neoag run-full \
   --config conf/run.<sample_id>.sliding.private.toml \
   --outdir results/<sample_id>_sliding
 ```
@@ -98,7 +98,7 @@ Use this path for production debugging, partial reruns, or when VEP/predictor st
 2. VEP annotation if CSQ is missing
 3. Short peptide generation
 4. Tool scoring
-5. run-v03 ranking and reports
+5. run ranking and reports
 6. Refresh variant_peptides.annotated.tsv
 ```
 
@@ -110,7 +110,7 @@ The staged command templates are in `staged-workflow.md`.
 - If VEP fails, rerun only VEP annotation after fixing VEP/cache/plugin/reference paths.
 - If peptide extraction fails, rerun only short peptide generation after checking `CSQ`, tumor sample name, HLA alleles, and normal proteome settings.
 - If NetMHCpan/MHCflurry fails, rerun only tool scoring.
-- If ranking/report generation fails, rerun `run-v03` using existing raw tables and predictor outputs.
+- If ranking/report generation fails, rerun `run` using existing raw tables and predictor outputs.
 - If only catalog score columns are stale, rerun only `refresh_variant_peptides_annotated.py`.
 
 ## Final Deliverables
@@ -123,9 +123,9 @@ The skill should report these paths when a run completes:
 - `<outdir>/upstream/parsed/raw_peptides.tsv`
 - `<outdir>/presentation/netmhcpan.xls`
 - `<outdir>/presentation/mhcflurry.csv`
-- `<outdir>/scoring/ranked_events.v03.tsv`
-- `<outdir>/scoring/ranked_peptides.v03.tsv`
-- `<outdir>/scoring/validation_plan.v03.tsv`
-- `<outdir>/reports/evidence_report.v03.html`
+- `<outdir>/scoring/ranked_events.tsv`
+- `<outdir>/scoring/ranked_peptides.tsv`
+- `<outdir>/scoring/validation_plan.tsv`
+- `<outdir>/reports/evidence_report.html`
 - `<outdir>/reports/evidence_report.patient.html`
 - `<outdir>/reports/evidence_report.technical.html`

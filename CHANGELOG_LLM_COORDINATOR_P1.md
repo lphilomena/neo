@@ -3,7 +3,7 @@
 Added an optional LLM-assisted Coordinator layer for Project B:
 
 - `neoag-llm-agent` CLI.
-- `src/neoag_v03/llm_coordinator/` package.
+- `src/neoag/llm_coordinator/` package.
 - Rule-based/offline provider plus optional LiteLLM provider.
 - Context builder, input-state builder, intent classifier, Skill planner, guardrails, Skill executor, result collector, summarizer, case-state and audit logging.
 - Optional LangGraph adapter in `llm_coordinator/langgraph_app.py`.

@@ -5,7 +5,7 @@ include { SV_SVABA } from '../modules/sv_svaba/main.nf'
 include { SV_GRIDSS } from '../modules/sv_gridss/main.nf'
 include { SV_NORMALIZE_MERGE } from '../modules/sv_normalize_merge/main.nf'
 include { SV_BUILD_RAW } from '../modules/sv_build_raw/main.nf'
-include { NEOAG_SV_SCORE_V03 } from './sv_score_v03.nf'
+include { NEOAG_SV_SCORE } from './sv_score.nf'
 
 /*
  * WGS SV Phase 1 workflow (+ optional v0.3 scoring).
@@ -19,7 +19,7 @@ include { NEOAG_SV_SCORE_V03 } from './sv_score_v03.nf'
  *   --hla 'HLA-A*02:01,HLA-B*07:02,...'
  *   --outdir results/P001_sv_phase1
  *
- * Scoring (default on): NetMHCpan + MHCflurry + score_v03
+ * Scoring (default on): NetMHCpan + MHCflurry + score
  *   --run_scoring false   # adapter-only mode
  *   --binding_stub true   # fixture binding for CI
  */
@@ -51,7 +51,7 @@ workflow {
     SV_BUILD_RAW(sample_ch, SV_NORMALIZE_MERGE.out.sv_list, ref_ch, gtf_ch)
 
     if (params.run_scoring) {
-        NEOAG_SV_SCORE_V03(
+        NEOAG_SV_SCORE(
             params.sample_id,
             params.profile_name,
             SV_BUILD_RAW.out.raw_events,

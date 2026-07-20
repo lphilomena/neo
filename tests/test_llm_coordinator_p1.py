@@ -24,7 +24,7 @@ def test_llm_coordinator_plan_ranking_compare(tmp_path: Path) -> None:
     make_rank_file(rec, rows)
     make_rank_file(net, list(reversed(rows)))
     out = tmp_path / "out"
-    cmd = [sys.executable, "-m", "neoag_v03.llm_coordinator.coordinator_agent", "--message", "比较 recommendation 和 NetMHCpan42 排序差异", "--file", str(rec), "--file", str(net), "--outdir", str(out), "--mode", "plan"]
+    cmd = [sys.executable, "-m", "neoag.llm_coordinator.coordinator_agent", "--message", "比较 recommendation 和 NetMHCpan42 排序差异", "--file", str(rec), "--file", str(net), "--outdir", str(out), "--mode", "plan"]
     proc = subprocess.run(cmd, text=True, capture_output=True)
     assert proc.returncode == 0, proc.stderr
     state = json.loads((out / "case_state.json").read_text(encoding="utf-8"))
@@ -45,7 +45,7 @@ def test_llm_coordinator_execute_safe_ranking_compare(tmp_path: Path) -> None:
     make_rank_file(rec, rows_rec)
     make_rank_file(net, rows_net)
     out = tmp_path / "out_exec"
-    cmd = [sys.executable, "-m", "neoag_v03.llm_coordinator.coordinator_agent", "--message", "比较 recommendation 和 NetMHCpan42 排序差异", "--file", str(rec), "--file", str(net), "--outdir", str(out), "--mode", "execute-safe"]
+    cmd = [sys.executable, "-m", "neoag.llm_coordinator.coordinator_agent", "--message", "比较 recommendation 和 NetMHCpan42 排序差异", "--file", str(rec), "--file", str(net), "--outdir", str(out), "--mode", "execute-safe"]
     proc = subprocess.run(cmd, text=True, capture_output=True)
     assert proc.returncode == 0, proc.stderr
     assert (out / "neoag-ranking-compare" / "ranking_compare_report.md").exists()
@@ -56,7 +56,7 @@ def test_llm_coordinator_execute_safe_ranking_compare(tmp_path: Path) -> None:
 
 def test_llm_coordinator_guardrail_hpc_plan(tmp_path: Path) -> None:
     out = tmp_path / "out_hpc"
-    cmd = [sys.executable, "-m", "neoag_v03.llm_coordinator.coordinator_agent", "--message", "请直接提交 Slurm 到 HPC 跑全流程", "--outdir", str(out), "--mode", "execute-safe"]
+    cmd = [sys.executable, "-m", "neoag.llm_coordinator.coordinator_agent", "--message", "请直接提交 Slurm 到 HPC 跑全流程", "--outdir", str(out), "--mode", "execute-safe"]
     proc = subprocess.run(cmd, text=True, capture_output=True)
     assert proc.returncode == 0, proc.stderr
     state = json.loads((out / "case_state.json").read_text(encoding="utf-8"))

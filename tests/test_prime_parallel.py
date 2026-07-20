@@ -4,9 +4,9 @@ from unittest.mock import patch
 
 import pytest
 
-from neoag_v03.adapters.prime import prime_parallel_jobs, split_peptide_chunks
-from neoag_v03.tools.registry import RunContext
-from neoag_v03.tools.runner import _run_prime_external
+from neoag.adapters.prime import prime_parallel_jobs, split_peptide_chunks
+from neoag.tools.registry import RunContext
+from neoag.tools.runner import _run_prime_external
 
 
 def test_prime_parallel_jobs_default(monkeypatch):
@@ -67,8 +67,8 @@ def test_run_prime_external_parallel_batches(tmp_path, monkeypatch):
     ctx = RunContext(sample_id="S1", outdir=tmp_path, stub=False, raw_peptides=tmp_path / "raw.tsv")
     out_tsv = tmp_path / "prime_evidence.tsv"
 
-    with patch("neoag_v03.tools.runner._resolve_prime_exe", return_value=Path("/fake/PRIME")), patch(
-        "neoag_v03.tools.runner._run_prime_batch", side_effect=fake_batch
+    with patch("neoag.tools.runner._resolve_prime_exe", return_value=Path("/fake/PRIME")), patch(
+        "neoag.tools.runner._run_prime_batch", side_effect=fake_batch
     ):
         _run_prime_external(pairs, out_tsv, ctx)
 

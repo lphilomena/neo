@@ -62,10 +62,10 @@ def main() -> None:
         "git_head": run(["git", "rev-parse", "HEAD"]),
         "git_status_short": run(["git", "status", "--short"], timeout=120),
         "pytest": None if args.skip_pytest else run([str(ROOT / ".venv" / "bin" / "python"), "-m", "pytest", "-q"], env=env, timeout=300),
-        "neoag_help": run([str(ROOT / "bin" / "neoag-v03"), "--help"], timeout=60),
+        "neoag_help": run([str(ROOT / "bin" / "neoag"), "--help"], timeout=60),
         "java_version": run(["java", "-version"], env=env),
         "nextflow_version": run([str(ROOT / "bin" / "nextflow"), "-version"], env=env),
-        "tool_check": run([str(ROOT / "bin" / "neoag-v03"), "check-tools"], env=env, timeout=180),
+        "tool_check": run([str(ROOT / "bin" / "neoag"), "check-tools"], env=env, timeout=180),
         "release_files": [],
         "known_optional_missing_tools": ["netmhcpan", "prime", "star_fusion", "fusioncatcher"],
     }
