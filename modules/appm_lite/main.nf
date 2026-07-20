@@ -1,3 +1,7 @@
+// @Deprecated: Use APPM_2 (modules/appm_2/main.nf) instead — APPM_2 provides
+// superset functionality including CNV/purity integration and expanded outputs.
+// This module is kept for backward compatibility and will be removed in a
+// future release.
 process APPM_LITE {
   tag "$sample_id"
   publishDir "${params.outdir}/appm", mode: 'copy'

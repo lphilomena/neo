@@ -1,15 +1,57 @@
 Bootstrap: docker
 From: ubuntu:22.04
 
+%files
+    vendor/netMHCpan-4.2c.Linux.tar.gz /tmp/
+
 %post
     export DEBIAN_FRONTEND=noninteractive
     apt-get update
-    apt-get install -y --no-install-recommends         bash ca-certificates coreutils gawk grep         libgomp1 libstdc++6 procps tcsh zlib1g
+    apt-get install -y --no-install-recommends \
+       bash ca-certificates libgomp1 libstdc++6
     rm -rf /var/lib/apt/lists/*
+    export NETMHCPAN_HOME=/opt/netMHCpan
+
+    # Extract tarball
+    tar xzf /tmp/netMHCpan-4.2c.Linux.tar.gz -C /tmp/
+    mkdir -p /opt
+    mv /tmp/netMHCpan-4.2 "${NETMHCPAN_HOME}"
+    rm -f /tmp/netMHCpan-4.2c.Linux.tar.gz
+
+    # Clean Apple resource forks and macOS metadata
+    find "${NETMHCPAN_HOME}" -name '._*' -delete
+    find "${NETMHCPAN_HOME}" -name '.DS_Store' -delete
+    mkdir -p "${NETMHCPAN_HOME}/tmp"
+
+    # Replace tcsh launcher with bash wrapper
+    cat > "${NETMHCPAN_HOME}/netMHCpan" <<'WRAPPER'
+#!/usr/bin/env bash
+set -euo pipefail
+
+export NETMHCPAN_HOME="${NETMHCPAN_HOME:-/opt/netMHCpan}"
+export NETMHCpan="${NETMHCpan:-${NETMHCPAN_HOME}/Linux_x86_64}"
+export TMPDIR="${TMPDIR:-/tmp}"
+mkdir -p "${TMPDIR}"
+
+BIN="${NETMHCpan}/bin/netMHCpan-4.2"
+if [[ ! -x "${BIN}" ]]; then
+  echo "netMHCpan: binary not found at ${BIN}" >&2
+  exit 127
+fi
+
+exec "${BIN}" "$@"
+WRAPPER
+    chmod +x "${NETMHCPAN_HOME}/netMHCpan"
+
+    # Smoke test
+    /opt/netMHCpan/netMHCpan -h 2>&1 | head -5 || true
 
 %environment
-    export LANG=C.UTF-8
-    export LC_ALL=C.UTF-8
+    export NETMHCPAN_HOME=/opt/netMHCpan
+    export NETMHCpan=/opt/netMHCpan/Linux_x86_64
+    export NEOAG_NETMHCPAN_BIN=/opt/netMHCpan/netMHCpan
+    export NEOAG_NETMHCPAN_TMPDIR=/opt/netMHCpan/tmp
+    export PATH="/opt/netMHCpan:${PATH}"
 
 %runscript
-    exec /bin/bash -lc ""
+    exec /bin/bash "$@"

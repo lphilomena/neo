@@ -1,6 +1,7 @@
 process SV_SVABA {
     tag "${sample_id}"
     cpus params.threads ?: 16
+    container 'quay.io/biocontainers/svaba:1.2.0--h69ac913_1'
     publishDir "${params.outdir}/sv_calls/svaba", mode: 'copy'
 
     input:

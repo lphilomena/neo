@@ -40,6 +40,7 @@ DOCKER_IMAGES: dict[str, str] = {
     "easyfuse": "tronbioinformatics/easyfuse:1.3.7",
     "gridss": "gridss/gridss:2.13.2",
     "delly": "dellytools/delly:v2.3.0",
+    "sequenza": "sequenza/sequenza:3.99rc1",
     # ---- Biocontainers 镜像 ----
     "lohhla": "quay.io/biocontainers/lohhla:20171108--hdfd78af_3",
     "ascat": "quay.io/biocontainers/ascat:2.5.2--r40hdfd78af_3",
@@ -183,6 +184,15 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
         fixture_outputs={"hla_loh": _fx("hla_loh.tsv")},
         docs_url="https://bitbucket.org/mcferrine/lohhla/src/master/",
     ),
+    "optitype": ToolSpec(
+        name="optitype",
+        category="hla",
+        executable="optitype",
+        description="OptiType: precision 4-digit HLA typing from NGS (DNA/RNA)",
+        version_args=("--version",),
+        fixture_outputs={"hla_csv": _fx("optitype_hla_typing.csv")},
+        docs_url="https://github.com/FRED-2/OptiType",
+    ),
     "facets": ToolSpec(
         name="facets",
         category="purity",
@@ -199,6 +209,15 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
         description="ASCAT allele-specific copy number and purity",
         version_args=("--version",),
         fixture_outputs={"purity": _fx("purity.tsv")},
+    ),
+    "sequenza": ToolSpec(
+        name="sequenza",
+        category="purity",
+        executable="sequenza-utils",
+        description="Sequenza allele-specific copy number and purity/ploidy from WGS (bam2seqz + R sequenza)",
+        version_args=(),
+        fixture_outputs={"purity": _fx("purity.tsv")},
+        docs_url="https://bitbucket.org/sequenza/sequenza/",
     ),
     "star_fusion": ToolSpec(
         name="star_fusion",

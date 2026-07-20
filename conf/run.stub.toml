@@ -8,7 +8,7 @@ outdir = "results/full_stub"
 
 [tools]
 stub = true
-enabled = ["pvacseq", "pvacfuse", "netmhcpan", "mhcflurry", "netmhcstabpan", "vep", "lohhla", "facets"]
+enabled = ["optitype", "pvacseq", "pvacfuse", "netmhcpan", "mhcflurry", "netmhcstabpan", "vep", "lohhla", "facets"]
 
 [inputs]
 hla_alleles = ["HLA-A*02:01", "HLA-A*11:01", "HLA-DRB1*04:01"]

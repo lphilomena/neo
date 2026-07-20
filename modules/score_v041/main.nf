@@ -1,5 +1,6 @@
 process SCORE_V041 {
   tag "score-v041"
+  label 'small'
   publishDir "${params.outdir}/scoring", mode: 'copy'
 
   input:

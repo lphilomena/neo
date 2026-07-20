@@ -1,5 +1,6 @@
 process PEPTIDE_SAFETY {
   tag "peptide-safety"
+  label 'small'
   publishDir "${params.outdir}/safety", mode: 'copy'
 
   input:

@@ -1,5 +1,6 @@
 process REPORT_V041 {
   tag "report-v041"
+  label 'small'
   publishDir "${params.outdir}/reports", mode: 'copy'
 
   input:

@@ -1,5 +1,6 @@
 process IMMUNE_ESCAPE {
   tag "$sample_id"
+  label 'medium'
   publishDir "${params.outdir}/immune_escape", mode: 'copy'
 
   input:

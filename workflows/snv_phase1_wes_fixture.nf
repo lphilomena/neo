@@ -58,5 +58,7 @@ workflow {
         file(params.cnv_tsv),
         file(params.normal_expression),
         file(params.normal_hla_ligands),
+        Channel.empty(),
+        Channel.empty(),
     )
 }

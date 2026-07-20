@@ -8,6 +8,12 @@ source "$ROOT/conf/tools.env.sh"
 export PYTHONPATH="$ROOT/src:${PYTHONPATH:-}"
 export PATH="$ROOT/bin:$PATH"
 
+# tools.env.sh puts neoag-tools/bin before neoag-vep/bin on PATH, causing
+# /usr/bin/env perl to resolve to neoag-tools Perl which lacks DBI.pm.
+# Prepend neoag-vep/bin (after ROOT/bin) so VEP finds a Perl with DBI.
+# Mirrors tests/run_demo/run_demo.sh line 10.
+export PATH="$ROOT/bin:${NEOAG_CONDA_BASE:-/home/na/miniforge3}/envs/${NEOAG_VEP_ENV:-neoag-vep}/bin:$PATH"
+
 # Keep Nextflow metadata out of the repository root. This also avoids stale
 # root-owned .nextflow/history.lock files left by earlier privileged runs.
 export NXF_HOME="${NXF_HOME:-$ROOT/work/.nextflow_home}"

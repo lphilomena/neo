@@ -1,3 +1,7 @@
+// @Deprecated: Use CCF_2 (modules/ccf_2/main.nf) instead — CCF_2 produces
+// ccf_lite.tsv as a side output, superseding this standalone module.
+// This module is kept for backward compatibility and will be removed in a
+// future release.
 process CCF_LITE {
   tag "ccf-lite"
   publishDir "${params.outdir}/clonality", mode: 'copy'

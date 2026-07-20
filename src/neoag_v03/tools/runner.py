@@ -290,27 +290,46 @@ def _run_docker(image: str, cmd: list[str], workdir: Path, *, env: dict[str, str
 
     mounts = _collect_docker_mounts(cmd, workdir)
 
-    # Build env-var passthrough: always pass core vars, then add caller's env dict
-    passthrough = {
-        "NEOAG_PROJECT_ROOT": os.environ.get("NEOAG_PROJECT_ROOT", ""),
-        "NEOAG_TOOLS_ROOT": os.environ.get("NEOAG_TOOLS_ROOT", ""),
-        "NETMHCPAN_HOME": os.environ.get("NETMHCPAN_HOME", ""),
-        "NETMHCpan": os.environ.get("NETMHCpan", ""),
-        "TMPDIR": os.environ.get("TMPDIR", "/tmp"),
-        # Prepend conda tool envs to PATH so shebangs like python3.11 resolve
-        "PATH": (
+    # Build env-var passthrough: always pass core vars, then add caller's env dict.
+    #
+    # PATH handling:
+    #   - neoag-* custom images ship their own tool binaries.  Don't pass PATH
+    #     at all — let the container's built-in ENV PATH take effect.  Passing
+    #     the host PATH would shadow container binaries with conda Docker wrapper
+    #     scripts, causing recursive "docker: not found" failures.
+    #   - Other images (ensembl-vep, pvacseq, etc.) may need host conda env
+    #     paths for shebangs like python3.11 to resolve correctly.
+    if image.startswith("neoag-"):
+        system_path = None  # let container use its own PATH
+    else:
+        system_path = (
             f"{os.environ.get('NEOAG_CONDA_BASE', '')}/envs/neoag-tools/bin:"
             f"{os.environ.get('NEOAG_CONDA_BASE', '')}/envs/neoag-vep/bin:"
             f"{os.environ.get('PATH', '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin')}"
-        ),
+        )
+
+    passthrough = {
+        "NEOAG_PROJECT_ROOT": os.environ.get("NEOAG_PROJECT_ROOT", ""),
+        "NEOAG_TOOLS_ROOT": os.environ.get("NEOAG_TOOLS_ROOT", ""),
+        "TMPDIR": os.environ.get("TMPDIR", "/tmp"),
         # Conda env libs (TensorFlow, CUDA, etc.)
         "LD_LIBRARY_PATH": os.environ.get("LD_LIBRARY_PATH", ""),
         # MHCflurry needs these
         "TF_USE_LEGACY_KERAS": os.environ.get("TF_USE_LEGACY_KERAS", "1"),
         "MHCFLURRY_DOWNLOADS_DIR": os.environ.get("MHCFLURRY_DOWNLOADS_DIR", ""),
     }
+    if system_path is not None:
+        passthrough["PATH"] = system_path
     if env:
         passthrough.update(env)
+    # For neoag-* images, ensure the container uses its own environment.
+    # _netmhcpan_subprocess_env() returns a copy of the full host environ
+    # which includes conda PATH and host tool paths — these would shadow
+    # the container's own tool binaries with host Docker wrapper scripts.
+    if system_path is None:
+        passthrough.pop("PATH", None)
+        passthrough.pop("NETMHCPAN_HOME", None)
+        passthrough.pop("NETMHCpan", None)
 
     # Custom (neoag-*) images use ENTRYPOINT ["/bin/bash", "-lc"] which
     # wraps the command; "exec" inside wrapper scripts fails under that.
@@ -319,13 +338,16 @@ def _run_docker(image: str, cmd: list[str], workdir: Path, *, env: dict[str, str
 
     # Resolve bare executable names to full host paths so they are
     # accessible inside the container via volume mounts.
-    if cmd and not os.path.isabs(cmd[0]) and "/" not in cmd[0]:
+    # Skip resolution for neoag-* images: entrypoint bypass means the
+    # command runs directly inside the container.  Resolving to a host
+    # conda wrapper would cause recursive "docker: not found" errors.
+    if cmd and not os.path.isabs(cmd[0]) and "/" not in cmd[0] and not entrypoint_args:
         resolved = shutil.which(cmd[0])
         if resolved:
             cmd = [resolved, *cmd[1:]]
 
     docker_cmd = [
-        "docker", "run", "--rm",
+        "/usr/bin/docker", "run", "--rm",
         *entrypoint_args,
         "--workdir", str(workdir),
         *[arg for pair in (("-e", f"{k}={v}") for k, v in passthrough.items()) for arg in pair],
@@ -1280,6 +1302,71 @@ def run_deepimmuno(ctx: RunContext, out_tsv: Path) -> Path:
         return out_tsv
 
 
+def run_optitype(ctx: RunContext, out_csv: Path) -> Path:
+    """Run OptiType HLA typing from BAM or FASTQ input.
+
+    OptiType produces a *_result.tsv with 4-digit HLA typing (A1,A2,B1,B2,C1,C2).
+    """
+    import shutil
+
+    spec = TOOL_REGISTRY["optitype"]
+    if ctx.stub:
+        _stub_copy(spec.fixture_outputs["hla_csv"], out_csv)
+        return out_csv
+
+    # Determine input files: BAM takes precedence, then FASTQ pairs
+    input_bam = ctx.variants_vcf  # not correct for BAM, but ctx doesn't have bam_path yet
+    # Use environment variables or executables config for BAM paths
+    import os
+    bam = (os.environ.get("NEOAG_OPTITYPE_BAM") or ""
+           or str(ctx.executables.get("optitype_bam", "")))
+    fq1 = (os.environ.get("NEOAG_OPTITYPE_FQ1") or ""
+           or str(ctx.executables.get("optitype_fq1", "")))
+    fq2 = (os.environ.get("NEOAG_OPTITYPE_FQ2") or ""
+           or str(ctx.executables.get("optitype_fq2", "")))
+    seq_type = os.environ.get("NEOAG_OPTITYPE_SEQ_TYPE", "dna").strip().lower()
+
+    if not bam and not fq1:
+        raise RuntimeError(
+            "OptiType requires input BAM or FASTQ. "
+            "Set NEOAG_OPTITYPE_BAM or NEOAG_OPTITYPE_FQ1/FQ2 env vars, "
+            "or use tools.stub=true."
+        )
+
+    work = ctx.outdir / "tools" / "optitype_work"
+    work.mkdir(parents=True, exist_ok=True)
+
+    cmd = [ctx.exe("optitype"), "run", "-o", str(work.resolve()), "-p", ctx.sample_id]
+
+    if bam:
+        cmd.extend(["-i", bam])
+    else:
+        cmd.extend(["-i", fq1])
+        if fq2:
+            cmd.extend(["-i", fq2])
+
+    if seq_type == "rna":
+        cmd.append("--rna")
+    else:
+        cmd.append("--dna")
+
+    threads = os.environ.get("NEOAG_OPTITYPE_THREADS", "4")
+    cmd.extend(["--threads", threads])
+
+    _run_cmd(cmd, work)
+
+    # Find the result CSV
+    result_files = list(work.glob(f"{ctx.sample_id}*_result.tsv"))
+    if not result_files:
+        result_files = list(work.glob("*_result.tsv"))
+    if not result_files:
+        raise FileNotFoundError(f"OptiType did not produce a _result.tsv in {work}")
+
+    result_csv = result_files[0]
+    shutil.copy2(result_csv, out_csv)
+    return out_csv
+
+
 RUNNERS = {
     "netmhcpan": lambda ctx, p: run_netmhcpan(ctx, p),
     "netmhcstabpan": lambda ctx, p: run_netmhcstabpan(ctx, p),
@@ -1293,6 +1380,7 @@ RUNNERS = {
     "vep": lambda ctx, p: run_vep_appm(ctx, p),
     "lohhla": lambda ctx, p: run_lohhla(ctx, p),
     "facets": lambda ctx, p: run_facets(ctx, p),
+    "optitype": lambda ctx, p: run_optitype(ctx, p),
 }
 
 

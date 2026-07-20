@@ -1,5 +1,6 @@
 process CCF_2 {
   tag "ccf-2"
+  label 'medium'
   publishDir "${params.outdir}/clonality", mode: 'copy'
 
   input:

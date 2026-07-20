@@ -1,5 +1,6 @@
 process APPM_2 {
   tag "$sample_id"
+  label 'medium'
   publishDir "${params.outdir}/appm", mode: 'copy'
 
   input:
