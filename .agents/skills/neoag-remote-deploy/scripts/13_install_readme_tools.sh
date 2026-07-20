@@ -108,7 +108,7 @@ Tool groups:
   --immunogenicity           PRIME + MixMHCpred + BigMHC via scripts/install_immunogenicity_tools.sh
   --deepimmuno               DeepImmuno via scripts/install_deepimmuno.sh
   --sherpa                   Register/install SHERPA-Presentation from a local authorized source/archive/container
-  --netmhcstabpan            NetMHCstabpan or IEDB shim via scripts/install_netmhcstabpan.sh
+  --netmhcstabpan            NetMHCstabpan or IEDB shim via scripts/install_netmhcstabpan.sh (explicit opt-in; skipped by --all/--all-open)
   --lohhla                   LOHHLA source wrapper via scripts/install_lohhla.sh
   --polysolver               Configure existing Polysolver; requires --polysolver-home
   --optitype                 OptiType via scripts/install_optitype.sh
@@ -120,8 +120,8 @@ Tool groups:
   --hla-la                   Register/load HLA-LA container assets and PRG graph if present
   --sequenza                 Install Sequenza conda env and reference hooks
   --hmf-purple               Register/load HMF PURPLE/AMBER/COBALT container assets and references
-  --all-open                 Install open/conda/git tools except very large VEP cache and licensed packages
-  --all                      Install all supported groups, including VEP cache; licensed packages still need sources/URLs
+  --all-open                 Install open/conda/git tools except very large VEP cache, licensed packages, and NetMHCstabpan
+  --all                      Install supported default groups, including VEP cache; NetMHCstabpan remains explicit opt-in
   --verify                   Run scripts/verify_all_tools_and_refs.sh after installs
   --strict-verify            Treat optional missing tools as failure during verify
   --run-real-vcf-smoke       Run default M1ML150017383 real VCF top-N smoke test
@@ -217,14 +217,14 @@ while [[ $# -gt 0 ]]; do
     --hmf-purple) INSTALL_HMF_PURPLE=1; shift ;;
     --all-open)
       INSTALL_CORE_ENV=1; INSTALL_VEP=1; INSTALL_GATK=1; INSTALL_RNA_EXPRESSION=1; INSTALL_IMMUNOGENICITY=1
-      INSTALL_DEEPIMMUNO=1; INSTALL_NETMHCSTABPAN=1; INSTALL_LOHHLA=1
+      INSTALL_DEEPIMMUNO=1; INSTALL_LOHHLA=1
       INSTALL_OPTITYPE=1; INSTALL_FACETS=1; INSTALL_ASCAT_PYCLONE=1; INSTALL_FUSION=1; INSTALL_SPLICE=1
       INSTALL_SPECHLA=1; INSTALL_HLALA=1; INSTALL_SEQUENZA=1; INSTALL_HMF_PURPLE=1
       SKIP_TORCH_INSTALL=0
       shift ;;
     --all)
       INSTALL_CORE_ENV=1; INSTALL_VEP=1; INSTALL_VEP_CACHE=1; INSTALL_GATK=1; INSTALL_RNA_EXPRESSION=1; INSTALL_IMMUNOGENICITY=1
-      INSTALL_DEEPIMMUNO=1; INSTALL_NETMHCSTABPAN=1; INSTALL_LOHHLA=1
+      INSTALL_DEEPIMMUNO=1; INSTALL_LOHHLA=1
       INSTALL_OPTITYPE=1; INSTALL_FACETS=1; INSTALL_ASCAT_PYCLONE=1; INSTALL_FUSION=1; INSTALL_SPLICE=1
       INSTALL_SPECHLA=1; INSTALL_HLALA=1; INSTALL_SEQUENZA=1; INSTALL_HMF_PURPLE=1
       SKIP_TORCH_INSTALL=0

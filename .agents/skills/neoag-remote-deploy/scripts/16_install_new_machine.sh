@@ -56,8 +56,8 @@ Common options:
 Tool group shortcuts:
   --minimal                   Install core env + immunogenicity only (default)
   --standard                  Add VEP, GATK, OptiType, FACETS, ASCAT/PyClone, splice, LOHHLA
-  --all-open                  Pass --all-open to 13_install_readme_tools.sh
-  --all                      Pass --all to 13_install_readme_tools.sh
+  --all-open                  Pass --all-open to 13_install_readme_tools.sh; NetMHCstabpan stays skipped
+  --all                      Pass --all to 13_install_readme_tools.sh; NetMHCstabpan stays skipped
   --add-tool-group FLAG       Add any 13_install_readme_tools.sh group flag, e.g. --vep
 
 Asset / validation toggles:
