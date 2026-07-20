@@ -428,17 +428,36 @@ def run_upstream(config_path: str | Path, outdir: str | Path | None = None) -> d
                     spechla_to_hla_loh_tsv(spechla_merge, p)
                     outputs["hla_loh"] = str(p)
 
+    purity_input = _path_or_none(inputs_cfg.get("purity") or inputs_cfg.get("purity_tsv"))
+    recommendation_candidates = [
+        _path_or_none(inputs_cfg.get("purity_recommendation") or inputs_cfg.get("purity_recommendation_json")),
+        purity_input.parent / "purity_recommendation.json" if purity_input else None,
+        _path_or_none(inputs_cfg.get("purity_results_dir")) / "purity_recommendation.json"
+        if inputs_cfg.get("purity_results_dir") else None,
+        out / "purity_cnv" / "purity_recommendation.json",
+        out.parent / "purity_cnv" / "purity_recommendation.json",
+    ]
+    purity_recommendation = next(
+        (candidate for candidate in recommendation_candidates if candidate and candidate.is_file()),
+        None,
+    )
+    if purity_recommendation:
+        outputs["purity"] = str(purity_recommendation)
+        outputs["purity_recommendation"] = str(purity_recommendation)
+
     if "facets" in enabled:
-        p = tools_dir / "purity.tsv"
+        p = tools_dir / ("facets_purity.tsv" if purity_recommendation else "purity.tsv")
         run_tool("facets", ctx, p)
-        outputs["purity"] = str(p)
+        outputs["facets_purity"] = str(p)
+        if "purity" not in outputs:
+            outputs["purity"] = str(p)
         work_cncf = ctx.outdir / "tools" / "facets" / "facets_cncf.tsv"
         if work_cncf.is_file():
             cnv_out = tools_dir / "cnv_segments.tsv"
             facets_to_cnv_tsv(work_cncf, cnv_out)
             outputs["cnv"] = str(cnv_out)
     elif "purity" not in outputs:
-        cached = _path_or_none(inputs_cfg.get("purity"))
+        cached = purity_input
         if cached and cached.is_file():
             outputs["purity"] = str(cached)
         elif ctx.facets_rds and ctx.facets_rds.is_file():

@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 import pytest
 
@@ -106,6 +107,37 @@ extract_appm_from_vcf = false
     assert "confidence is LOW" in capsys.readouterr().out
     coverage = read_tsv(outputs["peptide_source_coverage"])[0]
     assert coverage["missing_sources"] == "pVACfuse"
+
+
+def test_upstream_prefers_purity_recommendation_over_facets(tmp_path):
+    recommendation = tmp_path / "purity_recommendation.json"
+    recommendation.write_text(json.dumps({
+        "status": "CONCORDANT", "recommended_purity": 0.67, "range": "0.6500-0.6900",
+        "n_tools": 2, "tool_values": {"FACETS": 0.65, "PURPLE": 0.69},
+    }), encoding="utf-8")
+    cfg = tmp_path / "purity.toml"
+    cfg.write_text(
+        f'''[sample]
+id = "PURITY_CONSENSUS"
+profile = "default"
+
+[tools]
+stub = true
+enabled = ["facets"]
+
+[inputs]
+purity_recommendation = "{recommendation}"
+extract_appm_from_vcf = false
+''',
+        encoding="utf-8",
+    )
+
+    outputs = run_upstream(cfg, tmp_path / "upstream")
+
+    assert outputs["purity"] == str(recommendation)
+    assert outputs["purity_recommendation"] == str(recommendation)
+    assert outputs["facets_purity"].endswith("facets_purity.tsv")
+    assert Path(outputs["facets_purity"]).is_file()
 
 def test_fusion_tools_in_registry():
     from neoag_v03.tools.registry import TOOL_REGISTRY

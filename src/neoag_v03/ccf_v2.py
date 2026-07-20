@@ -18,6 +18,7 @@ P0/P1 additions in v0.4.3-style CCF 2.1:
 
 from __future__ import annotations
 
+import json
 import math
 from pathlib import Path
 from typing import Any, Mapping
@@ -29,6 +30,8 @@ CCF_FIELDS = [
     "event_id", "sample_id", "gene", "event_type", "mutation_source", "chrom", "pos",
     "tumor_alt_count", "tumor_depth", "tumor_vaf", "vaf_ci_low", "vaf_ci_high",
     "purity", "purity_source", "purity_confidence", "ploidy",
+    "purity_consensus_status", "purity_range", "purity_n_tools", "purity_tool_values",
+    "purity_recommendation_file",
     "total_cn", "major_cn", "minor_cn", "loh_status", "cnv_confidence",
     "multiplicity_candidates", "multiplicity_best", "multiplicity_confidence", "multiplicity_ambiguity",
     "ccf_best", "ccf_min", "ccf_max", "ccf_ci_low", "ccf_ci_high",
@@ -45,6 +48,8 @@ CCF_FIELDS = [
 
 CCF_INPUT_QC_FIELDS = [
     "sample_id", "purity", "purity_source", "purity_confidence", "ploidy", "cnv_source",
+    "purity_consensus_status", "purity_range", "purity_n_tools", "purity_tool_values",
+    "purity_recommendation_file",
     "cnv_quality_status", "cnv_segment_count", "fraction_genome_cna", "fraction_genome_loh",
     "major_minor_cn_available", "subclonal_cna_detected", "ccf_ready_status", "ccf_ready_reason",
 ]
@@ -74,24 +79,65 @@ def load_purity(path: str | Path | None) -> tuple[float | None, float | None]:
     return info["purity"], info["ploidy"]
 
 
+def _load_purity_recommendation(path: Path) -> dict[str, Any]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    status = str(payload.get("status") or "NO_PURITY").upper()
+    purity = to_float(payload.get("recommended_purity", ""), -1.0)
+    tool_values = payload.get("tool_values") if isinstance(payload.get("tool_values"), dict) else {}
+    n_tools = int(to_float(payload.get("n_tools", len(tool_values)), len(tool_values)))
+    if status == "CONCORDANT":
+        confidence = "high"
+    elif status in {"SINGLE_TOOL", "MODERATE_DISCORDANCE"}:
+        confidence = "medium"
+    else:
+        confidence = "low"
+    source = "multi_tool_median" if n_tools > 1 else next(iter(tool_values), "purity_recommendation")
+    return {
+        "purity": purity if purity > 0 else None,
+        "ploidy": None,
+        "purity_source": source,
+        "purity_confidence": confidence,
+        "purity_consensus_status": status,
+        "purity_range": str(payload.get("range") or ""),
+        "purity_n_tools": n_tools,
+        "purity_tool_values": json.dumps(tool_values, sort_keys=True, separators=(",", ":")),
+        "purity_recommendation_file": str(path),
+        "reason": f"purity_consensus_{status.lower()}",
+    }
+
+
+def _with_purity_consensus_defaults(info: dict[str, Any]) -> dict[str, Any]:
+    return {
+        **info,
+        "purity_consensus_status": info.get("purity_consensus_status", "NOT_ASSESSED"),
+        "purity_range": info.get("purity_range", ""),
+        "purity_n_tools": info.get("purity_n_tools", ""),
+        "purity_tool_values": info.get("purity_tool_values", ""),
+        "purity_recommendation_file": info.get("purity_recommendation_file", ""),
+    }
+
+
 def load_purity_info(path: str | Path | None) -> dict[str, Any]:
     if not path or not Path(path).exists():
-        return {
+        return _with_purity_consensus_defaults({
             "purity": None,
             "ploidy": None,
             "purity_source": "not_provided",
             "purity_confidence": "low",
             "reason": "missing_purity",
-        }
-    rows = read_tsv(path)
+        })
+    purity_path = Path(path)
+    if purity_path.suffix.lower() == ".json":
+        return _load_purity_recommendation(purity_path)
+    rows = read_tsv(purity_path)
     if not rows:
-        return {
+        return _with_purity_consensus_defaults({
             "purity": None,
             "ploidy": None,
             "purity_source": "provided_empty",
             "purity_confidence": "low",
             "reason": "empty_purity_file",
-        }
+        })
     r = rows[0]
     purity = to_float(first(r, ["purity", "tumor_purity", "cellularity", "purity_estimate"], ""), -1.0)
     ploidy = to_float(first(r, ["ploidy", "tumor_ploidy"], ""), -1.0)
@@ -106,13 +152,13 @@ def load_purity_info(path: str | Path | None) -> dict[str, Any]:
             conf = "medium"
         else:
             conf = "high"
-    return {
+    return _with_purity_consensus_defaults({
         "purity": purity if purity > 0 else None,
         "ploidy": ploidy if ploidy > 0 else None,
         "purity_source": source,
         "purity_confidence": conf,
         "reason": "purity_loaded" if purity > 0 else "invalid_purity",
-    }
+    })
 
 
 def _row_chrom(r: Mapping[str, Any]) -> str:
@@ -405,13 +451,18 @@ def _ccf_ready_status(purity_info: Mapping[str, Any], cnv_rows: list[dict[str, s
         reasons.append("missing_purity")
     elif purity < 0.20:
         reasons.append("low_purity")
+    consensus_status = str(purity_info.get("purity_consensus_status", "")).upper()
+    if consensus_status == "STRONG_DISCORDANCE":
+        reasons.append("purity_strong_discordance")
+    elif consensus_status == "MODERATE_DISCORDANCE":
+        reasons.append("purity_moderate_discordance")
     if not cnv_rows:
         reasons.append("missing_cnv_segments")
     elif not any(_major_minor_available(r) for r in cnv_rows):
         reasons.append("major_minor_cn_missing")
     if not reasons:
         return "ready", "purity_cnv_available"
-    if reasons == ["major_minor_cn_missing"]:
+    if set(reasons).issubset({"major_minor_cn_missing", "purity_moderate_discordance"}):
         return "approximate", ";".join(reasons)
     return "limited", ";".join(reasons)
 
@@ -425,6 +476,11 @@ def build_input_qc(sample_id: str, purity_info: Mapping[str, Any], cnv_rows: lis
         "purity_source": str(purity_info.get("purity_source", "")),
         "purity_confidence": str(purity_info.get("purity_confidence", "low")),
         "ploidy": "" if purity_info.get("ploidy") is None else f"{float(purity_info['ploidy']):.4f}",
+        "purity_consensus_status": str(purity_info.get("purity_consensus_status", "")),
+        "purity_range": str(purity_info.get("purity_range", "")),
+        "purity_n_tools": str(purity_info.get("purity_n_tools", "")),
+        "purity_tool_values": str(purity_info.get("purity_tool_values", "")),
+        "purity_recommendation_file": str(purity_info.get("purity_recommendation_file", "")),
         **q,
         "ccf_ready_status": ready,
         "ccf_ready_reason": reason,
@@ -617,12 +673,19 @@ def _base_confidence(
     warning: list[str] = []
     conf = "medium"
     purity = purity_info.get("purity")
+    consensus_status = str(purity_info.get("purity_consensus_status", "")).upper()
+    if consensus_status == "STRONG_DISCORDANCE":
+        return "low", ["purity_strong_discordance"]
+    if consensus_status == "MODERATE_DISCORDANCE":
+        warning.append("purity_moderate_discordance")
     if purity is None:
         return "low", ["missing_purity"]
     if purity < 0.20:
         conf = "low"; warning.append("low_purity")
     elif purity_info.get("purity_confidence") == "high" and cn.get("matched") and cn.get("cnv_confidence") == "high":
         conf = "high"
+    if consensus_status == "MODERATE_DISCORDANCE" and conf == "high":
+        conf = "medium"
     if method == "RNA_ONLY_UNRESOLVED":
         return "low", ["rna_only_no_dna_ccf"]
     if method == "WES_SV_CAPTURE_LIMITED_APPROX":
@@ -741,6 +804,11 @@ def build_ccf_2(
             "purity_source": str(purity_info.get("purity_source", "")),
             "purity_confidence": str(purity_info.get("purity_confidence", "low")),
             "ploidy": "" if ploidy is None else f"{float(ploidy):.4f}",
+            "purity_consensus_status": str(purity_info.get("purity_consensus_status", "")),
+            "purity_range": str(purity_info.get("purity_range", "")),
+            "purity_n_tools": str(purity_info.get("purity_n_tools", "")),
+            "purity_tool_values": str(purity_info.get("purity_tool_values", "")),
+            "purity_recommendation_file": str(purity_info.get("purity_recommendation_file", "")),
             "total_cn": f"{total_cn:.4f}",
             "major_cn": cn.get("major_cn", ""),
             "minor_cn": cn.get("minor_cn", ""),

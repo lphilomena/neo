@@ -301,6 +301,10 @@ Key outputs:
 - `results/SAMPLE001_sliding/reports/evidence_report.patient.html`
 - `results/SAMPLE001_sliding/reports/evidence_report.technical.html`
 
+When `inputs.purity_recommendation` points to `purity_recommendation.json`, the full
+pipeline uses the multi-tool median for concordant calls. All tool values and the
+consensus range/status are retained in CCF outputs; strong discordance forces low confidence.
+
 Manual debug path for variant peptide extraction:
 
 ```bash

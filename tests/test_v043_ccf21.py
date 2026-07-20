@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from neoag_v03.ccf_v2 import build_ccf_2
@@ -91,3 +92,60 @@ def test_ccf21_svclone_preferred_for_sv_event(tmp_path):
     assert rows[0]["external_clonality_tool"] == "SVclone"
     assert rows[0]["svclone_ccf"] == "0.88"
     assert rows[0]["ccf_resolution"] == "external_svclone_preferred"
+
+
+def _write_ccf_inputs(tmp_path):
+    events = tmp_path / "events.tsv"
+    cnv = tmp_path / "cnv.tsv"
+    write_tsv(events, [{
+        "event_id": "E1", "sample_id": "S1", "mutation_source": "SNV",
+        "chrom": "chr1", "pos": "150", "tumor_vaf": "0.25",
+        "tumor_depth": "100", "tumor_alt_count": "25",
+    }])
+    write_tsv(cnv, [{
+        "chrom": "chr1", "start": "1", "end": "1000", "total_cn": "2",
+        "major_cn": "1", "minor_cn": "1", "cnv_confidence": "high",
+    }])
+    return events, cnv
+
+
+def test_ccf21_uses_concordant_multi_tool_median(tmp_path):
+    events, cnv = _write_ccf_inputs(tmp_path)
+    recommendation = tmp_path / "purity_recommendation.json"
+    recommendation.write_text(json.dumps({
+        "status": "CONCORDANT", "recommended_purity": 0.7, "range": "0.6800-0.7200",
+        "n_tools": 3, "tool_values": {"FACETS": 0.68, "PURPLE": 0.7, "Sequenza": 0.72},
+    }), encoding="utf-8")
+
+    rows = build_ccf_2(events, recommendation, cnv, load_profile("default"), tmp_path / "ccf.tsv")
+
+    row = rows[0]
+    assert row["purity"] == "0.7000"
+    assert row["purity_source"] == "multi_tool_median"
+    assert row["purity_confidence"] == "high"
+    assert row["purity_consensus_status"] == "CONCORDANT"
+    assert json.loads(row["purity_tool_values"])["FACETS"] == 0.68
+    assert row["ccf_confidence"] in {"high", "medium"}
+    assert "purity_" not in row["ccf_warning"]
+
+
+def test_ccf21_strong_purity_discordance_forces_low_confidence(tmp_path):
+    events, cnv = _write_ccf_inputs(tmp_path)
+    recommendation = tmp_path / "purity_recommendation.json"
+    recommendation.write_text(json.dumps({
+        "status": "STRONG_DISCORDANCE", "recommended_purity": 0.52,
+        "range": "0.2500-0.8200", "n_tools": 3,
+        "tool_values": {"FACETS": 0.25, "PURPLE": 0.52, "ASCAT": 0.82},
+    }), encoding="utf-8")
+
+    out = tmp_path / "ccf.tsv"
+    rows = build_ccf_2(events, recommendation, cnv, load_profile("default"), out)
+
+    row = rows[0]
+    assert row["purity"] == "0.5200"
+    assert row["purity_consensus_status"] == "STRONG_DISCORDANCE"
+    assert row["ccf_confidence"] == "low"
+    assert "purity_strong_discordance" in row["ccf_warning"]
+    qc = read_tsv(out.parent / "ccf_input_qc.tsv")[0]
+    assert qc["ccf_ready_status"] == "limited"
+    assert json.loads(qc["purity_tool_values"])["ASCAT"] == 0.82

@@ -188,6 +188,9 @@ neoag-v03 run-full \
 - `results/SAMPLE001_sliding/reports/evidence_report.patient.html`
 - `results/SAMPLE001_sliding/reports/evidence_report.technical.html`
 
+当 `inputs.purity_recommendation` 指向 `purity_recommendation.json` 时，流程优先使用多工具中位数；
+CCF 保留所有工具值、范围和一致性状态，强冲突时自动降为低置信度。
+
 手动调试 variant peptide extraction：
 
 ```bash
