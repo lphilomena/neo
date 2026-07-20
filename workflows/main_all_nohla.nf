@@ -10,7 +10,7 @@
  *   2. GATK_FILTER_MUTECT_CALLS  — filter raw variants
  *   3. SNV_WRITE_RUN_CONFIG      — generate TOML config with manual HLA + VCF paths
  *   4. RUN_UPSTREAM              — pVACtools / NetMHCpan / MHCflurry / VEP
- *   5. NEOAG_V03_RC              — scoring chain → ranked report
+ *   5. UPSTREAM_TO_SCORING       — scoring chain (shared with main_fromVCF.nf)
  *
  * Required parameters:
  *   --normal_bam          Normal sample BAM (for variant calling)
@@ -38,14 +38,14 @@
  *     --sample_id SAMPLE001 \
  *     -c conf/main_full.config
  *
- * Usage (with env var for reference):
- *   NEOAG_REFERENCE_FASTA=/path/to/hg38.fa \
+ * Production (Docker):
+ *   NEOAG_RUNNER_MODE=docker \
  *   bin/neoag-nextflow run workflows/main_all_nohla.nf \
  *     --normal_bam /path/to/normal.bam \
  *     --tumor_bam /path/to/tumor.bam \
  *     --hla_alleles "HLA-A*02:01,HLA-B*07:02,HLA-C*07:02" \
  *     --sample_id SAMPLE001 \
- *     -c conf/main_full.config
+ *     -c conf/main_full.config -profile docker
  */
 
 nextflow.enable.dsl=2
@@ -54,7 +54,7 @@ include { GATK_MUTECT2 } from '../modules/gatk_mutect2/main.nf'
 include { GATK_FILTER_MUTECT_CALLS } from '../modules/gatk_filter_mutect_calls/main.nf'
 include { SNV_WRITE_RUN_CONFIG } from '../modules/snv_write_run_config/main.nf'
 include { RUN_UPSTREAM } from '../modules/run_upstream/main.nf'
-include { NEOAG_V03_RC } from './neoag_v03_rc.nf'
+include { UPSTREAM_TO_SCORING } from './subworkflows/upstream_to_scoring.nf'
 
 // --- Defaults -----------------------------------------------------------------
 params.sample_id = params.sample_id ?: 'SAMPLE001'
@@ -105,12 +105,11 @@ workflow {
   tumor_bam  = file(params.tumor_bam)
 
   // --- Parse HLA alleles from manual input ---------------------------------
-  // Same format as OptiType output (list of strings), but sourced from --hla_alleles.
   hla_alleles_list = Channel.value(
     params.hla_alleles.split(',')*.trim()
   )
 
-  // === Stage 1 — Somatic variant calling (GATK Mutect2, auto-indexes BAMs) ==
+  // === Stage 1 — Somatic variant calling (GATK Mutect2) =====================
   GATK_MUTECT2(
     sample_id,
     tumor_bam,
@@ -118,7 +117,7 @@ workflow {
     ref_fasta,
     ref_fai,
     ref_dict,
-    '',            // intervals_bed — empty = WGS mode (no capture intervals)
+    '',            // intervals_bed — empty = WGS mode
     tumor_sample_name,
     normal_sample_name,
   )
@@ -135,7 +134,6 @@ workflow {
   )
 
   // === Stage 3 — Generate run config (TOML with manual HLA) ================
-  // Uses manually-provided HLA alleles instead of OptiType output.
   SNV_WRITE_RUN_CONFIG(
     sample_id,
     profile_name,
@@ -148,47 +146,13 @@ workflow {
 
   // === Stage 4 — Run upstream tools ========================================
   RUN_UPSTREAM(sample_id, SNV_WRITE_RUN_CONFIG.out.run_config)
-  upstream_dir = RUN_UPSTREAM.out.upstream_dir
 
-  // === Stage 5 — Derive channels from upstream output ======================
-  pvac_ch = upstream_dir
-    .map { d -> file("${d}/tools/pvacseq_aggregated.tsv") }
-    .mix(upstream_dir.map { d -> file("${d}/tools/pvacfuse_aggregated.tsv") })
-    .filter { it.exists() }
-    .collect()
-
-  netmhcpan_ch    = upstream_dir.map { d -> file("${d}/tools/netmhcpan.xls") }
-  mhcflurry_ch    = upstream_dir.map { d -> file("${d}/tools/mhcflurry.csv") }
-  vep_ch          = upstream_dir.map { d -> file("${d}/tools/vep_appm.tsv") }
-  hla_loh_ch      = upstream_dir.map { d -> file("${d}/tools/hla_loh.tsv") }
-  purity_ch       = upstream_dir.map { d -> file("${d}/tools/purity.tsv") }
-  expression_ch   = upstream_dir.map { d -> file("${d}/tools/expression.tsv") }
-  cnv_ch          = upstream_dir.map { d -> file("${d}/tools/cnv.tsv") }
-  raw_events_ch   = upstream_dir.map { d -> file("${d}/parsed/raw_events.tsv") }
-  raw_peptides_ch = upstream_dir.map { d -> file("${d}/parsed/raw_peptides.tsv") }
-
-  normal_expression_ch  = params.normal_expression
-    ? Channel.value(file(params.normal_expression))
-    : Channel.empty()
-  normal_hla_ligands_ch = params.normal_hla_ligands
-    ? Channel.value(file(params.normal_hla_ligands))
-    : Channel.empty()
-
-  // === Stage 6 — NeoAg scoring chain =======================================
-  NEOAG_V03_RC(
+  // === Stage 5 — Scoring chain (shared sub-workflow) =======================
+  UPSTREAM_TO_SCORING(
     sample_id,
     profile_name,
-    pvac_ch,
-    netmhcpan_ch,
-    mhcflurry_ch,
-    vep_ch,
-    expression_ch,
-    hla_loh_ch,
-    purity_ch,
-    cnv_ch,
-    normal_expression_ch,
-    normal_hla_ligands_ch,
-    raw_events_ch,
-    raw_peptides_ch,
+    RUN_UPSTREAM.out.upstream_dir,
+    params.normal_expression,
+    params.normal_hla_ligands,
   )
 }

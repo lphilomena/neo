@@ -1,3 +1,4 @@
+NEOAG_RUNNER_MODE=docker \
 bin/neoag-nextflow run workflows/main_all_nohla.nf \
     --normal_bam /mnt/zjl-bgi-zzb/peixunban/gl/data/chenxiaoliang_data/dsrct_data/dsrct/sunbinbin/wgs/sunbinbin_blood.align.bam \
     --tumor_bam /mnt/zjl-bgi-zzb/peixunban/gl/data/chenxiaoliang_data/dsrct_data/dsrct/sunbinbin/wgs/sunbinbin_tumor.align.bam \
@@ -7,4 +8,5 @@ bin/neoag-nextflow run workflows/main_all_nohla.nf \
     --tumor_sample_name sunbinbin_tumor \
     --outdir /home/na/project/working/result_sunbinbin \
     -c conf/main_full.config \
+    -profile docker \
     -resume

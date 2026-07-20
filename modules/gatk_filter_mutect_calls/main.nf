@@ -1,5 +1,6 @@
 process GATK_FILTER_MUTECT_CALLS {
     tag "${sample_id}"
+    container 'broadinstitute/gatk:4.6.2.0'
     publishDir "${params.outdir}/calling/filter", mode: 'copy'
 
     input:

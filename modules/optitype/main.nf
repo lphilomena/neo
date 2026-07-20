@@ -8,7 +8,6 @@
 process OPTITYPE {
   tag "$sample_id"
   label 'large'
-  container params.neoag_container ?: null
   time '12.h'
   publishDir "${params.outdir}/hla_typing", mode: 'copy'
 

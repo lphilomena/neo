@@ -1,7 +1,6 @@
 process RUN_UPSTREAM {
   tag "$sample_id"
   label 'large'
-  container params.neoag_container ?: null
   time '24.h'
   publishDir "${params.outdir}", mode: 'copy'
 

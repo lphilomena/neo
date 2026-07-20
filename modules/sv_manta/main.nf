@@ -1,6 +1,7 @@
 process SV_MANTA {
     tag "${sample_id}"
     cpus params.threads ?: 16
+    container 'quay.io/biocontainers/manta:1.6.0--h9ee0642_3'
     publishDir "${params.outdir}/sv_calls/manta", mode: 'copy'
 
     input:

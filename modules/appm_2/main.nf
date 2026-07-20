@@ -1,7 +1,6 @@
 process APPM_2 {
   tag "$sample_id"
   label 'medium'
-  container params.neoag_container ?: null
   publishDir "${params.outdir}/appm", mode: 'copy'
 
   input:

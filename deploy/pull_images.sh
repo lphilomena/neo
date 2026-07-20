@@ -85,6 +85,13 @@ pull "gridss/gridss:2.13.2" \
 pull "dellytools/delly:v2.3.0" \
      "DELLY 2.3.0 — SV 检测 (paired-end + split-read)"
 
+# ---- 肿瘤纯度与拷贝数 ----
+# Sequenza - 等位基因特异性拷贝数与纯度/倍性 (WGS)
+# 官方镜像: https://hub.docker.com/r/sequenza/sequenza
+# Dockerfile 含 sequenza-utils (v3.9.0) + R sequenza + samtools + tabix + BWA
+pull "sequenza/sequenza:3.99rc1" \
+     "Sequenza 3.99rc1 — 等位基因特异性拷贝数与纯度 (WGS)"
+
 echo ""
 echo "============================================================"
 echo "  二、Biocontainers 镜像 (quay.io)"
@@ -192,5 +199,5 @@ echo "  拉取完成"
 echo "============================================================"
 echo ""
 echo "提示: 如需验证已拉取的镜像，请运行:"
-echo "  docker images | grep -E 'ensemblorg|griffithlab|fred2|broadinstitute|uhrigs|tronbioinformatics|gridss|dellytools|biocontainers'"
+echo "  docker images | grep -E 'ensemblorg|griffithlab|fred2|broadinstitute|uhrigs|tronbioinformatics|gridss|dellytools|sequenza|biocontainers'"
 echo ""
