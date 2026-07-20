@@ -941,9 +941,11 @@ def run_vep_appm(ctx: RunContext, out_tsv: Path) -> Path:
         cache_version = os.environ.get("NEOAG_VEP_CACHE_VERSION", "").strip()
         if cache_version:
             cmd.extend(["--cache_version", cache_version])
-        reference_fasta = os.environ.get("NEOAG_REFERENCE_FASTA", "").strip()
+        reference_fasta = ctx.reference_fasta
+        if not reference_fasta:
+            reference_fasta = os.environ.get("NEOAG_REFERENCE_FASTA", "").strip()
         if reference_fasta:
-            cmd.extend(["--fasta", reference_fasta])
+            cmd.extend(["--fasta", str(reference_fasta)])
     _run_cmd(cmd, work)
     vep_to_appm_tsv(raw, out_tsv)
     return out_tsv

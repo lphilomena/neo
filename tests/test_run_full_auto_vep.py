@@ -1,6 +1,8 @@
 from pathlib import Path
 
 from neoag_v03.tools import upstream
+from neoag_v03.tools import runner
+from neoag_v03.tools.registry import RunContext
 
 
 def test_vcf_has_csq_annotations_plain_file_with_gz_suffix(tmp_path):
@@ -123,3 +125,38 @@ extract_appm_from_vcf = false
 
     assert outputs["vep_annotated_vcf"].endswith("S1.vep.annotated.vcf")
     assert outputs["raw_peptides"].endswith("raw_peptides.tsv")
+
+
+def test_vep_appm_prefers_config_reference_fasta(tmp_path, monkeypatch):
+    variants_vcf = tmp_path / "variants.vcf"
+    variants_vcf.write_text("##fileformat=VCFv4.2\n", encoding="utf-8")
+    config_fasta = tmp_path / "config.fa"
+    config_fasta.write_text(">chr1\nAAAA\n", encoding="utf-8")
+    env_fasta = tmp_path / "environment.fa"
+    env_fasta.write_text(">chr1\nCCCC\n", encoding="utf-8")
+    captured = {}
+
+    def fake_run_cmd(cmd, _workdir, **_kwargs):
+        captured["cmd"] = cmd
+
+    def fake_vep_to_appm(_raw, out_tsv):
+        out_tsv.write_text("event_id\tgene\n", encoding="utf-8")
+
+    monkeypatch.setenv("NEOAG_REFERENCE_FASTA", str(env_fasta))
+    monkeypatch.setenv("NEOAG_RUNNER_MODE", "conda")
+    monkeypatch.setattr(runner, "_run_cmd", fake_run_cmd)
+    monkeypatch.setattr(runner, "vep_to_appm_tsv", fake_vep_to_appm)
+
+    ctx = RunContext(
+        sample_id="S1",
+        outdir=tmp_path / "out",
+        variants_vcf=variants_vcf,
+        reference_fasta=config_fasta,
+    )
+    out_tsv = tmp_path / "vep_appm.tsv"
+    runner.run_vep_appm(ctx, out_tsv)
+
+    cmd = captured["cmd"]
+    fasta_index = cmd.index("--fasta")
+    assert cmd[fasta_index + 1] == str(config_fasta)
+    assert str(env_fasta) not in cmd
