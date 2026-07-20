@@ -34,6 +34,9 @@ data/external/
 data/ref/
 data/vep/
 
+resources/cancerGeneList.tsv
+
+
 # Local downloads/logs
 human_v102.tar.gz.ad
 neoantigen2-main.zip
