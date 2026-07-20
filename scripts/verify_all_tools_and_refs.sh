@@ -274,6 +274,17 @@ if command -v snaf-neoag >/dev/null 2>&1; then
 else
   soft_fail "SNAF wrapper missing; splice installation includes SNAF by default (use --skip-snaf only intentionally)"
 fi
+splicemutr_bin="${NEOAG_SPLICEMUTR_BIN:-}"
+[[ -z "$splicemutr_bin" ]] && splicemutr_bin="$(command -v splicemutr-neoag 2>/dev/null || true)"
+if [[ -n "$splicemutr_bin" && -x "$splicemutr_bin" ]]; then
+  if "$splicemutr_bin" doctor >/dev/null 2>&1; then
+    pass "SpliceMutr core runtime: $splicemutr_bin"
+  else
+    soft_fail "SpliceMutr wrapper exists but its core runtime smoke failed: $splicemutr_bin"
+  fi
+else
+  soft_fail "SpliceMutr missing; splice installation includes it by default (use --skip-splicemutr only intentionally)"
+fi
 
 echo
 

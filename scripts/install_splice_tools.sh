@@ -4,7 +4,7 @@
 # Installs:
 #   - RegTools in a dedicated neoag-splice conda env
 #   - pVACsplice wrapper from the existing neoag-tools/pVACtools env
-#   - SNAF from local source or a pinned approved Git revision (default on)
+#   - SNAF and SpliceMutr from pinned approved source snapshots (default on)
 # Optional:
 #   - ASNEO / NeoSplice / splice2neo source directories as registered wrappers
 set -euo pipefail
@@ -20,6 +20,7 @@ YML="${ROOT}/conda/env.neoag-splice.yml"
 export CONDA_CHANNEL_ALIAS="${NEOAG_CONDA_CHANNEL_ALIAS:-${CONDA_CHANNEL_ALIAS:-https://conda.anaconda.org}}"
 
 INSTALL_SNAF="${NEOAG_INSTALL_SNAF:-1}"
+INSTALL_SPLICEMUTR="${NEOAG_INSTALL_SPLICEMUTR:-1}"
 SNAF_SOURCE="${SNAF_SOURCE:-${NEOAG_SNAF_SOURCE:-}}"
 SNAF_GIT_URL="${SNAF_GIT_URL:-${NEOAG_SNAF_GIT_URL:-https://github.com/frankligy/SNAF.git}}"
 SNAF_GIT_REF="${SNAF_GIT_REF:-${NEOAG_SNAF_GIT_REF:-e23ce39512a1a7f58c74e59b4b7cedc89248b908}}"
@@ -146,6 +147,13 @@ else
   echo "==> Skipping SNAF because NEOAG_INSTALL_SNAF=${INSTALL_SNAF}"
 fi
 
+if [[ "${INSTALL_SPLICEMUTR}" == "1" ]]; then
+  NEOAG_CONDA_BASE="${CONDA_BASE}" NEOAG_TOOLS_ROOT="${TOOLS_ROOT}" \
+    bash "${ROOT}/scripts/install_splicemutr.sh"
+else
+  echo "==> Skipping SpliceMutr because NEOAG_INSTALL_SPLICEMUTR=${INSTALL_SPLICEMUTR}"
+fi
+
 install_python_source "ASNEO" "${ASNEO_SOURCE}" "${TOOLS_ROOT}/tools/ASNEO" "asneo-neoag" "ASNEO"
 install_python_source "NeoSplice" "${NEOSPLICE_SOURCE}" "${TOOLS_ROOT}/tools/NeoSplice" "neosplice-neoag" "NeoSplice"
 install_python_source "splice2neo" "${SPLICE2NEO_SOURCE}" "${TOOLS_ROOT}/tools/splice2neo" "splice2neo-neoag" "splice2neo"
@@ -195,6 +203,9 @@ fi
 if [[ -x "${BIN_DIR}/snaf-neoag" ]]; then
   "${CONDA_BASE}/bin/conda" run -n "${SNAF_ENV_NAME}" python -c \
     'import snaf, tensorflow as tf; print("SNAF import OK; TensorFlow " + tf.__version__)'
+fi
+if [[ -x "${BIN_DIR}/splicemutr-neoag" ]]; then
+  "${BIN_DIR}/splicemutr-neoag" doctor
 fi
 
 echo "==> Done. Run: bash scripts/run_splice_tool_smoke.sh"
