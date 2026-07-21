@@ -5,6 +5,7 @@ from ..utils import read_tsv, write_tsv, first, safe_id, to_float
 from ..schemas import EVENT_FIELDS, PEPTIDE_FIELDS
 from ..driver_gene_db import lookup_driver_relevance
 from ..tumor_specificity import compute_tumor_specificity
+from ..self_similarity import compute_self_similarity
 
 def discover_tsvs(paths: list[str | Path]) -> list[Path]:
     found = []
@@ -127,7 +128,8 @@ def peptide_from_row(row: dict[str, str], sample_id: str, event: dict[str, str],
                 99.0,
             )
         ),
-        "self_similarity_score": first(row, ["self_similarity_score", "Self Similarity"], "0.0"),
+        "self_similarity_score": first(row, ["self_similarity_score", "Self Similarity"], "")
+            or str(compute_self_similarity(peptide, wt)),
         "normal_hla_ligand_overlap": first(row, ["normal_hla_ligand_overlap"], "no"),
     }
     for field in (
