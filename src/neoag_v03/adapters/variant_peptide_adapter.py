@@ -10,6 +10,7 @@ from ..config import load_profile
 from ..input_router import resolve_entry_mode
 from ..driver_gene_db import lookup_driver_relevance
 from ..tumor_specificity import compute_tumor_specificity
+from ..self_similarity import compute_self_similarity
 from ..model_layers import enrich_event_layers, enrich_peptide_layers, infer_mutation_source, infer_peptide_consequence
 from ..schemas import EVENT_FIELDS, PEPTIDE_FIELDS
 from ..utils import read_tsv, safe_id, write_tsv
@@ -106,7 +107,7 @@ def peptide_from_variant_row(
         "presentation_score": "0.0",
         "immunogenicity_score": "0.5",
         "wildtype_binding_rank": "99",
-        "self_similarity_score": "0.0",
+        "self_similarity_score": str(compute_self_similarity(peptide, wt)),
         "normal_hla_ligand_overlap": "no",
     }
     return enrich_peptide_layers(base, event)

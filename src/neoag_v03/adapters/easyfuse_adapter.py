@@ -18,6 +18,7 @@ from ..schemas import EVENT_FIELDS, FUSION_EVIDENCE_FIELDS, PEPTIDE_FIELDS
 from ..utils import first, safe_id, to_float
 from ..evidence_provenance import ProvenanceRecord, provenance_from_file, without_provenance, write_evidence_tsv
 from ..driver_gene_db import lookup_driver_relevance
+from ..self_similarity import compute_self_similarity
 
 # Common read-through / low-confidence fusion types in normal tissue (EasyFuse taxonomy).
 READTHROUGH_TYPES = frozenset({"cis_near"})
@@ -326,7 +327,12 @@ def easyfuse_row_to_peptide(
         "presentation_score": "0.0",
         "immunogenicity_score": "0.5",
         "wildtype_binding_rank": "99",
-        "self_similarity_score": "0.0",
+        # Fusion junction peptides have no wildtype counterpart by
+        # construction (wildtype_peptide is always "" above), so this
+        # correctly evaluates to 0.0 -- not a placeholder, but the right
+        # answer to "how similar is this to the specific self-peptide it
+        # came from" when there is no such self-peptide.
+        "self_similarity_score": str(compute_self_similarity(peptide, "")),
         "normal_hla_ligand_overlap": "no",
     }
     return enrich_peptide_layers(base, event)
