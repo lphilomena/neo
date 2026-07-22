@@ -208,6 +208,84 @@ def rna_junction_dimension_score(reads: Any) -> float:
     return clamp(n / 10.0)
 
 
+def expression_dimension_score(event: Mapping[str, Any], high_expression_tpm: float) -> float:
+    """Score gene/transcript expression without treating gene TPM as mutant-transcript proof."""
+    gene_raw = _norm(event.get("gene_expression_tpm") or event.get("event_expression"))
+    tx_raw = _norm(event.get("transcript_expression_tpm"))
+    gene_score = norm_tpm(gene_raw, high_expression_tpm) if gene_raw else 0.0
+    tx_score = norm_tpm(tx_raw, high_expression_tpm) if tx_raw else 0.0
+    if gene_raw and tx_raw:
+        return clamp(0.45 * gene_score + 0.55 * tx_score)
+    if tx_raw:
+        return tx_score
+    if gene_raw:
+        # Gene expression is useful context but cannot establish expression of the
+        # mutant transcript, so it cannot receive the full expression score alone.
+        return clamp(0.70 * gene_score)
+    return 0.0
+
+
+def rna_evidence_metrics(event: Mapping[str, Any]) -> dict[str, str]:
+    """Return event-type-aware RNA support, completeness, and a 0-1 score."""
+    source = _norm(event.get("mutation_source")).upper()
+    consequence = _norm(event.get("peptide_consequence")).lower()
+    is_junction = consequence in {"fusion", "splice_junction"} and source != "INDEL"
+    if source == "SV" and ("fusion" in consequence or "junction" in consequence):
+        is_junction = True
+
+    alt = to_float(event.get("rna_alt_reads"), 0.0)
+    depth_raw = _norm(event.get("rna_depth"))
+    depth = to_float(depth_raw, 0.0)
+    vaf = to_float(event.get("rna_vaf"), 0.0)
+    reads = to_float(event.get("rna_junction_reads"), 0.0)
+    frame = _norm(event.get("rna_frame_status")).lower()
+    prior_status = _norm(event.get("rna_support_status")).upper()
+
+    if is_junction:
+        assessed = bool(prior_status and prior_status != "UNASSESSED") or bool(
+            _norm(event.get("rna_junction_source"))
+        )
+        frame_known = bool(frame and frame not in {"na", "n/a", "unknown", "unassessed"})
+        junction_score = clamp(reads / 10.0)
+        frame_score = 1.0 if frame in {
+            "in-frame", "in_frame", "inframe", "frame_preserved", "neo_frame", "out_frame",
+        } else 0.0
+        score = 0.85 * junction_score + 0.15 * frame_score
+        if reads > 0:
+            status = "RNA_JUNCTION_SUPPORTED"
+            completeness = "COMPLETE" if frame_known else "PARTIAL"
+        elif assessed:
+            status = "RNA_JUNCTION_NOT_DETECTED"
+            completeness = "PARTIAL" if not frame_known else "COMPLETE"
+        else:
+            status = "UNASSESSED"
+            completeness = "UNASSESSED"
+        return {
+            "rna_support_status": status,
+            "rna_evidence_completeness": completeness,
+            "rna_evidence_score": f"{clamp(score):.4f}",
+        }
+
+    assessed = depth > 0 or bool(depth_raw) or bool(_norm(event.get("rna_vaf_source")))
+    alt_score = clamp(alt / 5.0)
+    vaf_score = clamp(vaf / 0.10)
+    score = 0.65 * alt_score + 0.35 * vaf_score
+    if alt > 0:
+        status = "RNA_ALT_SUPPORTED"
+        completeness = "COMPLETE"
+    elif assessed:
+        status = "RNA_ALT_NOT_DETECTED"
+        completeness = "COMPLETE"
+    else:
+        status = "UNASSESSED"
+        completeness = "UNASSESSED"
+    return {
+        "rna_support_status": status,
+        "rna_evidence_completeness": completeness,
+        "rna_evidence_score": f"{clamp(score):.4f}",
+    }
+
+
 def compute_l3_dimension_scores(
     peptide: Mapping[str, Any],
     event: Mapping[str, Any],
@@ -223,13 +301,16 @@ def compute_l3_dimension_scores(
     safety = peptide.get("safety_status") or event.get("safety_status", "PASS")
     scores = {
         "event_confidence": clamp(to_float(event.get("event_confidence"), 0.0)),
-        "expression": norm_tpm(event.get("event_expression"), high_expression_tpm),
+        "expression": expression_dimension_score(event, high_expression_tpm),
         "clonality": clamp(to_float(event.get("clonality"), 0.0)),
         "tumor_specificity": clamp(to_float(event.get("tumor_specificity"), 0.0)),
         "hla_binding": clamp(to_float(presentation.get("binding_evidence_score"), 0.0)),
         "hla_presentation": clamp(to_float(presentation.get("presentation_evidence_score"), 0.0)),
-        "rna_junction_support": rna_junction_dimension_score(
-            peptide.get("rna_junction_reads") or event.get("rna_junction_reads")
+        # This legacy output column now carries event-aware RNA support: RNA
+        # alt/VAF for SNV/InDel and junction/frame support for fusion/splice.
+        "rna_junction_support": to_float(
+            peptide.get("rna_evidence_score") or event.get("rna_evidence_score"),
+            to_float(rna_evidence_metrics(event).get("rna_evidence_score"), 0.0),
         ),
         "normal_tissue_safety": safety_dimension_score(str(safety)),
         "apm_integrity": clamp(appm),
@@ -241,5 +322,6 @@ def compute_l3_dimension_scores(
     if total_w > 0:
         composite = sum(scores[k] * weights.get(k, 0.0) for k in scores) / total_w
     out: dict[str, str] = {l3_dimension_field(k): f"{v:.4f}" for k, v in scores.items()}
+    out["l3_rna_support_score"] = out["l3_rna_junction_support_score"]
     out["immunology_composite_score"] = f"{clamp(composite):.4f}"
     return out

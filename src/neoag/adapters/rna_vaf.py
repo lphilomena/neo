@@ -106,9 +106,14 @@ def load_rna_vaf_support(path: str | Path | None) -> dict[str, RNAVafSupport]:
         return {}
     index: dict[str, RNAVafSupport] = {}
     for support in parse_rna_vaf_table(path):
-        keys = [support.event_id, support.gene]
+        keys = [support.event_id]
         if support.chrom and support.pos and support.ref and support.alt:
             keys.append(f"{support.chrom}:{support.pos}:{support.ref}>{support.alt}")
+        elif not support.event_id:
+            # Gene-only fallback is accepted only when the source has no variant
+            # coordinates. A coordinate-resolved RNA count must never leak to a
+            # different variant in the same gene.
+            keys.append(support.gene)
         for key in keys:
             if key and key not in index:
                 index[key] = support

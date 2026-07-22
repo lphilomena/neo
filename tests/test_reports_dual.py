@@ -1,6 +1,7 @@
 from pathlib import Path
 
-from neoag.reports_dual import ReportBundle, make_dual_reports, make_patient_report, make_technical_report
+from neoag.reports_dual import ReportBundle, load_report_bundle, make_dual_reports, make_patient_report, make_technical_report
+from neoag.utils import write_tsv
 
 
 def _bundle():
@@ -60,3 +61,30 @@ def test_dual_reports_writes_three_files(tmp_path):
     assert Path(paths["evidence_report_technical"]).exists()
     assert Path(paths["evidence_report"]).exists()
     assert "Technical Report" in Path(paths["evidence_report_technical"]).read_text(encoding="utf-8")
+
+
+def test_technical_report_loads_independent_wes_qc(tmp_path):
+    qc_dir = tmp_path / "qc" / "wes"
+    qc_dir.mkdir(parents=True)
+    write_tsv(qc_dir / "wes_qc.tsv", [{
+        "sample_id": "WES1", "qc_status": "PASS_WITH_CAPTURE_RATE_UNASSESSED",
+        "total_reads": "1000", "primary_mapping_rate_pct": "99.9",
+        "properly_paired_rate_pct": "98.0", "duplicate_rate_pct": "20.0",
+        "target_definition": "GENCODE_CDS_PROXY_NOT_ASSAY_CAPTURE_BED",
+        "mean_target_coverage": "80", "pct_target_bases_20x": "95",
+        "pct_target_bases_30x": "90", "on_target_rate_pct": "70",
+        "capture_rate_status": "UNASSESSED_CAPTURE_BED_MISSING",
+        "formal_capture_rate_pct": "",
+    }])
+    base = _bundle()
+    bundle = load_report_bundle(
+        profile=base.profile, events=base.events, peptides=base.peptides,
+        appm_summary=base.appm_summary, validation_rows=base.validation_rows,
+        outdir=tmp_path, sample_id="S1",
+    )
+    out = tmp_path / "technical_wes.html"
+    make_technical_report(out, bundle)
+    text = out.read_text(encoding="utf-8")
+    assert "Independent WES QC" in text
+    assert "PASS_WITH_CAPTURE_RATE_UNASSESSED" in text
+    assert "assay-specific capture BED" in text

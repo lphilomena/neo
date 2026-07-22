@@ -232,6 +232,8 @@ def _submodule_score(sample_id: str, parent: str, submodule: str, genes: set[str
             score = min(score, 0.15); reasons.append("CIITA_RFX_biallelic_defect"); action = "mhc_ii_cap"
         elif any(_is_caution(gene_map.get(g)) for g in genes):
             score = min(score, 0.65); reasons.append("mhc_ii_core_caution")
+        if lost_hla:
+            score = min(score, 0.65); reasons.append("hla_class_ii_loh:" + ",".join(lost_hla)); action = action or "mhc_ii_review"
     elif submodule == "IFNG_SIGNALING":
         if any(_is_bial(gene_map.get(g)) for g in ["JAK1", "JAK2", "IFNGR1", "IFNGR2", "STAT1"]):
             score = min(score, 0.20); reasons.append("JAK_STAT_IFNGR_biallelic_defect"); action = "ifng_response_cap"
@@ -294,6 +296,40 @@ def _augment_rows_with_confidence(path: Path, key_name: str, gene_map: Mapping[s
     return out
 
 
+def _propagate_submodule_scores(path: Path, key_name: str, sub_rows: list[dict[str, str]]) -> None:
+    """Propagate the weakest assessed submodule to its parent module."""
+    rows = read_tsv(path) if path.exists() else []
+    if not rows:
+        return
+    grouped: dict[str, list[dict[str, str]]] = {}
+    for sub in sub_rows:
+        grouped.setdefault(sub.get("parent_module", ""), []).append(sub)
+    prefixes = {"MHC-I": "MHC_I", "MHC-II": "MHC_II", "IFNG-JAK-STAT": "IFNG_RESPONSE"}
+    score_key = "pathway_score" if key_name == "pathway" else "score"
+    status_key = "pathway_status" if key_name == "pathway" else "status"
+    for row in rows:
+        parent = row.get(key_name, "")
+        children = grouped.get(parent, [])
+        if not children:
+            continue
+        weakest = min(to_float(child.get("score"), 1.0) for child in children)
+        current = to_float(row.get(score_key), 1.0)
+        propagated = min(current, weakest)
+        row[score_key] = f"{propagated:.4f}"
+        row[status_key] = _status_from_score(prefixes.get(parent, parent.replace("-", "_")), propagated, assessed=True)
+        child_reasons = [
+            child.get("driver_defects", "")
+            for child in children
+            if to_float(child.get("score"), 1.0) < 1.0 and child.get("driver_defects") not in {"", "no_major_signal"}
+        ]
+        reasons = [x for x in [row.get("driver_defects", ""), *child_reasons] if x]
+        if reasons:
+            merged = ";".join(dict.fromkeys(part for reason in reasons for part in reason.split(";") if part))
+            row["driver_defects"] = merged
+            row["reason"] = merged
+    write_tsv(path, rows, list(rows[0].keys()))
+
+
 def enhance_appm_outputs_v042(outdir: str | Path, *, raw_peptides: str | Path | None = None, profile: Mapping[str, Any] | None = None) -> dict[str, str]:
     """Post-process APPM 2.0 sidecars with v0.4.2 P1 explainability.
 
@@ -311,25 +347,48 @@ def enhance_appm_outputs_v042(outdir: str | Path, *, raw_peptides: str | Path | 
     conflict_rows = read_tsv(out / "appm_conflicts.tsv") if (out / "appm_conflicts.tsv").exists() else []
     summary_rows = read_tsv(out / "appm_summary.tsv") if (out / "appm_summary.tsv").exists() else []
     sample_id = gene_rows[0].get("sample_id", "SAMPLE") if gene_rows else (summary_rows[0].get("sample_id", "SAMPLE") if summary_rows else "SAMPLE")
-    lost_hla = []
+    lost_hla_i = []
+    lost_hla_ii = []
     if summary_rows:
-        lost_hla = [x for x in summary_rows[0].get("hla_loh_alleles", "").split(",") if x]
+        lost_hla_i = [x for x in summary_rows[0].get("hla_i_loh_alleles", "").split(",") if x]
+        lost_hla_ii = [x for x in summary_rows[0].get("hla_ii_loh_alleles", "").split(",") if x]
 
     sub_rows = [
-        _submodule_score(sample_id, "MHC-I", "MHC_I_CORE", MHC_I_CORE, gene_map, lost_hla, input_rows, conflict_rows),
-        _submodule_score(sample_id, "MHC-I", "MHC_I_PROCESSING", MHC_I_PROCESSING, gene_map, lost_hla, input_rows, conflict_rows),
-        _submodule_score(sample_id, "MHC-I", "MHC_I_REGULATION", MHC_I_REGULATION, gene_map, lost_hla, input_rows, conflict_rows),
-        _submodule_score(sample_id, "MHC-I", "MHC_I_HLA_LOH", set(), gene_map, lost_hla, input_rows, conflict_rows),
-        _submodule_score(sample_id, "MHC-II", "MHC_II_CORE", MHC_II_CORE, gene_map, lost_hla, input_rows, conflict_rows),
-        _submodule_score(sample_id, "IFNG-JAK-STAT", "IFNG_SIGNALING", IFNG_SIGNALING, gene_map, lost_hla, input_rows, conflict_rows),
+        _submodule_score(sample_id, "MHC-I", "MHC_I_CORE", MHC_I_CORE, gene_map, lost_hla_i, input_rows, conflict_rows),
+        _submodule_score(sample_id, "MHC-I", "MHC_I_PROCESSING", MHC_I_PROCESSING, gene_map, lost_hla_i, input_rows, conflict_rows),
+        _submodule_score(sample_id, "MHC-I", "MHC_I_REGULATION", MHC_I_REGULATION, gene_map, lost_hla_i, input_rows, conflict_rows),
+        _submodule_score(sample_id, "MHC-I", "MHC_I_HLA_LOH", set(), gene_map, lost_hla_i, input_rows, conflict_rows),
+        _submodule_score(sample_id, "MHC-II", "MHC_II_CORE", MHC_II_CORE, gene_map, lost_hla_ii, input_rows, conflict_rows),
+        _submodule_score(sample_id, "IFNG-JAK-STAT", "IFNG_SIGNALING", IFNG_SIGNALING, gene_map, [], input_rows, conflict_rows),
     ]
     sub_path = out / "appm_submodule_scores.tsv"
     write_tsv(sub_path, sub_rows, APPM_SUBMODULE_SCORE_FIELDS)
 
+    _propagate_submodule_scores(out / "appm_module_scores.tsv", "module", sub_rows)
+    _propagate_submodule_scores(out / "appm_pathway_status.tsv", "pathway", sub_rows)
     module_rows = _augment_rows_with_confidence(out / "appm_module_scores.tsv", "module", gene_map, input_rows, conflict_rows)
     pathway_rows = _augment_rows_with_confidence(out / "appm_pathway_status.tsv", "pathway", gene_map, input_rows, conflict_rows)
 
     if summary_rows:
+        module_map = {row.get("module", ""): row for row in module_rows}
+        mhc_i = module_map.get("MHC-I", {})
+        mhc_ii = module_map.get("MHC-II", {})
+        ifng = module_map.get("IFNG-JAK-STAT", {})
+        summary_rows[0].update({
+            "mhc_i_integrity_score": mhc_i.get("score", summary_rows[0].get("mhc_i_integrity_score", "1.0000")),
+            "mhc_i_integrity_status": mhc_i.get("status", summary_rows[0].get("mhc_i_integrity_status", "")),
+            "mhc_ii_integrity_score": mhc_ii.get("score", summary_rows[0].get("mhc_ii_integrity_score", "1.0000")),
+            "mhc_ii_integrity_status": mhc_ii.get("status", summary_rows[0].get("mhc_ii_integrity_status", "")),
+            "ifng_response_score": ifng.get("score", summary_rows[0].get("ifng_response_score", "1.0000")),
+            "ifng_response_status": ifng.get("status", summary_rows[0].get("ifng_response_status", "")),
+        })
+        propagated_min = min(
+            to_float(summary_rows[0]["mhc_i_integrity_score"], 1.0),
+            to_float(summary_rows[0]["mhc_ii_integrity_score"], 1.0),
+            to_float(summary_rows[0]["ifng_response_score"], 1.0),
+        )
+        if summary_rows[0].get("appm_overall_status") != "UNASSESSED":
+            summary_rows[0]["appm_overall_status"] = "DEFECTIVE" if propagated_min < 0.30 else ("CAUTION" if propagated_min < 0.75 else "PASS")
         # Overall confidence is the minimum confidence among core modules, with reason aggregation.
         conf_scores = [to_float(r.get("appm_call_confidence_score"), 0.0) for r in module_rows if r.get("module") in {"MHC-I", "MHC-II", "IFNG-JAK-STAT"}]
         score = min(conf_scores) if conf_scores else 0.0

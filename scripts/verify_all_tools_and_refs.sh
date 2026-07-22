@@ -24,7 +24,8 @@ Environment:
   NEOAG_STRICT_VERIFY=1                  Same as --strict.
 
 This script checks the core deployment tools plus VEP, GATK, NetMHCpan,
-NetMHCstabpan, PRIME/MixMHCpred/BigMHC, EasyFuse, SpecHLA, HLA-LA, PURPLE/AMBER/COBALT, and Sequenza.
+NetMHCstabpan, PRIME/MixMHCpred/BigMHC, EasyFuse, splice-neoantigen tools,
+SpecHLA, HLA-LA, PURPLE/AMBER/COBALT, and Sequenza.
 USAGE
 }
 
@@ -402,6 +403,25 @@ seq_ref="${SEQUENZA_FASTA:-${NEOAG_REF_BUNDLE:-}/data/sequenza/reference/GRCh38.
 [[ -n "$seq_ref" ]] && check_file "$seq_ref" "Sequenza FASTA" || warn "SEQUENZA_FASTA unset"
 seq_gc="${SEQUENZA_GC_WIG:-${NEOAG_REF_BUNDLE:-}/data/sequenza/reference/gc.wig.gz}"
 [[ -n "$seq_gc" ]] && check_file "$seq_gc" "Sequenza GC wiggle" || warn "SEQUENZA_GC_WIG unset"
+
+echo
+echo "==> Splice neoantigen tools"
+splice_verify="$ROOT/scripts/verify_splice_neoantigen_tools.sh"
+if [[ -x "$splice_verify" ]]; then
+  splice_status="$(mktemp "${TMPDIR:-/tmp}/neoag-splice-status.XXXXXX")"
+  "$splice_verify" | tee "$splice_status"
+  while IFS=$'\t' read -r tool status detail; do
+    [[ "$tool" == "tool" ]] && continue
+    case "$status" in
+      READY) : ;;
+      PARTIAL) warn "$tool partial: $detail" ;;
+      BLOCKED) soft_fail "$tool blocked: $detail" ;;
+    esac
+  done < "$splice_status"
+  rm -f "$splice_status"
+else
+  soft_fail "splice tool verifier missing: $splice_verify"
+fi
 
 echo
 if [[ "$FAILED" != "0" ]]; then

@@ -148,9 +148,15 @@ Tools are optional for fixture demo but required by specific real-data modes. In
 | ASCAT 3.2.0 | CNV/LOH evidence cross-check and newer ASCAT runs | Optional | `conda env create -f conda/env.neoag-ascat-v3.yml` | `NEOAG_ASCAT_V3_ENV`, `NEOAG_ASCAT_V3_BIN` | `bin/ascat-v3 --check` |
 | PyClone-VI | Clonality context | Optional | `bash scripts/install_ascat_pyclone.sh` | `NEOAG_PYCLONE_ENV`, `NEOAG_PYCLONE_BIN` | `neoag check-tools` |
 | STAR-Fusion / FusionCatcher / Arriba / EasyFuse | Fusion discovery | Optional, required for corresponding fusion workflows | `bash scripts/install_fusion_tools.sh`; mount EasyFuse refs separately | `NEOAG_FUSION_ENV`, `NEOAG_STAR_FUSION_HOME`, `NEOAG_CTAT_LIB_DIR`, `NEOAG_EASYFUSE_HOME`, `NEOAG_EASYFUSE_REF` | `neoag check-tools` |
+| RegTools / pVACsplice / SNAF / ASNEO / NeoSplice / splice2neo | RNA splice-junction neoantigen discovery and cross-checking | Optional; RegTools+pVACsplice is the primary GRCh38 path | `bash scripts/install_splice_neoantigen_tools.sh --all` or select `--core`, `--snaf`, `--asneo`, `--neosplice`, `--splice2neo` | `NEOAG_ENV_ROOT`, `NEOAG_SPLICE_TOOLS_ROOT`, `NEOAG_CONTAINER_ARCHIVE_ROOT`, optional `NEOAG_PVACSPLICE_BIN` | `bash scripts/verify_splice_neoantigen_tools.sh` |
+| SpliceMutr + LeafCutter | Cohort/group differential splice usage, transcript reconstruction, and splice antigen burden | Optional; needs comparison samples rather than a tumor BAM alone | Stage source, then `bash scripts/install_splice_neoantigen_tools.sh --splicemutr` | `NEOAG_SPLICEMUTR_SOURCE`, `NEOAG_ENV_ROOT` | `bash scripts/verify_splice_neoantigen_tools.sh` |
 | Manta / GRIDSS / SvABA | SV discovery | Optional upstream SV callers | Install externally or via site conda/modules | `NEOAG_SV_ENV`, `NEOAG_MANTA_ENV` | `neoag check-tools` |
 
 Licensed tools such as NetMHCpan, NetMHCstabpan, LOHHLA, and Novoalign/Polysolver components may require academic or institutional approval. Do not redistribute their binaries inside the online release.
+
+Splice-tool boundaries: use RegTools plus pVACsplice as the default GRCh38 route. ASNEO's published workflow is GRCh37/hg19-specific and must not receive GRCh38 coordinates without a validated conversion. NeoSplice requires matched tumor/normal RNA. SNAF requires its external database and benefits from a normal-junction background. A successful junction extraction is not itself a peptide result; only coding, transcript-consistent translated junctions may enter presentation prediction and ranking.
+
+For a site with slow access to PyPI, set `NEOAG_PIP_INDEX_URL` to an approved institutional mirror before installing SNAF. This is optional and intentionally has no public-release default.
 
 ## 5. Reference Data Download Table
 

@@ -21,9 +21,25 @@ def make_validation_plan(
     catalog_path = resolve_peptide_catalog(peptide_catalog_tsv, outdir=outdir)
     catalog_index = load_peptide_catalog_index(catalog_path)
     rows = []
+    group_counts: dict[str, int] = {}
     for p in peptides:
         catalog_row = lookup_peptide_catalog(p, catalog_index)
-        rows.append(design_validation_row(p, catalog_row=catalog_row))
+        row = design_validation_row(p, catalog_row=catalog_row)
+        group = str(p.get("redundancy_group") or p.get("phase_group_id") or "").strip()
+        if row["validation_mode"] in {"do_not_advance", "phasing_required"}:
+            row["shortlist_status"] = "NOT_ELIGIBLE"
+        elif group:
+            rank = group_counts.get(group, 0) + 1
+            group_counts[group] = rank
+            row["shortlist_rank"] = str(rank)
+            if rank <= 2:
+                row["shortlist_status"] = "SHORTLISTED"
+            else:
+                row["shortlist_status"] = "REDUNDANT_NOT_SHORTLISTED"
+                row["validation_notes"] = "; ".join(x for x in [row["validation_notes"], "overlapping phased-haplotype candidate; retain only top 2 peptide-HLA combinations"] if x)
+        else:
+            row["shortlist_status"] = "SHORTLISTED"
+        rows.append(row)
     return rows
 
 

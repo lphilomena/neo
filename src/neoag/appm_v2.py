@@ -10,7 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Mapping
 
-from .adapters.peptide_input import normalize_hla_allele
+from .adapters.peptide_input import hla_allele_class, normalize_hla_allele
 from .utils import clamp, first, read_tsv, to_float, write_tsv
 
 MHC_I_CORE_GENES = ["HLA-A", "HLA-B", "HLA-C", "B2M", "TAP1", "TAP2", "TAPBP", "NLRC5"]
@@ -634,6 +634,9 @@ def build_appm_2(
     cnv = load_cnv_gene_status(cnv_tsv)
     cnv_status = cnv_input_status(cnv_tsv, cnv)
     lost_hla = load_hla_loh(hla_loh_tsv)
+    lost_hla_i = {hla for hla in lost_hla if hla_allele_class(hla) == "I"}
+    lost_hla_ii = {hla for hla in lost_hla if hla_allele_class(hla) == "II"}
+    lost_hla_unclassified = lost_hla - lost_hla_i - lost_hla_ii
     hla_loh_provided = _path_exists(hla_loh_tsv)
 
     genes = sorted(set(APPM_INTEGRITY_GENES + APPM_CONTEXT_GENES) | set(variants))
@@ -740,8 +743,8 @@ def build_appm_2(
         mhc_i_score = min(mhc_i_score, 0.05); mhc_i_reasons.append("B2M_biallelic_loss")
     if bial("TAP1") or bial("TAP2"):
         mhc_i_score = min(mhc_i_score, 0.25); mhc_i_reasons.append("TAP1_TAP2_biallelic_defect")
-    if lost_hla:
-        mhc_i_score = min(mhc_i_score, 0.70 if len(lost_hla) == 1 else 0.45); mhc_i_reasons.append("HLA_LOH")
+    if lost_hla_i:
+        mhc_i_score = min(mhc_i_score, 0.70 if len(lost_hla_i) == 1 else 0.45); mhc_i_reasons.append("HLA_I_LOH")
     if caution("NLRC5"):
         mhc_i_score = min(mhc_i_score, 0.75); mhc_i_reasons.append("NLRC5_caution")
     if bial("JAK1") or bial("JAK2") or bial("STAT1"):
@@ -754,6 +757,12 @@ def build_appm_2(
         mhc_ii_score = min(mhc_ii_score, 0.15); mhc_ii_reasons.append("CIITA_RFX_biallelic_defect")
     elif caution("CIITA") or caution("RFX5") or caution("RFXANK") or caution("RFXAP"):
         mhc_ii_score = min(mhc_ii_score, 0.60); mhc_ii_reasons.append("MHC_II_regulator_caution")
+    if any(caution(g) for g in MHC_II_CORE_GENES):
+        mhc_ii_score = min(mhc_ii_score, 0.65); mhc_ii_reasons.append("MHC_II_core_caution")
+    if lost_hla_ii:
+        # Class-II allele loss is pathway background evidence. It does not
+        # modify class-I peptides and is kept at review/caution strength.
+        mhc_ii_score = min(mhc_ii_score, 0.65); mhc_ii_reasons.append("HLA_II_LOH")
 
     ifng_score = 1.0
     ifng_reasons: list[str] = []
@@ -822,7 +831,7 @@ def build_appm_2(
             if mhc in {"I", "MHC-I", "CLASSI"}:
                 if bial("B2M"):
                     action = "REJECT_OR_CAP"; mult = 0.0; cap = "D"; reasons.append("B2M_biallelic_loss")
-                if hla in lost_hla:
+                if hla in lost_hla_i:
                     # HLA-allele LOH is handled by the immune_escape peptide layer; APPM records review context
                     # without applying a second multiplier penalty.
                     action = "REVIEW" if action == "PASS" else action; reasons.append("restricting_HLA_LOH_review_in_immune_escape")
@@ -845,7 +854,7 @@ def build_appm_2(
                 "mhc_ii_integrity_status": pathway_rows[1]["pathway_status"],
                 "ifng_response_status": pathway_rows[2]["pathway_status"],
                 "restricting_locus_expression_status": locus_expr,
-                "restricting_locus_loh": "yes" if hla in lost_hla else "no",
+                "restricting_locus_loh": "yes" if hla in lost_hla_i else "no",
                 "b2m_status": by_gene.get("B2M", {}).get("biallelic_status", "NO_EVIDENCE"),
                 "tap_status": "DEFECT" if bial("TAP1") or bial("TAP2") else "NO_HIGH_RISK_SIGNAL",
                 "nlrc5_status": by_gene.get("NLRC5", {}).get("functional_status", "unassessed"),
@@ -886,8 +895,12 @@ def build_appm_2(
         "mhc_i_integrity_status": pathway_rows[0]["pathway_status"],
         "mhc_ii_integrity_status": pathway_rows[1]["pathway_status"],
         "ifng_response_status": pathway_rows[2]["pathway_status"],
-        "hla_i_loh_flag": "yes" if lost_hla else "no",
+        "hla_i_loh_flag": "yes" if lost_hla_i else "no",
         "hla_loh_alleles": ",".join(sorted(lost_hla)),
+        "hla_i_loh_alleles": ",".join(sorted(lost_hla_i)),
+        "hla_ii_loh_flag": "yes" if lost_hla_ii else "no",
+        "hla_ii_loh_alleles": ",".join(sorted(lost_hla_ii)),
+        "hla_loh_unclassified_alleles": ",".join(sorted(lost_hla_unclassified)),
         "b2m_risk": "yes" if bial("B2M") else ("caution" if caution("B2M") else "no"),
         "tap_risk": "yes" if bial("TAP1") or bial("TAP2") else ("caution" if caution("TAP1") or caution("TAP2") else "no"),
         "nlrc5_risk": by_gene.get("NLRC5", {}).get("functional_status", "unassessed"),

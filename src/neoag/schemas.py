@@ -4,13 +4,29 @@ EVENT_FIELDS = [
     "evidence_scope","priority_cap","wes_confidence_tier",
     "gene","event_name",
     "chrom","pos","ref","alt","transcript_id","consequence",
-    "rna_junction_reads",
-    "event_confidence","event_expression","driver_relevance",
+    "rna_junction_reads","rna_junction_source","rna_frame_status",
+    "event_confidence","event_expression","gene_expression_tpm","transcript_expression_tpm",
+    "expression_evidence_status","rna_support_status","rna_evidence_completeness","rna_evidence_score",
+    "driver_relevance",
     "tumor_vaf","tumor_depth","tumor_alt_count",
-    "rna_vaf","rna_alt_reads","rna_depth",
+    "rna_vaf","rna_alt_reads","rna_depth","rna_vaf_source",
     "clonality","persistence","tumor_specificity",
-    "ccf_estimate","ccf_status","clonality_multiplier",
-    "normal_tissue_max_tpm","normal_hspc_tpm","critical_tissue_hit",
+    "raw_ccf","ccf_estimate","ccf_status","ccf_confidence","ccf_warning","ccf_method",
+    "ccf_resolution","ccf_resolution_reason","clonality_multiplier",
+    "phase_group_id","haplotype_status","phase_support_reads","phase_total_informative_reads",
+    "phase_confidence","component_event_ids","combined_protein_change","redundancy_group",
+    "cross_platform_variant_key","comparison_status","cross_platform_status",
+    "cross_platform_confidence","cross_platform_multiplier","cross_platform_priority_cap",
+    "cross_platform_review_required","source_vcf_tumor_ad","source_vcf_tumor_af",
+    "wes_tumor_depth","wes_tumor_alt_count","wes_tumor_alt_vaf",
+    "wgs_tumor_depth","wgs_tumor_alt_count","wgs_tumor_alt_vaf",
+    "normal_depth","normal_alt_count","normal_alt_vaf",
+    "other_zero_alt_probability_at_source_pileup_vaf",
+    "normal_tissue_max_tpm","normal_tissue_max_tissue","critical_tissue_max_tpm",
+    "critical_tissue_name","normal_hspc_tpm","normal_hspc_unit","critical_tissue_hit",
+    "normal_expression_status","normal_hspc_status","reference_proteome_status",
+    "normal_ligandome_status","anchor_assessment_status","safety_evidence_completeness",
+    "safety_missing_layers",
     "safety_status","safety_reason","appm_mhc_i_integrity","appm_mhc_ii_integrity",
     "event_score","source"
 ]
@@ -19,7 +35,10 @@ PEPTIDE_FIELDS = [
     "peptide_id","event_id","sample_id","event_type","mutation_source","peptide_consequence",
     "evidence_scope","priority_cap","wes_confidence_tier",
     "gene","peptide","wildtype_peptide",
-    "crosses_junction","contains_novel_aa","rna_junction_reads",
+    "crosses_junction","contains_novel_aa","rna_junction_reads","rna_junction_source","rna_frame_status",
+    "gene_expression_tpm","transcript_expression_tpm","expression_evidence_status",
+    "rna_support_status","rna_evidence_completeness","rna_evidence_score",
+    "rna_vaf","rna_alt_reads","rna_depth","rna_vaf_source",
     "hla_allele","mhc_class","source_tool",
     "binding_rank","el_rank","presentation_score","immunogenicity_score",
     "wildtype_binding_rank","self_similarity_score","normal_hla_ligand_overlap",
@@ -28,19 +47,41 @@ PEPTIDE_FIELDS = [
     "netmhcpan_ba_rank","netmhcpan_el_rank",
     "netmhcstabpan_score","netmhcstabpan_rank",
     "mhcflurry_affinity_percentile","mhcflurry_processing_score","mhcflurry_presentation_score",
+    "mhcflurry_wt_affinity_percentile","mhcflurry_wt_processing_score","mhcflurry_wt_presentation_score",
     "binding_evidence_score","presentation_evidence_score","presentation_evidence_grade",
     "iedb_immunogenicity_score","immunogenicity_resolved",
     "prime_score","prime_rank","bigmhc_im_score","deepimmuno_score",
+    "prime_wt_score","prime_wt_rank","bigmhc_im_wt_score",
     "immunogenicity_composite_score","immunogenicity_source",
     "presentation_gate_status","presentation_gate_reason","presentation_gate_multiplier",
     "appm_multiplier","appm_multiplier_reason","appm_integrity_status",
     "appm_evidence_completeness","appm_review_required","appm_action",
-    "ccf_multiplier",
+    "raw_ccf","ccf_estimate","ccf_status","ccf_confidence","ccf_warning","ccf_method",
+    "ccf_resolution","ccf_resolution_reason","ccf_multiplier",
     "safety_tier","safety_status","safety_reason","safety_multiplier","review_required",
     "reference_proteome_exact_match","normal_ligand_tissue","mutation_anchor_only",
+    "normal_tissue_max_tpm","normal_tissue_max_tissue","critical_tissue_max_tpm",
+    "critical_tissue_name","normal_hspc_tpm","normal_hspc_unit",
+    "normal_expression_status","normal_hspc_status","reference_proteome_status",
+    "normal_ligandome_status","anchor_assessment_status","normal_junction_assessment_status",
+    "safety_evidence_completeness","safety_missing_layers","safety_priority_cap",
+    "mutation_positions_in_peptide","mutation_tcr_facing",
+    "phase_group_id","haplotype_status","phase_support_reads","phase_total_informative_reads",
+    "phase_confidence","component_event_ids","combined_protein_change","redundancy_group",
+    "cross_platform_variant_key","comparison_status","cross_platform_status",
+    "cross_platform_confidence","cross_platform_multiplier","cross_platform_priority_cap",
+    "cross_platform_review_required","source_vcf_tumor_ad","source_vcf_tumor_af",
+    "wes_tumor_depth","wes_tumor_alt_count","wes_tumor_alt_vaf",
+    "wgs_tumor_depth","wgs_tumor_alt_count","wgs_tumor_alt_vaf",
+    "normal_depth","normal_alt_count","normal_alt_vaf",
+    "other_zero_alt_probability_at_source_pileup_vaf",
+    "agretopicity_el","mt_wt_el_rank_difference","mhcflurry_mt_wt_presentation_difference",
+    "prime_mt_wt_score_difference","bigmhc_mt_wt_score_difference",
+    "mutant_specificity_status","mutant_specificity_gate_status","mutant_specificity_reason",
+    "mutant_specificity_multiplier","mutant_specificity_priority_cap",
     "escape_status","escape_flag","escape_reason","resistance_risk","escape_action","escape_multiplier","restricting_hla_lost",
     "l3_event_confidence_score","l3_expression_score","l3_clonality_score","l3_tumor_specificity_score",
-    "l3_hla_binding_score","l3_hla_presentation_score","l3_rna_junction_support_score",
+    "l3_hla_binding_score","l3_hla_presentation_score","l3_rna_support_score","l3_rna_junction_support_score",
     "l3_normal_tissue_safety_score","l3_apm_integrity_score","l3_immunogenicity_score",
     "immunology_composite_score",
     "efficacy_score","final_priority","recommended_use"
@@ -49,10 +90,13 @@ PEPTIDE_FIELDS = [
 PRESENTATION_FIELDS = [
     "peptide_id","event_id","sample_id","peptide","hla_allele","mhc_class",
     "netmhcpan_ba_rank","netmhcpan_el_rank",
+    "netmhcpan_mt_rank_ba","netmhcpan_mt_rank_el","netmhcpan_wt_rank_ba","netmhcpan_wt_rank_el",
     "netmhcstabpan_score","netmhcstabpan_rank",
     "mhcflurry_affinity_percentile","mhcflurry_processing_score","mhcflurry_presentation_score",
+    "mhcflurry_wt_affinity_percentile","mhcflurry_wt_processing_score","mhcflurry_wt_presentation_score",
     "iedb_immunogenicity_score",
     "prime_score","prime_rank","bigmhc_im_score","deepimmuno_score",
+    "prime_wt_score","prime_wt_rank","bigmhc_im_wt_score",
     "immunogenicity_composite_score","immunogenicity_source",
     "binding_evidence_score","presentation_evidence_score",
     "evidence_completeness","presentation_evidence_grade"
@@ -60,15 +104,18 @@ PRESENTATION_FIELDS = [
 
 # Standard Project B intermediate layer (multi-entry A–F → unified event ranking)
 EXPRESSION_EVIDENCE_FIELDS = [
-    "event_id", "sample_id", "gene", "event_expression", "expression_tpm",
-    "expression_source", "mutation_source", "peptide_consequence",
+    "event_id", "sample_id", "gene", "transcript_id", "event_expression",
+    "gene_expression_tpm", "transcript_expression_tpm", "expression_tpm",
+    "expression_evidence_status", "expression_source", "transcript_expression_source",
+    "mutation_source", "peptide_consequence",
 ]
 
 RNA_JUNCTION_EVIDENCE_FIELDS = [
     "evidence_id", "event_id", "peptide_id", "sample_id", "gene", "gene_pair",
     "junction_reads", "junction_source", "mutation_source", "peptide_consequence",
     "rna_alt_reads", "rna_ref_reads", "rna_depth", "rna_vaf", "rna_vaf_source",
-    "rna_support_status", "targeted_validation_status", "targeted_validation_source",
+    "rna_frame_status", "rna_support_status", "rna_evidence_completeness", "rna_evidence_score",
+    "targeted_validation_status", "targeted_validation_source",
     "targeted_validation_method",
 ]
 
@@ -83,7 +130,7 @@ FUSION_EVIDENCE_FIELDS = [
 
 SAFETY_EVIDENCE_FIELDS = [
     "evidence_id", "level", "event_id", "peptide_id", "sample_id", "gene", "peptide",
-    "safety_status", "safety_reason", "normal_tissue_max_tpm", "normal_hspc_tpm",
+    "safety_status", "safety_reason", "normal_tissue_max_tpm", "normal_hspc_tpm", "normal_hspc_unit",
     "critical_tissue_hit", "normal_hla_ligand_overlap",
 ]
 
@@ -118,23 +165,32 @@ PEPTIDE_SAFETY_FIELDS = [
     "matched_normal_status","normal_alt_reads","normal_vaf","tumor_only_flag",
     "reference_proteome_exact_match","reference_match_gene","reference_match_protein","reference_match_position",
     "normal_hla_ligand_exact_match","normal_ligand_tissue","normal_ligand_hla","normal_ligand_source_protein",
-    "normal_tissue_max_tpm","normal_tissue_max_tissue","normal_hspc_tpm","critical_tissue_hit",
+    "normal_tissue_max_tpm","normal_tissue_max_tissue","critical_tissue_max_tpm",
+    "normal_hspc_tpm","normal_hspc_unit","critical_tissue_hit",
     "normal_junction_seen","normal_junction_source","normal_junction_max_reads","normal_junction_tissue",
     "wildtype_peptide","mt_binding_rank","wt_binding_rank","mt_wt_fold_change",
     "mutation_position_in_peptide","mutation_anchor_only","anchor_risk_status",
     "closest_self_peptide","closest_self_gene","closest_self_similarity","closest_self_hla_binding_rank","closest_self_normal_expression_tpm",
-    "safety_tier","safety_status","safety_reason","safety_multiplier","review_required"
+    "safety_tier","safety_status","safety_reason","safety_multiplier","review_required",
+    "normal_expression_status","normal_hspc_status","reference_proteome_status",
+    "normal_ligandome_status","anchor_assessment_status","normal_junction_assessment_status",
+    "safety_evidence_completeness","safety_missing_layers","safety_priority_cap"
 ]
 
 EVENT_SAFETY_FIELDS = [
     "event_id","sample_id","gene","event_type","mutation_source",
     "normal_expression_status","normal_junction_status","matched_normal_status",
-    "event_safety_status","event_safety_reason"
+    "event_safety_status","event_safety_reason","normal_hspc_status",
+    "reference_proteome_status","normal_ligandome_status","anchor_assessment_status",
+    "normal_tissue_max_tpm","normal_tissue_max_tissue","critical_tissue_max_tpm",
+    "critical_tissue_name","normal_hspc_tpm","normal_hspc_unit",
+    "safety_evidence_completeness","safety_missing_layers"
 ]
 
 IMMUNE_ESCAPE_SUMMARY_FIELDS = [
     "sample_id","mhc_i_escape_status","mhc_ii_escape_status","ifng_response_status",
     "cytotoxic_killing_resistance_status","hla_loh_status","lost_hla_alleles",
+    "lost_hla_i_alleles","lost_hla_ii_alleles","unclassified_lost_hla_alleles",
     "b2m_biallelic_loss","jak1_biallelic_loss","jak2_biallelic_loss",
     "tap_defect","nlrc5_defect","ciita_defect",
     "overall_immune_escape_risk","mechanism_summary","evidence_completeness","interpretation"
@@ -231,6 +287,10 @@ APPM_SUMMARY_FIELDS = [
     "mhc_ii_integrity_score",
     "hla_i_loh_flag",
     "hla_loh_alleles",
+    "hla_i_loh_alleles",
+    "hla_ii_loh_flag",
+    "hla_ii_loh_alleles",
+    "hla_loh_unclassified_alleles",
     "b2m_risk",
     "tap_risk",
     "nlrc5_risk",

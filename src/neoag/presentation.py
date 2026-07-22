@@ -47,6 +47,8 @@ def build_presentation_evidence(
         pct = m.get("mhcflurry_affinity_percentile", "")
         proc = m.get("mhcflurry_processing_score", "")
         pres = m.get("mhcflurry_presentation_score", "")
+        def evidence_value(key, default=""):
+            return n.get(key) or m.get(key) or p.get(key) or default
         ba_s = norm_rank(ba) if ba != "" else None
         el_s = norm_rank(el) if el != "" else None
         pct_s = norm_rank(pct) if pct != "" else None
@@ -73,11 +75,21 @@ def build_presentation_evidence(
             "mhc_class": p.get("mhc_class",""),
             "netmhcpan_ba_rank": str(to_float(ba, 99.0)),
             "netmhcpan_el_rank": str(to_float(el, 99.0)),
+            "netmhcpan_mt_rank_ba": evidence_value("netmhcpan_mt_rank_ba", ba),
+            "netmhcpan_mt_rank_el": evidence_value("netmhcpan_mt_rank_el", el),
+            "netmhcpan_wt_rank_ba": evidence_value("netmhcpan_wt_rank_ba"),
+            "netmhcpan_wt_rank_el": evidence_value("netmhcpan_wt_rank_el"),
             "netmhcstabpan_score": str(to_float(s.get("netmhcstabpan_score"), 0.0)) if s else "",
             "netmhcstabpan_rank": str(to_float(s.get("netmhcstabpan_rank"), 99.0)) if s else "",
             "mhcflurry_affinity_percentile": str(to_float(pct, 99.0)),
             "mhcflurry_processing_score": str(to_float(proc, 0.0)),
             "mhcflurry_presentation_score": str(to_float(pres, 0.0)),
+            "mhcflurry_wt_affinity_percentile": evidence_value("mhcflurry_wt_affinity_percentile"),
+            "mhcflurry_wt_processing_score": evidence_value("mhcflurry_wt_processing_score"),
+            "mhcflurry_wt_presentation_score": evidence_value("mhcflurry_wt_presentation_score"),
+            "prime_wt_score": evidence_value("prime_wt_score"),
+            "prime_wt_rank": evidence_value("prime_wt_rank"),
+            "bigmhc_im_wt_score": evidence_value("bigmhc_im_wt_score"),
             "binding_evidence_score": f"{binding:.4f}",
             "presentation_evidence_score": f"{presentation:.4f}",
             "evidence_completeness": f"{complete:.4f}",

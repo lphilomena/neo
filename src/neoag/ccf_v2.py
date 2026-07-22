@@ -34,7 +34,7 @@ CCF_FIELDS = [
     "purity_recommendation_file",
     "total_cn", "major_cn", "minor_cn", "loh_status", "cnv_confidence",
     "multiplicity_candidates", "multiplicity_best", "multiplicity_confidence", "multiplicity_ambiguity",
-    "ccf_best", "ccf_min", "ccf_max", "ccf_ci_low", "ccf_ci_high",
+    "raw_ccf", "ccf_best", "ccf_min", "ccf_max", "ccf_ci_low", "ccf_ci_high",
     "probability_ccf_gt_0_8", "probability_ccf_lt_0_3",
     # Backward-compatible columns consumed by older score code
     "ccf_estimate", "ccf_status", "clonality_status", "clonality_confidence", "clonality_multiplier",
@@ -166,11 +166,11 @@ def _row_chrom(r: Mapping[str, Any]) -> str:
 
 
 def _row_start(r: Mapping[str, Any]) -> int:
-    return int(to_float(first(r, ["start", "Start", "loc.start", "seg_start", "chromStart"], "0"), 0))
+    return int(to_float(first(r, ["start", "Start", "start.pos", "loc.start", "seg_start", "chromStart"], "0"), 0))
 
 
 def _row_end(r: Mapping[str, Any]) -> int:
-    return int(to_float(first(r, ["end", "End", "loc.end", "seg_end", "chromEnd"], "0"), 0))
+    return int(to_float(first(r, ["end", "End", "end.pos", "loc.end", "seg_end", "chromEnd"], "0"), 0))
 
 
 def _copy_status_from_minor(minor_cn: float | None, total_cn: float | None) -> str:
@@ -188,8 +188,8 @@ def _copy_status_from_minor(minor_cn: float | None, total_cn: float | None) -> s
 
 
 def _major_minor_available(row: Mapping[str, Any]) -> bool:
-    major_raw = first(row, ["major_cn", "major_copy_number", "major", "tcn.em", "cf.em"], "")
-    minor_raw = first(row, ["minor_cn", "minor_copy_number", "minor", "lcn.em", "lcn"], "")
+    major_raw = first(row, ["major_cn", "major_copy_number", "major", "A", "tcn.em", "cf.em"], "")
+    minor_raw = first(row, ["minor_cn", "minor_copy_number", "minor", "B", "lcn.em", "lcn"], "")
     return bool(major_raw and minor_raw)
 
 
@@ -212,8 +212,8 @@ def find_cn(chrom: str, pos: str | int | float, cnv_rows: list[dict[str, str]]) 
         start, end = _row_start(r), _row_end(r)
         if start <= p <= end:
             total = to_float(first(r, ["total_cn", "copy_number", "total_copy_number", "tcn", "cn", "CNt"], "2"), 2.0)
-            major_raw = first(r, ["major_cn", "major_copy_number", "major", "tcn.em", "cf.em"], "")
-            minor_raw = first(r, ["minor_cn", "minor_copy_number", "minor", "lcn.em", "lcn"], "")
+            major_raw = first(r, ["major_cn", "major_copy_number", "major", "A", "tcn.em", "cf.em"], "")
+            minor_raw = first(r, ["minor_cn", "minor_copy_number", "minor", "B", "lcn.em", "lcn"], "")
             major = to_float(major_raw, math.nan) if major_raw else math.nan
             minor = to_float(minor_raw, math.nan) if minor_raw else math.nan
             loh = first(r, ["loh_status", "LOH", "loh", "cnloh", "status", "call"], "")
@@ -234,25 +234,31 @@ def find_cn(chrom: str, pos: str | int | float, cnv_rows: list[dict[str, str]]) 
     return best
 
 
-def estimate_ccf(vaf: float, purity: float, total_cn: float, multiplicity: float) -> float:
+def estimate_ccf_raw(vaf: float, purity: float, total_cn: float, multiplicity: float) -> float:
     if purity <= 0 or multiplicity <= 0:
         return 0.0
     denom = purity * multiplicity
     numerator = vaf * (purity * total_cn + 2.0 * (1.0 - purity))
-    return clamp(numerator / denom, 0.0, 1.5)
+    return numerator / denom
+
+
+def estimate_ccf(vaf: float, purity: float, total_cn: float, multiplicity: float) -> float:
+    """Biologically bounded CCF; use estimate_ccf_raw for diagnostic output."""
+    return clamp(estimate_ccf_raw(vaf, purity, total_cn, multiplicity), 0.0, 1.0)
 
 
 def enumerate_ccf(vaf: float, purity: float, total_cn: float) -> dict[str, Any]:
     max_m = max(1, int(round(max(total_cn, 1.0))))
     vals: list[tuple[int, float]] = []
     for m in range(1, max_m + 1):
-        c = estimate_ccf(vaf, purity, total_cn, float(m))
-        if 0 <= c <= 1.5:
+        c = estimate_ccf_raw(vaf, purity, total_cn, float(m))
+        if c >= 0:
             vals.append((m, c))
     if not vals:
         c = estimate_ccf(vaf, purity, total_cn, 1.0)
         return {
             "best_m": 1,
+            "raw_best": estimate_ccf_raw(vaf, purity, total_cn, 1.0),
             "best": c,
             "min": c,
             "max": c,
@@ -283,9 +289,10 @@ def enumerate_ccf(vaf: float, purity: float, total_cn: float) -> dict[str, Any]:
 
     return {
         "best_m": best_m,
-        "best": best_c,
-        "min": min(c for _, c in vals),
-        "max": max(c for _, c in vals),
+        "raw_best": best_c,
+        "best": clamp(best_c),
+        "min": clamp(min(c for _, c in vals)),
+        "max": clamp(max(c for _, c in vals)),
         "candidates": ";".join(str(m) for m, _ in vals),
         "multiplicity_confidence": mult_conf,
         "multiplicity_ambiguity": ambiguity,
@@ -317,7 +324,16 @@ def _event_method(e: Mapping[str, Any]) -> str:
         str(e.get("source") or ""),
         str(e.get("evidence_scope") or ""),
     ]).lower()
-    if "rna_only" in source or ("rna" in source and not e.get("tumor_vaf") and not e.get("tumor_alt_count")):
+    rna_callers = (
+        "easyfuse", "arriba", "star-fusion", "star_fusion", "fusioncatcher",
+        "pvacfuse", "pvacsplice", "snaf", "splicemutr", "splice2neo", "neosplice",
+    )
+    lacks_dna_allele_evidence = not _has_tumor_allele_evidence(e)
+    if (
+        "rna_only" in source
+        or ("rna" in source and lacks_dna_allele_evidence)
+        or (any(caller in source for caller in rna_callers) and lacks_dna_allele_evidence)
+    ):
         return "RNA_ONLY_UNRESOLVED"
     if "wes" in source and "sv" in source:
         return "WES_SV_CAPTURE_LIMITED_APPROX"
@@ -330,6 +346,17 @@ def _event_method(e: Mapping[str, Any]) -> str:
     if any(x in source for x in ["cnv", "copy", "exon"]):
         return "COPY_NUMBER_AWARE_APPROX"
     return "COPY_NUMBER_AWARE_APPROX"
+
+
+def _has_tumor_allele_evidence(e: Mapping[str, Any]) -> bool:
+    vaf = str(first(e, ["tumor_vaf", "vaf", "sv_vaf_like"], "") or "").strip()
+    alt = str(first(e, ["tumor_alt_count", "alt_count", "tumor_alt_support", "sv_alt_support"], "") or "").strip()
+    depth = str(first(e, ["tumor_depth", "depth", "local_depth", "tumor_local_depth"], "") or "").strip()
+    if alt and depth:
+        return True
+    # A zero placeholder without measured depth is missing evidence, not a
+    # confidently observed VAF of zero.
+    return bool(vaf and (to_float(vaf, 0.0) > 0.0 or depth))
 
 
 def _probability_from_interval(ccf_best: float | None, lo: float | None, hi: float | None, threshold: float, direction: str) -> str:
@@ -371,6 +398,9 @@ def clonality_status(ccf: float | None, confidence: str, profile: Mapping[str, A
 
 def clonality_multiplier(status: str, profile: Mapping[str, Any]) -> float:
     cfg = profile.get("ccf_lite", {}) if profile else {}
+    if status == "RNA_ONLY_UNRESOLVED":
+        # Missing DNA clonality evidence is not evidence of a low-frequency clone.
+        return float(cfg.get("rna_only_unresolved_multiplier", 1.0))
     if status == "clonal_like":
         return 1.0
     if status == "subclonal_like":
@@ -741,11 +771,13 @@ def build_ccf_2(
         event_id = e.get("event_id", "")
         chrom = e.get("chrom", "")
         pos = e.get("pos", "")
+        vaf_observed = _has_tumor_allele_evidence(e)
         vaf, alt, depth = _vaf_from_event(e)
         vaf_lo, vaf_hi = _ci_for_vaf(vaf, depth)
         cn = find_cn(chrom, pos, cnv)
         total_cn = float(cn["total_cn"])
         method = _event_method(e)
+        raw_ccf = None
         ccf_best = ccf_min = ccf_max = None
         best_m = ""
         ci_low = ci_high = None
@@ -755,14 +787,20 @@ def build_ccf_2(
         status = "unresolved"
         confidence = "low"
         warning: list[str] = []
-        if purity is None or purity <= 0:
+        if method == "RNA_ONLY_UNRESOLVED":
+            status = "RNA_ONLY_UNRESOLVED"
+            confidence = "unresolved"
+            warning.append("rna_only_no_dna_ccf")
+        elif not vaf_observed:
+            status = "unresolved"
+            confidence = "unresolved"
+            warning.append("missing_tumor_vaf")
+        elif purity is None or purity <= 0:
             status = "vaf_only_unresolved"
             warning.append("missing_purity")
-        elif method == "RNA_ONLY_UNRESOLVED":
-            status = "unresolved"
-            warning.append("rna_only_no_dna_ccf")
         else:
             enum = enumerate_ccf(vaf, float(purity), total_cn)
+            raw_ccf = enum["raw_best"]
             ccf_best, ccf_min, ccf_max = enum["best"], enum["min"], enum["max"]
             best_m = str(enum["best_m"])
             mult_candidates = str(enum["candidates"])
@@ -778,6 +816,10 @@ def build_ccf_2(
                 depth=depth,
                 multiplicity_confidence=mult_conf,
             )
+            if raw_ccf > 1.0:
+                warning.append("raw_ccf_above_1_clamped")
+            elif raw_ccf < 0.0:
+                warning.append("raw_ccf_below_0_clamped")
             status = clonality_status(ccf_best, confidence, profile)
         clon_conf = _clonality_confidence(
             ccf_confidence=confidence,
@@ -797,7 +839,7 @@ def build_ccf_2(
             "pos": str(pos),
             "tumor_alt_count": "" if alt is None else str(alt),
             "tumor_depth": "" if depth is None else str(depth),
-            "tumor_vaf": f"{vaf:.4f}",
+            "tumor_vaf": f"{vaf:.4f}" if vaf_observed else "",
             "vaf_ci_low": "" if vaf_lo is None else f"{vaf_lo:.4f}",
             "vaf_ci_high": "" if vaf_hi is None else f"{vaf_hi:.4f}",
             "purity": "" if purity is None else f"{float(purity):.4f}",
@@ -818,6 +860,7 @@ def build_ccf_2(
             "multiplicity_best": best_m,
             "multiplicity_confidence": mult_conf,
             "multiplicity_ambiguity": mult_ambiguity,
+            "raw_ccf": "" if raw_ccf is None else f"{raw_ccf:.4f}",
             "ccf_best": "" if ccf_best is None else f"{ccf_best:.4f}",
             "ccf_min": "" if ccf_min is None else f"{ccf_min:.4f}",
             "ccf_max": "" if ccf_max is None else f"{ccf_max:.4f}",
@@ -825,7 +868,7 @@ def build_ccf_2(
             "ccf_ci_high": "" if ci_high is None else f"{ci_high:.4f}",
             "probability_ccf_gt_0_8": _probability_from_interval(ccf_best, ci_low, ci_high, 0.8, "gt"),
             "probability_ccf_lt_0_3": _probability_from_interval(ccf_best, ci_low, ci_high, 0.3, "lt"),
-            "ccf_estimate": "" if ccf_best is None else f"{ccf_best:.4f}",
+            "ccf_estimate": "NA" if ccf_best is None else f"{ccf_best:.4f}",
             "ccf_status": status,
             "clonality_status": status,
             "clonality_confidence": clon_conf,

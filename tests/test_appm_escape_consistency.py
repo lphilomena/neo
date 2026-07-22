@@ -114,3 +114,35 @@ def test_no_appm_input_is_unassessed_and_not_penalized(tmp_path):
     assert r["escape_summary"]["overall_immune_escape_risk"] == "INCONCLUSIVE"
     assert all(row["appm_multiplier"] == "1.0000" for row in r["ranked"])
     assert all(row["appm_review_required"] == "yes" for row in r["ranked"])
+
+
+def test_class_ii_hla_loh_stays_out_of_class_i_and_requires_review(tmp_path):
+    out = _run(
+        tmp_path,
+        hla_rows=[
+            {"hla_allele": "HLA-DQA1*02:01", "loh_status": "loh"},
+            {"hla_allele": "HLA-DQB1*02:02", "loh_status": "loh"},
+        ],
+    )
+    r = _rows(out)
+    summary = r["appm_summary"]
+    assert summary["hla_i_loh_flag"] == "no"
+    assert summary["hla_i_loh_alleles"] == ""
+    assert summary["hla_ii_loh_flag"] == "yes"
+    assert set(summary["hla_ii_loh_alleles"].split(",")) == {"HLA-DQA1*02:01", "HLA-DQB1*02:02"}
+    assert summary["mhc_i_integrity_score"] == "1.0000"
+    assert summary["mhc_i_integrity_status"] == "MHC_I_INTACT"
+    assert summary["mhc_ii_integrity_score"] == "0.6500"
+    assert summary["mhc_ii_integrity_status"] == "MHC_II_CAUTION"
+
+    submodules = {row["submodule"]: row for row in read_tsv(out["appm_submodule_scores"])}
+    assert submodules["MHC_I_HLA_LOH"]["score"] == "1.0000"
+    assert submodules["MHC_II_CORE"]["score"] == "0.6500"
+
+    escape = r["escape_summary"]
+    assert escape["lost_hla_i_alleles"] == ""
+    assert set(escape["lost_hla_ii_alleles"].split(",")) == {"HLA-DQA1*02:01", "HLA-DQB1*02:02"}
+    assert escape["n_peptides_affected_by_hla_loh"] == "0"
+    assert escape["n_top_peptides_affected_by_hla_loh"] == "0"
+    assert escape["overall_immune_escape_risk"] == "REVIEW_REQUIRED"
+    assert all(flag["escape_status"] == "ESCAPE_PASS" for flag in r["escape_flags"])

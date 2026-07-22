@@ -4,7 +4,11 @@ from typing import Any, Mapping
 
 from .utils import read_tsv, write_tsv, to_float, norm_tpm, clamp
 from .config import source_priority
-from .safety import safety_multiplier, apply_event_safety, apply_peptide_safety, load_normal_expression, load_normal_hla_ligands
+from .safety import (
+    safety_multiplier, apply_event_safety, apply_peptide_safety,
+    load_normal_expression, load_normal_hla_ligands,
+    combine_safety_reasons, worst_safety_status,
+)
 from .gates import evaluate_presentation_gate
 from .schemas import EVENT_FIELDS, PEPTIDE_FIELDS
 from .model_layers import enrich_event_layers, enrich_peptide_layers, compute_l3_dimension_scores
@@ -12,6 +16,14 @@ from .model_layers import enrich_event_layers, enrich_peptide_layers, compute_l3
 from .immunogenicity_composite import has_resolved_immunogenicity, resolve_immunogenicity_score
 from .peptide_safety_gate import load_peptide_safety
 from .immune_escape import load_peptide_escape_flags
+from .mutant_specificity import evaluate_mutant_specificity
+from .haplotype import annotate_nearby_variant_groups
+from .cross_platform import (
+    annotate_event_cross_platform,
+    cross_platform_recommendation,
+    load_cross_platform_evidence,
+    propagate_cross_platform_to_peptide,
+)
 
 
 def map_by(rows, key):
@@ -76,13 +88,41 @@ def merge_appm_modifier(p: dict[str, Any], appm_row: Mapping[str, Any] | None) -
             p[k] = val
     return p
 
-def merge_safety_gate(peptide: dict, gate: Mapping[str, Any] | None) -> dict:
+def merge_safety_gate(peptide: dict, gate: Mapping[str, Any] | None, profile: Mapping[str, Any] | None = None) -> dict:
     if not gate:
         return peptide
-    for k in ["safety_tier", "safety_status", "safety_reason", "safety_multiplier"]:
+    peptide["safety_status"] = worst_safety_status(peptide.get("safety_status"), gate.get("safety_status"))
+    peptide["safety_reason"] = combine_safety_reasons(peptide.get("safety_reason"), gate.get("safety_reason"))
+    peptide["safety_tier"] = gate.get("safety_tier") or peptide.get("safety_tier", "")
+    peptide["safety_multiplier"] = f"{safety_multiplier(peptide['safety_status'], profile):.4f}"
+    for k in [
+        "review_required", "reference_proteome_exact_match", "normal_ligand_tissue",
+        "mutation_anchor_only", "normal_expression_status", "normal_hspc_status",
+        "reference_proteome_status", "normal_ligandome_status", "anchor_assessment_status",
+        "normal_junction_assessment_status", "safety_evidence_completeness",
+        "safety_missing_layers", "safety_priority_cap", "normal_tissue_max_tpm",
+        "normal_tissue_max_tissue", "critical_tissue_max_tpm", "critical_tissue_name",
+        "normal_hspc_tpm", "normal_hspc_unit",
+    ]:
         if gate.get(k) not in {None, ""}:
             peptide[k] = gate.get(k)
     return peptide
+
+
+def merge_event_safety(event: dict[str, Any], safety_row: Mapping[str, Any] | None) -> dict[str, Any]:
+    if not safety_row:
+        return event
+    event["safety_status"] = worst_safety_status(event.get("safety_status"), safety_row.get("event_safety_status"))
+    event["safety_reason"] = combine_safety_reasons(event.get("safety_reason"), safety_row.get("event_safety_reason"))
+    for key in [
+        "normal_expression_status", "normal_hspc_status", "reference_proteome_status",
+        "normal_ligandome_status", "anchor_assessment_status",
+        "normal_tissue_max_tpm", "normal_tissue_max_tissue", "critical_tissue_max_tpm",
+        "critical_tissue_name", "normal_hspc_tpm", "normal_hspc_unit", "safety_evidence_completeness", "safety_missing_layers",
+    ]:
+        if safety_row.get(key) not in {None, ""}:
+            event[key] = safety_row.get(key)
+    return event
 
 def merge_escape_flags(peptide: dict, flags: Mapping[str, Any] | None) -> dict:
     if not flags:
@@ -196,8 +236,9 @@ def score_event(e, profile):
         float(w.get("tumor_specificity",0.1))*clamp(to_float(e.get("tumor_specificity"),0))
     )
     base *= source_priority(profile, e.get("event_type", "Other"), e.get("mutation_source"))
-    base *= safety_multiplier(e.get("safety_status",""))
+    base *= safety_multiplier(e.get("safety_status",""), profile)
     base *= to_float(e.get("clonality_multiplier"), 1.0)
+    base *= to_float(e.get("cross_platform_multiplier"), 1.0)
     e["event_score"] = f"{clamp(base,0,2):.4f}"
     return e
 
@@ -221,6 +262,7 @@ def appm_multiplier(p, summary, profile=None):
 def priority(safety, score):
     if safety == "FAIL": return "D"
     if safety == "CAUTION": return "B_CAUTION" if score >= 0.55 else "C_CAUTION"
+    if safety in {"SAFETY_PARTIAL", "PARTIAL"}: return "C_CAUTION" if score >= 0.35 else "D"
     if score >= 0.75: return "A"
     if score >= 0.55: return "B"
     if score >= 0.35: return "C"
@@ -233,8 +275,20 @@ def recommended(p, appm, ccf):
     if p.get("safety_status") == "CAUTION": notes.append("requires focused safety validation")
     if p.get("presentation_gate_status") == "FAIL":
         notes.append(f"presentation gate: {p.get('presentation_gate_reason','')}")
+    if p.get("haplotype_status") == "PHASING_REQUIRED":
+        notes.append("nearby variants require read-backed phasing and combined-mutant peptide reconstruction")
     if appm < 0.65: notes.append("APPM caution")
+    if p.get("ccf_status") == "RNA_ONLY_UNRESOLVED":
+        notes.append("RNA-only event; DNA clonality unresolved")
+    specificity = p.get("mutant_specificity_status", "")
+    if specificity in {"WT_BETTER", "MT_WT_SIMILAR", "MARGINAL_MT_ADVANTAGE"}:
+        notes.append(f"mutant specificity caution ({specificity}); MT/WT paired validation required; exclude from first validation batch")
+    elif specificity == "UNASSESSED" and p.get("wildtype_peptide"):
+        notes.append("mutant specificity unresolved; obtain paired MT/WT predictions")
     if ccf < 0.75: notes.append("clonality/persistence caution")
+    platform_note = cross_platform_recommendation(p.get("cross_platform_status", ""))
+    if platform_note:
+        notes.append(platform_note)
     from .validation_design import classify_validation_mode, recommended_assay_text
     mode = classify_validation_mode(p)
     if mode not in {"do_not_advance", "safety_caution"}:
@@ -267,8 +321,9 @@ def compute_peptide_efficacy(
     )
     composite = to_float(l3.get("immunology_composite_score"), 0.0)
     safety = peptide.get("safety_status", event.get("safety_status", "PASS"))
-    score = composite * safety_multiplier(safety) * appm * gate_mult * ccf
+    score = composite * safety_multiplier(safety, profile) * appm * gate_mult * ccf
     score *= to_float(peptide.get("escape_multiplier"), 1.0)
+    score *= to_float(event.get("cross_platform_multiplier"), 1.0)
     return {
         "efficacy_score": f"{clamp(score):.4f}",
         "immunogenicity_resolved": "yes" if w.get("immunogenicity", 0.0) > 0 else "no",
@@ -279,19 +334,38 @@ def compute_peptide_efficacy(
 
 
 def score_peptide(p, e, profile, pres, summary):
+    p = propagate_cross_platform_to_peptide(p, e)
+    for field in (
+        "raw_ccf", "ccf_estimate", "ccf_status", "ccf_confidence", "ccf_warning",
+        "ccf_method", "ccf_resolution", "ccf_resolution_reason",
+    ):
+        p[field] = e.get(field, p.get(field, ""))
+    for field in (
+        "phase_group_id", "haplotype_status", "phase_support_reads",
+        "phase_total_informative_reads", "phase_confidence", "component_event_ids",
+        "combined_protein_change", "redundancy_group",
+    ):
+        p[field] = e.get(field, p.get(field, ""))
     for k in [
         "netmhcpan_ba_rank", "netmhcpan_el_rank", "netmhcstabpan_score", "netmhcstabpan_rank",
         "mhcflurry_affinity_percentile", "mhcflurry_processing_score", "mhcflurry_presentation_score",
         "binding_evidence_score", "presentation_evidence_score", "presentation_evidence_grade",
         "prime_score", "prime_rank", "bigmhc_im_score", "deepimmuno_score",
+        "mhcflurry_wt_affinity_percentile", "mhcflurry_wt_processing_score", "mhcflurry_wt_presentation_score",
+        "prime_wt_score", "prime_wt_rank", "bigmhc_im_wt_score",
+        "netmhcpan_mt_rank_ba", "netmhcpan_mt_rank_el", "netmhcpan_wt_rank_ba", "netmhcpan_wt_rank_el",
         "iedb_immunogenicity_score", "immunogenicity_composite_score", "immunogenicity_source",
     ]:
-        p[k] = pres.get(k, p.get(k, ""))
+        p[k] = pres.get(k) or p.get(k, "")
 
     appm = appm_multiplier(p, summary, profile)
     ccf = to_float(e.get("clonality_multiplier"), 1.0)
+    specificity = evaluate_mutant_specificity(p, pres, profile)
+    p.update(specificity)
     scored = compute_peptide_efficacy(p, e, pres, profile, appm=appm, ccf=ccf)
     p.update(scored)
+    specificity_mult = to_float(p.get("mutant_specificity_multiplier"), 1.0)
+    p["efficacy_score"] = f"{clamp(to_float(p.get('efficacy_score'), 0.0) * specificity_mult):.4f}"
     escape_mult = to_float(p.get("escape_multiplier"), 1.0)
     # escape_multiplier is already applied inside compute_peptide_efficacy;
     # do not apply it a second time here.
@@ -303,6 +377,27 @@ def score_peptide(p, e, profile, pres, summary):
     p["ccf_multiplier"] = f"{ccf:.4f}"
     p["escape_multiplier"] = f"{escape_mult:.4f}"
     pri = priority(p.get("safety_status"), to_float(p["efficacy_score"], 0.0))
+    specificity_cap = p.get("mutant_specificity_priority_cap", "")
+    if specificity_cap:
+        p["priority_cap"] = apply_priority_cap_value(p.get("priority_cap", "") or "A", specificity_cap)
+    if p.get("haplotype_status") == "PHASING_REQUIRED":
+        p["priority_cap"] = apply_priority_cap_value(p.get("priority_cap", "") or "A", "C_CAUTION")
+    fusion_cfg = profile.get("fusion", {})
+    is_fusion = str(p.get("event_type") or e.get("event_type") or "").lower() == "fusion"
+    if is_fusion and p.get("ccf_status") == "RNA_ONLY_UNRESOLVED":
+        cap = fusion_cfg.get("rna_only_priority_cap", "")
+        if cap:
+            p["priority_cap"] = apply_priority_cap_value(p.get("priority_cap", "") or "A", cap)
+    if is_fusion and p.get("normal_junction_assessment_status") == "UNASSESSED":
+        cap = fusion_cfg.get("normal_junction_unassessed_priority_cap", "")
+        if cap:
+            p["priority_cap"] = apply_priority_cap_value(p.get("priority_cap", "") or "A", cap)
+    if p.get("safety_status") in {"SAFETY_PARTIAL", "PARTIAL"}:
+        partial_cap = p.get("safety_priority_cap") or profile.get("safety", {}).get("partial_priority_cap", "C_CAUTION")
+        p["priority_cap"] = apply_priority_cap_value(p.get("priority_cap", "") or "A", partial_cap)
+    platform_cap = p.get("cross_platform_priority_cap", "")
+    if platform_cap:
+        p["priority_cap"] = apply_priority_cap_value(p.get("priority_cap", "") or "A", platform_cap)
     p["final_priority"] = apply_priority_cap_value(pri, p.get("priority_cap", ""))
     p["recommended_use"] = recommended(p, appm, ccf)
     return p
@@ -324,8 +419,9 @@ def filter_by_enabled_sources(events: list[dict], profile: Mapping[str, Any]) ->
     return out
 
 
-def score(raw_events, raw_peptides, presentation_evidence, appm_summary_tsv, ccf_lite_tsv, normal_expression_tsv, normal_hla_ligands_tsv, profile, out_events, out_peptides, peptide_safety_tsv=None, peptide_escape_flags_tsv=None, appm_peptide_modifiers_tsv=None):
+def score(raw_events, raw_peptides, presentation_evidence, appm_summary_tsv, ccf_lite_tsv, normal_expression_tsv, normal_hla_ligands_tsv, profile, out_events, out_peptides, peptide_safety_tsv=None, event_safety_tsv=None, peptide_escape_flags_tsv=None, appm_peptide_modifiers_tsv=None, cross_platform_evidence_tsv=None):
     events = [enrich_event_layers(e) for e in read_tsv(raw_events)]
+    events = annotate_nearby_variant_groups(events)
     events = filter_by_enabled_sources(events, profile)
     peptides = read_tsv(raw_peptides)
     pres_map = map_by(read_tsv(presentation_evidence), "peptide_id")
@@ -335,8 +431,10 @@ def score(raw_events, raw_peptides, presentation_evidence, appm_summary_tsv, ccf
     norm_expr = load_normal_expression(normal_expression_tsv)
     norm_lig = load_normal_hla_ligands(normal_hla_ligands_tsv)
     safety_map = load_optional_map(peptide_safety_tsv, "peptide_id")
+    event_safety_map = load_optional_map(event_safety_tsv, "event_id")
     escape_map = load_optional_map(peptide_escape_flags_tsv, "peptide_id")
     appm_modifier_map = load_optional_map(appm_peptide_modifiers_tsv, "peptide_id")
+    cross_platform_map = load_cross_platform_evidence(cross_platform_evidence_tsv)
     event_map, scored_e = {}, []
     for e in events:
         if e.get("event_id") in ccf_map:
@@ -344,11 +442,23 @@ def score(raw_events, raw_peptides, presentation_evidence, appm_summary_tsv, ccf
             e["ccf_estimate"] = c.get("ccf_estimate","")
             e["ccf_status"] = c.get("ccf_status","")
             e["clonality_multiplier"] = c.get("clonality_multiplier","1.0")
+            for field in (
+                "raw_ccf", "ccf_confidence", "ccf_warning", "ccf_method",
+                "ccf_resolution", "ccf_resolution_reason",
+            ):
+                e[field] = c.get(field, "")
         else:
             e["clonality_multiplier"] = e.get("clonality_multiplier","1.0")
         e["appm_mhc_i_integrity"] = summary.get("mhc_i_integrity_score","1.0")
         e["appm_mhc_ii_integrity"] = summary.get("mhc_ii_integrity_score","1.0")
+        e = annotate_event_cross_platform(e, cross_platform_map, profile)
         e = apply_event_safety(e, profile, norm_expr)
+        e = merge_event_safety(e, event_safety_map.get(e.get("event_id", "")))
+        if e.get("cross_platform_status") == "NORMAL_SUPPORT_REVIEW":
+            e["safety_status"] = worst_safety_status(e.get("safety_status"), "CAUTION")
+            e["safety_reason"] = combine_safety_reasons(
+                e.get("safety_reason"), "matched_normal_alt_support"
+            )
         e = score_event(e, profile)
         event_map[e["event_id"]] = e
         scored_e.append(e)
@@ -359,7 +469,7 @@ def score(raw_events, raw_peptides, presentation_evidence, appm_summary_tsv, ccf
             continue
         p = enrich_peptide_layers(p, e)
         p = apply_peptide_safety(p, e, profile, norm_lig)
-        p = merge_safety_gate(p, safety_map.get(p.get("peptide_id", "")))
+        p = merge_safety_gate(p, safety_map.get(p.get("peptide_id", "")), profile)
         p = merge_appm_modifier(p, appm_modifier_map.get(p.get("peptide_id", "")))
         p = merge_escape_flags(p, escape_map.get(p.get("peptide_id", "")))
         p = score_peptide(p, e, profile, pres_map.get(p.get("peptide_id",""), {}), summary)

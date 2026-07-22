@@ -123,6 +123,22 @@ def normalize_hla_allele(raw: str) -> str:
     return s
 
 
+def hla_allele_class(raw: str) -> str:
+    """Return the classical HLA class for an allele, or an empty string.
+
+    APPM peptide modifiers are intentionally limited to classical HLA-A/B/C
+    for class I. DP/DQ/DR alleles are class II background evidence and must not
+    be aggregated into the class-I LOH score.
+    """
+    allele = normalize_hla_allele(raw)
+    locus = allele.removeprefix("HLA-").split("*", 1)[0]
+    if locus in {"A", "B", "C"}:
+        return "I"
+    if locus.startswith(("DP", "DQ", "DR")):
+        return "II"
+    return ""
+
+
 def pair_key(peptide: str, hla_allele: str) -> tuple[str, str]:
     return peptide.strip().upper(), normalize_hla_allele(hla_allele)
 

@@ -64,6 +64,40 @@ def evaluate_presentation_gate(
             passed = False
             reasons.append(f"vaf={vaf:.4f}")
 
+    consequence = str(event.get("peptide_consequence") or "").lower()
+    mutation_source = str(event.get("mutation_source") or "").upper()
+    is_junction = consequence in {"fusion", "splice_junction"} and mutation_source != "INDEL"
+    if is_junction:
+        min_junction = float(cfg.get("min_rna_junction_reads", 0.0))
+        if min_junction > 0:
+            reads = to_float(event.get("rna_junction_reads"), 0.0)
+            if reads < min_junction:
+                passed = False
+                reasons.append(f"rna_junction_reads={reads:.0f}")
+    else:
+        min_alt = float(cfg.get("min_rna_alt_reads", 0.0))
+        if min_alt > 0:
+            alt_reads = to_float(event.get("rna_alt_reads"), 0.0)
+            if alt_reads < min_alt:
+                passed = False
+                reasons.append(f"rna_alt_reads={alt_reads:.0f}")
+        min_rna_vaf = float(cfg.get("min_rna_vaf", 0.0))
+        if min_rna_vaf > 0:
+            rna_vaf = to_float(event.get("rna_vaf"), 0.0)
+            if rna_vaf < min_rna_vaf:
+                passed = False
+                reasons.append(f"rna_vaf={rna_vaf:.4f}")
+        min_allele_expression = float(cfg.get("min_allele_expression", 0.0))
+        if min_allele_expression > 0:
+            gene_tpm = to_float(
+                event.get("gene_expression_tpm") or event.get("event_expression"), 0.0
+            )
+            rna_vaf = to_float(event.get("rna_vaf"), 0.0)
+            allele_expression = gene_tpm * rna_vaf
+            if allele_expression < min_allele_expression:
+                passed = False
+                reasons.append(f"allele_expression={allele_expression:.4f}")
+
     if passed:
         return {
             "presentation_gate_status": "PASS",

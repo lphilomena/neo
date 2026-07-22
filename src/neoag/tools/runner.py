@@ -916,7 +916,7 @@ def run_vep_appm(ctx: RunContext, out_tsv: Path) -> Path:
         return out_tsv
     if not ctx.variants_vcf:
         raise ValueError("vep requires variants_vcf or tools.stub=true")
-    work = ctx.outdir / "tools" / "vep"
+    work = (ctx.outdir / "tools" / "vep").resolve()
     raw = work / "vep_raw.tsv"
     import os
     docker_mode = _effective_mode("vep") == RunnerMode.DOCKER
@@ -941,11 +941,15 @@ def run_vep_appm(ctx: RunContext, out_tsv: Path) -> Path:
         cache_version = os.environ.get("NEOAG_VEP_CACHE_VERSION", "").strip()
         if cache_version:
             cmd.extend(["--cache_version", cache_version])
-        reference_fasta = ctx.reference_fasta
+        # The run manifest is sample-specific and takes precedence over a
+        # deployment-wide environment default.
+        reference_fasta = str(ctx.reference_fasta or "").strip()
         if not reference_fasta:
             reference_fasta = os.environ.get("NEOAG_REFERENCE_FASTA", "").strip()
         if reference_fasta:
-            cmd.extend(["--fasta", str(reference_fasta)])
+            if not Path(reference_fasta).is_file():
+                raise FileNotFoundError(f"Configured VEP reference FASTA does not exist: {reference_fasta}")
+            cmd.extend(["--fasta", reference_fasta])
     _run_cmd(cmd, work)
     vep_to_appm_tsv(raw, out_tsv)
     return out_tsv
@@ -1034,6 +1038,7 @@ def _run_prime_batch(
 ) -> Path:
     import os
     import subprocess
+    import sys
 
     batch_dir.mkdir(parents=True, exist_ok=True)
     pep_file = batch_dir / "peptides.txt"
@@ -1052,7 +1057,25 @@ def _run_prime_batch(
     ]
     if mixmhcpred:
         cmd.extend(["-mix", mixmhcpred])
-    subprocess.run(cmd, check=True, cwd=batch_dir, env=os.environ.copy())
+
+    env = os.environ.copy()
+    prime_python = Path(env.get("NEOAG_PRIME_PYTHON", sys.executable)).expanduser()
+    if not prime_python.is_file():
+        raise RuntimeError(
+            f"NEOAG_PRIME_PYTHON does not point to an executable file: {prime_python}"
+        )
+    # MixMHCpred invokes `python3` from its shell wrapper. Keep it isolated from
+    # unrelated active conda environments (for example OptiType + pandas 3).
+    env["MIXMHCPRED_PYTHON"] = str(prime_python.resolve())
+    env["PATH"] = os.pathsep.join(
+        [str(prime_python.resolve().parent), env.get("PATH", "")]
+    )
+    subprocess.run(cmd, check=True, cwd=batch_dir, env=env)
+    if not raw_out.is_file() or raw_out.stat().st_size <= 1:
+        raise RuntimeError(
+            "PRIME returned success but produced an empty output file: "
+            f"{raw_out}. Check the PRIME/MixMHCpred subprocess output and allele batch size."
+        )
     return raw_out
 
 
@@ -1064,7 +1087,8 @@ def _prime_rows_by_peptide(raw_paths: list[Path]) -> dict[str, dict[str, str]]:
         for row in read_prime_wide_rows(raw_out):
             peptide = (row.get("Peptide") or row.get("peptide") or "").strip().upper()
             if peptide:
-                by_pep[peptide] = row
+                merged = by_pep.setdefault(peptide, {})
+                merged.update({key: value for key, value in row.items() if value not in (None, "")})
     return by_pep
 
 
@@ -1106,41 +1130,57 @@ def _run_prime_external(pairs: list[tuple[str, str]], out_tsv: Path, ctx: RunCon
 
     work = out_tsv.parent / "prime"
     work.mkdir(parents=True, exist_ok=True)
-    unique_peptides = sorted({peptide.upper() for peptide, _ in pairs})
-    prime_alleles = sorted({prime_allele_tag(allele) for _, allele in pairs})
     prime_exe = _resolve_prime_exe(ctx)
     mixmhcpred = ctx.executables.get("mixmhcpred") or os.environ.get("MIXMHCPRED_BIN")
     n_jobs = prime_parallel_jobs()
-    chunks = split_peptide_chunks(unique_peptides, n_jobs)
+    grouped: dict[str, set[str]] = {}
+    for peptide, allele in pairs:
+        grouped.setdefault(prime_allele_tag(allele), set()).add(peptide.upper())
 
-    if len(chunks) == 1:
-        raw_out = _run_prime_batch(work, chunks[0], prime_alleles, prime_exe, mixmhcpred)
-        by_pep = _prime_rows_by_peptide([raw_out])
-        source_file = str(raw_out)
-    else:
-        print(
-            f"prime: running {len(chunks)} batches in parallel "
-            f"(NEOAG_PRIME_JOBS={n_jobs}, {len(unique_peptides)} peptides)",
-            flush=True,
-        )
-        batch_dirs = [work / f"batch_{i:03d}" for i in range(len(chunks))]
-        raw_paths: list[Path] = []
-        with ThreadPoolExecutor(max_workers=len(chunks)) as pool:
-            futures = {
-                pool.submit(
-                    _run_prime_batch,
-                    batch_dir,
-                    chunk,
-                    prime_alleles,
-                    prime_exe,
-                    mixmhcpred,
-                ): batch_dir
-                for batch_dir, chunk in zip(batch_dirs, chunks)
-            }
-            for fut in as_completed(futures):
-                raw_paths.append(fut.result())
-        by_pep = _prime_rows_by_peptide(raw_paths)
-        source_file = str(work)
+    try:
+        max_batch_size = max(1, int(os.environ.get("NEOAG_PRIME_BATCH_SIZE", "5000")))
+    except ValueError:
+        max_batch_size = 5000
+
+    tasks: list[tuple[Path, list[str], list[str]]] = []
+    one_allele = len(grouped) == 1
+    for allele, allele_peptides in sorted(grouped.items()):
+        peptides_for_allele = sorted(allele_peptides)
+        if one_allele:
+            chunks = split_peptide_chunks(peptides_for_allele, n_jobs)
+        else:
+            chunks = [
+                peptides_for_allele[i : i + max_batch_size]
+                for i in range(0, len(peptides_for_allele), max_batch_size)
+            ]
+        allele_dir = work / f"allele_{allele}"
+        for i, chunk in enumerate(chunks):
+            tasks.append((allele_dir / f"batch_{i:03d}", chunk, [allele]))
+
+    unique_peptides = {peptide.upper() for peptide, _ in pairs}
+    print(
+        f"prime: running {len(tasks)} allele-specific batches "
+        f"(NEOAG_PRIME_JOBS={n_jobs}, {len(unique_peptides)} peptides, "
+        f"{len(grouped)} alleles, {len(pairs)} requested pairs)",
+        flush=True,
+    )
+    raw_paths: list[Path] = []
+    with ThreadPoolExecutor(max_workers=min(n_jobs, len(tasks))) as pool:
+        futures = {
+            pool.submit(
+                _run_prime_batch,
+                batch_dir,
+                chunk,
+                alleles,
+                prime_exe,
+                mixmhcpred,
+            ): batch_dir
+            for batch_dir, chunk, alleles in tasks
+        }
+        for fut in as_completed(futures):
+            raw_paths.append(fut.result())
+    by_pep = _prime_rows_by_peptide(raw_paths)
+    source_file = str(work)
 
     write_prime_evidence(out_tsv, _prime_evidence_rows(pairs, by_pep, ctx.sample_id, source_file))
 

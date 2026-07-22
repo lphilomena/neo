@@ -10,7 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Mapping
 
-from .adapters.peptide_input import normalize_hla_allele
+from .adapters.peptide_input import hla_allele_class, normalize_hla_allele
 from .appm_v2 import (
     IFNG_GENES,
     MHC_I_GENES,
@@ -37,6 +37,7 @@ IMMUNE_ESCAPE_EVENT_FIELDS = [
 IMMUNE_ESCAPE_SUMMARY_FIELDS = [
     "sample_id", "therapy_context", "mhc_i_escape_status", "mhc_ii_escape_status", "ifng_response_status",
     "cytotoxic_killing_resistance_status", "hla_loh_status", "lost_hla_alleles", "b2m_biallelic_loss",
+    "lost_hla_i_alleles", "lost_hla_ii_alleles", "unclassified_lost_hla_alleles",
     "jak1_biallelic_loss", "jak2_biallelic_loss", "tap_defect", "nlrc5_defect", "ciita_defect",
     "n_peptides_affected_by_hla_loh", "n_top_peptides_affected_by_hla_loh",
     "n_mhc_i_peptides_affected_by_b2m", "n_top_mhc_i_peptides_affected_by_b2m",
@@ -232,6 +233,9 @@ def build_immune_escape_evidence(
     ctx = _therapy_context(profile, therapy_context)
     lost_hla_info = _load_lost_hla_with_conf(hla_loh_tsv)
     lost_hla = set(lost_hla_info)
+    lost_hla_i = {hla for hla in lost_hla if hla_allele_class(hla) == "I"}
+    lost_hla_ii = {hla for hla in lost_hla if hla_allele_class(hla) == "II"}
+    lost_hla_unclassified = lost_hla - lost_hla_i - lost_hla_ii
     gene_map, pathway_map, appm_summary = _build_or_load_appm(
         sample_id=sample_id,
         workdir=out,
@@ -254,8 +258,10 @@ def build_immune_escape_evidence(
     ciita_def = _functional(gene_map, "CIITA") in {"defective", "caution"}
 
     events: list[dict[str, str]] = []
-    for hla, info in sorted(lost_hla_info.items()):
-        events.append(_escape_event_row(sample_id, "HLA_ALLELE_SPECIFIC_LOSS", hla, "HLA-I", "HLA_LOH", risk="HIGH" if len(lost_hla) >= 2 else "MEDIUM", reason="restricting_HLA_allele_loss", ccf_by_event=ccf_by_event))
+    for hla in sorted(lost_hla_i):
+        events.append(_escape_event_row(sample_id, "HLA_ALLELE_SPECIFIC_LOSS", hla, "HLA-I", "HLA_LOH", risk="HIGH" if len(lost_hla_i) >= 2 else "MEDIUM", reason="restricting_HLA_class_I_allele_loss", ccf_by_event=ccf_by_event))
+    for hla in sorted(lost_hla_ii):
+        events.append(_escape_event_row(sample_id, "HLA_CLASS_II_ALLELE_SPECIFIC_LOSS", hla, "HLA-II", "HLA_LOH", risk="MEDIUM", reason="HLA_class_II_background_loss", ccf_by_event=ccf_by_event))
     if b2m:
         events.append(_escape_event_row(sample_id, "MHC_I_GLOBAL_LOSS", "B2M", "MHC-I", "BIALLELIC_LOSS", gene_map.get("B2M"), risk="HIGH", ccf_by_event=ccf_by_event))
     if tap_def:
@@ -272,7 +278,7 @@ def build_immune_escape_evidence(
     mechanisms = [e["mechanism"] for e in events]
     appm_unassessed = appm_summary.get("appm_overall_status") == "UNASSESSED" or appm_summary.get("appm_evidence_completeness") == "UNASSESSED"
     no_direct_escape_inputs = not any([vep_tsv, expression_tsv, cnv_tsv, hla_loh_tsv])
-    if b2m or jak1 or jak2 or any(e["mechanism"] == "HLA_ALLELE_SPECIFIC_LOSS" for e in events if e["risk_level"] == "HIGH"):
+    if b2m or jak1 or jak2:
         overall = "HIGH"
     elif events:
         overall = "MEDIUM"
@@ -286,12 +292,15 @@ def build_immune_escape_evidence(
     summary = {
         "sample_id": sample_id,
         "therapy_context": ctx,
-        "mhc_i_escape_status": "HIGH" if b2m else ("MEDIUM" if lost_hla or tap_def or nlrc5_def else "LOW"),
-        "mhc_ii_escape_status": "MEDIUM" if ciita_def else "LOW",
+        "mhc_i_escape_status": "HIGH" if b2m else ("MEDIUM" if lost_hla_i or tap_def or nlrc5_def else "LOW"),
+        "mhc_ii_escape_status": "MEDIUM" if ciita_def or lost_hla_ii else "LOW",
         "ifng_response_status": "HIGH" if jak1 or jak2 else "LOW",
         "cytotoxic_killing_resistance_status": "LOW",
         "hla_loh_status": "LOH_DETECTED" if lost_hla else ("NOT_ASSESSED" if not hla_loh_tsv else "NO_LOH_DETECTED"),
         "lost_hla_alleles": ",".join(sorted(lost_hla)),
+        "lost_hla_i_alleles": ",".join(sorted(lost_hla_i)),
+        "lost_hla_ii_alleles": ",".join(sorted(lost_hla_ii)),
+        "unclassified_lost_hla_alleles": ",".join(sorted(lost_hla_unclassified)),
         "b2m_biallelic_loss": "yes" if b2m else "no",
         "jak1_biallelic_loss": "yes" if jak1 else "no",
         "jak2_biallelic_loss": "yes" if jak2 else "no",
@@ -311,9 +320,10 @@ def build_immune_escape_evidence(
         event_id = p.get("event_id", "")
         hla = normalize_hla_allele(p.get("hla_allele", ""))
         mhc_i = _mhc_class_i(p.get("mhc_class", "I"))
+        restricting_hla_lost = hla in (lost_hla_i if mhc_i else lost_hla_ii)
         reasons: list[str] = []
         status = "ESCAPE_PASS"; mult = 1.0; cap = ""
-        if hla in lost_hla:
+        if restricting_hla_lost:
             if strict_lost:
                 status = "LOST_RESTRICTING_HLA"; mult = 0.0; cap = "D"
             else:
@@ -352,7 +362,7 @@ def build_immune_escape_evidence(
             "hla_allele": p.get("hla_allele", ""),
             "mhc_class": p.get("mhc_class", ""),
             "therapy_context": ctx,
-            "restricting_hla_lost": "yes" if hla in lost_hla else "no",
+            "restricting_hla_lost": "yes" if restricting_hla_lost else "no",
             "lost_hla_alleles": ",".join(sorted(lost_hla)),
             "b2m_status": "BIALLELIC_LOSS" if b2m else gene_map.get("B2M", {}).get("biallelic_status", "NO_EVIDENCE"),
             "hla_class_i_global_status": "GLOBAL_MHC_I_LOSS" if b2m else "NO_GLOBAL_LOSS_SIGNAL",
@@ -383,7 +393,9 @@ def build_immune_escape_evidence(
         hla = normalize_hla_allele(flag.get("hla_allele", ""))
         mhc_i_flag = _mhc_class_i(flag.get("mhc_class", "I"))
         if mech == "HLA_ALLELE_SPECIFIC_LOSS":
-            return hla == normalize_hla_allele(ev.get("gene_or_hla", ""))
+            return mhc_i_flag and hla == normalize_hla_allele(ev.get("gene_or_hla", ""))
+        if mech == "HLA_CLASS_II_ALLELE_SPECIFIC_LOSS":
+            return (not mhc_i_flag) and hla == normalize_hla_allele(ev.get("gene_or_hla", ""))
         if mech == "MHC_I_GLOBAL_LOSS":
             return mhc_i_flag
         if mech in {"ANTIGEN_PROCESSING_DEFECT", "MHC_I_TRANSCRIPTION_CAUTION"}:
@@ -413,12 +425,25 @@ def build_immune_escape_evidence(
     hla_loh_top = [f for f in hla_loh_affected if _is_top(f.get("peptide_id", ""))]
     b2m_affected = [f for f in flags if f.get("hla_class_i_global_status") == "GLOBAL_MHC_I_LOSS"]
     b2m_top = [f for f in b2m_affected if _is_top(f.get("peptide_id", ""))]
+    material_events = [ev for ev in events if int(ev.get("affected_candidate_count", "0") or 0) > 0]
+    completeness_status = str(appm_summary.get("appm_evidence_completeness", "")).upper()
+    if b2m or jak1 or jak2 or hla_loh_top:
+        overall = "HIGH"
+    elif material_events:
+        overall = "MEDIUM"
+    elif events or completeness_status == "LOW":
+        overall = "REVIEW_REQUIRED"
+    elif appm_unassessed:
+        overall = "INCONCLUSIVE"
+    else:
+        overall = "LOW"
     summary.update({
         "n_peptides_affected_by_hla_loh": str(len(hla_loh_affected)),
         "n_top_peptides_affected_by_hla_loh": str(len(hla_loh_top)),
         "n_mhc_i_peptides_affected_by_b2m": str(len(b2m_affected)),
         "n_top_mhc_i_peptides_affected_by_b2m": str(len(b2m_top)),
         "escape_burden_summary": f"hla_loh={len(hla_loh_affected)};b2m_mhc_i={len(b2m_affected)};top_hla_loh={len(hla_loh_top)};top_b2m={len(b2m_top)}",
+        "overall_immune_escape_risk": overall,
     })
 
     paths = {

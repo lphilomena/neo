@@ -43,6 +43,12 @@ Priority container details are documented in `docs/PRIORITY_TOOL_CONTAINERS.md`.
 | RNA fusion | FusionCatcher | `fusioncatcher` / `fusioncatcher-neoag` | RNA fusion discovery | `bash scripts/install_fusion_tools.sh` or external install | `quay.io/biocontainers/fusioncatcher:1.33b--hdfd78af_0` | `NEOAG_FUSIONCATCHER_HOME` | FusionCatcher reference data. |
 | RNA fusion | Arriba | `arriba` / `arriba` | RNA fusion discovery | Conda/site install or external module | `uhrigs/arriba:2.5.1` | `NEOAG_FUSION_ENV`, `GTF`, STAR/reference paths | GRCh38 FASTA, GTF, STAR index, optional blacklist resources. |
 | RNA fusion | EasyFuse | `easyfuse` / `easyfuse-neoag` | Fusion metacaller and evidence cross-check | External install or prebuilt Nextflow/Conda cache | `tronbioinformatics/easyfuse:1.3.7` | `NEOAG_EASYFUSE_HOME`, `NEOAG_EASYFUSE_REF`, `NEOAG_CONDA_BASE` | EasyFuse reference bundle and Nextflow/Conda cache as needed. |
+| RNA splice | RegTools + pVACsplice | `regtools`, `pvacsplice` | Extract RNA junctions and translate variant-associated coding junctions | `bash scripts/install_splice_neoantigen_tools.sh --core` | `griffithlab/pvactools:6.1.1` for pVACtools | `NEOAG_ENV_ROOT`, `NEOAG_PVACSPLICE_BIN` | RNA BAM/BAI, matching GTF/FASTA, VEP VCF, HLA alleles. |
+| RNA splice | SNAF | `snaf` | Tumor-specific junction filtering and neoantigen analysis | `bash scripts/install_splice_neoantigen_tools.sh --snaf` | none registered | `NEOAG_ENV_ROOT`, `NEOAG_SPLICE_TOOLS_ROOT` | SNAF database plus cohort or normal-junction background. |
+| RNA splice | ASNEO | `ASNEO.py` | Alternative-splicing neoantigen discovery | `bash scripts/install_splice_neoantigen_tools.sh --asneo` | none registered | `NEOAG_ENV_ROOT`, `NEOAG_SPLICE_TOOLS_ROOT` | GRCh37/hg19-aligned RNA input and ASNEO resources; do not apply directly to GRCh38. |
+| RNA splice | NeoSplice | `NeoSplice` | Tumor-normal differential splice neoantigen analysis | `bash scripts/install_splice_neoantigen_tools.sh --neosplice` | upstream image may be unavailable; source is staged | `NEOAG_SPLICE_TOOLS_ROOT` | Matched tumor and normal RNA plus compatible annotation/resources. |
+| RNA splice | splice2neo | `splice2neo` | Containerized splice-to-neoantigen workflow | `bash scripts/install_splice_neoantigen_tools.sh --splice2neo` | `ghcr.io/tron-bioinformatics/splice2neo:v0.6.14` | `NEOAG_CONTAINER_ARCHIVE_ROOT` | Workflow-specific genome/RNA/HLA inputs and mounted references. |
+| RNA splice | SpliceMutr | script suite / `form_transcripts.R` | Differential junction usage, transcript reconstruction, k-mer generation, and splice antigen burden | Stage source, then `bash scripts/install_splice_neoantigen_tools.sh --splicemutr` | none registered | `NEOAG_SPLICEMUTR_SOURCE`, `NEOAG_ENV_ROOT` | Tumor/normal or grouped RNA cohort, STAR junctions, LeafCutter, GTF/BSgenome/TxDb, HLA, and binding predictor. |
 | RNA expression | Salmon | script-level | RNA FASTQ to gene/transcript TPM | `scripts/run_salmon_fastq_to_tpm.sh` | none registered | `SALMON_BIN`, `SALMON_INDEX`, `SALMON_TX2GENE`, `SALMON_THREADS` | Salmon index and tx2gene mapping. |
 | RNA expression | RSEM | script-level | RNA FASTQ to TPM with RSEM | `scripts/run_rsem_fastq_to_tpm.sh` | none registered | `RSEM_BIN`, `RSEM_REFERENCE`, `RSEM_THREADS` | RSEM reference prefix. |
 | SV discovery | Manta | site tool | Structural variant discovery | Site install/module | `quay.io/biocontainers/manta:1.6.0--h9ee0642_3` | `NEOAG_MANTA_ENV`, run config paths | GRCh38 FASTA and BAM inputs. |
@@ -85,6 +91,9 @@ NEOAG_REF_BUNDLE=/path/to/neodata4git bash scripts/verify_all_tools_and_refs.sh 
 
 # Priority container smoke checks
 bash scripts/verify_priority_tool_containers.sh
+
+# Splice-specific install status and input-boundary checks
+NEOAG_ENV_ROOT=/path/to/envs bash scripts/verify_splice_neoantigen_tools.sh
 ```
 
 ## Licensing Boundary

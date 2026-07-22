@@ -21,6 +21,10 @@ VALIDATION_PLAN_FIELDS = [
     "presentation_grade",
     "appm_multiplier",
     "ccf_multiplier",
+    "phase_group_id",
+    "haplotype_status",
+    "shortlist_status",
+    "shortlist_rank",
     "validation_mode",
     "validation_strategy",
     "recommended_assay",
@@ -118,6 +122,8 @@ def classify_validation_mode(peptide: Mapping[str, Any]) -> str:
     priority = _norm(peptide.get("final_priority")).upper()
     if priority == "D":
         return "do_not_advance"
+    if _norm(peptide.get("haplotype_status")).upper() == "PHASING_REQUIRED":
+        return "phasing_required"
     if "CAUTION" in priority and _norm(peptide.get("safety_status")).upper() != "PASS":
         return "safety_caution"
 
@@ -164,6 +170,7 @@ def validation_strategy_text(mode: str) -> str:
         ),
         "safety_caution": "Safety-focused validation before efficacy assay",
         "do_not_advance": "Do not advance",
+        "phasing_required": "Complete read-backed phasing and rebuild combined-mutant peptide before validation",
     }.get(mode, "MHC-I peptide ELISpot/tetramer")
 
 
@@ -177,6 +184,7 @@ def recommended_assay_text(mode: str) -> str:
         "mhc_ii_long": "CD4 long peptide stimulation + cytokine assay",
         "safety_caution": "Safety-focused validation before efficacy assay",
         "do_not_advance": "Do not advance",
+        "phasing_required": "Read-backed phasing followed by combined-mutant peptide prediction",
     }.get(mode, "MHC-I peptide ELISpot/tetramer")
 
 
@@ -236,6 +244,10 @@ def design_validation_row(
         "presentation_grade": _norm(peptide.get("presentation_evidence_grade")),
         "appm_multiplier": _norm(peptide.get("appm_multiplier")),
         "ccf_multiplier": _norm(peptide.get("ccf_multiplier")),
+        "phase_group_id": _norm(peptide.get("phase_group_id")),
+        "haplotype_status": _norm(peptide.get("haplotype_status")),
+        "shortlist_status": "",
+        "shortlist_rank": "",
         "validation_mode": mode,
         "validation_strategy": validation_strategy_text(mode),
         "recommended_assay": recommended_assay_text(mode),

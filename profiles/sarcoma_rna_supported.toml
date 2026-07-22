@@ -1,34 +1,25 @@
 [enabled_sources]
-# Layer 1 mutation sources; legacy event_type values still accepted when enforce_enabled_sources=true
-types = ["SNV", "InDel", "SV", "CNV", "Fusion", "Splice", "TAA"]
-enforce_enabled_sources = false
-
+types = ["SNV", "InDel", "Fusion", "Splice", "TAA"]
 [source_priority]
-# Layer 1 priorities (preferred when mutation_source is set)
 SNV = 1.00
 InDel = 1.10
-SV = 1.12
-CNV = 0.95
-TAA = 0.50
-# Legacy Layer-2 / tool-specific keys (backward compatible)
-Fusion = 1.15
+SV = 1.15
+Fusion = 1.55
 Splice = 1.00
-SV_Fusion = 1.15
-SV_Frameshift = 1.10
+TAA = 0.35
 Other = 1.00
-
 [l3_weights]
-# Layer 3 unified immunology scoring (Project B core)
-event_confidence = 0.10
-expression = 0.08
+# Experimental-readiness profile: WTS evidence receives material weight.
+event_confidence = 0.08
+expression = 0.14
 clonality = 0.07
-tumor_specificity = 0.05
-hla_binding = 0.20
-hla_presentation = 0.25
-rna_junction_support = 0.05
+tumor_specificity = 0.04
+hla_binding = 0.16
+hla_presentation = 0.20
+rna_junction_support = 0.12
 normal_tissue_safety = 0.05
 apm_integrity = 0.05
-immunogenicity = 0.15
+immunogenicity = 0.09
 [event_weights]
 event_confidence = 0.22
 event_expression = 0.20
@@ -41,7 +32,7 @@ netmhcpan_ba = 0.25
 netmhcpan_el = 0.35
 mhcflurry_presentation = 0.30
 mhcflurry_processing = 0.10
-[score_weights]
+[v03_score_weights]
 event_score = 0.35
 binding_evidence = 0.20
 presentation_evidence = 0.25
@@ -85,31 +76,30 @@ rna_only_unresolved_multiplier = 1.00
 subclonal_multiplier = 0.75
 low_frequency_multiplier = 0.45
 [scoring]
-high_expression_tpm = 20.0
+high_expression_tpm = 15.0
 
 [gates]
 enabled = true
 require_presentation_grades = ["A", "B"]
 max_el_rank = 2.0
 min_stabpan_score = 1.4
-min_event_expression_tpm = 0.0
+min_event_expression_tpm = 0.1
 min_tumor_vaf = 0.0
+min_rna_alt_reads = 2
+min_rna_vaf = 0.02
+min_rna_junction_reads = 3
 failure_mode = "multiply"
-failure_multiplier = 0.25
+failure_multiplier = 0.10
 
 [immunogenicity]
 enabled = true
-sources = ["prime", "bigmhc_im", "iedb"]
-composite = "weighted"
+sources = ["prime", "bigmhc_im"]
+composite = "mean"
 use_iedb_fallback = false
 
 [immunogenicity.weights]
-bigmhc_im = 0.45
-prime = 0.35
-iedb = 0.20
-
-# HLA-stratified source multipliers disabled (CEDAR ablation: hurts gated composite AUROC).
-# Re-enable under [immunogenicity.hla_source_multipliers."HLA-..."] when retuned.
+prime = 0.5
+bigmhc_im = 0.5
 
 [immune_escape]
 therapy_context = "vaccine"

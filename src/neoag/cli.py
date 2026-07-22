@@ -80,6 +80,8 @@ def cmd_run(args):
         args.vep_appm, args.expression, args.hla_loh, args.purity, args.cnv,
         args.normal_expression, args.normal_hla_ligands,
         immunogenicity_stub=args.immunogenicity_stub,
+        transcript_expression=args.transcript_expression,
+        rna_vaf=args.rna_vaf,
         rna_junction=args.rna_junction,
         entry_mode=args.entry_mode,
         **kwargs,
@@ -157,8 +159,10 @@ def cmd_score(args):
         args.normal_expression, args.normal_hla_ligands, load_profile(args.profile),
         args.out_events, args.out_peptides,
         peptide_safety_tsv=getattr(args, "peptide_safety", None),
+        event_safety_tsv=getattr(args, "event_safety", None),
         peptide_escape_flags_tsv=getattr(args, "peptide_escape_flags", None),
         appm_peptide_modifiers_tsv=appm_modifiers,
+        cross_platform_evidence_tsv=getattr(args, "cross_platform_evidence", None),
     )
     print("Scored current evidence model into schema-compatible output files.")
 
@@ -800,6 +804,7 @@ def cmd_build_evidence_layer(args):
         raw_events=args.raw_events,
         raw_peptides=args.raw_peptides,
         expression=args.expression,
+        transcript_expression=args.transcript_expression,
         rna_junction=args.rna_junction,
         fusion_evidence=getattr(args, "fusion_evidence", None),
         rna_vaf=getattr(args, "rna_vaf", None),
@@ -854,6 +859,8 @@ def cmd_run_full(args):
         "netmhcstabpan": upstream.get("netmhcstabpan"),
         "vep_appm": upstream.get("vep_appm"),
         "expression": upstream.get("expression"),
+        "transcript_expression": upstream.get("transcript_expression") or inputs.get("transcript_expression_tsv") or inputs.get("transcript_expression"),
+        "rna_vaf": upstream.get("rna_vaf") or inputs.get("rna_vaf_tsv") or inputs.get("rna_vaf"),
         "hla_loh": upstream.get("hla_loh"),
         "purity": upstream.get("purity"),
         "cnv": upstream.get("cnv"),
@@ -918,6 +925,8 @@ def build_parser():
     r.add_argument("--profile", default="default"); r.add_argument("--sample-id", default="SAMPLE001"); r.add_argument("--outdir", required=True)
     r.add_argument("--pvac", nargs="*"); r.add_argument("--raw-events"); r.add_argument("--raw-peptides")
     r.add_argument("--netmhcpan"); r.add_argument("--mhcflurry"); r.add_argument("--netmhcstabpan"); r.add_argument("--vep-appm"); r.add_argument("--expression"); r.add_argument("--hla-loh"); r.add_argument("--purity"); r.add_argument("--cnv"); r.add_argument("--normal-expression"); r.add_argument("--normal-hla-ligands")
+    r.add_argument("--transcript-expression", help="Optional transcript-level TPM table (RSEM/Salmon compatible)")
+    r.add_argument("--rna-vaf", help="RNA allele-count/VAF TSV keyed by event_id or chrom/pos/ref/alt")
     r.add_argument("--rna-junction", help="Optional RNA junction support TSV")
     r.add_argument("--entry-mode", help="Entry mode label for provenance (snv_indel/fusion/splice_junction/sv/peptide_only/e2e)")
     r.add_argument("--immunogenicity-stub", action="store_true", default=False, help="Use stub immunogenicity scores (demo/testing only)")
@@ -939,7 +948,7 @@ def build_parser():
     cc2 = sub.add_parser("ccf-2", help="Build copy-number/multiplicity-aware CCF 2.0 table")
     cc2.add_argument("--events", required=True); cc2.add_argument("--purity"); cc2.add_argument("--cnv"); cc2.add_argument("--external-clonality"); cc2.add_argument("--svclone"); cc2.add_argument("--sidecar-dir"); cc2.add_argument("--input-qc-out"); cc2.add_argument("--conflicts-out"); cc2.add_argument("--clusters-out"); cc2.add_argument("--profile", default="default"); cc2.add_argument("--out", required=True); cc2.set_defaults(func=cmd_ccf_2)
     sc = sub.add_parser("score")
-    sc.add_argument("--raw-events", required=True); sc.add_argument("--raw-peptides", required=True); sc.add_argument("--presentation", required=True); sc.add_argument("--appm-summary"); sc.add_argument("--appm-peptide-modifiers", help="APPM 2.0 peptide modifiers TSV (defaults to sibling of --appm-summary)"); sc.add_argument("--ccf"); sc.add_argument("--normal-expression"); sc.add_argument("--normal-hla-ligands"); sc.add_argument("--peptide-safety"); sc.add_argument("--peptide-escape-flags"); sc.add_argument("--profile", default="default"); sc.add_argument("--out-events", required=True); sc.add_argument("--out-peptides", required=True); sc.set_defaults(func=cmd_score)
+    sc.add_argument("--raw-events", required=True); sc.add_argument("--raw-peptides", required=True); sc.add_argument("--presentation", required=True); sc.add_argument("--appm-summary"); sc.add_argument("--appm-peptide-modifiers", help="APPM 2.0 peptide modifiers TSV (defaults to sibling of --appm-summary)"); sc.add_argument("--ccf"); sc.add_argument("--normal-expression"); sc.add_argument("--normal-hla-ligands"); sc.add_argument("--peptide-safety"); sc.add_argument("--event-safety"); sc.add_argument("--peptide-escape-flags"); sc.add_argument("--cross-platform-evidence", help="WES/WGS targeted pileup evidence TSV keyed by normalized variant_key"); sc.add_argument("--profile", default="default"); sc.add_argument("--out-events", required=True); sc.add_argument("--out-peptides", required=True); sc.set_defaults(func=cmd_score)
 
     ps = sub.add_parser("peptide-safety", help="Build peptide_safety.tsv: reference proteome, normal ligandome, normal junction and anchor-risk safety gate")
     ps.add_argument("--raw-events", required=True)
@@ -1180,6 +1189,7 @@ def build_parser():
     be.add_argument("--raw-events")
     be.add_argument("--raw-peptides")
     be.add_argument("--expression")
+    be.add_argument("--transcript-expression", help="Transcript-level TPM table from RSEM/Salmon")
     be.add_argument("--rna-junction")
     be.add_argument("--rna-vaf", help="RNA allele-count/VAF TSV keyed by event_id, gene, or chrom:pos:ref>alt")
     be.add_argument("--fusion-evidence", help="parsed/fusion_evidence.tsv from EasyFuse adapter")
