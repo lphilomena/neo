@@ -57,9 +57,11 @@ human navigation layer:
 
 - `configs/assets/production_assets.tsv`: large assets to synchronize, including
   references, VEP cache, BigMHC/DeepImmuno models, EasyFuse references, LOHHLA,
-  and licensed-tool assets.
+  licensed-tool assets, and the prebuilt IEDB human MHC ligand tables.
 - `configs/references/reference_manifest.yaml`: reference paths, genome build,
   required markers, and VEP cache version checks.
+  IEDB deployment uses generated TSV files, manifest, and checksums as assets;
+  new machines do not rebuild the 9.1 GB source export.
 - `configs/tools/tools_manifest.yaml`: tools, environments, containers,
   license/distribution flags, and smoke commands.
 
@@ -166,6 +168,11 @@ neoag run-demo --outdir work/demo_v043 --sample-id DEMO001
 Important demo outputs include:
 
 - `work/demo_v043/scoring/ranked_peptides.tsv`
+- `work/demo_v043/scoring/ranked_peptides.evidence_consensus.tsv` (parallel review ranking; does not replace the primary ranking)
+- `work/demo_v043/scoring/ranked_events.evidence_consensus.tsv`
+- `work/demo_v043/scoring/evidence_states.tsv`
+- `work/demo_v043/scoring/evidence_conflicts.tsv`
+- `work/demo_v043/scoring/weighted_vs_consensus_comparison.tsv`
 - `work/demo_v043/scoring/ranked_events.tsv`
 - `work/demo_v043/scoring/validation_plan.tsv`
 - `work/demo_v043/reports/evidence_report.html`
@@ -176,6 +183,26 @@ Important demo outputs include:
 - `work/demo_v043/clonality/ccf_lite.tsv`
 - `work/demo_v043/safety/peptide_safety.tsv`
 - `work/demo_v043/immune_escape/peptide_escape_flags.tsv`
+
+### Parallel Evidence-consensus Ranking
+
+Every pipeline run keeps the existing weighted `ranked_peptides.tsv`. After
+building `comprehensive_peptide_evidence.tsv`, it independently writes peptide
+and event consensus rankings, normalized evidence states, and a row-level
+weighted-versus-consensus comparison. Missing evidence remains explicit and is
+not described as a negative biological result. Candidates receive an R1-R4
+evidence grade and a Pareto front calculated within the same event track.
+
+To generate it for an existing ranked table:
+
+```bash
+neoag evidence-consensus-rank \
+  --input results/sample/scoring/comprehensive_peptide_evidence.tsv \
+  --output results/sample/scoring/ranked_peptides.evidence_consensus.tsv \
+  --rules configs/ranking/sarcoma_evidence_consensus_v1.toml
+```
+
+See `docs/EVIDENCE_CONSENSUS.md` for field definitions and interpretation.
 
 For tests:
 

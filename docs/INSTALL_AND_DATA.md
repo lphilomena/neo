@@ -170,7 +170,8 @@ Large data should live under `NEOAG_TOOLS_ROOT` or another site-managed referenc
 | gnomAD AF VCF and PoN | GATK Mutect2 filtering | `bash scripts/download_ref_hg38.sh /path/to/ref/hg38` | Paths inside selected run config | `test -f /path/to/af-only-gnomad.hg38.vcf.gz` |
 | Ensembl protein FASTA | Peptide safety normal/reference proteome screen | Download Ensembl GRCh38 peptide FASTA manually or from site bundle | `NEOAG_NORMAL_PROTEOME_FASTA=/path/to/Homo_sapiens.GRCh38.pep.all.fa` | `test -f "$NEOAG_NORMAL_PROTEOME_FASTA"` |
 | Normal expression table | Peptide safety evidence | Site-generated TSV or `resources/normal_expression.example.tsv` for fixtures | CLI argument or run config path | Header should match expected TSV schema |
-| Normal HLA ligand table | Peptide safety evidence | Site-generated TSV or `resources/normal_hla_ligands.example.tsv` for fixtures | CLI argument or run config path | Header should match expected TSV schema |
+| Normal HLA ligand table | Peptide safety evidence | Rebuild HLA Ligand Atlas 2020.12 with `scripts/build_hla_ligand_atlas_reference.py`; use `resources/normal_hla_ligands.example.tsv` only for fixtures | CLI argument or run config path | `sha256sum -c SHA256SUMS` and compare `manifest.json` |
+| Cancer gene list | Event context and report annotation only | Synchronize the versioned OncoKB-style TSV through `configs/assets/production_assets.tsv` | `inputs.cancer_gene_list_tsv` or `--cancer-gene-list` | Verify SHA256 and header `Hugo Symbol` |
 | RNA allele-count / RNA VAF TSV | RNA variant support in `rna_junction_evidence.tsv` | Generate with `scripts/rna_allele_counts_pysam.py` or site RNA genotyper | CLI argument `--rna-vaf` to `build-evidence-layer` | Columns may include `event_id`, `gene`, `chrom`, `pos`, `ref`, `alt`, `rna_ref_reads`, `rna_alt_reads`, `rna_depth`, `rna_vaf` |
 | CTAT genome lib | STAR-Fusion | Download per STAR-Fusion/CTAT docs or mount site bundle | `CTAT_GENOME_LIB`, `NEOAG_CTAT_LIB_DIR`, `NEOAG_SHARED_REF_DIR` | `test -d "$CTAT_GENOME_LIB"` |
 | EasyFuse reference | EasyFuse workflow | Download per EasyFuse docs or mount site bundle | `NEOAG_EASYFUSE_REF`, `NEOAG_SHARED_REF_DIR` | `test -d "$NEOAG_EASYFUSE_REF"` |
@@ -178,8 +179,102 @@ Large data should live under `NEOAG_TOOLS_ROOT` or another site-managed referenc
 | Capture BED | WES SV Phase 1.5 | Use panel/exome capture BED | CLI argument `--capture-bed` | `test -f /path/to/capture.bed` |
 | HLA allele file | peptide prediction and SV workflows | Site HLA typing output converted to one allele per line | CLI argument `--hla` | `head /path/to/hla.txt` |
 
+### 5.1 HLA Ligand Atlas normal ligandome
 
-### 5.1 Highest-Priority Reference Checklist
+The production normal-ligand reference is reproducibly derived from the
+HLA Ligand Atlas 2020.12 `peptides` and `sample_hits` tables. The builder joins
+on `peptide_sequence_id`, aggregates sorted unique normal tissues and HLA
+classes, and deliberately leaves `hla_allele` blank: a donor's genotype does
+not establish peptide-specific HLA restriction.
+
+```bash
+ROOT=/path/to/data/normal/hla_ligand_atlas/2020.12
+mkdir -p "$ROOT/raw" "$ROOT/build"
+
+python scripts/build_hla_ligand_atlas_reference.py \
+  --release 2020.12 \
+  --raw-dir "$ROOT/raw" \
+  --output "$ROOT/build/normal_ms_ligands.tsv" \
+  --manifest "$ROOT/manifest.json" \
+  --checksums "$ROOT/SHA256SUMS" \
+  --download
+
+(cd "$ROOT" && sha256sum -c SHA256SUMS)
+```
+
+The official source URLs are recorded per file in `manifest.json`. Downloads
+use `.part` files, retries, and HTTP Range resume. For an offline installation,
+copy `raw/peptides.tsv.gz`, `raw/sample_hits.tsv.gz`, and `SHA256SUMS` to the new
+machine, omit `--download`, and rebuild locally. The expected 2020.12 build has
+223,246 rows: 80,621 HLA-I, 132,818 HLA-II, and 9,807 HLA-I+II. Large raw and
+built files remain outside Git; commit only the builder and path templates.
+
+### 5.2 IEDB MHC ligand prebuilt assets
+
+The IEDB reference is deployed as prebuilt data assets. A new machine
+synchronizes the three TSV outputs, `manifest.json`, and `SHA256SUMS` through
+`configs/assets/production_assets.tsv`; it does not copy or reprocess the 9.1 GB
+uncompressed export during normal deployment.
+
+| Asset | Rows | SHA256 | Intended use |
+| --- | ---: | --- | --- |
+| `iedb_human_ms_ligands_detail.tsv` | 2,972,906 | `219125f7501f951b6c42f2a0ca513d5e57b5266c1a74a8c674258edb2acb0207` | Assay context, disease, culture condition, HLA class and restriction review |
+| `iedb_human_ms_ligands.tsv` | 1,169,421 | `e72f6fad29dfe96fa3a147ffe5b47ef1112cb14f655cdac8e8d84fcddc49bddf` | Supplemental observed human immunopeptidome lookup |
+| `iedb_human_normal_direct_ex_vivo_ligands.tsv` | 398,226 | `e8da603e58a8bd697d0c3375c6318fec260737321803fa277684b9886a4fa7eb` | Preferred IEDB-derived normal safety subset |
+
+The generated manifest records the raw ZIP SHA256
+`4d262f7dfae1da671d2048e1716b27b8ace37dcf280bad1ff2918ec0dc4cb373`,
+all filters, accepted/rejected row counts, output row counts, and output hashes.
+Verify deployed assets directly:
+
+```bash
+ROOT=/root/neo/neodata4git/data/normal/iedb_mhc_ligand/2026-07-14
+test -s "$ROOT/manifest.json"
+test -s "$ROOT/build/iedb_human_ms_ligands_detail.tsv"
+(cd "$ROOT" && grep '  build/' SHA256SUMS | sha256sum -c -)
+```
+
+`iedb_human_ms_ligands.tsv` is not a pure normal-tissue database. Disease and
+cell-line observations are supplemental review evidence only. The strict
+Direct Ex Vivo subset is preferred for safety screening, while the detail
+table must be consulted for exact allele and biological context.
+
+`scripts/build_iedb_mhc_ligand_reference.py` remains in Git for provenance and
+explicit rebuilds only. It is not called by the new-machine installer. The raw
+IEDB ZIP is deliberately absent from `production_assets.tsv`.
+
+### 5.3 Cancer gene context annotation
+
+The optional `cancerGeneList.tsv` asset annotates events and peptides with
+oncogene/TSG context, source membership, and report labels. It does not change
+`driver_relevance`, `event_score`, `efficacy_score`, or `final_priority`.
+Membership alone is not driver evidence: entries with `Gene Type=NEITHER`
+(for example ALB in the current list) are marked `LISTED_NO_DRIVER_CLASS`.
+
+For a direct run:
+
+```bash
+neoag-v03 run \
+  --cancer-gene-list /path/to/cancerGeneList.tsv \
+  ...
+```
+
+For an existing result without rescoring:
+
+```bash
+neoag-v03 annotate-cancer-genes \
+  --events scoring/ranked_events.tsv \
+  --peptides scoring/ranked_peptides.tsv \
+  --cancer-gene-list /path/to/cancerGeneList.tsv \
+  --out-events scoring/ranked_events.cancer_annotated.tsv \
+  --out-peptides scoring/ranked_peptides.cancer_annotated.tsv
+```
+
+For `run-full`, set `inputs.cancer_gene_list_tsv` in the run configuration.
+Review the source terms before redistribution or commercial use.
+
+
+### 5.4 Highest-Priority Reference Checklist
 
 Prepare these references first on a new machine. They cover the workflows most likely to fail early: VEP annotation, GATK SNV calling, FACETS/ASCAT purity and CNV, RNA fusion discovery, peptide binding prediction, and HLA LOH/typing cross-checks. Keep these files in a site-managed reference bundle such as `$NEOAG_TOOLS_ROOT`, not in Git.
 

@@ -40,9 +40,43 @@ references:
 
   normal_ligandome:
     path: /opt/neoag/refs/safety/normal_ligandome/normal_ms_ligands.tsv
-    source: curated
-    version: "<version>"
+    source: HLA Ligand Atlas
+    version: "2020.12"
+    license: CC-BY-4.0
+    manifest: /opt/neoag/refs/safety/hla_ligand_atlas/2020.12/manifest.json
+    checksums: /opt/neoag/refs/safety/hla_ligand_atlas/2020.12/SHA256SUMS
+    builder: scripts/build_hla_ligand_atlas_reference.py
     required: false
+
+  iedb_human_ms_ligands_detail:
+    path: /opt/neoag/refs/safety/iedb_mhc_ligand/2026-07-14/build/iedb_human_ms_ligands_detail.tsv
+    source: IEDB MHC ligand full TSV export
+    version: IEDB-export-2026-07-14
+    sha256: 219125f7501f951b6c42f2a0ca513d5e57b5266c1a74a8c674258edb2acb0207
+    manifest: /opt/neoag/refs/safety/iedb_mhc_ligand/2026-07-14/manifest.json
+    required: false
+
+  iedb_human_ms_ligands:
+    path: /opt/neoag/refs/safety/iedb_mhc_ligand/2026-07-14/build/iedb_human_ms_ligands.tsv
+    source: IEDB MHC ligand full TSV export
+    version: IEDB-export-2026-07-14
+    sha256: e72f6fad29dfe96fa3a147ffe5b47ef1112cb14f655cdac8e8d84fcddc49bddf
+    required: false
+
+  iedb_strict_normal_ligands:
+    path: /opt/neoag/refs/safety/iedb_mhc_ligand/2026-07-14/build/iedb_human_normal_direct_ex_vivo_ligands.tsv
+    source: IEDB healthy-or-unspecified Direct Ex Vivo subset
+    version: IEDB-export-2026-07-14
+    sha256: e8da603e58a8bd697d0c3375c6318fec260737321803fa277684b9886a4fa7eb
+    required: false
+
+  cancer_gene_list:
+    path: /opt/neoag/refs/annotation/cancer_gene/oncokb_v7.3_2026-06-25/cancerGeneList.tsv
+    source: OncoKB Cancer Gene List
+    version: v7.3_2026-06-25
+    sha256: e333f58739c8fdf31b98ee5cb00c9fb05a36eeba74719a25d17d7f68c27156ba
+    required: false
+    scoring_role: annotation_and_report_only
 
   normal_junctions:
     path: /opt/neoag/refs/safety/normal_junctions/normal_splice_junctions.tsv

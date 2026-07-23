@@ -1,6 +1,10 @@
 from pathlib import Path
 
-from neoag.comprehensive_evidence import build_comprehensive_peptide_evidence
+from neoag.comprehensive_evidence import (
+    AUTHORITATIVE_FIELDS,
+    EVIDENCE_SOURCE_PRECEDENCE_VERSION,
+    build_comprehensive_peptide_evidence,
+)
 from neoag.utils import read_tsv, write_tsv
 
 
@@ -119,3 +123,53 @@ def test_comprehensive_evidence_falls_back_to_ranked_table(tmp_path):
     assert summary["base_source"] == "ranked_peptides"
     assert row["event_type"] == "Fusion"
     assert row["comprehensive_evidence_status"] == "PARTIAL"
+
+
+def test_authoritative_sources_override_stale_ranked_copies_and_record_conflicts(tmp_path):
+    ranked = tmp_path / "ranked.tsv"
+    raw_events = tmp_path / "events.tsv"
+    presentation = tmp_path / "presentation.tsv"
+    expression = tmp_path / "expression.tsv"
+    ccf = tmp_path / "ccf.tsv"
+    safety = tmp_path / "safety.tsv"
+    event_safety = tmp_path / "event_safety.tsv"
+    output = tmp_path / "comprehensive.tsv"
+    write_tsv(ranked, [{
+        "peptide_id": "P1", "event_id": "E1", "gene": "STALE_GENE",
+        "presentation_evidence_score": "0.1", "gene_expression_tpm": "0.1",
+        "ccf_estimate": "0.2", "safety_status": "CAUTION",
+        "efficacy_score": "0.91", "final_priority": "B",
+    }])
+    write_tsv(raw_events, [{"event_id": "E1", "gene": "AUTH_GENE", "event_type": "SNV"}])
+    write_tsv(presentation, [{"peptide_id": "P1", "presentation_evidence_score": "0.94"}])
+    write_tsv(expression, [{"event_id": "E1", "gene_expression_tpm": "12.5"}])
+    write_tsv(ccf, [{"event_id": "E1", "ccf_estimate": "0.85"}])
+    write_tsv(safety, [{"peptide_id": "P1", "safety_status": "PASS"}])
+    write_tsv(event_safety, [{"event_id": "E1", "safety_status": "CAUTION"}])
+
+    summary = build_comprehensive_peptide_evidence(
+        output_tsv=output,
+        ranked_peptides=ranked,
+        raw_events=raw_events,
+        presentation_evidence=presentation,
+        expression_evidence=expression,
+        ccf_2=ccf,
+        peptide_safety=safety,
+        event_safety=event_safety,
+    )
+    row = read_tsv(output)[0]
+    assert row["gene"] == "AUTH_GENE"
+    assert row["presentation_evidence_score"] == "0.94"
+    assert row["gene_expression_tpm"] == "12.5"
+    assert row["ccf_estimate"] == "0.85"
+    assert row["safety_status"] == "PASS"
+    assert row["event_safety_status"] == "CAUTION"
+    assert row["efficacy_score"] == "0.91"
+    assert row["evidence_source_precedence_version"] == EVIDENCE_SOURCE_PRECEDENCE_VERSION
+    assert {"gene", "presentation_evidence_score", "gene_expression_tpm", "ccf_estimate", "safety_status"} <= set(row["evidence_conflict_fields"].split(","))
+    conflicts = read_tsv(summary["conflicts_tsv"])
+    assert summary["conflicts"] >= 5
+    assert {item["selected_source"] for item in conflicts} >= {
+        "raw_events", "presentation_evidence", "expression_evidence", "ccf_2", "peptide_safety",
+    }
+    assert "presentation_evidence_score" in AUTHORITATIVE_FIELDS["presentation_evidence"]

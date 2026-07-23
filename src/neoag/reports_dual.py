@@ -313,6 +313,18 @@ def _patient_pileup_rows(rows: list[dict[str, str]]) -> list[dict[str, str]]:
     ]
 
 
+def _patient_cancer_context(row: Mapping[str, Any]) -> str:
+    status = str(row.get("cancer_driver_context") or "")
+    types = str(row.get("cancer_gene_types") or "")
+    if status == "DRIVER_CONTEXT":
+        return f"癌症基因背景：{types}" if types else "具有癌症基因背景"
+    if status == "LISTED_NO_DRIVER_CLASS":
+        return "名单收录，但未归类为癌基因/抑癌基因"
+    if status == "NOT_LISTED":
+        return "未在当前癌症基因表中"
+    return "未评估"
+
+
 def make_patient_report(path: str | Path, bundle: ReportBundle) -> None:
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -424,6 +436,7 @@ def make_patient_report(path: str | Path, bundle: ReportBundle) -> None:
     for event in dna_events[:12]:
         mutation_rows.append({
             "gene": event.get("gene", ""),
+            "cancer_context": _patient_cancer_context(event),
             "protein_change": _patient_event_change(event),
             "type": event.get("mutation_source", ""),
             "rna_evidence": _patient_rna_label(event),
@@ -433,7 +446,7 @@ def make_patient_report(path: str | Path, bundle: ReportBundle) -> None:
                 else "需结合病理、克隆性和实验验证判断作用"
             ),
         })
-    out.append(_table(mutation_rows, ["gene", "protein_change", "type", "rna_evidence", "wes_wgs_evidence", "interpretation"]))
+    out.append(_table(mutation_rows, ["gene", "cancer_context", "protein_change", "type", "rna_evidence", "wes_wgs_evidence", "interpretation"]))
     out.append("<p><b>重点提示：</b>TP53 等共同检出且有 RNA 支持的变异可信度相对更高；KRAS 等仅在一个肿瘤文库明确检出的变异应按样本/时间点特异结果解释；TBR1 相邻变异按已重构的同一单倍型解读。</p>")
     out.append("</div>")
 
@@ -445,13 +458,14 @@ def make_patient_report(path: str | Path, bundle: ReportBundle) -> None:
     for event in fusion_events[:10]:
         fusion_rows.append({
             "fusion": event.get("gene", ""),
+            "cancer_context": _patient_cancer_context(event),
             "junction_reads": event.get("rna_junction_reads", ""),
             "rna_status": _patient_rna_label(event),
             "expression": event.get("event_expression", ""),
             "safety": event.get("safety_status", ""),
             "interpretation": _patient_fusion_interpretation(event),
         })
-    out.append(_table(fusion_rows, ["fusion", "junction_reads", "rna_status", "expression", "safety", "interpretation"]))
+    out.append(_table(fusion_rows, ["fusion", "cancer_context", "junction_reads", "rna_status", "expression", "safety", "interpretation"]))
     out.append("<p class='small'>肝脏高表达基因、HLA 区域或仅有少量 junction reads 的融合可能包含 read-through、正常背景或比对伪影，其证据等级不能与 EWSR1::WT1 等驱动融合等同。</p>")
     out.append("</div>")
 
@@ -533,7 +547,7 @@ def make_patient_report(path: str | Path, bundle: ReportBundle) -> None:
 
     out.append("<div class='section'><h2>10. 优先候选肽段（按事件去重 Top 10）</h2>")
     out.append("<p class='small'>下表为计算排序靠前的候选，不代表已证实可诱导抗肿瘤免疫反应。</p>")
-    headers = ["rank", "gene", "variant_type", "hla", "priority", "rna_evidence", "dna_evidence", "meaning", "next_step"]
+    headers = ["rank", "gene", "cancer_context", "variant_type", "hla", "priority", "rna_evidence", "dna_evidence", "meaning", "next_step"]
     rows = []
     for i, ppt in enumerate(top, 1):
         pid = str(ppt.get("peptide_id") or "")
@@ -547,6 +561,7 @@ def make_patient_report(path: str | Path, bundle: ReportBundle) -> None:
         rows.append({
             "rank": str(i),
             "gene": ppt.get("gene", ""),
+            "cancer_context": _patient_cancer_context(ppt),
             "variant_type": _patient_consequence_label(ppt),
             "hla": ppt.get("hla_allele", ""),
             "priority": _patient_priority_label(str(ppt.get("final_priority") or "")),
@@ -768,6 +783,8 @@ def make_technical_report(path: str | Path, bundle: ReportBundle) -> None:
     out.append("<div class='section'><h2>Ranked Events (full)</h2>")
     out.append(_table(bundle.events, [
         "event_id", "event_name", "event_type", "mutation_source", "peptide_consequence", "gene",
+        "cancer_gene_list_status", "cancer_gene_symbols", "cancer_gene_types", "cancer_driver_context",
+        "oncokb_annotated", "cosmic_cgc_flag", "cancer_gene_source_count", "cancer_gene_sources", "cancer_gene_context",
         "event_score", "raw_ccf", "ccf_estimate", "ccf_status", "ccf_confidence",
         "ccf_method", "ccf_warning", "clonality_multiplier", "safety_status", "safety_reason",
         "safety_evidence_completeness", "safety_missing_layers", "normal_expression_status",
@@ -784,7 +801,7 @@ def make_technical_report(path: str | Path, bundle: ReportBundle) -> None:
 
     out.append("<div class='section'><h2>Ranked Peptides (full)</h2>")
     pep_headers = [
-        "peptide_id", "event_id", "gene", "peptide", "wildtype_peptide", "peptide_consequence",
+        "peptide_id", "event_id", "gene", "cancer_gene_types", "cancer_driver_context", "cancer_gene_context", "peptide", "wildtype_peptide", "peptide_consequence",
         "hla_allele", "mhc_class", "presentation_evidence_grade", "binding_evidence_score",
         "presentation_evidence_score", "netmhcpan_ba_rank", "netmhcpan_el_rank",
         "netmhcpan_wt_rank_el", "agretopicity_el", "mt_wt_el_rank_difference",

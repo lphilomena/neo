@@ -52,6 +52,13 @@ def test_run(tmp_path):
         assert Path(v).exists()
     assert "immune_escape_summary" in out
     assert "ccf_2" in out
+    assert "ranked_peptides_evidence_consensus" in out
+    assert Path(out["ranked_peptides_evidence_consensus"]).exists()
+    assert Path(out["ranked_events_evidence_consensus"]).exists()
+    assert Path(out["evidence_states"]).exists()
+    assert Path(out["evidence_conflicts"]).exists()
+    assert Path(out["evidence_source_conflicts"]).exists()
+    assert Path(out["weighted_vs_consensus_comparison"]).exists()
     assert Path(out["ccf_2"]).exists()
     assert Path(out["ccf_lite"]).exists()
     ccf_header = Path(out["ccf_2"]).read_text().splitlines()[0]
@@ -69,6 +76,12 @@ def test_run(tmp_path):
     assert "peptide_consequence" in txt
     assert "immunology_composite_score" in txt
     assert "l3_hla_binding_score" in txt
+    consensus_txt = Path(out["ranked_peptides_evidence_consensus"]).read_text()
+    assert "evidence_consensus_score" in consensus_txt
+    assert "pareto_front" in consensus_txt
+    assert "evidence_grade" in consensus_txt
+    assert "evidence_completeness_score" in consensus_txt
+    assert "evidence_missing_layers" in consensus_txt
 
 
 def test_run_accepts_raw_inputs_already_in_outdir(tmp_path):

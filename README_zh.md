@@ -35,6 +35,11 @@ neoag-agent --message "比较 recommendation 和 NetMHCpan42 排序差异" --res
 
 如果要把本包迁移到新机器并交给另一个编程 agent 部署，建议使用 skill-first 迁移流程：先读 `.agents/config/skills_registry.abcd.json`，再生成本机 manifest，运行 Doctor，最后运行 `pipeline-full` dry-run。详见 `docs/SKILL_FIRST_MIGRATION.md`，也可以直接运行：
 
+IEDB MHC ligand 参考库按预构建资产部署：新机器通过
+`configs/assets/production_assets.tsv` 同步三份结果 TSV、`manifest.json` 和
+`SHA256SUMS`，不复制或重新处理解压后约 9.1 GB 的原始导出文件。正式构建脚本
+`scripts/build_iedb_mhc_ligand_reference.py` 仅用于来源审计和显式重建。
+
 ```bash
 bash scripts/bootstrap_agent_deploy.sh
 ```
@@ -53,6 +58,11 @@ neoag run-demo --outdir work/demo_v043 --sample-id DEMO001
 重要 demo 输出包括：
 
 - `work/demo_v043/scoring/ranked_peptides.tsv`
+- `work/demo_v043/scoring/ranked_peptides.evidence_consensus.tsv`（并行证据共识排序，不替换原排序）
+- `work/demo_v043/scoring/ranked_events.evidence_consensus.tsv`
+- `work/demo_v043/scoring/evidence_states.tsv`
+- `work/demo_v043/scoring/evidence_conflicts.tsv`
+- `work/demo_v043/scoring/weighted_vs_consensus_comparison.tsv`
 - `work/demo_v043/scoring/ranked_events.tsv`
 - `work/demo_v043/scoring/validation_plan.tsv`
 - `work/demo_v043/reports/evidence_report.html`
@@ -63,6 +73,26 @@ neoag run-demo --outdir work/demo_v043 --sample-id DEMO001
 - `work/demo_v043/clonality/ccf_lite.tsv`
 - `work/demo_v043/safety/peptide_safety.tsv`
 - `work/demo_v043/immune_escape/peptide_escape_flags.tsv`
+
+### 并行证据共识排序
+
+每次流水线运行都会保留现有固定权重的 `ranked_peptides.tsv`。流程随后从
+`comprehensive_peptide_evidence.tsv` 独立生成标准化证据状态、R1-R4 证据等级、
+同事件来源赛道内的 Pareto 分层，以及肽段和事件共识排序。缺失证据会保持为
+`MISSING`，不会解释为生物学阴性；硬失败和 priority cap 只影响共识分支。
+
+对已有综合证据表运行：
+
+```bash
+neoag evidence-consensus-rank \
+  --input results/sample/scoring/comprehensive_peptide_evidence.tsv \
+  --output results/sample/scoring/ranked_peptides.evidence_consensus.tsv \
+  --rules configs/ranking/sarcoma_evidence_consensus_v1.toml
+```
+
+逐行差异原因写在 `weighted_vs_consensus_comparison.tsv`。字段定义和算法边界见
+`docs/EVIDENCE_CONSENSUS.md`。所有阈值均标记为
+`PROVISIONAL_RESEARCH_ONLY`，第一阶段仅用于比较算法行为，不代表临床验证。
 
 运行测试：
 

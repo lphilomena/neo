@@ -19,6 +19,7 @@ from .peptide_safety_gate import build_peptide_safety_gate
 from .immune_escape import build_immune_escape_evidence
 from .schemas import PRESENTATION_FIELDS
 from .comprehensive_evidence import build_comprehensive_peptide_evidence
+from .evidence_consensus import build_evidence_consensus, load_consensus_rules
 from .tools.registry import RunContext
 from .utils import copy_if_different, read_tsv, write_tsv, write_json
 import shutil
@@ -50,6 +51,7 @@ def run(
     entry_mode=None,
     reference_proteome=None,
     normal_junctions=None,
+    cancer_gene_list=None,
 ):
     outdir = Path(outdir)
     outdir.mkdir(parents=True, exist_ok=True)
@@ -104,6 +106,8 @@ def run(
         provenance_registry.register_converted("facets", purity)
     elif cnv:
         provenance_registry.register_converted("facets", cnv)
+    if cancer_gene_list:
+        provenance_registry.register_passthrough("cancer_gene_list", cancer_gene_list)
 
     net_path = None
     if netmhcpan:
@@ -193,11 +197,33 @@ def run(
         event_safety_tsv=event_safety_path,
         peptide_escape_flags_tsv=immune_paths["peptide_escape_flags"],
         appm_peptide_modifiers_tsv=appm / "appm_peptide_modifiers.tsv",
+        cancer_gene_list_tsv=cancer_gene_list,
     )
     from .validation import validation_plan_fieldnames
     val_rows = make_validation_plan(peps, outdir=outdir)
     val_path = scoring / "validation_plan.tsv"
     write_tsv(val_path, val_rows, validation_plan_fieldnames())
+    comprehensive_path = scoring / "comprehensive_peptide_evidence.tsv"
+    comprehensive_summary = build_comprehensive_peptide_evidence(
+        output_tsv=comprehensive_path,
+        ranked_peptides=ranked_peptides,
+        raw_peptides=raw_peptides_path,
+        raw_events=raw_events_path,
+        presentation_evidence=pres_path,
+        appm_peptide_modifiers=appm / "appm_peptide_modifiers.tsv",
+        ccf_2=ccf_path,
+        expression_evidence=evidence_paths["expression_evidence"],
+        rna_junction_evidence=evidence_paths["rna_junction_evidence"],
+        peptide_safety=peptide_safety_path,
+        event_safety=event_safety_path,
+        peptide_escape_flags=immune_paths["peptide_escape_flags"],
+        validation_plan=val_path,
+        conflicts_tsv=scoring / "evidence_source_conflicts.tsv",
+    )
+    consensus_rules_path = Path(__file__).resolve().parents[2] / "configs/ranking/sarcoma_evidence_consensus_v1.toml"
+    consensus_rules = load_consensus_rules(consensus_rules_path if consensus_rules_path.is_file() else None)
+    evidence_consensus_summary = build_evidence_consensus(comprehensive_path, scoring, consensus_rules)
+    evidence_consensus_path = Path(evidence_consensus_summary["ranked_peptides"])
     prov_payload = {
         "created_at": datetime.datetime.now(datetime.UTC).isoformat().replace("+00:00", "Z"),
         "sample_id": sample_id,
@@ -205,6 +231,20 @@ def run(
         "entry_mode": entry_mode,
         "tools": provenance_registry.to_json(),
         "warning": "Computational prototype only.",
+        "parallel_rankings": {
+            "legacy_weighted": str(ranked_peptides),
+            "evidence_consensus": str(evidence_consensus_path),
+            "evidence_states": evidence_consensus_summary["evidence_states"],
+            "evidence_conflicts": evidence_consensus_summary["evidence_conflicts"],
+            "evidence_source_conflicts": comprehensive_summary["conflicts_tsv"],
+            "event_consensus": evidence_consensus_summary["ranked_events"],
+            "comparison": evidence_consensus_summary["comparison"],
+            "rules": str(consensus_rules_path) if consensus_rules_path.is_file() else "embedded_default",
+            "rules_name": consensus_rules.get("metadata", {}).get("name", ""),
+            "rules_version": consensus_rules.get("metadata", {}).get("version", ""),
+            "rules_status": consensus_rules.get("metadata", {}).get("status", "PROVISIONAL_RESEARCH_ONLY"),
+            "legacy_ranking_modified": evidence_consensus_summary["legacy_ranking_modified"],
+        },
     }
     report_bundle = load_report_bundle(
         profile=profile,
@@ -220,21 +260,6 @@ def run(
     report_paths = make_dual_reports(reports, report_bundle)
     report_path = report_paths["evidence_report"]
     prov = outdir / "provenance.json"
-    comprehensive_path = scoring / "comprehensive_peptide_evidence.tsv"
-    build_comprehensive_peptide_evidence(
-        output_tsv=comprehensive_path,
-        ranked_peptides=ranked_peptides,
-        raw_peptides=raw_peptides_path,
-        raw_events=raw_events_path,
-        presentation_evidence=pres_path,
-        appm_peptide_modifiers=appm / "appm_peptide_modifiers.tsv",
-        ccf_2=ccf_path,
-        expression_evidence=evidence_paths["expression_evidence"],
-        rna_junction_evidence=evidence_paths["rna_junction_evidence"],
-        peptide_safety=peptide_safety_path,
-        peptide_escape_flags=immune_paths["peptide_escape_flags"],
-        validation_plan=val_path,
-    )
     write_json(prov, prov_payload)
     return {
         "raw_events": str(raw_events_path),
@@ -260,6 +285,12 @@ def run(
         "ccf_lite": str(ccf_lite_alias),
         "ranked_events": str(ranked_events),
         "ranked_peptides": str(ranked_peptides),
+        "ranked_peptides_evidence_consensus": str(evidence_consensus_path),
+        "ranked_events_evidence_consensus": evidence_consensus_summary["ranked_events"],
+        "evidence_states": evidence_consensus_summary["evidence_states"],
+        "evidence_conflicts": evidence_consensus_summary["evidence_conflicts"],
+        "evidence_source_conflicts": comprehensive_summary["conflicts_tsv"],
+        "weighted_vs_consensus_comparison": evidence_consensus_summary["comparison"],
         "comprehensive_peptide_evidence": str(comprehensive_path),
         "validation_plan": str(val_path),
         "evidence_report": str(report_path),

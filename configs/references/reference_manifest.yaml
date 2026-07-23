@@ -64,8 +64,44 @@ references:
   normal_ligandome:
     path: /root/neo/neodata4git/data/normal/ligandome/normal_ms_ligands.tsv
     source: HLA Ligand Atlas
-    version: 2020.12 peptide_only
+    version: "2020.12"
+    license: CC-BY-4.0
+    manifest: /root/neo/neodata4git/data/normal/hla_ligand_atlas/2020.12/manifest.json
+    checksums: /root/neo/neodata4git/data/normal/hla_ligand_atlas/2020.12/SHA256SUMS
+    builder: scripts/build_hla_ligand_atlas_reference.py
     required: true
+
+  iedb_human_ms_ligands_detail:
+    path: /root/neo/neodata4git/data/normal/iedb_mhc_ligand/2026-07-14/build/iedb_human_ms_ligands_detail.tsv
+    source: IEDB MHC ligand full TSV export
+    version: IEDB-export-2026-07-14
+    sha256: 219125f7501f951b6c42f2a0ca513d5e57b5266c1a74a8c674258edb2acb0207
+    manifest: /root/neo/neodata4git/data/normal/iedb_mhc_ligand/2026-07-14/manifest.json
+    required: true
+
+  iedb_human_ms_ligands:
+    path: /root/neo/neodata4git/data/normal/iedb_mhc_ligand/2026-07-14/build/iedb_human_ms_ligands.tsv
+    source: IEDB MHC ligand full TSV export
+    version: IEDB-export-2026-07-14
+    sha256: e72f6fad29dfe96fa3a147ffe5b47ef1112cb14f655cdac8e8d84fcddc49bddf
+    required: true
+
+  iedb_strict_normal_ligands:
+    path: /root/neo/neodata4git/data/normal/iedb_mhc_ligand/2026-07-14/build/iedb_human_normal_direct_ex_vivo_ligands.tsv
+    source: IEDB healthy-or-unspecified Direct Ex Vivo subset
+    version: IEDB-export-2026-07-14
+    sha256: e8da603e58a8bd697d0c3375c6318fec260737321803fa277684b9886a4fa7eb
+    manifest: /root/neo/neodata4git/data/normal/iedb_mhc_ligand/2026-07-14/manifest.json
+    required: true
+
+  cancer_gene_list:
+    path: /root/neo/neodata4git/data/annotation/cancer_gene/oncokb_v7.3_2026-06-25/cancerGeneList.tsv
+    source: OncoKB Cancer Gene List
+    version: v7.3_2026-06-25
+    sha256: e333f58739c8fdf31b98ee5cb00c9fb05a36eeba74719a25d17d7f68c27156ba
+    manifest: /root/neo/neodata4git/data/annotation/cancer_gene/oncokb_v7.3_2026-06-25/manifest.json
+    required: false
+    scoring_role: annotation_and_report_only
 
   salmon_index:
     path: /root/neo/neodata4git/data/rna/salmon_index

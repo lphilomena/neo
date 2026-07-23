@@ -52,6 +52,35 @@ def test_experiment_design_skill(tmp_path: Path):
     assert (outdir / "minigene_design.tsv").exists()
 
 
+def test_experiment_design_prefers_event_representatives(tmp_path: Path):
+    ranked_events = tmp_path / "ranked_events.evidence_consensus.tsv"
+    ranked_events.write_text(
+        "event_evidence_rank\tevent_group_id\tevent_id\tgene\tevent_type\tbest_evidence_grade\t"
+        "representative_1_peptide_id\trepresentative_1_peptide\trepresentative_1_hla_allele\t"
+        "representative_2_peptide_id\trepresentative_2_peptide\trepresentative_2_hla_allele\n"
+        "1\tEVENT:E1\tE1\tTBR1\tSNV\tR2\tP1\tSYFPEITHI\tHLA-A*02:01\tP2\tYFPEITHIA\tHLA-B*07:02\n"
+        "2\tEVENT:E2\tE2\tGENE2\tfusion\tR3\tP3\tABCDEFGHI\tHLA-A*02:01\t\t\t\n",
+        encoding="utf-8",
+    )
+    ranked_peptides = tmp_path / "ranked_peptides.evidence_consensus.tsv"
+    ranked_peptides.write_text(
+        "peptide_id\tpeptide\thla_allele\tgene\tevent_type\n"
+        "WRONG\tAAAAAAAAA\tHLA-A*01:01\tDUPLICATE\tSNV\n",
+        encoding="utf-8",
+    )
+    outdir = tmp_path / "design_events"
+    res = run_skill("neoag-experiment-design", {
+        "ranked_events": str(ranked_events), "ranked_peptides": str(ranked_peptides),
+        "top_n": 3, "outdir": str(outdir),
+    }, dry_run=False)
+    assert res["status"] == "PASS"
+    assert res["input_source"] == "ranked_events"
+    rows = list(csv.DictReader((outdir / "experiment_candidates.tsv").open(), delimiter="\t"))
+    assert [row["peptide_id"] for row in rows] == ["P1", "P3", "P2"]
+    assert all(row["peptide_id"] != "WRONG" for row in rows)
+    assert rows[0]["event_group_id"] == "EVENT:E1"
+
+
 
 def test_vcf_skill_gz_multialt_csq(tmp_path: Path):
     import gzip

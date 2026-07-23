@@ -49,6 +49,12 @@ from .peptide_safety_gate import build_peptide_safety_gate
 from .immune_escape import build_immune_escape_evidence
 from .hla_loh_crosscheck import write_hla_loh_crosscheck
 from .comprehensive_evidence import build_comprehensive_peptide_evidence
+from .cancer_gene_annotation import (
+    annotate_events,
+    load_cancer_gene_index,
+    propagate_to_peptide,
+)
+from .evidence_consensus import load_consensus_rules, rank_by_evidence_consensus
 
 ROOT = Path(__file__).resolve().parents[2]
 def fixture(x): return ROOT/"data"/"fixtures"/x
@@ -84,6 +90,7 @@ def cmd_run(args):
         rna_vaf=args.rna_vaf,
         rna_junction=args.rna_junction,
         entry_mode=args.entry_mode,
+        cancer_gene_list=args.cancer_gene_list,
         **kwargs,
     )
     print("NeoAg run completed. Outputs retain .tsv names for schema compatibility.")
@@ -163,6 +170,7 @@ def cmd_score(args):
         peptide_escape_flags_tsv=getattr(args, "peptide_escape_flags", None),
         appm_peptide_modifiers_tsv=appm_modifiers,
         cross_platform_evidence_tsv=getattr(args, "cross_platform_evidence", None),
+        cancer_gene_list_tsv=getattr(args, "cancer_gene_list", None),
     )
     print("Scored current evidence model into schema-compatible output files.")
 
@@ -830,6 +838,9 @@ def cmd_run_full(args):
         if key in upstream:
             pvac.append(upstream[key])
     inputs = cfg.get("inputs", {})
+    cancer_gene_list = inputs.get("cancer_gene_list_tsv") or inputs.get("cancer_gene_list")
+    if cancer_gene_list and not Path(cancer_gene_list).is_absolute():
+        cancer_gene_list = str(ROOT / cancer_gene_list)
     for p in inputs.get("pvac_files") or []:
         path = ROOT / p if not Path(p).is_absolute() else Path(p)
         if path.is_file():
@@ -870,6 +881,7 @@ def cmd_run_full(args):
         "tool_executables": tools_cfg.get("executables") or {},
         "rna_junction": inputs.get("rna_junction_tsv") or inputs.get("rna_junction"),
         "entry_mode": entry_mode,
+        "cancer_gene_list": cancer_gene_list,
     }
     if raw_events and raw_peptides:
         run_kwargs["raw_events"] = raw_events
@@ -916,6 +928,32 @@ def cmd_run_full(args):
         print(f"  {k}: {v}")
 
 
+def cmd_annotate_cancer_genes(args):
+    index = load_cancer_gene_index(args.cancer_gene_list)
+    events = annotate_events(read_tsv(args.events), index)
+    write_tsv(args.out_events, events)
+    if args.peptides and args.out_peptides:
+        event_map = {row.get("event_id", ""): row for row in events if row.get("event_id")}
+        peptides = [
+            propagate_to_peptide(row, event_map.get(row.get("event_id", ""), {}))
+            for row in read_tsv(args.peptides)
+        ]
+        write_tsv(args.out_peptides, peptides)
+    print(f"Annotated cancer-gene context for {len(events)} events without changing scores.")
+
+
+def cmd_evidence_consensus(args):
+    result = rank_by_evidence_consensus(args.input, args.output, load_consensus_rules(args.rules))
+    print(
+        f"Wrote parallel evidence-consensus ranking: {result['output']} "
+        f"({result['rows']} rows); legacy ranking was not modified."
+    )
+    print(f"  evidence_states: {result['evidence_states']}")
+    print(f"  evidence_conflicts: {result['evidence_conflicts']}")
+    print(f"  ranked_events: {result['ranked_events']}")
+    print(f"  comparison: {result['comparison']}")
+
+
 def build_parser():
     p = argparse.ArgumentParser(prog="neoag")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -924,7 +962,7 @@ def build_parser():
     r = sub.add_parser("run")
     r.add_argument("--profile", default="default"); r.add_argument("--sample-id", default="SAMPLE001"); r.add_argument("--outdir", required=True)
     r.add_argument("--pvac", nargs="*"); r.add_argument("--raw-events"); r.add_argument("--raw-peptides")
-    r.add_argument("--netmhcpan"); r.add_argument("--mhcflurry"); r.add_argument("--netmhcstabpan"); r.add_argument("--vep-appm"); r.add_argument("--expression"); r.add_argument("--hla-loh"); r.add_argument("--purity"); r.add_argument("--cnv"); r.add_argument("--normal-expression"); r.add_argument("--normal-hla-ligands")
+    r.add_argument("--netmhcpan"); r.add_argument("--mhcflurry"); r.add_argument("--netmhcstabpan"); r.add_argument("--vep-appm"); r.add_argument("--expression"); r.add_argument("--hla-loh"); r.add_argument("--purity"); r.add_argument("--cnv"); r.add_argument("--normal-expression"); r.add_argument("--normal-hla-ligands"); r.add_argument("--cancer-gene-list", help="Optional OncoKB-style cancer gene list for context annotation only")
     r.add_argument("--transcript-expression", help="Optional transcript-level TPM table (RSEM/Salmon compatible)")
     r.add_argument("--rna-vaf", help="RNA allele-count/VAF TSV keyed by event_id or chrom/pos/ref/alt")
     r.add_argument("--rna-junction", help="Optional RNA junction support TSV")
@@ -948,7 +986,21 @@ def build_parser():
     cc2 = sub.add_parser("ccf-2", help="Build copy-number/multiplicity-aware CCF 2.0 table")
     cc2.add_argument("--events", required=True); cc2.add_argument("--purity"); cc2.add_argument("--cnv"); cc2.add_argument("--external-clonality"); cc2.add_argument("--svclone"); cc2.add_argument("--sidecar-dir"); cc2.add_argument("--input-qc-out"); cc2.add_argument("--conflicts-out"); cc2.add_argument("--clusters-out"); cc2.add_argument("--profile", default="default"); cc2.add_argument("--out", required=True); cc2.set_defaults(func=cmd_ccf_2)
     sc = sub.add_parser("score")
-    sc.add_argument("--raw-events", required=True); sc.add_argument("--raw-peptides", required=True); sc.add_argument("--presentation", required=True); sc.add_argument("--appm-summary"); sc.add_argument("--appm-peptide-modifiers", help="APPM 2.0 peptide modifiers TSV (defaults to sibling of --appm-summary)"); sc.add_argument("--ccf"); sc.add_argument("--normal-expression"); sc.add_argument("--normal-hla-ligands"); sc.add_argument("--peptide-safety"); sc.add_argument("--event-safety"); sc.add_argument("--peptide-escape-flags"); sc.add_argument("--cross-platform-evidence", help="WES/WGS targeted pileup evidence TSV keyed by normalized variant_key"); sc.add_argument("--profile", default="default"); sc.add_argument("--out-events", required=True); sc.add_argument("--out-peptides", required=True); sc.set_defaults(func=cmd_score)
+    sc.add_argument("--raw-events", required=True); sc.add_argument("--raw-peptides", required=True); sc.add_argument("--presentation", required=True); sc.add_argument("--appm-summary"); sc.add_argument("--appm-peptide-modifiers", help="APPM 2.0 peptide modifiers TSV (defaults to sibling of --appm-summary)"); sc.add_argument("--ccf"); sc.add_argument("--normal-expression"); sc.add_argument("--normal-hla-ligands"); sc.add_argument("--peptide-safety"); sc.add_argument("--event-safety"); sc.add_argument("--peptide-escape-flags"); sc.add_argument("--cross-platform-evidence", help="WES/WGS targeted pileup evidence TSV keyed by normalized variant_key"); sc.add_argument("--cancer-gene-list", help="Optional cancer gene list for annotation only; does not alter scores"); sc.add_argument("--profile", default="default"); sc.add_argument("--out-events", required=True); sc.add_argument("--out-peptides", required=True); sc.set_defaults(func=cmd_score)
+
+    cg = sub.add_parser("annotate-cancer-genes", help="Add cancer-gene context to existing event/peptide tables without rescoring")
+    cg.add_argument("--events", required=True)
+    cg.add_argument("--peptides")
+    cg.add_argument("--cancer-gene-list", required=True)
+    cg.add_argument("--out-events", required=True)
+    cg.add_argument("--out-peptides")
+    cg.set_defaults(func=cmd_annotate_cancer_genes)
+
+    ec = sub.add_parser("evidence-consensus-rank", help="Build a parallel evidence-consensus peptide ranking")
+    ec.add_argument("--input", required=True, help="Comprehensive peptide evidence TSV")
+    ec.add_argument("--output", required=True, help="Parallel evidence-consensus TSV")
+    ec.add_argument("--rules", help="Provisional evidence-consensus TOML rules")
+    ec.set_defaults(func=cmd_evidence_consensus)
 
     ps = sub.add_parser("peptide-safety", help="Build peptide_safety.tsv: reference proteome, normal ligandome, normal junction and anchor-risk safety gate")
     ps.add_argument("--raw-events", required=True)

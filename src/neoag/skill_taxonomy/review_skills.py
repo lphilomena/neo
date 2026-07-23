@@ -25,12 +25,55 @@ def _validation_route(row: dict[str, str]) -> str:
     return "short_peptide_elispot_with_wt_control_if_available"
 
 
+def _event_representatives(events: list[dict[str, str]], top_n: int) -> list[dict[str, str]]:
+    candidates: list[dict[str, str]] = []
+    for index in (1, 2):
+        for event in events:
+            prefix = f"representative_{index}_"
+            peptide_id = row_get(event, [f"{prefix}peptide_id"], "")
+            if not peptide_id:
+                if index == 1:
+                    peptide_id = row_get(event, ["best_peptide_id"], "")
+                else:
+                    continue
+            candidate = dict(event)
+            candidate.update({
+                "peptide_id": peptide_id,
+                "peptide": row_get(event, [f"{prefix}peptide", "best_peptide"], ""),
+                "hla_allele": row_get(event, [f"{prefix}hla_allele", "best_hla_allele"], ""),
+                "event_id": row_get(event, [f"{prefix}event_id", "event_id"], ""),
+                "evidence_rank": row_get(event, [f"{prefix}evidence_rank", "best_peptide_evidence_rank"], ""),
+                "evidence_grade": row_get(event, [f"{prefix}evidence_grade", "best_evidence_grade"], ""),
+                "pareto_front": row_get(event, [f"{prefix}pareto_front", "best_pareto_front"], ""),
+                "representative_index": str(index),
+                "candidate_source": "ranked_events_representative",
+            })
+            candidates.append(candidate)
+            if len(candidates) >= top_n:
+                return candidates
+    return candidates
+
+
 def run_experiment_design(args: dict[str, Any]) -> dict[str, Any]:
     outdir = ensure_dir(args["outdir"])
-    ranked = Path(args.get("ranked_peptides") or args.get("input") or "")
     top_n = int(args.get("top_n") or 20)
-    _, rows = read_table(ranked)
-    rows = rows[:top_n]
+    ranked_peptides = Path(args.get("ranked_peptides") or args.get("input") or "")
+    ranked_events_value = args.get("ranked_events")
+    if not ranked_events_value and ranked_peptides.is_file():
+        for name in ("ranked_events.evidence_consensus.tsv", "ranked_events.tsv"):
+            candidate = ranked_peptides.with_name(name)
+            if candidate.is_file():
+                ranked_events_value = str(candidate)
+                break
+    if ranked_events_value:
+        ranked_events = Path(ranked_events_value)
+        _, event_rows = read_table(ranked_events)
+        rows = _event_representatives(event_rows, top_n)
+        input_source = "ranked_events"
+    else:
+        _, peptide_rows = read_table(ranked_peptides)
+        rows = peptide_rows[:top_n]
+        input_source = "ranked_peptides_fallback"
     candidates = []
     short = []
     longp = []
@@ -38,7 +81,7 @@ def run_experiment_design(args: dict[str, Any]) -> dict[str, Any]:
     targeted = []
     for i, row in enumerate(rows, 1):
         route = _validation_route(row)
-        rec = {"rank": i, "peptide_id": row_get(row, ["peptide_id"], ""), "gene": row_get(row, ["gene"], ""), "peptide": row_get(row, ["peptide"], ""), "hla_allele": row_get(row, ["hla_allele"], ""), "event_type": row_get(row, ["event_type", "source_type", "peptide_consequence"], ""), "final_priority": row_get(row, ["final_priority"], ""), "efficacy_score": row_get(row, ["efficacy_score"], ""), "recommended_validation": route, "reason": "computed triage; requires wet-lab validation"}
+        rec = {"rank": i, "event_evidence_rank": row_get(row, ["event_evidence_rank"], ""), "event_group_id": row_get(row, ["event_group_id"], ""), "representative_index": row_get(row, ["representative_index"], ""), "peptide_id": row_get(row, ["peptide_id"], ""), "gene": row_get(row, ["gene"], ""), "peptide": row_get(row, ["peptide"], ""), "hla_allele": row_get(row, ["hla_allele"], ""), "event_type": row_get(row, ["event_type", "source_type", "peptide_consequence"], ""), "evidence_grade": row_get(row, ["evidence_grade", "best_evidence_grade"], ""), "final_priority": row_get(row, ["final_priority"], ""), "efficacy_score": row_get(row, ["efficacy_score"], ""), "recommended_validation": route, "reason": "event-deduplicated computed triage; requires wet-lab validation"}
         candidates.append(rec)
         if route.startswith("short"):
             short.append(rec)
@@ -51,7 +94,7 @@ def run_experiment_design(args: dict[str, Any]) -> dict[str, Any]:
     write_tsv(outdir / "long_peptide_design.tsv", longp)
     write_tsv(outdir / "minigene_design.tsv", mini)
     (outdir / "targeted_rna_validation_plan.md").write_text("# Targeted RNA validation plan\n\n" + markdown_table(targeted, max_rows=top_n) + "\nBoundary: this is an experimental validation plan, not a treatment recommendation.\n", encoding="utf-8")
-    res = {"status": "PASS", "skill": "neoag-experiment-design", "summary": f"Designed validation routes for top {len(candidates)} candidates", "outputs": {"experiment_candidates": str(outdir / "experiment_candidates.tsv")}}
+    res = {"status": "PASS", "skill": "neoag-experiment-design", "summary": f"Designed validation routes for top {len(candidates)} event-prioritized representatives", "input_source": input_source, "outputs": {"experiment_candidates": str(outdir / "experiment_candidates.tsv")}}
     write_json(outdir / "skill_result.json", res)
     return res
 

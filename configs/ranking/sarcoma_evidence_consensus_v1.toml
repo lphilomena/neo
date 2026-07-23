@@ -1,0 +1,38 @@
+[metadata]
+name = "sarcoma_evidence_consensus_v1"
+version = "1.0"
+status = "PROVISIONAL_RESEARCH_ONLY"
+mode = "parallel"
+replace_weighted_ranking = false
+unassessed_is_negative = false
+
+[presentation]
+netmhcpan_el_strong = 0.5
+netmhcpan_el_supported = 2.0
+mhcflurry_presentation_strong = 0.70
+mhcflurry_presentation_supported = 0.50
+netmhcstabpan_supported = 1.4
+prime_rank_strong = 2.0
+prime_rank_supported = 5.0
+bigmhc_im_strong = 0.70
+bigmhc_im_supported = 0.50
+deepimmuno_supported = 0.50
+
+[rna]
+snv_min_alt_reads = 3
+snv_min_vaf = 0.02
+junction_min_reads = 3
+junction_strong_reads = 10
+
+[completeness]
+allow_r1_with_hla_loh_unassessed = false
+allow_r1_with_safety_partial = false
+allow_r1_with_ccf_low_confidence = false
+
+[manual_review]
+genes = ["KRAS", "TP53"]
+events = ["EWSR1::WT1"]
+
+[output]
+peptide_id_tie_break = true
+event_deduplicate = true

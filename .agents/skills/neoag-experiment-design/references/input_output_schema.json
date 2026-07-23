@@ -3,7 +3,7 @@
   "category": "C",
   "category_label": "审阅/报告/实验设计型 Skills：解释结果、生成报告、设计实验验证和患者沟通材料",
   "purpose": "候选实验验证设计",
-  "description": "Assign candidates to short peptide, WT control, long peptide, minigene and targeted RNA validation routes.",
+  "description": "Assign event-deduplicated representatives to short peptide, WT control, long peptide, minigene and targeted RNA validation routes.",
   "use_when": [
     "需要第一批 10–20 个实验候选",
     "需要区分 short peptide / long peptide / minigene / targeted RNA"
@@ -12,9 +12,11 @@
     "不要把设计建议写成治疗处方"
   ],
   "required_inputs": [
-    "ranked_peptides"
+    "ranked_events_or_ranked_peptides"
   ],
   "optional_inputs": [
+    "ranked_events",
+    "ranked_peptides",
     "top_n",
     "therapy_context"
   ],

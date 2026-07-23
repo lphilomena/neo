@@ -198,10 +198,10 @@ SKILL_SPECS: list[SkillSpec] = [
     _spec(
         name="neoag-experiment-design", category="C", handler="experiment_design",
         purpose="候选实验验证设计",
-        description="Assign candidates to short peptide, WT control, long peptide, minigene and targeted RNA validation routes.",
+        description="Assign event-deduplicated representatives to short peptide, WT control, long peptide, minigene and targeted RNA validation routes.",
         use_when=["需要第一批 10–20 个实验候选", "需要区分 short peptide / long peptide / minigene / targeted RNA"],
         do_not_use_when=["不要把设计建议写成治疗处方"],
-        required_inputs=["ranked_peptides"], optional_inputs=["top_n", "therapy_context"],
+        required_inputs=["ranked_events_or_ranked_peptides"], optional_inputs=["ranked_events", "ranked_peptides", "top_n", "therapy_context"],
         outputs=["experiment_candidates.tsv", "short_peptide_pool.tsv", "long_peptide_design.tsv", "minigene_design.tsv", "targeted_rna_validation_plan.md"], risk_level="LOW",
     ),
     _spec(

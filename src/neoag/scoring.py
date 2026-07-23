@@ -24,6 +24,11 @@ from .cross_platform import (
     load_cross_platform_evidence,
     propagate_cross_platform_to_peptide,
 )
+from .cancer_gene_annotation import (
+    annotate_events,
+    load_cancer_gene_index,
+    propagate_to_peptide,
+)
 
 
 def map_by(rows, key):
@@ -419,10 +424,11 @@ def filter_by_enabled_sources(events: list[dict], profile: Mapping[str, Any]) ->
     return out
 
 
-def score(raw_events, raw_peptides, presentation_evidence, appm_summary_tsv, ccf_lite_tsv, normal_expression_tsv, normal_hla_ligands_tsv, profile, out_events, out_peptides, peptide_safety_tsv=None, event_safety_tsv=None, peptide_escape_flags_tsv=None, appm_peptide_modifiers_tsv=None, cross_platform_evidence_tsv=None):
+def score(raw_events, raw_peptides, presentation_evidence, appm_summary_tsv, ccf_lite_tsv, normal_expression_tsv, normal_hla_ligands_tsv, profile, out_events, out_peptides, peptide_safety_tsv=None, event_safety_tsv=None, peptide_escape_flags_tsv=None, appm_peptide_modifiers_tsv=None, cross_platform_evidence_tsv=None, cancer_gene_list_tsv=None):
     events = [enrich_event_layers(e) for e in read_tsv(raw_events)]
     events = annotate_nearby_variant_groups(events)
     events = filter_by_enabled_sources(events, profile)
+    events = annotate_events(events, load_cancer_gene_index(cancer_gene_list_tsv))
     peptides = read_tsv(raw_peptides)
     pres_map = map_by(read_tsv(presentation_evidence), "peptide_id")
     ccf_map = map_by(read_tsv(ccf_lite_tsv), "event_id") if ccf_lite_tsv else {}
@@ -467,6 +473,7 @@ def score(raw_events, raw_peptides, presentation_evidence, appm_summary_tsv, ccf
         e = event_map.get(p.get("event_id"))
         if not e:
             continue
+        p = propagate_to_peptide(p, e)
         p = enrich_peptide_layers(p, e)
         p = apply_peptide_safety(p, e, profile, norm_lig)
         p = merge_safety_gate(p, safety_map.get(p.get("peptide_id", "")), profile)
