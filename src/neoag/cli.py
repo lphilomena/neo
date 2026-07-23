@@ -54,7 +54,12 @@ from .cancer_gene_annotation import (
     load_cancer_gene_index,
     propagate_to_peptide,
 )
-from .evidence_consensus import load_consensus_rules, rank_by_evidence_consensus
+from .evidence_consensus import (
+    build_evidence_consensus,
+    load_consensus_rules,
+    rank_by_evidence_consensus,
+    score_evidence_consensus,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 def fixture(x): return ROOT/"data"/"fixtures"/x
@@ -954,6 +959,45 @@ def cmd_evidence_consensus(args):
     print(f"  comparison: {result['comparison']}")
 
 
+def cmd_evidence_rank(args):
+    comprehensive = Path(args.comprehensive_evidence)
+    weighted = Path(args.weighted_baseline)
+    if not comprehensive.is_file():
+        raise SystemExit(f"Comprehensive evidence file not found: {comprehensive}")
+    if not weighted.is_file():
+        raise SystemExit(f"Weighted baseline file not found: {weighted}")
+    rules = load_consensus_rules(args.rules)
+    outdir = Path(args.outdir)
+    outdir.mkdir(parents=True, exist_ok=True)
+    ranking_input = comprehensive
+    if args.track != "all":
+        expected_track = args.track.upper()
+        source_rows = read_tsv(comprehensive)
+        filtered = [
+            row for row in source_rows
+            if score_evidence_consensus(row, rules).get("evidence_track") == expected_track
+        ]
+        ranking_input = outdir / f"comprehensive_peptide_evidence.{args.track}.tsv"
+        write_tsv(ranking_input, filtered, list(source_rows[0]) if source_rows else [])
+    result = build_evidence_consensus(
+        ranking_input,
+        outdir,
+        rules,
+        provenance_json=args.provenance,
+        weighted_baseline_tsv=weighted,
+    )
+    print("Evidence ranking completed in protected parallel mode.")
+    print(f"  mode: {args.mode}")
+    print(f"  track: {args.track}")
+    print(f"  deterministic: {str(args.deterministic).lower()}")
+    print(f"  ranked_peptides: {result['ranked_peptides']}")
+    print(f"  ranked_events: {result['ranked_events']}")
+    print(f"  summary: {result['summary']}")
+    print(f"  comparison: {result['comparison']}")
+    print(f"  run_manifest: {result['run_manifest']}")
+    print("  primary_ranking_replaced: false")
+
+
 def build_parser():
     p = argparse.ArgumentParser(prog="neoag")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -1001,6 +1045,23 @@ def build_parser():
     ec.add_argument("--output", required=True, help="Parallel evidence-consensus TSV")
     ec.add_argument("--rules", help="Provisional evidence-consensus TOML rules")
     ec.set_defaults(func=cmd_evidence_consensus)
+
+    er = sub.add_parser("evidence-rank", help="Run protected parallel evidence-consensus ranking")
+    er.add_argument("--comprehensive-evidence", required=True, help="Authoritative comprehensive peptide evidence TSV")
+    er.add_argument("--weighted-baseline", required=True, help="Existing weighted ranked_peptides.tsv; never modified")
+    er.add_argument("--rules", help="Provisional evidence-consensus TOML rules")
+    er.add_argument("--provenance", help="Optional existing provenance JSON to append evidence-consensus metadata")
+    er.add_argument("--outdir", required=True, help="Evidence-consensus output directory")
+    er.add_argument("--mode", choices=["parallel"], default="parallel")
+    er.add_argument(
+        "--track",
+        choices=["all", "missense", "frameshift", "fusion", "splice", "dna_sv", "manual_review"],
+        default="all",
+    )
+    er.add_argument("--emit-event-ranking", action="store_true", default=True)
+    er.add_argument("--compare-weighted", action="store_true", default=True)
+    er.add_argument("--deterministic", action="store_true", default=True)
+    er.set_defaults(func=cmd_evidence_rank)
 
     ps = sub.add_parser("peptide-safety", help="Build peptide_safety.tsv: reference proteome, normal ligandome, normal junction and anchor-risk safety gate")
     ps.add_argument("--raw-events", required=True)

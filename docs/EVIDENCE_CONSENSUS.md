@@ -8,6 +8,32 @@ replace the existing weighted neoantigen ranking, `efficacy_score`, or
 `comprehensive_peptide_evidence.tsv`; consensus code reads that table rather
 than calling or changing `score()`.
 
+## CLI
+
+The protected first-phase entry point is:
+
+```bash
+neoag evidence-rank \
+  --comprehensive-evidence results/sample/scoring/comprehensive_peptide_evidence.tsv \
+  --weighted-baseline results/sample/scoring/ranked_peptides.tsv \
+  --rules configs/ranking/sarcoma_evidence_consensus_v1.toml \
+  --provenance results/sample/provenance.json \
+  --outdir results/sample/scoring/evidence_consensus \
+  --mode parallel \
+  --track all \
+  --emit-event-ranking \
+  --compare-weighted \
+  --deterministic
+```
+
+Defaults are `--mode parallel`, `--track all`, event ranking, weighted
+comparison, and deterministic ordering. Optional tracks are `missense`,
+`frameshift`, `fusion`, `splice`, `dna_sv`, and `manual_review`.
+
+The first-phase parser does not expose `--replace-primary-ranking`; passing it
+is an error. The older `evidence-consensus-rank` command remains available only
+as a compatibility entry point.
+
 ## Data flow
 
 ```text
@@ -128,14 +154,35 @@ It uses the current schema fields for seven layers:
 
 The generated bundle contains:
 
+- `ranked_peptides.tsv`: unchanged weighted production ranking and stable
+  compatibility interface.
+- `ranked_peptides.weighted_baseline.tsv`: explicit hard-link/copy alias of the
+  unchanged weighted ranking.
+- `comprehensive_peptide_evidence.tsv`: authoritative merged evidence table.
+- `all_tool_results.tsv`: user-facing hard-link/copy alias of the comprehensive
+  evidence table.
 - `evidence_states.tsv`: normalized state/value/source for every evidence layer.
 - `ranked_peptides.evidence_consensus.tsv`: independent peptide ranking.
 - `ranked_events.evidence_consensus.tsv`: event aggregation based on each
   event's best consensus-ranked peptide.
-- `weighted_vs_consensus_comparison.tsv`: old/new rank, rank shift, constraints,
-  and a deterministic difference reason for each peptide.
+- `evidence_consensus_summary.tsv`: compact counts by grade, track, hard failure,
+  manual review, event, and conflict status.
+- `ranking_compare_weighted_vs_consensus.tsv`: old/new rank, rank shift,
+  constraints, and deterministic difference reason for each peptide.
+- `ranking_compare_weighted_vs_consensus.md`: human-readable comparison
+  summary and the largest absolute rank shifts.
+- `evidence_consensus_run.json`: input/output checksums, rules identity,
+  algorithm version, counts, and output manifest.
 - `evidence_conflicts.tsv`: discordant evidence layers requiring manual
   reconciliation.
+
+`weighted_vs_consensus_comparison.tsv` remains as a compatibility alias for
+older callers.
+
+For historical result directories lacking the standard `ranked_peptides.tsv`
+name, the builder recognizes `ranked_peptides.cancer_annotated.tsv` and then
+`ranked_peptides.v03.tsv`, materializing the standard interface and weighted
+baseline aliases without changing the source file.
 
 ## Event-level deduplication
 

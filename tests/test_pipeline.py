@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 from neoag.adapters.pvactools_parser import parse_pvactools_outputs
 from neoag.adapters.netmhcpan import parse_netmhcpan, write_netmhcpan_evidence
 from neoag.adapters.mhcflurry import parse_mhcflurry, write_mhcflurry_evidence
@@ -59,6 +60,14 @@ def test_run(tmp_path):
     assert Path(out["evidence_conflicts"]).exists()
     assert Path(out["evidence_source_conflicts"]).exists()
     assert Path(out["weighted_vs_consensus_comparison"]).exists()
+    assert Path(out["ranking_compare_weighted_vs_consensus"]).name == "ranking_compare_weighted_vs_consensus.tsv"
+    assert Path(out["ranking_compare_weighted_vs_consensus_md"]).exists()
+    assert Path(out["evidence_consensus_summary"]).exists()
+    assert Path(out["evidence_consensus_run"]).exists()
+    assert Path(out["ranked_peptides_weighted_baseline"]).read_bytes() == Path(out["ranked_peptides"]).read_bytes()
+    assert Path(out["all_tool_results"]).read_bytes() == Path(out["comprehensive_peptide_evidence"]).read_bytes()
+    run_manifest = json.loads(Path(out["evidence_consensus_run"]).read_text())
+    assert run_manifest["legacy_ranking_modified"] is False
     assert Path(out["ccf_2"]).exists()
     assert Path(out["ccf_lite"]).exists()
     ccf_header = Path(out["ccf_2"]).read_text().splitlines()[0]

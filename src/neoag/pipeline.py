@@ -222,7 +222,12 @@ def run(
     )
     consensus_rules_path = Path(__file__).resolve().parents[2] / "configs/ranking/sarcoma_evidence_consensus_v1.toml"
     consensus_rules = load_consensus_rules(consensus_rules_path if consensus_rules_path.is_file() else None)
-    evidence_consensus_summary = build_evidence_consensus(comprehensive_path, scoring, consensus_rules)
+    evidence_consensus_summary = build_evidence_consensus(
+        comprehensive_path,
+        scoring,
+        consensus_rules,
+        weighted_baseline_tsv=ranked_peptides,
+    )
     evidence_consensus_path = Path(evidence_consensus_summary["ranked_peptides"])
     prov_payload = {
         "created_at": datetime.datetime.now(datetime.UTC).isoformat().replace("+00:00", "Z"),
@@ -239,6 +244,11 @@ def run(
             "evidence_source_conflicts": comprehensive_summary["conflicts_tsv"],
             "event_consensus": evidence_consensus_summary["ranked_events"],
             "comparison": evidence_consensus_summary["comparison"],
+            "comparison_markdown": evidence_consensus_summary["comparison_markdown"],
+            "summary": evidence_consensus_summary["summary"],
+            "run_manifest": evidence_consensus_summary["run_manifest"],
+            "weighted_baseline": evidence_consensus_summary["weighted_baseline"],
+            "all_tool_results": evidence_consensus_summary["all_tool_results"],
             "rules": str(consensus_rules_path) if consensus_rules_path.is_file() else "embedded_default",
             "rules_name": consensus_rules.get("metadata", {}).get("name", ""),
             "rules_version": consensus_rules.get("metadata", {}).get("version", ""),
@@ -291,6 +301,12 @@ def run(
         "evidence_conflicts": evidence_consensus_summary["evidence_conflicts"],
         "evidence_source_conflicts": comprehensive_summary["conflicts_tsv"],
         "weighted_vs_consensus_comparison": evidence_consensus_summary["comparison"],
+        "ranking_compare_weighted_vs_consensus": evidence_consensus_summary["comparison"],
+        "ranking_compare_weighted_vs_consensus_md": evidence_consensus_summary["comparison_markdown"],
+        "evidence_consensus_summary": evidence_consensus_summary["summary"],
+        "evidence_consensus_run": evidence_consensus_summary["run_manifest"],
+        "ranked_peptides_weighted_baseline": evidence_consensus_summary["weighted_baseline"],
+        "all_tool_results": evidence_consensus_summary["all_tool_results"],
         "comprehensive_peptide_evidence": str(comprehensive_path),
         "validation_plan": str(val_path),
         "evidence_report": str(report_path),

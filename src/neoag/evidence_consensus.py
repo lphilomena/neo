@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 from collections import Counter, defaultdict
+import datetime
 import hashlib
 import json
+import os
 from pathlib import Path
+import shutil
 import tomllib
 from typing import Any, Mapping
 
@@ -842,6 +845,128 @@ def _write_provenance(path: str | Path, rules: Mapping[str, Any], result: Mappin
     target.write_text(json.dumps(payload, indent=2, ensure_ascii=True) + "\n")
 
 
+def _sha256(path: str | Path) -> str:
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _materialize_alias(source: str | Path, target: str | Path) -> str:
+    source_path = Path(source)
+    target_path = Path(target)
+    if source_path.resolve() == target_path.resolve():
+        return str(target_path)
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    if target_path.exists() or target_path.is_symlink():
+        target_path.unlink()
+    try:
+        os.link(source_path, target_path)
+    except OSError:
+        shutil.copy2(source_path, target_path)
+    return str(target_path)
+
+
+def _write_consensus_summary(
+    path: str | Path,
+    rows: list[dict[str, str]],
+    event_rows: list[dict[str, str]],
+    conflicts: list[dict[str, str]],
+) -> None:
+    grade_counts = Counter(row["evidence_grade"] for row in rows)
+    track_counts = Counter(row["evidence_track"] for row in rows)
+    summary = [
+        {"metric": "peptide_hla_rows", "category": "overall", "value": str(len(rows))},
+        {"metric": "event_rows", "category": "overall", "value": str(len(event_rows))},
+        {"metric": "conflict_rows", "category": "overall", "value": str(len(conflicts))},
+        {"metric": "hard_failure_rows", "category": "overall", "value": str(sum(row["hard_failure"] == "yes" for row in rows))},
+        {"metric": "manual_review_rows", "category": "overall", "value": str(sum(row["manual_review_required"] == "yes" for row in rows))},
+    ]
+    summary.extend({"metric": grade, "category": "evidence_grade", "value": str(count)} for grade, count in sorted(grade_counts.items()))
+    summary.extend({"metric": track, "category": "evidence_track", "value": str(count)} for track, count in sorted(track_counts.items()))
+    write_tsv(path, summary, ["metric", "category", "value"])
+
+
+def _write_comparison_markdown(
+    path: str | Path,
+    comparison_rows: list[dict[str, str]],
+    grade_counts: Mapping[str, int],
+    track_counts: Mapping[str, int],
+) -> None:
+    direction_counts = Counter(row["rank_shift_direction"] for row in comparison_rows)
+    largest = sorted(
+        comparison_rows,
+        key=lambda row: (-abs(int(row["rank_shift_weighted_minus_consensus"])), row["peptide_id"]),
+    )[:20]
+    lines = [
+        "# Weighted baseline vs evidence consensus",
+        "",
+        "The weighted baseline remains unchanged. Consensus ranking is an independent research-only view.",
+        "",
+        "## Summary",
+        "",
+        "| Metric | Value |",
+        "| --- | ---: |",
+        f"| Candidate peptide-HLA rows | {len(comparison_rows)} |",
+        *[f"| Rank shift: {key} | {value} |" for key, value in sorted(direction_counts.items())],
+        *[f"| Evidence grade {key} | {value} |" for key, value in sorted(grade_counts.items())],
+        *[f"| Track {key} | {value} |" for key, value in sorted(track_counts.items())],
+        "",
+        "## Largest absolute rank shifts",
+        "",
+        "| Peptide ID | Event | Gene | Weighted rank | Consensus rank | Shift | Grade | Track |",
+        "| --- | --- | --- | ---: | ---: | ---: | --- | --- |",
+    ]
+    lines.extend(
+        "| {peptide_id} | {event_id} | {gene} | {legacy_weighted_rank} | {evidence_rank} | {rank_shift_weighted_minus_consensus} | {evidence_grade} | {evidence_track} |".format(**row)
+        for row in largest
+    )
+    Path(path).write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _write_run_manifest(
+    path: str | Path,
+    comprehensive_tsv: str | Path,
+    rules: Mapping[str, Any],
+    result: Mapping[str, Any],
+) -> None:
+    rules_json = json.dumps(rules, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+    outputs = {
+        key.removeprefix("output_"): {
+            "path": str(value),
+            "sha256": _sha256(value),
+            "size_bytes": Path(value).stat().st_size,
+        }
+        for key, value in result.items()
+        if key.startswith("output_") and value and Path(value).is_file() and Path(value) != Path(path)
+    }
+    payload = {
+        "schema_version": "1.0",
+        "generated_at": datetime.datetime.now(datetime.UTC).isoformat().replace("+00:00", "Z"),
+        "algorithm": "discrete_state_grade_track_pareto_v2",
+        "status": rules.get("metadata", {}).get("status", "PROVISIONAL_RESEARCH_ONLY"),
+        "rules_name": rules.get("metadata", {}).get("name", ""),
+        "rules_version": rules.get("metadata", {}).get("version", ""),
+        "rules_sha256": hashlib.sha256(rules_json.encode()).hexdigest(),
+        "input": {
+            "comprehensive_peptide_evidence": str(comprehensive_tsv),
+            "sha256": _sha256(comprehensive_tsv),
+            "size_bytes": Path(comprehensive_tsv).stat().st_size,
+        },
+        "counts": {
+            "peptide_hla_rows": result["rows"],
+            "event_rows": result["events"],
+            "conflict_rows": result["conflicts"],
+            "evidence_grades": result["grade_counts"],
+            "tracks": result["track_counts"],
+        },
+        "legacy_ranking_modified": False,
+        "outputs": outputs,
+    }
+    Path(path).write_text(json.dumps(payload, indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
+
+
 def rank_evidence_consensus(
     comprehensive_tsv: str | Path,
     output_peptides_tsv: str | Path,
@@ -879,8 +1004,21 @@ def rank_evidence_consensus(
     write_tsv(output_conflicts_tsv, conflicts, CONFLICT_FIELDS)
     event_rows = _event_output(rows, bool(rules.get("output", {}).get("event_deduplicate", True)))
     write_tsv(output_events_tsv, event_rows)
-    comparison_path = Path(output_peptides_tsv).with_name("weighted_vs_consensus_comparison.tsv")
-    write_tsv(comparison_path, _comparison_rows(rows))
+    output_dir = Path(output_peptides_tsv).parent
+    comparison_rows = _comparison_rows(rows)
+    comparison_path = output_dir / "ranking_compare_weighted_vs_consensus.tsv"
+    comparison_legacy_path = output_dir / "weighted_vs_consensus_comparison.tsv"
+    comparison_md_path = output_dir / "ranking_compare_weighted_vs_consensus.md"
+    summary_path = output_dir / "evidence_consensus_summary.tsv"
+    run_manifest_path = output_dir / "evidence_consensus_run.json"
+    all_tool_results_path = output_dir / "all_tool_results.tsv"
+    write_tsv(comparison_path, comparison_rows)
+    _materialize_alias(comparison_path, comparison_legacy_path)
+    grade_counts = dict(sorted(Counter(row["evidence_grade"] for row in rows).items()))
+    track_counts = dict(sorted(Counter(row["evidence_track"] for row in rows).items()))
+    _write_consensus_summary(summary_path, rows, event_rows, conflicts)
+    _write_comparison_markdown(comparison_md_path, comparison_rows, grade_counts, track_counts)
+    _materialize_alias(comprehensive_tsv, all_tool_results_path)
     result = {
         "rows": len(rows),
         "events": len(event_rows),
@@ -890,10 +1028,16 @@ def rank_evidence_consensus(
         "output_states": str(output_states_tsv),
         "output_conflicts": str(output_conflicts_tsv),
         "output_comparison": str(comparison_path),
-        "grade_counts": dict(sorted(Counter(row["evidence_grade"] for row in rows).items())),
-        "track_counts": dict(sorted(Counter(row["evidence_track"] for row in rows).items())),
+        "output_comparison_legacy": str(comparison_legacy_path),
+        "output_comparison_markdown": str(comparison_md_path),
+        "output_summary": str(summary_path),
+        "output_run_manifest": str(run_manifest_path),
+        "output_all_tool_results": str(all_tool_results_path),
+        "grade_counts": grade_counts,
+        "track_counts": track_counts,
         "legacy_ranking_modified": False,
     }
+    _write_run_manifest(run_manifest_path, comprehensive_tsv, rules, result)
     if provenance_json:
         _write_provenance(provenance_json, rules, result)
     return result
@@ -906,18 +1050,36 @@ def build_evidence_consensus(
     *,
     peptide_output: str | Path | None = None,
     provenance_json: str | Path | None = None,
+    weighted_baseline_tsv: str | Path | None = None,
 ) -> dict[str, Any]:
     output_dir = Path(outdir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    effective_rules = rules or load_consensus_rules()
     result = rank_evidence_consensus(
         comprehensive_tsv,
         peptide_output or output_dir / "ranked_peptides.evidence_consensus.tsv",
         output_dir / "ranked_events.evidence_consensus.tsv",
         output_dir / "evidence_states.tsv",
         output_dir / "evidence_conflicts.tsv",
-        rules or load_consensus_rules(),
+        effective_rules,
         provenance_json,
     )
+    baseline_candidates = (
+        [Path(weighted_baseline_tsv)] if weighted_baseline_tsv else [
+            output_dir / "ranked_peptides.tsv",
+            output_dir / "ranked_peptides.cancer_annotated.tsv",
+            output_dir / "ranked_peptides.v03.tsv",
+        ]
+    )
+    baseline_source = next((path for path in baseline_candidates if path.is_file()), baseline_candidates[0])
+    if baseline_source.is_file():
+        standard_ranked = output_dir / "ranked_peptides.tsv"
+        if not standard_ranked.is_file():
+            result["output_ranked_peptides_compat"] = _materialize_alias(baseline_source, standard_ranked)
+        result["output_weighted_baseline"] = _materialize_alias(
+            baseline_source, output_dir / "ranked_peptides.weighted_baseline.tsv",
+        )
+        _write_run_manifest(result["output_run_manifest"], comprehensive_tsv, effective_rules, result)
     return {
         "rows": result["rows"],
         "ranked_peptides": result["output_peptides"],
@@ -925,6 +1087,13 @@ def build_evidence_consensus(
         "evidence_states": result["output_states"],
         "evidence_conflicts": result["output_conflicts"],
         "comparison": result["output_comparison"],
+        "comparison_legacy": result["output_comparison_legacy"],
+        "comparison_markdown": result["output_comparison_markdown"],
+        "summary": result["output_summary"],
+        "run_manifest": result["output_run_manifest"],
+        "all_tool_results": result["output_all_tool_results"],
+        "ranked_peptides_compat": result.get("output_ranked_peptides_compat", str(output_dir / "ranked_peptides.tsv")),
+        "weighted_baseline": result.get("output_weighted_baseline", ""),
         "grade_counts": result["grade_counts"],
         "track_counts": result["track_counts"],
         "legacy_ranking_modified": False,

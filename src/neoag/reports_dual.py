@@ -721,6 +721,27 @@ def make_technical_report(path: str | Path, bundle: ReportBundle) -> None:
     out.append(_provenance_section(bundle.provenance))
     out.append("</div>")
 
+    parallel_rankings = bundle.provenance.get("parallel_rankings", {})
+    if isinstance(parallel_rankings, Mapping) and parallel_rankings.get("evidence_consensus"):
+        out.append("<div class='section'><h2>Experimental parallel evidence-consensus ranking</h2>")
+        out.append(
+            "<div class='warn'><b>Research-only parallel analysis:</b> "
+            "This section does not replace the current primary weighted ranking. "
+            "The evidence-consensus ranking has not been experimentally calibrated "
+            "and is provided only for algorithm comparison and candidate review.</div>"
+        )
+        metadata_rows = [
+            {"field": "primary patient-report ranking", "value": parallel_rankings.get("legacy_weighted", "ranked_peptides.tsv")},
+            {"field": "parallel peptide ranking", "value": parallel_rankings.get("evidence_consensus", "")},
+            {"field": "parallel event ranking", "value": parallel_rankings.get("event_consensus", "")},
+            {"field": "comparison", "value": parallel_rankings.get("comparison", "")},
+            {"field": "rules", "value": parallel_rankings.get("rules_name", "")},
+            {"field": "rules version", "value": parallel_rankings.get("rules_version", "")},
+            {"field": "rules status", "value": parallel_rankings.get("rules_status", "PROVISIONAL_RESEARCH_ONLY")},
+        ]
+        out.append(_table(metadata_rows, ["field", "value"]))
+        out.append("</div>")
+
     if bundle.wes_qc:
         out.append("<div class='section'><h2>Independent WES QC</h2>")
         wes_headers = [

@@ -196,13 +196,18 @@ evidence grade and a Pareto front calculated within the same event track.
 To generate it for an existing ranked table:
 
 ```bash
-neoag evidence-consensus-rank \
-  --input results/sample/scoring/comprehensive_peptide_evidence.tsv \
-  --output results/sample/scoring/ranked_peptides.evidence_consensus.tsv \
-  --rules configs/ranking/sarcoma_evidence_consensus_v1.toml
+neoag evidence-rank \
+  --comprehensive-evidence results/sample/scoring/comprehensive_peptide_evidence.tsv \
+  --weighted-baseline results/sample/scoring/ranked_peptides.tsv \
+  --rules configs/ranking/sarcoma_evidence_consensus_v1.toml \
+  --provenance results/sample/provenance.json \
+  --outdir results/sample/scoring/evidence_consensus \
+  --mode parallel --track all \
+  --emit-event-ranking --compare-weighted --deterministic
 ```
 
-See `docs/EVIDENCE_CONSENSUS.md` for field definitions and interpretation.
+The first phase does not expose `--replace-primary-ranking`. See
+`docs/EVIDENCE_CONSENSUS.md` for field definitions and interpretation.
 
 For tests:
 

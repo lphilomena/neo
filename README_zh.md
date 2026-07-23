@@ -84,13 +84,18 @@ neoag run-demo --outdir work/demo_v043 --sample-id DEMO001
 对已有综合证据表运行：
 
 ```bash
-neoag evidence-consensus-rank \
-  --input results/sample/scoring/comprehensive_peptide_evidence.tsv \
-  --output results/sample/scoring/ranked_peptides.evidence_consensus.tsv \
-  --rules configs/ranking/sarcoma_evidence_consensus_v1.toml
+neoag evidence-rank \
+  --comprehensive-evidence results/sample/scoring/comprehensive_peptide_evidence.tsv \
+  --weighted-baseline results/sample/scoring/ranked_peptides.tsv \
+  --rules configs/ranking/sarcoma_evidence_consensus_v1.toml \
+  --provenance results/sample/provenance.json \
+  --outdir results/sample/scoring/evidence_consensus \
+  --mode parallel --track all \
+  --emit-event-ranking --compare-weighted --deterministic
 ```
 
-逐行差异原因写在 `weighted_vs_consensus_comparison.tsv`。字段定义和算法边界见
+第一阶段不提供 `--replace-primary-ranking`。逐行差异原因写在
+`ranking_compare_weighted_vs_consensus.tsv`；旧文件名继续作为兼容别名。字段定义和算法边界见
 `docs/EVIDENCE_CONSENSUS.md`。所有阈值均标记为
 `PROVISIONAL_RESEARCH_ONLY`，第一阶段仅用于比较算法行为，不代表临床验证。
 

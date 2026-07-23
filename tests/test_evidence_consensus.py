@@ -9,6 +9,7 @@ from neoag.evidence_consensus import (
     rank_by_evidence_consensus,
     score_evidence_consensus,
 )
+from neoag.cli import build_parser, main as cli_main
 from neoag.evidence_states import (
     derive_all_states,
     derive_event_authenticity,
@@ -344,6 +345,108 @@ def test_recommended_main_api_writes_conflicts_and_provenance(tmp_path: Path):
     assert result["conflicts"] == 1
     assert read_tsv(tmp_path / "conflicts.tsv")[0]["layer"] == "event_authenticity"
     assert "PROVISIONAL_RESEARCH_ONLY" in provenance.read_text()
+
+
+def test_first_phase_output_contract_and_aliases(tmp_path: Path):
+    comprehensive = tmp_path / "comprehensive.tsv"
+    weighted = tmp_path / "ranked_peptides.tsv"
+    write_tsv(comprehensive, [complete_row()])
+    write_tsv(weighted, [{"peptide_id": "P1", "efficacy_score": "0.5"}])
+    outdir = tmp_path / "scoring"
+    result = build_evidence_consensus(
+        comprehensive, outdir, weighted_baseline_tsv=weighted,
+    )
+    expected = {
+        "ranked_peptides.evidence_consensus.tsv",
+        "ranked_peptides.tsv",
+        "ranked_events.evidence_consensus.tsv",
+        "evidence_states.tsv",
+        "evidence_conflicts.tsv",
+        "evidence_consensus_summary.tsv",
+        "ranking_compare_weighted_vs_consensus.tsv",
+        "ranking_compare_weighted_vs_consensus.md",
+        "evidence_consensus_run.json",
+        "all_tool_results.tsv",
+        "ranked_peptides.weighted_baseline.tsv",
+    }
+    assert expected <= {path.name for path in outdir.iterdir()}
+    assert Path(result["all_tool_results"]).read_bytes() == comprehensive.read_bytes()
+    assert Path(result["ranked_peptides_compat"]).read_bytes() == weighted.read_bytes()
+    assert Path(result["weighted_baseline"]).read_bytes() == weighted.read_bytes()
+    assert Path(result["comparison_legacy"]).read_bytes() == Path(result["comparison"]).read_bytes()
+    manifest = json.loads(Path(result["run_manifest"]).read_text())
+    assert manifest["counts"]["peptide_hla_rows"] == 1
+    assert manifest["legacy_ranking_modified"] is False
+    assert manifest["outputs"]["weighted_baseline"]["sha256"]
+
+
+def test_evidence_rank_cli_defaults_to_protected_parallel_mode(tmp_path: Path):
+    comprehensive = tmp_path / "comprehensive.tsv"
+    weighted = tmp_path / "ranked_peptides.tsv"
+    provenance = tmp_path / "provenance.json"
+    outdir = tmp_path / "consensus"
+    write_tsv(comprehensive, [complete_row()])
+    write_tsv(weighted, [{"peptide_id": "P1", "efficacy_score": "0.5"}])
+    provenance.write_text("{}\n")
+    cli_main([
+        "evidence-rank",
+        "--comprehensive-evidence", str(comprehensive),
+        "--weighted-baseline", str(weighted),
+        "--provenance", str(provenance),
+        "--outdir", str(outdir),
+        "--emit-event-ranking",
+        "--compare-weighted",
+        "--deterministic",
+    ])
+    assert (outdir / "ranked_peptides.evidence_consensus.tsv").is_file()
+    assert (outdir / "ranked_events.evidence_consensus.tsv").is_file()
+    assert weighted.read_text().startswith("peptide_id")
+    assert "evidence_consensus" in json.loads(provenance.read_text())
+
+
+def test_evidence_rank_cli_forbids_primary_replacement():
+    parser = build_parser()
+    defaults = parser.parse_args([
+        "evidence-rank",
+        "--comprehensive-evidence", "comprehensive.tsv",
+        "--weighted-baseline", "ranked_peptides.tsv",
+        "--outdir", "out",
+    ])
+    assert defaults.mode == "parallel"
+    assert defaults.track == "all"
+    assert defaults.emit_event_ranking is True
+    assert defaults.compare_weighted is True
+    assert defaults.deterministic is True
+    with pytest.raises(SystemExit):
+        parser.parse_args([
+            "evidence-rank",
+            "--comprehensive-evidence", "comprehensive.tsv",
+            "--weighted-baseline", "ranked_peptides.tsv",
+            "--outdir", "out",
+            "--replace-primary-ranking",
+        ])
+
+
+def test_evidence_rank_cli_filters_track_using_normalized_state(tmp_path: Path):
+    comprehensive = tmp_path / "comprehensive.tsv"
+    weighted = tmp_path / "ranked_peptides.tsv"
+    missense = complete_row("P1")
+    fusion = complete_row("P2")
+    fusion.update({"event_type": "Fusion", "rna_junction_reads": "12", "rna_frame_status": "IN_FRAME"})
+    write_tsv(comprehensive, [missense, fusion])
+    write_tsv(weighted, [{"peptide_id": "P1"}, {"peptide_id": "P2"}])
+    outdir = tmp_path / "fusion_consensus"
+    cli_main([
+        "evidence-rank",
+        "--comprehensive-evidence", str(comprehensive),
+        "--weighted-baseline", str(weighted),
+        "--outdir", str(outdir),
+        "--track", "fusion",
+    ])
+    rows = read_tsv(outdir / "ranked_peptides.evidence_consensus.tsv")
+    assert len(rows) == 1
+    assert rows[0]["peptide_id"] == "P2"
+    assert rows[0]["biological_event_track"] == "FUSION"
 
 
 def test_source_precedence_conflicts_flow_into_final_conflict_table(tmp_path: Path):

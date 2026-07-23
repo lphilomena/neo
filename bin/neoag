@@ -7,13 +7,27 @@ if [[ -f "$ROOT/conf/tools.env.sh" && "${NEOAG_SKIP_TOOLS_ENV:-0}" != "1" ]]; th
   source "$ROOT/conf/tools.env.sh"
 fi
 
-CONDA_BASE="$(conda info --base 2>/dev/null || echo)"
-PY="${NEOAG_PYTHON:-${CONDA_BASE}/envs/${NEOAG_CONDA_ENV:-neoag-tools}/bin/python}"
-if [[ ! -x "${PY}" && -x "$ROOT/.venv/bin/python" ]]; then
-  PY="$ROOT/.venv/bin/python"
-fi
-if [[ ! -x "${PY}" ]]; then
-  PY="$(command -v python3 || command -v python)"
+CONDA_BASE="$(conda info --base 2>/dev/null || true)"
+CANDIDATES=()
+[[ -n "${NEOAG_PYTHON:-}" ]] && CANDIDATES+=("$NEOAG_PYTHON")
+[[ -n "$CONDA_BASE" ]] && CANDIDATES+=("$CONDA_BASE/envs/${NEOAG_CONDA_ENV:-neoag-tools}/bin/python")
+CANDIDATES+=("$ROOT/.venv/bin/python")
+[[ -n "$CONDA_BASE" ]] && CANDIDATES+=("$CONDA_BASE/bin/python")
+[[ -n "${MAMBA_ROOT_PREFIX:-}" ]] && CANDIDATES+=("$MAMBA_ROOT_PREFIX/bin/python")
+CANDIDATES+=("$HOME/miniforge3/bin/python" "$HOME/miniconda3/bin/python")
+command -v python3 >/dev/null 2>&1 && CANDIDATES+=("$(command -v python3)")
+command -v python >/dev/null 2>&1 && CANDIDATES+=("$(command -v python)")
+
+PY=""
+for candidate in "${CANDIDATES[@]}"; do
+  if [[ -x "$candidate" ]] && "$candidate" -c 'import sys, tomllib; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)' >/dev/null 2>&1; then
+    PY="$candidate"
+    break
+  fi
+done
+if [[ -z "$PY" ]]; then
+  echo "ERROR: neoag requires Python >=3.11 with tomllib. Set NEOAG_PYTHON or create .venv." >&2
+  exit 2
 fi
 
 exec "${PY}" -m neoag.cli "$@"
