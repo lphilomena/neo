@@ -8,7 +8,7 @@ from neoag.config import load_profile
 from neoag.appm_lite import build_appm_lite
 from neoag.ccf_lite import build_ccf_lite
 from neoag.pipeline import run
-from neoag.utils import write_tsv
+from neoag.utils import read_tsv, write_tsv
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -65,7 +65,9 @@ def test_run(tmp_path):
     assert Path(out["evidence_consensus_summary"]).exists()
     assert Path(out["evidence_consensus_run"]).exists()
     assert Path(out["ranked_peptides_weighted_baseline"]).read_bytes() == Path(out["ranked_peptides"]).read_bytes()
-    assert Path(out["all_tool_results"]).read_bytes() == Path(out["comprehensive_peptide_evidence"]).read_bytes()
+    assert read_tsv(out["all_tool_results"])[0]["all_tool_results_schema_version"] == "1.0"
+    assert Path(out["all_tool_results_manifest"]).exists()
+    assert Path(out["comprehensive_evidence_manifest"]).exists()
     run_manifest = json.loads(Path(out["evidence_consensus_run"]).read_text())
     assert run_manifest["legacy_ranking_modified"] is False
     assert Path(out["ccf_2"]).exists()

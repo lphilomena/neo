@@ -13,6 +13,7 @@ def test_abcd_registry_complete():
     assert set(reg["categories"]) == {"A", "B", "C", "D"}
     assert "neoag-vcf" in SKILLS_BY_NAME
     assert "neoag-ranking" in SKILLS_BY_NAME
+    assert "open-neo-run" in SKILLS_BY_NAME
     assert "neoag-release-qc" in SKILLS_BY_NAME
     assert len(reg["skills"]) >= 20
 
@@ -50,6 +51,42 @@ def test_experiment_design_skill(tmp_path: Path):
     assert res["status"] == "PASS"
     assert (outdir / "short_peptide_pool.tsv").exists()
     assert (outdir / "minigene_design.tsv").exists()
+
+
+def test_skill2_ranking_delegates_to_production_evidence_rank(tmp_path: Path):
+    comprehensive = tmp_path / "comprehensive_peptide_evidence.tsv"
+    comprehensive.write_text(
+        "peptide_id\tevent_id\tevent_type\tpeptide\thla_allele\t"
+        "cross_platform_status\trna_alt_reads\trna_vaf\t"
+        "netmhcpan_mt_rank_el\tmhcflurry_presentation_score\t"
+        "mutant_specificity_status\tccf_estimate\tccf_confidence\t"
+        "appm_multiplier\thla_loh_status\trestricting_hla_lost\t"
+        "safety_status\tsafety_evidence_completeness\n"
+        "P1\tE1\tSNV\tSYFPEITHI\tHLA-A*02:01\t"
+        "CROSS_PLATFORM_PASS_CONCORDANT\t8\t0.20\t0.2\t0.8\t"
+        "MT_SPECIFIC\t0.9\thigh\t1.0\tRETAINED\tfalse\tPASS\tCOMPLETE\n",
+        encoding="utf-8",
+    )
+    weighted = tmp_path / "ranked_peptides.tsv"
+    weighted.write_text("peptide_id\tefficacy_score\tfinal_priority\nP1\t0.8\tB\n", encoding="utf-8")
+    for skill_name in ("neoag-ranking", "open-neo-run"):
+        outdir = tmp_path / skill_name
+        result = run_skill(skill_name, {
+            "comprehensive_evidence": str(comprehensive),
+            "weighted_baseline": str(weighted),
+            "outdir": str(outdir),
+        })
+        assert result["status"] == "PASS"
+        assert result["production_command"] == "neoag evidence-rank"
+        assert result["algorithm_owner"] == "src/neoag/evidence_consensus.py"
+        for filename in (
+            "all_tool_results.tsv",
+            "ranked_peptides.weighted_baseline.tsv",
+            "ranked_peptides.evidence_consensus.tsv",
+            "ranked_events.evidence_consensus.tsv",
+            "ranking_compare_weighted_vs_consensus.md",
+        ):
+            assert (outdir / filename).is_file()
 
 
 def test_experiment_design_prefers_event_representatives(tmp_path: Path):

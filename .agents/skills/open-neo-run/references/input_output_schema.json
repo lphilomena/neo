@@ -1,5 +1,5 @@
 {
-  "name": "neoag-ranking",
+  "name": "open-neo-run",
   "handler": "ranking",
   "production_command": "neoag evidence-rank",
   "required_inputs": ["comprehensive_evidence", "weighted_baseline"],

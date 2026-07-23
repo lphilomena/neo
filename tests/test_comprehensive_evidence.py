@@ -1,7 +1,9 @@
+import json
 from pathlib import Path
 
 from neoag.comprehensive_evidence import (
     AUTHORITATIVE_FIELDS,
+    COMPREHENSIVE_EVIDENCE_SCHEMA_VERSION,
     EVIDENCE_SOURCE_PRECEDENCE_VERSION,
     build_comprehensive_peptide_evidence,
 )
@@ -166,6 +168,11 @@ def test_authoritative_sources_override_stale_ranked_copies_and_record_conflicts
     assert row["event_safety_status"] == "CAUTION"
     assert row["efficacy_score"] == "0.91"
     assert row["evidence_source_precedence_version"] == EVIDENCE_SOURCE_PRECEDENCE_VERSION
+    assert row["comprehensive_evidence_schema_version"] == COMPREHENSIVE_EVIDENCE_SCHEMA_VERSION
+    field_sources = json.loads(row["evidence_field_sources"])
+    assert field_sources["gene"] == "raw_events"
+    assert field_sources["presentation_evidence_score"] == "presentation_evidence"
+    assert field_sources["event_safety_status"] == "event_safety"
     assert {"gene", "presentation_evidence_score", "gene_expression_tpm", "ccf_estimate", "safety_status"} <= set(row["evidence_conflict_fields"].split(","))
     conflicts = read_tsv(summary["conflicts_tsv"])
     assert summary["conflicts"] >= 5
@@ -173,3 +180,7 @@ def test_authoritative_sources_override_stale_ranked_copies_and_record_conflicts
         "raw_events", "presentation_evidence", "expression_evidence", "ccf_2", "peptide_safety",
     }
     assert "presentation_evidence_score" in AUTHORITATIVE_FIELDS["presentation_evidence"]
+    manifest = json.loads(Path(summary["manifest"]).read_text())
+    assert manifest["record_type"] == "PEPTIDE_HLA_EVIDENCE"
+    assert manifest["inputs"]["event_safety"]["sha256"]
+    assert manifest["output"]["rows"] == 1

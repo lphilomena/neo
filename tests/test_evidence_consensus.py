@@ -116,6 +116,7 @@ def test_hard_failure_and_priority_cap_are_auditable(tmp_path: Path):
     rows = {row["peptide_id"]: row for row in read_tsv(result["ranked_peptides"])}
     assert rows["P1"]["hard_failure"] == "yes"
     assert rows["P1"]["evidence_grade"] == "R4"
+    assert rows["P1"]["hard_failure_codes"] == "HARD_REFERENCE_PROTEOME_MATCH"
     assert "HARD_REFERENCE_PROTEOME_MATCH" in rows["P1"]["hard_failure_reasons"]
     assert rows["P2"]["evidence_grade_uncapped"] == "R1"
     assert rows["P2"]["evidence_grade"] == "R3"
@@ -309,6 +310,9 @@ def test_state_derivers_emit_discrete_auditable_vector():
     }
     assert all(0 <= state["grade"] <= 3 for state in states.values())
     assert all(state["reason"] for state in states.values())
+    assert all(state["reason_code"] for state in states.values())
+    assert states["rna_support"]["reason_code"] == "RNA_ALT_READS_SUPPORTED"
+    assert states["presentation_consensus"]["reason_code"] == "PRESENTATION_CORE_TOOLS_CONCORDANT"
 
 
 def test_pareto_collapses_identical_vectors_and_is_deterministic():
@@ -350,7 +354,9 @@ def test_recommended_main_api_writes_conflicts_and_provenance(tmp_path: Path):
 def test_first_phase_output_contract_and_aliases(tmp_path: Path):
     comprehensive = tmp_path / "comprehensive.tsv"
     weighted = tmp_path / "ranked_peptides.tsv"
-    write_tsv(comprehensive, [complete_row()])
+    canonical_input = complete_row()
+    canonical_input.update({"peptide": "AAAAAAAAA", "hla_allele": "HLA-A*02:01"})
+    write_tsv(comprehensive, [canonical_input])
     write_tsv(weighted, [{"peptide_id": "P1", "efficacy_score": "0.5"}])
     outdir = tmp_path / "scoring"
     result = build_evidence_consensus(
@@ -367,10 +373,21 @@ def test_first_phase_output_contract_and_aliases(tmp_path: Path):
         "ranking_compare_weighted_vs_consensus.md",
         "evidence_consensus_run.json",
         "all_tool_results.tsv",
+        "all_tool_results.manifest.json",
         "ranked_peptides.weighted_baseline.tsv",
     }
     assert expected <= {path.name for path in outdir.iterdir()}
-    assert Path(result["all_tool_results"]).read_bytes() == comprehensive.read_bytes()
+    canonical = read_tsv(result["all_tool_results"])[0]
+    assert canonical["all_tool_results_schema_version"] == "1.0"
+    assert canonical["canonical_record_type"] == "PEPTIDE_HLA_EVIDENCE"
+    assert len(canonical["canonical_record_id"]) == 24
+    canonical_manifest = json.loads(Path(result["all_tool_results_manifest"]).read_text())
+    assert canonical_manifest["canonical"] is True
+    assert canonical_manifest["input"]["sha256"]
+    assert canonical_manifest["output"]["sha256"]
+    assert canonical_manifest["output"]["rows"] == 1
+    assert canonical_manifest["validation"]["status"] == "PASS"
+    assert canonical_manifest["validation"]["duplicate_record_ids"] == 0
     assert Path(result["ranked_peptides_compat"]).read_bytes() == weighted.read_bytes()
     assert Path(result["weighted_baseline"]).read_bytes() == weighted.read_bytes()
     assert Path(result["comparison_legacy"]).read_bytes() == Path(result["comparison"]).read_bytes()
@@ -526,10 +543,19 @@ def test_hla_and_safety_strong_rules_have_stable_hard_codes():
     partial = derive_safety_state({
         "safety_status": "PASS", "safety_missing_layers": "normal_ligandome",
     }, {})
+    event_partial = derive_safety_state({
+        "safety_status": "PASS", "event_safety_status": "PASS",
+        "event_safety_missing_layers": "normal_junction",
+    }, {})
+    event_reject = derive_safety_state({
+        "safety_status": "PASS", "event_reference_proteome_exact_match": "true",
+    }, {})
     assert hla["state"] == "RESTRICTING_HLA_LOST"
     assert hla["hard_code"] == "HARD_RESTRICTING_HLA_LOST"
     assert safety["hard_code"] == "HARD_REFERENCE_PROTEOME_MATCH"
     assert partial["state"] == "SAFETY_PARTIAL"
+    assert event_partial["state"] == "SAFETY_PARTIAL"
+    assert event_reject["hard_code"] == "HARD_REFERENCE_PROTEOME_MATCH"
 
 
 def test_state_driven_caps_apply_before_pareto(tmp_path: Path):

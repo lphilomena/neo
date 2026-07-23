@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from .io import ensure_dir, normalize_hla, read_fasta_sequences, read_table, row_get, safe_float, write_json, write_tsv
+from .production_cli import invoke_production_cli
 
 
 def run_hla_typing_loh(args: dict[str, Any]) -> dict[str, Any]:
@@ -242,58 +243,65 @@ def run_safety(args: dict[str, Any]) -> dict[str, Any]:
     return res
 
 
-def run_ranking(args: dict[str, Any]) -> dict[str, Any]:
+def run_ranking_skill(args: dict[str, Any]) -> dict[str, Any]:
+    """Skill2 wrapper around the production evidence-rank CLI."""
     outdir = ensure_dir(args["outdir"])
-    raw = Path(args.get("raw_peptides") or args.get("input") or "")
-    _, peps = read_table(raw)
-    pres_by = {}
-    if args.get("presentation"):
-        _, pres = read_table(args["presentation"])
-        for r in pres:
-            pres_by[row_get(r, ["peptide_id"], "") or (row_get(r, ["peptide"], "") + "|" + row_get(r, ["hla_allele"], ""))] = r
-    expr_by = {}
-    if args.get("expression"):
-        _, expr = read_table(args["expression"])
-        for r in expr:
-            expr_by[row_get(r, ["gene"], "")] = r
-    ccf_by = {}
-    if args.get("ccf"):
-        _, ccf = read_table(args["ccf"])
-        for r in ccf:
-            ccf_by[row_get(r, ["event_id"], "") or row_get(r, ["peptide_id"], "")] = r
-    safety_by = {}
-    if args.get("safety"):
-        _, safety = read_table(args["safety"])
-        for r in safety:
-            safety_by[row_get(r, ["peptide_id"], "")] = r
-    ranked = []
-    for row in peps:
-        pid = row_get(row, ["peptide_id"], "") or (row_get(row, ["peptide"], "") + "|" + row_get(row, ["hla_allele"], ""))
-        p = pres_by.get(pid) or pres_by.get(row_get(row, ["peptide"], "") + "|" + row_get(row, ["hla_allele"], "")) or {}
-        grade = row_get(p, ["presentation_evidence_grade"], "UNASSESSED")
-        base = {"A": 0.9, "B": 0.75, "C_BINDING_ONLY": 0.45, "D_WEAK": 0.15, "UNASSESSED": 0.2}.get(grade, 0.3)
-        gene = row_get(row, ["gene"], "")
-        expr = expr_by.get(gene, {})
-        expr_mult = 1.0 if row_get(expr, ["expression_status"], "") == "expressed" else (0.8 if row_get(expr, ["expression_status"], "") == "low" else 0.7)
-        c = ccf_by.get(row_get(row, ["event_id"], ""), {}) or ccf_by.get(pid, {})
-        ccf_mult = safe_float(row_get(c, ["ccf_multiplier"], ""), 0.6) or 0.6
-        s = safety_by.get(pid, {})
-        safety_status = row_get(s, ["safety_status"], "PASS") or "PASS"
-        safety_mult = 0.0 if safety_status == "FAIL" else (0.75 if safety_status == "REVIEW" else 1.0)
-        score = base * expr_mult * ccf_mult * safety_mult
-        priority = "A" if score >= 0.75 else ("B" if score >= 0.55 else ("C_CAUTION" if safety_status == "REVIEW" else ("C" if score >= 0.30 else "D")))
-        ranked.append({**row, "peptide_id": pid, "presentation_evidence_grade": grade, "expression_status": row_get(expr, ["expression_status"], "unassessed"), "ccf_status": row_get(c, ["clonality_status"], "unresolved"), "ccf_multiplier": f"{ccf_mult:.2f}", "safety_status": safety_status, "final_priority": priority, "efficacy_score": f"{score:.4f}", "recommended_use": "computed_triage; validate experimentally"})
-    ranked.sort(key=lambda r: float(r["efficacy_score"]), reverse=True)
-    write_tsv(outdir / "ranked_peptides.recommendation.tsv", ranked)
-    # NetMHCpan sort proxy: sort by EL rank if present in pres, else score.
-    net = list(ranked)
-    def net_key(r: dict[str, str]):
-        p = pres_by.get(r.get("peptide_id", ""), {})
-        return safe_float(row_get(p, ["el_rank", "ba_rank", "ic50"], ""), 999999) or 999999
-    net.sort(key=net_key)
-    write_tsv(outdir / "ranked_peptides.netmhcpan42.tsv", net)
-    write_tsv(outdir / "ranked_events.tsv", ranked)
-    write_tsv(outdir / "validation_plan.tsv", [{"peptide_id": r.get("peptide_id", ""), "recommended_validation": "short_peptide" if r.get("source_type", "").lower() in {"snv", "peptide_csv"} else "long_peptide_or_minigene"} for r in ranked])
-    res = {"status": "PASS", "skill": "neoag-ranking", "summary": f"Ranked {len(ranked)} peptide candidates", "outputs": {"recommendation": str(outdir / "ranked_peptides.recommendation.tsv")}}
+    skill_name = str(args.get("_skill_name") or "neoag-ranking")
+    comprehensive = Path(args.get("comprehensive_evidence") or args.get("all_tool_results") or args.get("input") or "")
+    weighted = Path(args.get("weighted_baseline") or args.get("ranked_peptides") or "")
+    if not comprehensive.is_file() or not weighted.is_file():
+        missing = []
+        if not comprehensive.is_file():
+            missing.append("comprehensive_evidence")
+        if not weighted.is_file():
+            missing.append("weighted_baseline")
+        res = {
+            "status": "FAIL", "skill": skill_name,
+            "failure_reason": "MISSING_INPUT:" + ",".join(missing),
+        }
+        write_json(outdir / "skill_result.json", res)
+        return res
+
+    cli_args = [
+        "--comprehensive-evidence", str(comprehensive),
+        "--weighted-baseline", str(weighted),
+        "--outdir", str(outdir),
+        "--mode", "parallel",
+        "--track", str(args.get("track") or "all"),
+        "--emit-event-ranking", "--compare-weighted", "--deterministic",
+    ]
+    if args.get("rules"):
+        cli_args.extend(["--rules", str(args["rules"])])
+    if args.get("provenance"):
+        cli_args.extend(["--provenance", str(args["provenance"])])
+    try:
+        invocation = invoke_production_cli("neoag evidence-rank", cli_args)
+    except (OSError, RuntimeError, ValueError) as exc:
+        res = {"status": "FAIL", "skill": skill_name, "failure_reason": str(exc)}
+        write_json(outdir / "skill_result.json", res)
+        return res
+
+    outputs = {
+        "all_tool_results": str(outdir / "all_tool_results.tsv"),
+        "weighted_baseline": str(outdir / "ranked_peptides.weighted_baseline.tsv"),
+        "evidence_consensus_peptides": str(outdir / "ranked_peptides.evidence_consensus.tsv"),
+        "evidence_consensus_events": str(outdir / "ranked_events.evidence_consensus.tsv"),
+        "weighted_vs_consensus_report": str(outdir / "ranking_compare_weighted_vs_consensus.md"),
+    }
+    missing_outputs = [name for name, path in outputs.items() if not Path(path).is_file()]
+    res = {
+        "status": "PASS" if not missing_outputs else "FAIL",
+        "skill": skill_name,
+        "summary": "Production evidence-rank completed in protected parallel mode",
+        "production_command": invocation["command"],
+        "algorithm_owner": "src/neoag/evidence_consensus.py",
+        "outputs": outputs,
+    }
+    if missing_outputs:
+        res["failure_reason"] = "MISSING_OUTPUT:" + ",".join(missing_outputs)
     write_json(outdir / "skill_result.json", res)
     return res
+
+
+# Compatibility name retained for existing handler imports.
+run_ranking = run_ranking_skill

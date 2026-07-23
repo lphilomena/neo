@@ -1,15 +1,19 @@
 ---
-name: neoag-ranking
-description: Thin Skill2 wrapper around the production neoag evidence-rank CLI.
+name: open-neo-run
+description: Public macro Skill2 wrapper for the production evidence-consensus ranking CLI.
 category: B - Public evidence analysis
 risk_level: LOW
 approval_required: false
 ---
 
-# neoag-ranking
+# open-neo-run
 
-This compatibility Skill delegates to `neoag evidence-rank`. It does not
-implement scoring, R1-R4 assignment, Pareto ranking, or event deduplication.
+## Purpose
+
+Run the protected parallel weighted-baseline and evidence-consensus ranking.
+This Skill is an SOP/adapter only. It calls `neoag evidence-rank`; all R1-R4,
+hard-fail, priority-cap, Pareto, tie-break, and event-deduplication logic remains
+in `src/neoag/evidence_consensus.py`.
 
 ## Required inputs
 
@@ -33,11 +37,11 @@ implement scoring, R1-R4 assignment, Pareto ranking, or event deduplication.
 ## Run
 
 ```bash
-neoag-skill run neoag-ranking \
-  --outdir work/neoag-ranking \
+neoag-skill run open-neo-run \
+  --outdir work/open-neo-run \
   --arg comprehensive_evidence=results/scoring/comprehensive_peptide_evidence.tsv \
   --arg weighted_baseline=results/scoring/ranked_peptides.tsv
 ```
 
-The weighted baseline remains the primary compatibility ranking. The evidence
-consensus is a parallel, research-only candidate-review output.
+The consensus ranking is research-only and does not replace the primary
+weighted ranking.

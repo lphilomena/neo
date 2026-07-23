@@ -94,6 +94,33 @@ neoag evidence-rank \
   --emit-event-ranking --compare-weighted --deterministic
 ```
 
+编程 Agent 应通过轻量的对外 Skill2 包装器调用正式算法：
+
+```bash
+neoag-skill run open-neo-run \
+  --outdir results/sample/scoring/evidence_consensus \
+  --arg comprehensive_evidence=results/sample/scoring/comprehensive_peptide_evidence.tsv \
+  --arg weighted_baseline=results/sample/scoring/ranked_peptides.tsv
+```
+
+`open-neo-run` 与兼容入口 `neoag-ranking` 都调用正式的
+`neoag evidence-rank` CLI。Skill 层不再维护独立的 R1-R4、Pareto、hard fail、
+priority cap 或 event 去重算法。
+
+使用通用审计命令比较任意两个排序：
+
+```bash
+neoag-ranking-compare \
+  --left results/sample/scoring/ranked_peptides.weighted_baseline.tsv \
+  --left-name weighted_baseline \
+  --right results/sample/scoring/ranked_peptides.evidence_consensus.tsv \
+  --right-name evidence_consensus \
+  --outdir results/sample/scoring/ranking_comparison
+```
+
+输出包括 Top10/20/50/100 overlap、Spearman 相关性、候选升降级、高位 hard-fail、
+event type 与 HLA 构成、证据冲突比例、missing evidence 比例和人工复核候选。
+
 第一阶段不提供 `--replace-primary-ranking`。逐行差异原因写在
 `ranking_compare_weighted_vs_consensus.tsv`；旧文件名继续作为兼容别名。字段定义和算法边界见
 `docs/EVIDENCE_CONSENSUS.md`。所有阈值均标记为

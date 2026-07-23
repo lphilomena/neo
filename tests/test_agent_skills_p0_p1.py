@@ -51,6 +51,47 @@ def test_ranking_compare_without_peptide_id(tmp_path: Path):
     assert (out / "rank_shift.tsv").read_text(encoding="utf-8").startswith("peptide_id")
 
 
+def test_generic_weighted_vs_consensus_comparison_audits_evidence(tmp_path: Path):
+    left = tmp_path / "ranked_peptides.weighted_baseline.tsv"
+    right = tmp_path / "ranked_peptides.evidence_consensus.tsv"
+    rows = [
+        {"peptide_id": "p1", "gene": "G1", "peptide": "AAAA", "hla_allele": "HLA-A*02:01", "event_type": "SNV", "final_priority": "B"},
+        {"peptide_id": "p2", "gene": "G2", "peptide": "BBBB", "hla_allele": "HLA-B*07:02", "event_type": "Fusion", "final_priority": "C"},
+        {"peptide_id": "p3", "gene": "G3", "peptide": "CCCC", "hla_allele": "HLA-C*07:02", "event_type": "InDel", "final_priority": "D"},
+    ]
+    write_tsv(left, rows)
+    right_rows = [
+        {**rows[1], "evidence_grade": "R4", "hard_failure": "yes", "hard_failure_codes": "HARD_NORMAL_JUNCTION", "manual_review_required": "yes", "evidence_conflict_fields": "rna_support_status", "evidence_missing_layers": "safety"},
+        {**rows[0], "evidence_grade": "R1", "hard_failure": "no", "manual_review_required": "no"},
+        {**rows[2], "evidence_grade": "R3", "hard_failure": "no", "manual_review_required": "yes"},
+    ]
+    write_tsv(right, right_rows)
+    out = tmp_path / "generic_comparison"
+    rc = subprocess.run([
+        sys.executable, "-m", "neoag.agent_skills.ranking_compare",
+        "--left", str(left), "--left-name", "weighted_baseline",
+        "--right", str(right), "--right-name", "evidence_consensus",
+        "--outdir", str(out),
+    ], text=True, capture_output=True)
+    assert rc.returncode == 0, rc.stderr
+    summary = json.loads((out / "ranking_comparison_summary.json").read_text())
+    assert summary["left"]["name"] == "weighted_baseline"
+    assert summary["right"]["name"] == "evidence_consensus"
+    assert summary["spearman_correlation"] == 0.5
+    overlap = list(csv.DictReader((out / "topn_overlap.tsv").open(), delimiter="\t"))
+    assert [row["top_n"] for row in overlap] == ["10", "20", "50", "100"]
+    changes = {row["candidate_id"]: row for row in csv.DictReader((out / "candidate_rank_changes.tsv").open(), delimiter="\t")}
+    assert changes["p2"]["change"] == "PROMOTED_IN_RIGHT"
+    hard = list(csv.DictReader((out / "high_rank_hard_fail.tsv").open(), delimiter="\t"))
+    assert hard[0]["candidate_id"] == "p2"
+    assert (out / "top_composition.tsv").is_file()
+    assert (out / "evidence_qc_summary.tsv").is_file()
+    assert (out / "manual_review_candidates.tsv").is_file()
+    report = (out / "ranking_compare_report.md").read_text()
+    assert "Conflict and missing-evidence rates" in report
+    assert "Top20 HLA coverage" in report
+
+
 def test_input_qc_detects_result_files(tmp_path: Path):
     (tmp_path / "ranked_peptides.recommendation.tsv").write_text("peptide_id\nP1\n", encoding="utf-8")
     (tmp_path / "evidence_report.v041.html").write_text("<html></html>", encoding="utf-8")

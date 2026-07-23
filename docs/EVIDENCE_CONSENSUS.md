@@ -142,7 +142,8 @@ It uses the current schema fields for seven layers:
   `evidence_missing_layers`, `evidence_conflict_layers`.
 - `evidence_layer_states`: auditable per-layer state summary.
 - `evidence_rank`: deterministic rank in the parallel output.
-- `hard_failure`, `hard_failure_reasons`, `consensus_priority_cap`: explicit
+- `hard_failure`, `hard_failure_codes`, `hard_failure_reasons`,
+  `consensus_priority_cap`: explicit
   constraints applied only to the consensus branch.
 - `evidence_grade_uncapped`, `evidence_grade`: R1-R4 before and after hard
   failure/priority-cap constraints.
@@ -151,6 +152,10 @@ It uses the current schema fields for seven layers:
   grade-and-track-specific Pareto placement and its auditable dimensions.
 - `consensus_trace`: row-level explanation of missing/conflicting evidence and
   any grade constraint.
+- `*_reason_code`: stable machine-readable reason code for every normalized
+  evidence domain; `*_reason` retains its human-readable explanation.
+- `evidence_reason_codes`: compact `domain:code` trace across all domains.
+  Priority-cap codes remain in `evidence_grade_cap_reasons`.
 
 The generated bundle contains:
 
@@ -159,8 +164,12 @@ The generated bundle contains:
 - `ranked_peptides.weighted_baseline.tsv`: explicit hard-link/copy alias of the
   unchanged weighted ranking.
 - `comprehensive_peptide_evidence.tsv`: authoritative merged evidence table.
-- `all_tool_results.tsv`: user-facing hard-link/copy alias of the comprehensive
-  evidence table.
+- `all_tool_results.tsv`: canonical user-facing evidence table with a stable
+  schema version, record type, and deterministic record identifier.
+- `all_tool_results.manifest.json`: input/output checksums, source manifest,
+  dimensions, required fields, and conflict/missing-layer QC counts.
+- `comprehensive_evidence_manifest.json`: merged source paths, checksums, row
+  counts, precedence version, output checksum, and conflict summary.
 - `evidence_states.tsv`: normalized state/value/source for every evidence layer.
 - `ranked_peptides.evidence_consensus.tsv`: independent peptide ranking.
 - `ranked_events.evidence_consensus.tsv`: event aggregation based on each
@@ -225,7 +234,8 @@ claim that these thresholds are clinically validated.
 | Legacy score/priority | ranked peptides |
 | Experimental method | validation plan |
 
-Every row records `evidence_source_precedence_version`,
+Every row records `evidence_source_precedence_version`, a complete JSON
+`evidence_field_sources` map, `comprehensive_evidence_schema_version`,
 `evidence_conflict_fields`, and compact conflict details. Different non-empty
 values are written to `evidence_source_conflicts.tsv`; the final
 `evidence_conflicts.tsv` combines these source conflicts with derived-state

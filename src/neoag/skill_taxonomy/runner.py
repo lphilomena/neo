@@ -54,6 +54,7 @@ def run_skill(name: str, args: dict[str, Any], dry_run: bool = False) -> dict[st
     outdir = ensure_dir(args.get("outdir") or f"work/{name}")
     args = dict(args)
     args["outdir"] = str(outdir)
+    args["_skill_name"] = name
     if dry_run:
         result = {"status": "DRY_RUN", "skill": name, "category": spec.category, "handler": spec.handler, "required_inputs": spec.required_inputs, "outputs": spec.outputs, "risk_level": spec.risk_level, "approval_required": spec.approval_required, "arguments": args}
         write_json(outdir / "skill_result.json", result)

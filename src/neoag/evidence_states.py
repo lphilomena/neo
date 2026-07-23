@@ -86,8 +86,95 @@ def _result(
         "hard_fail": bool(hard_fail),
         "hard_code": hard_code,
         "conflict": bool(conflict),
+        "reason_code": hard_code or state,
         "reason": reason,
     }
+
+
+STATE_REASON_CODES: dict[str, dict[str, str]] = {
+    "event_authenticity": {
+        "EVENT_CONFIRMED": "EVENT_CONFIRMED_BY_PRIMARY_EVIDENCE",
+        "EVENT_STRONG": "EVENT_STRONG_SUPPORT",
+        "EVENT_PARTIAL": "EVENT_PARTIAL_SUPPORT",
+        "EVENT_SAMPLE_SPECIFIC": "EVENT_SAMPLE_OR_ASSAY_SPECIFIC",
+        "EVENT_CONFLICT": "EVENT_EVIDENCE_CONFLICT",
+        "EVENT_ARTIFACT_RISK": "EVENT_ARTIFACT_RISK",
+        "EVENT_UNASSESSED": "EVENT_AUTHENTICITY_UNASSESSED",
+    },
+    "rna_support": {
+        "RNA_CONFIRMED": "RNA_MUTANT_OR_JUNCTION_CONFIRMED",
+        "RNA_LOW_SUPPORT": "RNA_SUPPORT_BELOW_THRESHOLD",
+        "GENE_EXPRESSION_ONLY": "RNA_GENE_EXPRESSION_ONLY",
+        "RNA_NEGATIVE": "RNA_MUTANT_OR_JUNCTION_NOT_DETECTED",
+        "RNA_UNASSESSED": "RNA_SUPPORT_UNASSESSED",
+    },
+    "presentation_consensus": {
+        "PRESENTATION_CONSISTENT_STRONG": "PRESENTATION_CORE_TOOLS_CONCORDANT",
+        "PRESENTATION_MODERATE": "PRESENTATION_MODERATE_SUPPORT",
+        "PRESENTATION_DISCORDANT": "PRESENTATION_CORE_TOOLS_DISCORDANT",
+        "PRESENTATION_SINGLE_TOOL": "PRESENTATION_SINGLE_CORE_TOOL",
+        "PRESENTATION_WEAK": "PRESENTATION_CORE_TOOLS_WEAK",
+        "PRESENTATION_UNASSESSED": "PRESENTATION_CORE_TOOLS_UNASSESSED",
+    },
+    "mutant_specificity": {
+        "MT_SPECIFIC": "MUTANT_SPECIFICITY_MT_SUPPORTED",
+        "MARGINAL_MT_ADVANTAGE": "MUTANT_SPECIFICITY_MARGINAL_ADVANTAGE",
+        "MT_WT_SIMILAR": "MUTANT_SPECIFICITY_MT_WT_SIMILAR",
+        "WT_BETTER": "MUTANT_SPECIFICITY_WT_BETTER",
+        "NON_MUTANT_SEQUENCE": "MUTANT_SPECIFICITY_NON_MUTANT_SEQUENCE",
+        "UNASSESSED": "MUTANT_SPECIFICITY_UNASSESSED",
+    },
+    "clonality": {
+        "CLONAL": "CLONALITY_CLONAL_SUPPORTED",
+        "SUPPORTED": "CLONALITY_SUPPORTED",
+        "SUBCLONAL": "CLONALITY_SUBCLONAL",
+        "CONFLICT": "CLONALITY_EVIDENCE_CONFLICT",
+        "UNASSESSED": "CLONALITY_UNASSESSED",
+    },
+    "hla_appm": {
+        "HLA_APPM_RETAINED": "HLA_APPM_RETAINED",
+        "HLA_APPM_CAUTION": "HLA_APPM_CAUTION",
+        "HLA_LOH_UNASSESSED": "HLA_LOH_UNASSESSED",
+        "RESTRICTING_HLA_LOST": "HLA_RESTRICTING_ALLELE_LOST",
+        "MAJOR_APPM_DEFECT": "HLA_APPM_MAJOR_DEFECT",
+        "CONFLICT": "HLA_APPM_EVIDENCE_CONFLICT",
+    },
+    "safety": {
+        "SAFETY_PASS": "SAFETY_CORE_LAYERS_PASS",
+        "SAFETY_PARTIAL": "SAFETY_EVIDENCE_PARTIAL",
+        "SAFETY_REVIEW": "SAFETY_REVIEW_REQUIRED",
+        "SAFETY_HIGH_RISK": "SAFETY_HIGH_RISK",
+        "SAFETY_REJECT": "SAFETY_REJECTED",
+    },
+    "evidence_completeness": {
+        "COMPLETE": "EVIDENCE_COMPLETENESS_COMPLETE",
+        "PARTIAL": "EVIDENCE_COMPLETENESS_PARTIAL",
+        "LOW": "EVIDENCE_COMPLETENESS_LOW",
+    },
+}
+
+
+def _assign_reason_code(
+    domain: str,
+    result: dict[str, Any],
+    row: Mapping[str, Any],
+    track: str,
+) -> dict[str, Any]:
+    hard_code = str(result.get("hard_code") or "")
+    if hard_code:
+        result["reason_code"] = hard_code
+        return result
+    state = str(result.get("state") or "UNASSESSED")
+    code = STATE_REASON_CODES.get(domain, {}).get(state, f"{domain.upper()}_{state}")
+    if domain == "event_authenticity" and state == "EVENT_CONFIRMED":
+        code = "EVENT_JUNCTION_CONFIRMED" if track in {"FUSION", "SPLICE"} else "EVENT_CROSS_PLATFORM_CONFIRMED"
+    elif domain == "rna_support" and state == "RNA_CONFIRMED":
+        code = "RNA_JUNCTION_SUPPORTED" if track in {"FUSION", "SPLICE"} else "RNA_ALT_READS_SUPPORTED"
+    elif domain == "safety" and state == "SAFETY_PARTIAL":
+        missing = _text(row, "safety_missing_layers", "event_safety_missing_layers")
+        code = "SAFETY_REFERENCE_LAYER_MISSING" if missing else "SAFETY_EVIDENCE_PARTIAL"
+    result["reason_code"] = code
+    return result
 
 
 def event_track(row: Mapping[str, Any]) -> str:
@@ -313,7 +400,10 @@ def derive_safety_state(row: Mapping[str, Any], rules: Mapping[str, Any]) -> dic
         row, "safety_status", "safety_tier", "safety_evidence_completeness",
         "event_safety_status", "event_safety_tier", "event_safety_evidence_completeness",
     )
-    exact = str(row.get("reference_proteome_exact_match", "")).strip().lower() in {"true", "yes", "1"}
+    exact = any(
+        str(row.get(field, "")).strip().lower() in {"true", "yes", "1"}
+        for field in ("reference_proteome_exact_match", "event_reference_proteome_exact_match")
+    )
     if exact:
         return _result("SAFETY_REJECT", 0, "reference proteome exact match", hard_fail=True, hard_code="HARD_REFERENCE_PROTEOME_MATCH")
     normal_junction = _text(row, "normal_junction_assessment_status", "event_normal_junction_assessment_status")
@@ -323,10 +413,11 @@ def derive_safety_state(row: Mapping[str, Any], rules: Mapping[str, Any]) -> dic
         return _result("SAFETY_REJECT", 0, status, hard_fail=True, hard_code="HARD_SAFETY_REJECT")
     if not status:
         return _result("SAFETY_PARTIAL", 1, "safety evidence unavailable", assessed=False)
-    missing_layers = _text(row, "safety_missing_layers")
+    missing_layers = _text(row, "safety_missing_layers", "event_safety_missing_layers")
     reference_statuses = _text(
         row, "reference_proteome_status", "normal_ligandome_status",
-        "normal_junction_assessment_status",
+        "normal_junction_assessment_status", "event_reference_proteome_status",
+        "event_normal_ligandome_status", "event_normal_junction_assessment_status",
     )
     if missing_layers or any(token in reference_statuses for token in MISSING_TOKENS):
         return _result("SAFETY_PARTIAL", 1, f"missing safety layers={missing_layers or reference_statuses}")
@@ -402,4 +493,6 @@ def derive_all_states(row: Mapping[str, Any], rules: Mapping[str, Any]) -> dict[
     track = event_track(row)
     result = {name: function(row, rules) for name, function in DERIVERS.items()}
     result["evidence_completeness"] = derive_evidence_completeness(row, track, rules, result)
+    for domain, state in result.items():
+        _assign_reason_code(domain, state, row, track)
     return result

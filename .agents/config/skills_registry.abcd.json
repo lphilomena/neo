@@ -1,28 +1,76 @@
 {
-  "schema_version": "neoag-skill-taxonomy-v1",
   "categories": {
     "A": "入口适配型 Skills：把不同来源输入转换为 Project B 标准 raw_events/raw_peptides/evidence tables",
     "B": "公共证据分析型 Skills：对所有入口共用的 HLA、表达、CCF、APPM、安全和排序证据层进行标准化分析",
     "C": "审阅/报告/实验设计型 Skills：解释结果、生成报告、设计实验验证和患者沟通材料",
     "D": "工程治理/执行控制型 Skills：输入质控、环境健康检查、全流程编排、发布审计和受控执行"
   },
+  "schema_version": "neoag-skill-taxonomy-v1",
   "skills": [
     {
-      "name": "neoag-fusion",
+      "approval_required": false,
+      "boundaries": [
+        "Skill 不承担临床决策；不得判断患者是否适合治疗或推荐临床用药。",
+        "缺失证据只能标记为 missing/unassessed，不能解释为阴性结果。",
+        "高风险写入、HPC 提交、安装工具、下载参考库、删除或覆盖文件必须经过 human approval。",
+        "Skill 目录不包含患者 BAM/FASTQ/VCF、大型参考库、VEP cache、NetMHCpan license、LOHHLA reference 或大型 conda env。"
+      ],
       "category": "A",
       "category_label": "入口适配型 Skills：把不同来源输入转换为 Project B 标准 raw_events/raw_peptides/evidence tables",
-      "purpose": "Fusion caller 输出标准化",
-      "description": "Normalize EasyFuse/Arriba/STAR-Fusion/FusionCatcher fusion outputs into raw_events/raw_peptides and fusion evidence tables.",
-      "use_when": [
-        "用户提供 fusions.pass.csv 或其他 fusion caller 输出",
-        "需要生成 fusion junction 候选输入"
+      "description": "Parse a somatic VCF or VEP-annotated VCF into Project B raw_events/raw_peptides-compatible tables.",
+      "do_not_use_when": [
+        "输入是 fusion/splice/SV/peptide 表",
+        "需要直接生成综合排序，应调用 neoag-ranking"
       ],
+      "downstream_skills": [
+        "neoag-presentation",
+        "neoag-ranking"
+      ],
+      "external_tools": [],
+      "handler": "vcf",
+      "name": "neoag-vcf",
+      "optional_inputs": [
+        "sample_id",
+        "hla",
+        "expression_tsv"
+      ],
+      "outputs": [
+        "raw_events.tsv",
+        "raw_peptides.tsv",
+        "vcf_parse_qc.tsv",
+        "candidate_generation_plan.md"
+      ],
+      "purpose": "VCF/SNV/InDel 入口标准化",
+      "required_inputs": [
+        "vcf"
+      ],
+      "risk_level": "LOW",
+      "use_when": [
+        "用户提供 tumor-normal somatic VCF",
+        "需要把 SNV/InDel 输入转成 raw_events.tsv"
+      ]
+    },
+    {
+      "approval_required": false,
+      "boundaries": [
+        "Skill 不承担临床决策；不得判断患者是否适合治疗或推荐临床用药。",
+        "缺失证据只能标记为 missing/unassessed，不能解释为阴性结果。",
+        "高风险写入、HPC 提交、安装工具、下载参考库、删除或覆盖文件必须经过 human approval。",
+        "Skill 目录不包含患者 BAM/FASTQ/VCF、大型参考库、VEP cache、NetMHCpan license、LOHHLA reference 或大型 conda env。"
+      ],
+      "category": "A",
+      "category_label": "入口适配型 Skills：把不同来源输入转换为 Project B 标准 raw_events/raw_peptides/evidence tables",
+      "description": "Normalize EasyFuse/Arriba/STAR-Fusion/FusionCatcher fusion outputs into raw_events/raw_peptides and fusion evidence tables.",
       "do_not_use_when": [
         "fusion 结果尚未经过 read-through 复核时直接作为临床结论"
       ],
-      "required_inputs": [
-        "fusion"
+      "downstream_skills": [
+        "neoag-presentation",
+        "neoag-experiment-design"
       ],
+      "external_tools": [],
+      "handler": "fusion",
+      "name": "neoag-fusion",
       "optional_inputs": [
         "sample_id",
         "normal_readthrough_db"
@@ -34,77 +82,37 @@
         "fusion_evidence.tsv",
         "fusion_qc.tsv"
       ],
-      "risk_level": "LOW",
-      "approval_required": false,
-      "handler": "fusion",
-      "external_tools": [],
-      "downstream_skills": [
-        "neoag-presentation",
-        "neoag-experiment-design"
-      ],
-      "boundaries": [
-        "Skill 不承担临床决策；不得判断患者是否适合治疗或推荐临床用药。",
-        "缺失证据只能标记为 missing/unassessed，不能解释为阴性结果。",
-        "高风险写入、HPC 提交、安装工具、下载参考库、删除或覆盖文件必须经过 human approval。",
-        "Skill 目录不包含患者 BAM/FASTQ/VCF、大型参考库、VEP cache、NetMHCpan license、LOHHLA reference 或大型 conda env。"
-      ]
-    },
-    {
-      "name": "neoag-peptide-csv",
-      "category": "A",
-      "category_label": "入口适配型 Skills：把不同来源输入转换为 Project B 标准 raw_events/raw_peptides/evidence tables",
-      "purpose": "已有 peptide-HLA 表入口标准化",
-      "description": "Normalize an existing peptide-HLA table into raw_peptides and optional presentation_evidence tables.",
-      "use_when": [
-        "用户已有 peptide-HLA 候选表",
-        "需要将外部排序/预测表接入 Project B scoring"
-      ],
-      "do_not_use_when": [
-        "需要从 VCF/fusion/SV 生成候选时"
-      ],
+      "purpose": "Fusion caller 输出标准化",
       "required_inputs": [
-        "peptide_csv"
-      ],
-      "optional_inputs": [
-        "sample_id",
-        "event_annotation"
-      ],
-      "outputs": [
-        "raw_peptides.tsv",
-        "presentation_evidence.tsv",
-        "peptide_input_qc.tsv"
+        "fusion"
       ],
       "risk_level": "LOW",
+      "use_when": [
+        "用户提供 fusions.pass.csv 或其他 fusion caller 输出",
+        "需要生成 fusion junction 候选输入"
+      ]
+    },
+    {
       "approval_required": false,
-      "handler": "peptide_csv",
-      "external_tools": [],
-      "downstream_skills": [
-        "neoag-safety",
-        "neoag-ranking"
-      ],
       "boundaries": [
         "Skill 不承担临床决策；不得判断患者是否适合治疗或推荐临床用药。",
         "缺失证据只能标记为 missing/unassessed，不能解释为阴性结果。",
         "高风险写入、HPC 提交、安装工具、下载参考库、删除或覆盖文件必须经过 human approval。",
         "Skill 目录不包含患者 BAM/FASTQ/VCF、大型参考库、VEP cache、NetMHCpan license、LOHHLA reference 或大型 conda env。"
-      ]
-    },
-    {
-      "name": "neoag-splice",
+      ],
       "category": "A",
       "category_label": "入口适配型 Skills：把不同来源输入转换为 Project B 标准 raw_events/raw_peptides/evidence tables",
-      "purpose": "Splice/junction 输入标准化",
       "description": "Normalize RegTools/splice junction tables and optional variant VCF into splice-junction event and peptide candidate inputs.",
-      "use_when": [
-        "用户提供 RegTools splice junction TSV",
-        "需要构建 splice/exon junction 候选"
-      ],
       "do_not_use_when": [
         "仅有普通 SNV/InDel VCF 时，应调用 neoag-vcf"
       ],
-      "required_inputs": [
-        "junctions"
+      "downstream_skills": [
+        "neoag-rna-evidence",
+        "neoag-experiment-design"
       ],
+      "external_tools": [],
+      "handler": "splice",
+      "name": "neoag-splice",
       "optional_inputs": [
         "vcf",
         "sample_id"
@@ -115,81 +123,37 @@
         "raw_peptides.tsv",
         "splice_qc.tsv"
       ],
-      "risk_level": "LOW",
-      "approval_required": false,
-      "handler": "splice",
-      "external_tools": [],
-      "downstream_skills": [
-        "neoag-rna-evidence",
-        "neoag-experiment-design"
+      "purpose": "Splice/junction 输入标准化",
+      "required_inputs": [
+        "junctions"
       ],
+      "risk_level": "LOW",
+      "use_when": [
+        "用户提供 RegTools splice junction TSV",
+        "需要构建 splice/exon junction 候选"
+      ]
+    },
+    {
+      "approval_required": false,
       "boundaries": [
         "Skill 不承担临床决策；不得判断患者是否适合治疗或推荐临床用药。",
         "缺失证据只能标记为 missing/unassessed，不能解释为阴性结果。",
         "高风险写入、HPC 提交、安装工具、下载参考库、删除或覆盖文件必须经过 human approval。",
         "Skill 目录不包含患者 BAM/FASTQ/VCF、大型参考库、VEP cache、NetMHCpan license、LOHHLA reference 或大型 conda env。"
-      ]
-    },
-    {
-      "name": "neoag-sv-wes",
+      ],
       "category": "A",
       "category_label": "入口适配型 Skills：把不同来源输入转换为 Project B 标准 raw_events/raw_peptides/evidence tables",
-      "purpose": "WES/capture-limited SV 入口标准化",
-      "description": "Parse WES/capture-limited SV VCFs and enforce conservative confidence caps and capture-limited flags.",
-      "use_when": [
-        "用户提供 WES/capture-limited SV VCF + capture BED",
-        "需要保守解释外显子捕获 SV"
-      ],
+      "description": "Parse WGS SV VCFs (Manta/GRIDSS/SvABA/DELLY) into SV events requiring transcript/protein reconstruction.",
       "do_not_use_when": [
-        "输入为 WGS SV，应调用 neoag-sv-wgs"
+        "输入来自 WES/capture-limited SV，应调用 neoag-sv-wes"
       ],
-      "required_inputs": [
-        "sv_vcf",
-        "capture_bed"
-      ],
-      "optional_inputs": [
-        "gtf",
-        "reference_fasta",
-        "sample_id"
-      ],
-      "outputs": [
-        "sv_events.tsv",
-        "raw_events.tsv",
-        "raw_peptides.tsv",
-        "sv_wes_confidence.tsv"
-      ],
-      "risk_level": "LOW",
-      "approval_required": false,
-      "handler": "sv_wes",
-      "external_tools": [],
       "downstream_skills": [
         "neoag-presentation",
         "neoag-experiment-design"
       ],
-      "boundaries": [
-        "WES SV 是 capture-limited hypothesis，默认 final priority 不应直接升至 A/B high-confidence。",
-        "Skill 不承担临床决策；不得判断患者是否适合治疗或推荐临床用药。",
-        "缺失证据只能标记为 missing/unassessed，不能解释为阴性结果。",
-        "高风险写入、HPC 提交、安装工具、下载参考库、删除或覆盖文件必须经过 human approval。",
-        "Skill 目录不包含患者 BAM/FASTQ/VCF、大型参考库、VEP cache、NetMHCpan license、LOHHLA reference 或大型 conda env。"
-      ]
-    },
-    {
+      "external_tools": [],
+      "handler": "sv_wgs",
       "name": "neoag-sv-wgs",
-      "category": "A",
-      "category_label": "入口适配型 Skills：把不同来源输入转换为 Project B 标准 raw_events/raw_peptides/evidence tables",
-      "purpose": "WGS DNA SV 入口标准化",
-      "description": "Parse WGS SV VCFs (Manta/GRIDSS/SvABA/DELLY) into SV events requiring transcript/protein reconstruction.",
-      "use_when": [
-        "用户提供 WGS SV VCF",
-        "需要进入 DNA SV-derived neoantigen workflow"
-      ],
-      "do_not_use_when": [
-        "输入来自 WES/capture-limited SV，应调用 neoag-sv-wes"
-      ],
-      "required_inputs": [
-        "sv_vcf"
-      ],
       "optional_inputs": [
         "gtf",
         "reference_fasta",
@@ -202,192 +166,123 @@
         "raw_peptides.tsv",
         "sv_reconstruction_tasks.tsv"
       ],
+      "purpose": "WGS DNA SV 入口标准化",
+      "required_inputs": [
+        "sv_vcf"
+      ],
       "risk_level": "LOW",
+      "use_when": [
+        "用户提供 WGS SV VCF",
+        "需要进入 DNA SV-derived neoantigen workflow"
+      ]
+    },
+    {
       "approval_required": false,
-      "handler": "sv_wgs",
-      "external_tools": [],
+      "boundaries": [
+        "WES SV 是 capture-limited hypothesis，默认 final priority 不应直接升至 A/B high-confidence。",
+        "Skill 不承担临床决策；不得判断患者是否适合治疗或推荐临床用药。",
+        "缺失证据只能标记为 missing/unassessed，不能解释为阴性结果。",
+        "高风险写入、HPC 提交、安装工具、下载参考库、删除或覆盖文件必须经过 human approval。",
+        "Skill 目录不包含患者 BAM/FASTQ/VCF、大型参考库、VEP cache、NetMHCpan license、LOHHLA reference 或大型 conda env。"
+      ],
+      "category": "A",
+      "category_label": "入口适配型 Skills：把不同来源输入转换为 Project B 标准 raw_events/raw_peptides/evidence tables",
+      "description": "Parse WES/capture-limited SV VCFs and enforce conservative confidence caps and capture-limited flags.",
+      "do_not_use_when": [
+        "输入为 WGS SV，应调用 neoag-sv-wgs"
+      ],
       "downstream_skills": [
         "neoag-presentation",
         "neoag-experiment-design"
       ],
-      "boundaries": [
-        "Skill 不承担临床决策；不得判断患者是否适合治疗或推荐临床用药。",
-        "缺失证据只能标记为 missing/unassessed，不能解释为阴性结果。",
-        "高风险写入、HPC 提交、安装工具、下载参考库、删除或覆盖文件必须经过 human approval。",
-        "Skill 目录不包含患者 BAM/FASTQ/VCF、大型参考库、VEP cache、NetMHCpan license、LOHHLA reference 或大型 conda env。"
-      ]
-    },
-    {
-      "name": "neoag-vcf",
-      "category": "A",
-      "category_label": "入口适配型 Skills：把不同来源输入转换为 Project B 标准 raw_events/raw_peptides/evidence tables",
-      "purpose": "VCF/SNV/InDel 入口标准化",
-      "description": "Parse a somatic VCF or VEP-annotated VCF into Project B raw_events/raw_peptides-compatible tables.",
-      "use_when": [
-        "用户提供 tumor-normal somatic VCF",
-        "需要把 SNV/InDel 输入转成 raw_events.tsv"
-      ],
-      "do_not_use_when": [
-        "输入是 fusion/splice/SV/peptide 表",
-        "需要直接生成综合排序，应调用 neoag-ranking"
-      ],
-      "required_inputs": [
-        "vcf"
-      ],
+      "external_tools": [],
+      "handler": "sv_wes",
+      "name": "neoag-sv-wes",
       "optional_inputs": [
-        "sample_id",
-        "hla",
-        "expression_tsv"
+        "gtf",
+        "reference_fasta",
+        "sample_id"
       ],
       "outputs": [
+        "sv_events.tsv",
         "raw_events.tsv",
         "raw_peptides.tsv",
-        "vcf_parse_qc.tsv",
-        "candidate_generation_plan.md"
+        "sv_wes_confidence.tsv"
+      ],
+      "purpose": "WES/capture-limited SV 入口标准化",
+      "required_inputs": [
+        "sv_vcf",
+        "capture_bed"
       ],
       "risk_level": "LOW",
+      "use_when": [
+        "用户提供 WES/capture-limited SV VCF + capture BED",
+        "需要保守解释外显子捕获 SV"
+      ]
+    },
+    {
       "approval_required": false,
-      "handler": "vcf",
-      "external_tools": [],
+      "boundaries": [
+        "Skill 不承担临床决策；不得判断患者是否适合治疗或推荐临床用药。",
+        "缺失证据只能标记为 missing/unassessed，不能解释为阴性结果。",
+        "高风险写入、HPC 提交、安装工具、下载参考库、删除或覆盖文件必须经过 human approval。",
+        "Skill 目录不包含患者 BAM/FASTQ/VCF、大型参考库、VEP cache、NetMHCpan license、LOHHLA reference 或大型 conda env。"
+      ],
+      "category": "A",
+      "category_label": "入口适配型 Skills：把不同来源输入转换为 Project B 标准 raw_events/raw_peptides/evidence tables",
+      "description": "Normalize an existing peptide-HLA table into raw_peptides and optional presentation_evidence tables.",
+      "do_not_use_when": [
+        "需要从 VCF/fusion/SV 生成候选时"
+      ],
       "downstream_skills": [
-        "neoag-presentation",
+        "neoag-safety",
         "neoag-ranking"
       ],
-      "boundaries": [
-        "Skill 不承担临床决策；不得判断患者是否适合治疗或推荐临床用药。",
-        "缺失证据只能标记为 missing/unassessed，不能解释为阴性结果。",
-        "高风险写入、HPC 提交、安装工具、下载参考库、删除或覆盖文件必须经过 human approval。",
-        "Skill 目录不包含患者 BAM/FASTQ/VCF、大型参考库、VEP cache、NetMHCpan license、LOHHLA reference 或大型 conda env。"
-      ]
-    },
-    {
-      "name": "neoag-appm-escape",
-      "category": "B",
-      "category_label": "公共证据分析型 Skills：对所有入口共用的 HLA、表达、CCF、APPM、安全和排序证据层进行标准化分析",
-      "purpose": "APPM / HLA LOH / immune escape 证据层",
-      "description": "Aggregate APPM gene status, HLA LOH and immune escape flags into pathway-level and peptide-level modifiers.",
-      "use_when": [
-        "需要 APPM、HLA LOH、B2M/TAP/JAK/NLRC5/CIITA 风险评估"
-      ],
-      "do_not_use_when": [
-        "缺所有 APPM 输入时，只能输出 unassessed，不得输出 intact"
-      ],
-      "required_inputs": [
-        "gene_status_or_appm",
-        "peptides_optional"
-      ],
+      "external_tools": [],
+      "handler": "peptide_csv",
+      "name": "neoag-peptide-csv",
       "optional_inputs": [
-        "hla_loh",
-        "ranked_peptides"
+        "sample_id",
+        "event_annotation"
       ],
       "outputs": [
-        "appm_summary.tsv",
-        "appm_gene_status.tsv",
-        "appm_peptide_modifiers.tsv",
-        "immune_escape_summary.tsv",
-        "peptide_escape_flags.tsv"
+        "raw_peptides.tsv",
+        "presentation_evidence.tsv",
+        "peptide_input_qc.tsv"
       ],
-      "risk_level": "LOW",
-      "approval_required": false,
-      "handler": "appm_escape",
-      "external_tools": [],
-      "downstream_skills": [],
-      "boundaries": [
-        "Skill 不承担临床决策；不得判断患者是否适合治疗或推荐临床用药。",
-        "缺失证据只能标记为 missing/unassessed，不能解释为阴性结果。",
-        "高风险写入、HPC 提交、安装工具、下载参考库、删除或覆盖文件必须经过 human approval。",
-        "Skill 目录不包含患者 BAM/FASTQ/VCF、大型参考库、VEP cache、NetMHCpan license、LOHHLA reference 或大型 conda env。"
-      ]
-    },
-    {
-      "name": "neoag-ccf",
-      "category": "B",
-      "category_label": "公共证据分析型 Skills：对所有入口共用的 HLA、表达、CCF、APPM、安全和排序证据层进行标准化分析",
-      "purpose": "CCF/clonality 估计与 modifier 输出",
-      "description": "Estimate or normalize Cancer Cell Fraction and clonality status for events, with confidence flags.",
-      "use_when": [
-        "需要 CCF/clonality 分层",
-        "需要计算或解释 CCF modifier"
-      ],
-      "do_not_use_when": [
-        "RNA-only fusion 不应伪造 DNA CCF"
-      ],
+      "purpose": "已有 peptide-HLA 表入口标准化",
       "required_inputs": [
-        "event_table_or_ranked_peptides"
-      ],
-      "optional_inputs": [
-        "purity",
-        "cnv_segments",
-        "sample_id"
-      ],
-      "outputs": [
-        "ccf_lite.tsv",
-        "ccf_input_qc.tsv",
-        "ccf_modifier_summary.tsv"
+        "peptide_csv"
       ],
       "risk_level": "LOW",
-      "approval_required": false,
-      "handler": "ccf",
-      "external_tools": [],
-      "downstream_skills": [],
-      "boundaries": [
-        "Skill 不承担临床决策；不得判断患者是否适合治疗或推荐临床用药。",
-        "缺失证据只能标记为 missing/unassessed，不能解释为阴性结果。",
-        "高风险写入、HPC 提交、安装工具、下载参考库、删除或覆盖文件必须经过 human approval。",
-        "Skill 目录不包含患者 BAM/FASTQ/VCF、大型参考库、VEP cache、NetMHCpan license、LOHHLA reference 或大型 conda env。"
-      ]
-    },
-    {
-      "name": "neoag-expression",
-      "category": "B",
-      "category_label": "公共证据分析型 Skills：对所有入口共用的 HLA、表达、CCF、APPM、安全和排序证据层进行标准化分析",
-      "purpose": "gene expression/TPM 证据标准化",
-      "description": "Normalize WTS/gene expression TPM tables into expression_evidence.tsv with expressed/low/not_detected labels.",
       "use_when": [
-        "用户提供 TPM/gene expression 表",
-        "需要把表达证据接入 ranking"
-      ],
-      "do_not_use_when": [
-        "需要 RNA alt reads 或 junction reads，使用 neoag-rna-evidence"
-      ],
-      "required_inputs": [
-        "expression_tsv"
-      ],
-      "optional_inputs": [
-        "sample_id"
-      ],
-      "outputs": [
-        "expression_evidence.tsv",
-        "expression_qc.tsv"
-      ],
-      "risk_level": "LOW",
+        "用户已有 peptide-HLA 候选表",
+        "需要将外部排序/预测表接入 Project B scoring"
+      ]
+    },
+    {
       "approval_required": false,
-      "handler": "expression",
-      "external_tools": [],
-      "downstream_skills": [],
       "boundaries": [
         "Skill 不承担临床决策；不得判断患者是否适合治疗或推荐临床用药。",
         "缺失证据只能标记为 missing/unassessed，不能解释为阴性结果。",
         "高风险写入、HPC 提交、安装工具、下载参考库、删除或覆盖文件必须经过 human approval。",
         "Skill 目录不包含患者 BAM/FASTQ/VCF、大型参考库、VEP cache、NetMHCpan license、LOHHLA reference 或大型 conda env。"
-      ]
-    },
-    {
-      "name": "neoag-hla-typing-loh",
+      ],
       "category": "B",
       "category_label": "公共证据分析型 Skills：对所有入口共用的 HLA、表达、CCF、APPM、安全和排序证据层进行标准化分析",
-      "purpose": "HLA typing / HLA LOH 共识与 peptide-level HLA loss flags",
       "description": "Normalize HLA typing and HLA LOH outputs from OptiType, SpecHLA, HLA-LA/HD and LOHHLA into consensus tables.",
-      "use_when": [
-        "需要标准化 HLA 分型",
-        "需要判断 restricting HLA 是否 LOH"
-      ],
       "do_not_use_when": [
         "只需要解释已有 ranking 差异，不需要更新 HLA 状态"
       ],
-      "required_inputs": [
-        "hla"
+      "downstream_skills": [],
+      "external_tools": [
+        "OptiType",
+        "SpecHLA",
+        "LOHHLA",
+        "HLA-LA/HLA-HD optional"
       ],
+      "handler": "hla_typing_loh",
+      "name": "neoag-hla-typing-loh",
       "optional_inputs": [
         "hla_loh",
         "ranked_peptides",
@@ -400,39 +295,40 @@
         "restricting_hla_peptide_flags.tsv",
         "hla_review.md"
       ],
-      "risk_level": "LOW",
-      "approval_required": false,
-      "handler": "hla_typing_loh",
-      "external_tools": [
-        "OptiType",
-        "SpecHLA",
-        "LOHHLA",
-        "HLA-LA/HLA-HD optional"
+      "purpose": "HLA typing / HLA LOH 共识与 peptide-level HLA loss flags",
+      "required_inputs": [
+        "hla"
       ],
-      "downstream_skills": [],
+      "risk_level": "LOW",
+      "use_when": [
+        "需要标准化 HLA 分型",
+        "需要判断 restricting HLA 是否 LOH"
+      ]
+    },
+    {
+      "approval_required": false,
       "boundaries": [
         "Skill 不承担临床决策；不得判断患者是否适合治疗或推荐临床用药。",
         "缺失证据只能标记为 missing/unassessed，不能解释为阴性结果。",
         "高风险写入、HPC 提交、安装工具、下载参考库、删除或覆盖文件必须经过 human approval。",
         "Skill 目录不包含患者 BAM/FASTQ/VCF、大型参考库、VEP cache、NetMHCpan license、LOHHLA reference 或大型 conda env。"
-      ]
-    },
-    {
-      "name": "neoag-presentation",
+      ],
       "category": "B",
       "category_label": "公共证据分析型 Skills：对所有入口共用的 HLA、表达、CCF、APPM、安全和排序证据层进行标准化分析",
-      "purpose": "HLA binding / presentation 证据标准化",
       "description": "Normalize NetMHCpan/MHCflurry/PRIME/BigMHC/MixMHCpred predictions into presentation_evidence.tsv.",
-      "use_when": [
-        "已有 prediction 表需要标准化",
-        "raw_peptides 需要标记 presentation 计算计划"
-      ],
       "do_not_use_when": [
         "需要解释综合推荐排序，应调用 neoag-ranking-compare"
       ],
-      "required_inputs": [
-        "predictions_or_raw_peptides"
+      "downstream_skills": [],
+      "external_tools": [
+        "NetMHCpan",
+        "MHCflurry",
+        "PRIME",
+        "BigMHC",
+        "MixMHCpred"
       ],
+      "handler": "presentation",
+      "name": "neoag-presentation",
       "optional_inputs": [
         "hla",
         "sample_id"
@@ -442,80 +338,69 @@
         "presentation_summary.tsv",
         "presentation_qc.tsv"
       ],
-      "risk_level": "LOW",
-      "approval_required": false,
-      "handler": "presentation",
-      "external_tools": [
-        "NetMHCpan",
-        "MHCflurry",
-        "PRIME",
-        "BigMHC",
-        "MixMHCpred"
+      "purpose": "HLA binding / presentation 证据标准化",
+      "required_inputs": [
+        "predictions_or_raw_peptides"
       ],
-      "downstream_skills": [],
+      "risk_level": "LOW",
+      "use_when": [
+        "已有 prediction 表需要标准化",
+        "raw_peptides 需要标记 presentation 计算计划"
+      ]
+    },
+    {
+      "approval_required": false,
       "boundaries": [
         "Skill 不承担临床决策；不得判断患者是否适合治疗或推荐临床用药。",
         "缺失证据只能标记为 missing/unassessed，不能解释为阴性结果。",
         "高风险写入、HPC 提交、安装工具、下载参考库、删除或覆盖文件必须经过 human approval。",
         "Skill 目录不包含患者 BAM/FASTQ/VCF、大型参考库、VEP cache、NetMHCpan license、LOHHLA reference 或大型 conda env。"
-      ]
-    },
-    {
-      "name": "neoag-ranking",
+      ],
       "category": "B",
       "category_label": "公共证据分析型 Skills：对所有入口共用的 HLA、表达、CCF、APPM、安全和排序证据层进行标准化分析",
-      "purpose": "综合推荐排序生成",
-      "description": "Integrate presentation, expression, RNA evidence, CCF, APPM, escape, safety and event confidence into recommendation ranking.",
-      "use_when": [
-        "需要生成 final_priority 和 recommendation ranked peptides"
-      ],
+      "description": "Normalize WTS/gene expression TPM tables into expression_evidence.tsv with expressed/low/not_detected labels.",
       "do_not_use_when": [
-        "只需比较两个排序文件时，使用 neoag-ranking-compare"
+        "需要 RNA alt reads 或 junction reads，使用 neoag-rna-evidence"
       ],
-      "required_inputs": [
-        "raw_peptides",
-        "presentation"
-      ],
+      "downstream_skills": [],
+      "external_tools": [],
+      "handler": "expression",
+      "name": "neoag-expression",
       "optional_inputs": [
-        "expression",
-        "rna_evidence",
-        "ccf",
-        "appm",
-        "safety"
+        "sample_id"
       ],
       "outputs": [
-        "ranked_peptides.recommendation.tsv",
-        "ranked_peptides.netmhcpan42.tsv",
-        "ranked_events.tsv",
-        "validation_plan.tsv"
+        "expression_evidence.tsv",
+        "expression_qc.tsv"
+      ],
+      "purpose": "gene expression/TPM 证据标准化",
+      "required_inputs": [
+        "expression_tsv"
       ],
       "risk_level": "LOW",
+      "use_when": [
+        "用户提供 TPM/gene expression 表",
+        "需要把表达证据接入 ranking"
+      ]
+    },
+    {
       "approval_required": false,
-      "handler": "ranking",
-      "external_tools": [],
-      "downstream_skills": [],
       "boundaries": [
         "Skill 不承担临床决策；不得判断患者是否适合治疗或推荐临床用药。",
         "缺失证据只能标记为 missing/unassessed，不能解释为阴性结果。",
         "高风险写入、HPC 提交、安装工具、下载参考库、删除或覆盖文件必须经过 human approval。",
         "Skill 目录不包含患者 BAM/FASTQ/VCF、大型参考库、VEP cache、NetMHCpan license、LOHHLA reference 或大型 conda env。"
-      ]
-    },
-    {
-      "name": "neoag-rna-evidence",
+      ],
       "category": "B",
       "category_label": "公共证据分析型 Skills：对所有入口共用的 HLA、表达、CCF、APPM、安全和排序证据层进行标准化分析",
-      "purpose": "RNA alt / RNA VAF / junction reads 证据标准化",
       "description": "Normalize RNA allele, RNA VAF and fusion/splice junction evidence into event-level RNA support tables.",
-      "use_when": [
-        "用户提供 RNA alt reads、RNA VAF、fusion/splice junction reads"
-      ],
       "do_not_use_when": [
         "只有 gene TPM 时，使用 neoag-expression"
       ],
-      "required_inputs": [
-        "rna_tsv"
-      ],
+      "downstream_skills": [],
+      "external_tools": [],
+      "handler": "rna_evidence",
+      "name": "neoag-rna-evidence",
       "optional_inputs": [
         "sample_id"
       ],
@@ -524,33 +409,110 @@
         "rna_junction_evidence.tsv",
         "rna_evidence_qc.tsv"
       ],
+      "purpose": "RNA alt / RNA VAF / junction reads 证据标准化",
+      "required_inputs": [
+        "rna_tsv"
+      ],
       "risk_level": "LOW",
+      "use_when": [
+        "用户提供 RNA alt reads、RNA VAF、fusion/splice junction reads"
+      ]
+    },
+    {
       "approval_required": false,
-      "handler": "rna_evidence",
-      "external_tools": [],
-      "downstream_skills": [],
       "boundaries": [
         "Skill 不承担临床决策；不得判断患者是否适合治疗或推荐临床用药。",
         "缺失证据只能标记为 missing/unassessed，不能解释为阴性结果。",
         "高风险写入、HPC 提交、安装工具、下载参考库、删除或覆盖文件必须经过 human approval。",
         "Skill 目录不包含患者 BAM/FASTQ/VCF、大型参考库、VEP cache、NetMHCpan license、LOHHLA reference 或大型 conda env。"
+      ],
+      "category": "B",
+      "category_label": "公共证据分析型 Skills：对所有入口共用的 HLA、表达、CCF、APPM、安全和排序证据层进行标准化分析",
+      "description": "Estimate or normalize Cancer Cell Fraction and clonality status for events, with confidence flags.",
+      "do_not_use_when": [
+        "RNA-only fusion 不应伪造 DNA CCF"
+      ],
+      "downstream_skills": [],
+      "external_tools": [],
+      "handler": "ccf",
+      "name": "neoag-ccf",
+      "optional_inputs": [
+        "purity",
+        "cnv_segments",
+        "sample_id"
+      ],
+      "outputs": [
+        "ccf_lite.tsv",
+        "ccf_input_qc.tsv",
+        "ccf_modifier_summary.tsv"
+      ],
+      "purpose": "CCF/clonality 估计与 modifier 输出",
+      "required_inputs": [
+        "event_table_or_ranked_peptides"
+      ],
+      "risk_level": "LOW",
+      "use_when": [
+        "需要 CCF/clonality 分层",
+        "需要计算或解释 CCF modifier"
       ]
     },
     {
-      "name": "neoag-safety",
+      "approval_required": false,
+      "boundaries": [
+        "Skill 不承担临床决策；不得判断患者是否适合治疗或推荐临床用药。",
+        "缺失证据只能标记为 missing/unassessed，不能解释为阴性结果。",
+        "高风险写入、HPC 提交、安装工具、下载参考库、删除或覆盖文件必须经过 human approval。",
+        "Skill 目录不包含患者 BAM/FASTQ/VCF、大型参考库、VEP cache、NetMHCpan license、LOHHLA reference 或大型 conda env。"
+      ],
       "category": "B",
       "category_label": "公共证据分析型 Skills：对所有入口共用的 HLA、表达、CCF、APPM、安全和排序证据层进行标准化分析",
-      "purpose": "peptide safety gate",
-      "description": "Check normal proteome exact matches, WT peptide flags, anchor-only risks and normal junction/ligandome overlap.",
-      "use_when": [
-        "需要筛查正常蛋白组匹配、WT peptide、anchor-only、normal junction 风险"
+      "description": "Aggregate APPM gene status, HLA LOH and immune escape flags into pathway-level and peptide-level modifiers.",
+      "do_not_use_when": [
+        "缺所有 APPM 输入时，只能输出 unassessed，不得输出 intact"
       ],
+      "downstream_skills": [],
+      "external_tools": [],
+      "handler": "appm_escape",
+      "name": "neoag-appm-escape",
+      "optional_inputs": [
+        "hla_loh",
+        "ranked_peptides"
+      ],
+      "outputs": [
+        "appm_summary.tsv",
+        "appm_gene_status.tsv",
+        "appm_peptide_modifiers.tsv",
+        "immune_escape_summary.tsv",
+        "peptide_escape_flags.tsv"
+      ],
+      "purpose": "APPM / HLA LOH / immune escape 证据层",
+      "required_inputs": [
+        "gene_status_or_appm",
+        "peptides_optional"
+      ],
+      "risk_level": "LOW",
+      "use_when": [
+        "需要 APPM、HLA LOH、B2M/TAP/JAK/NLRC5/CIITA 风险评估"
+      ]
+    },
+    {
+      "approval_required": false,
+      "boundaries": [
+        "Skill 不承担临床决策；不得判断患者是否适合治疗或推荐临床用药。",
+        "缺失证据只能标记为 missing/unassessed，不能解释为阴性结果。",
+        "高风险写入、HPC 提交、安装工具、下载参考库、删除或覆盖文件必须经过 human approval。",
+        "Skill 目录不包含患者 BAM/FASTQ/VCF、大型参考库、VEP cache、NetMHCpan license、LOHHLA reference 或大型 conda env。"
+      ],
+      "category": "B",
+      "category_label": "公共证据分析型 Skills：对所有入口共用的 HLA、表达、CCF、APPM、安全和排序证据层进行标准化分析",
+      "description": "Check normal proteome exact matches, WT peptide flags, anchor-only risks and normal junction/ligandome overlap.",
       "do_not_use_when": [
         "不能替代湿实验安全性评估"
       ],
-      "required_inputs": [
-        "raw_peptides_or_ranked_peptides"
-      ],
+      "downstream_skills": [],
+      "external_tools": [],
+      "handler": "safety",
+      "name": "neoag-safety",
       "optional_inputs": [
         "normal_proteome",
         "normal_junctions",
@@ -561,68 +523,158 @@
         "event_safety.tsv",
         "safety_review.tsv"
       ],
+      "purpose": "peptide safety gate",
+      "required_inputs": [
+        "raw_peptides_or_ranked_peptides"
+      ],
       "risk_level": "LOW",
+      "use_when": [
+        "需要筛查正常蛋白组匹配、WT peptide、anchor-only、normal junction 风险"
+      ]
+    },
+    {
       "approval_required": false,
-      "handler": "safety",
-      "external_tools": [],
-      "downstream_skills": [],
       "boundaries": [
+        "Skill 只调用 neoag evidence-rank；正式排序算法只由 src/neoag/evidence_consensus.py 维护。",
         "Skill 不承担临床决策；不得判断患者是否适合治疗或推荐临床用药。",
         "缺失证据只能标记为 missing/unassessed，不能解释为阴性结果。",
         "高风险写入、HPC 提交、安装工具、下载参考库、删除或覆盖文件必须经过 human approval。",
         "Skill 目录不包含患者 BAM/FASTQ/VCF、大型参考库、VEP cache、NetMHCpan license、LOHHLA reference 或大型 conda env。"
-      ]
-    },
-    {
-      "name": "neoag-concept-explainer",
-      "category": "C",
-      "category_label": "审阅/报告/实验设计型 Skills：解释结果、生成报告、设计实验验证和患者沟通材料",
-      "purpose": "术语解释与报告注释",
-      "description": "Generate bounded explanations for APPM, CCF, HLA LOH, NetMHCpan, minigene, ELISpot and validation concepts.",
-      "use_when": [
-        "用户询问术语解释",
-        "报告需要插入概念框"
       ],
+      "category": "B",
+      "category_label": "公共证据分析型 Skills：对所有入口共用的 HLA、表达、CCF、APPM、安全和排序证据层进行标准化分析",
+      "description": "Thin SOP wrapper around the production neoag evidence-rank CLI; it does not implement ranking logic.",
       "do_not_use_when": [
-        "不要替代具体结果分析"
+        "只需比较两个排序文件时，使用 neoag-ranking-compare"
       ],
-      "required_inputs": [
-        "concept"
-      ],
+      "downstream_skills": [],
+      "external_tools": [],
+      "handler": "ranking",
+      "name": "neoag-ranking",
       "optional_inputs": [
-        "audience"
+        "rules",
+        "provenance",
+        "track"
       ],
       "outputs": [
-        "concept_explanation.md"
+        "all_tool_results.tsv",
+        "ranked_peptides.weighted_baseline.tsv",
+        "ranked_peptides.evidence_consensus.tsv",
+        "ranked_events.evidence_consensus.tsv",
+        "ranking_compare_weighted_vs_consensus.md"
+      ],
+      "purpose": "生产级加权基线与证据共识并行排序",
+      "required_inputs": [
+        "comprehensive_evidence",
+        "weighted_baseline"
       ],
       "risk_level": "LOW",
+      "use_when": [
+        "已有 comprehensive evidence 和 weighted baseline，需要生成并行 evidence-consensus 排序"
+      ]
+    },
+    {
       "approval_required": false,
-      "handler": "concept_explainer",
-      "external_tools": [],
+      "boundaries": [
+        "Skill = SOP/包装层；不得在 Skill 中复制 R1-R4、Pareto、hard fail 或 priority-cap 算法。",
+        "Skill 不承担临床决策；不得判断患者是否适合治疗或推荐临床用药。",
+        "缺失证据只能标记为 missing/unassessed，不能解释为阴性结果。",
+        "高风险写入、HPC 提交、安装工具、下载参考库、删除或覆盖文件必须经过 human approval。",
+        "Skill 目录不包含患者 BAM/FASTQ/VCF、大型参考库、VEP cache、NetMHCpan license、LOHHLA reference 或大型 conda env。"
+      ],
+      "category": "B",
+      "category_label": "公共证据分析型 Skills：对所有入口共用的 HLA、表达、CCF、APPM、安全和排序证据层进行标准化分析",
+      "description": "Public macro Skill2 alias that invokes neoag evidence-rank through the shared production CLI wrapper.",
+      "do_not_use_when": [
+        "尚未生成 comprehensive evidence 或 weighted baseline"
+      ],
       "downstream_skills": [],
+      "external_tools": [],
+      "handler": "ranking",
+      "name": "open-neo-run",
+      "optional_inputs": [
+        "rules",
+        "provenance",
+        "track"
+      ],
+      "outputs": [
+        "all_tool_results.tsv",
+        "ranked_peptides.weighted_baseline.tsv",
+        "ranked_peptides.evidence_consensus.tsv",
+        "ranked_events.evidence_consensus.tsv",
+        "ranking_compare_weighted_vs_consensus.md"
+      ],
+      "purpose": "对外宏 Skill2：执行生产级并行证据排序",
+      "required_inputs": [
+        "comprehensive_evidence",
+        "weighted_baseline"
+      ],
+      "risk_level": "LOW",
+      "use_when": [
+        "外部 Agent 需要用统一 Skill2 入口生成加权基线与证据共识并行结果"
+      ]
+    },
+    {
+      "approval_required": false,
       "boundaries": [
         "Skill 不承担临床决策；不得判断患者是否适合治疗或推荐临床用药。",
         "缺失证据只能标记为 missing/unassessed，不能解释为阴性结果。",
         "高风险写入、HPC 提交、安装工具、下载参考库、删除或覆盖文件必须经过 human approval。",
         "Skill 目录不包含患者 BAM/FASTQ/VCF、大型参考库、VEP cache、NetMHCpan license、LOHHLA reference 或大型 conda env。"
+      ],
+      "category": "C",
+      "category_label": "审阅/报告/实验设计型 Skills：解释结果、生成报告、设计实验验证和患者沟通材料",
+      "description": "Compare arbitrary left/right rankings using overlap, Spearman correlation, rank shifts, hard-fail audit, event/HLA composition and evidence-quality rates.",
+      "do_not_use_when": [
+        "需要生成 ranking 时，使用 open-neo-run 或 neoag-ranking"
+      ],
+      "downstream_skills": [],
+      "external_tools": [],
+      "handler": "ranking_compare",
+      "name": "neoag-ranking-compare",
+      "optional_inputs": [
+        "left_name",
+        "right_name"
+      ],
+      "outputs": [
+        "ranking_compare_report.md",
+        "topn_overlap.tsv",
+        "candidate_rank_changes.tsv",
+        "high_rank_hard_fail.tsv",
+        "top_composition.tsv",
+        "evidence_qc_summary.tsv",
+        "manual_review_candidates.tsv",
+        "ranking_comparison_summary.json"
+      ],
+      "purpose": "任意两个候选排序的通用比较与审计",
+      "required_inputs": [
+        "left",
+        "right"
+      ],
+      "risk_level": "LOW",
+      "use_when": [
+        "需要比较 weighted baseline 与 evidence consensus",
+        "需要比较任意两个 peptide ranking"
       ]
     },
     {
-      "name": "neoag-experiment-design",
+      "approval_required": false,
+      "boundaries": [
+        "Skill 不承担临床决策；不得判断患者是否适合治疗或推荐临床用药。",
+        "缺失证据只能标记为 missing/unassessed，不能解释为阴性结果。",
+        "高风险写入、HPC 提交、安装工具、下载参考库、删除或覆盖文件必须经过 human approval。",
+        "Skill 目录不包含患者 BAM/FASTQ/VCF、大型参考库、VEP cache、NetMHCpan license、LOHHLA reference 或大型 conda env。"
+      ],
       "category": "C",
       "category_label": "审阅/报告/实验设计型 Skills：解释结果、生成报告、设计实验验证和患者沟通材料",
-      "purpose": "候选实验验证设计",
       "description": "Assign event-deduplicated representatives to short peptide, WT control, long peptide, minigene and targeted RNA validation routes.",
-      "use_when": [
-        "需要第一批 10–20 个实验候选",
-        "需要区分 short peptide / long peptide / minigene / targeted RNA"
-      ],
       "do_not_use_when": [
         "不要把设计建议写成治疗处方"
       ],
-      "required_inputs": [
-        "ranked_events_or_ranked_peptides"
-      ],
+      "downstream_skills": [],
+      "external_tools": [],
+      "handler": "experiment_design",
+      "name": "neoag-experiment-design",
       "optional_inputs": [
         "ranked_events",
         "ranked_peptides",
@@ -636,34 +688,34 @@
         "minigene_design.tsv",
         "targeted_rna_validation_plan.md"
       ],
+      "purpose": "候选实验验证设计",
+      "required_inputs": [
+        "ranked_events_or_ranked_peptides"
+      ],
       "risk_level": "LOW",
+      "use_when": [
+        "需要第一批 10–20 个实验候选",
+        "需要区分 short peptide / long peptide / minigene / targeted RNA"
+      ]
+    },
+    {
       "approval_required": false,
-      "handler": "experiment_design",
-      "external_tools": [],
-      "downstream_skills": [],
       "boundaries": [
         "Skill 不承担临床决策；不得判断患者是否适合治疗或推荐临床用药。",
         "缺失证据只能标记为 missing/unassessed，不能解释为阴性结果。",
         "高风险写入、HPC 提交、安装工具、下载参考库、删除或覆盖文件必须经过 human approval。",
         "Skill 目录不包含患者 BAM/FASTQ/VCF、大型参考库、VEP cache、NetMHCpan license、LOHHLA reference 或大型 conda env。"
-      ]
-    },
-    {
-      "name": "neoag-patient-report",
+      ],
       "category": "C",
       "category_label": "审阅/报告/实验设计型 Skills：解释结果、生成报告、设计实验验证和患者沟通材料",
-      "purpose": "患者沟通版报告",
       "description": "Generate a patient-facing markdown/html/docx draft with research boundary statements.",
-      "use_when": [
-        "需要更新患者沟通版报告",
-        "需要解释 A/B/C/D、CCF、APPM、HLA LOH"
-      ],
       "do_not_use_when": [
         "不要生成临床处方或疗效承诺"
       ],
-      "required_inputs": [
-        "ranked_peptides_or_summary"
-      ],
+      "downstream_skills": [],
+      "external_tools": [],
+      "handler": "patient_report",
+      "name": "neoag-patient-report",
       "optional_inputs": [
         "evidence_report",
         "ranking_compare",
@@ -675,68 +727,34 @@
         "patient_report.html",
         "patient_report.docx"
       ],
-      "risk_level": "MEDIUM",
-      "approval_required": false,
-      "handler": "patient_report",
-      "external_tools": [],
-      "downstream_skills": [],
-      "boundaries": [
-        "Skill 不承担临床决策；不得判断患者是否适合治疗或推荐临床用药。",
-        "缺失证据只能标记为 missing/unassessed，不能解释为阴性结果。",
-        "高风险写入、HPC 提交、安装工具、下载参考库、删除或覆盖文件必须经过 human approval。",
-        "Skill 目录不包含患者 BAM/FASTQ/VCF、大型参考库、VEP cache、NetMHCpan license、LOHHLA reference 或大型 conda env。"
-      ]
-    },
-    {
-      "name": "neoag-ranking-compare",
-      "category": "C",
-      "category_label": "审阅/报告/实验设计型 Skills：解释结果、生成报告、设计实验验证和患者沟通材料",
-      "purpose": "NetMHCpan42 与综合推荐排序比较",
-      "description": "Compute overlap, rank shifts and interpretation between NetMHCpan42 and recommendation ranking tables.",
-      "use_when": [
-        "用户问两个排序文件差异",
-        "需要解释 NetMHCpan42 top fusion 为什么被综合降权"
-      ],
-      "do_not_use_when": [
-        "需要生成 ranking 时，使用 neoag-ranking"
-      ],
+      "purpose": "患者沟通版报告",
       "required_inputs": [
-        "recommendation",
-        "netmhcpan42"
+        "ranked_peptides_or_summary"
       ],
-      "optional_inputs": [],
-      "outputs": [
-        "ranking_compare_report.md",
-        "topn_overlap.tsv",
-        "rank_shift.tsv"
-      ],
-      "risk_level": "LOW",
+      "risk_level": "MEDIUM",
+      "use_when": [
+        "需要更新患者沟通版报告",
+        "需要解释 A/B/C/D、CCF、APPM、HLA LOH"
+      ]
+    },
+    {
       "approval_required": false,
-      "handler": "ranking_compare",
-      "external_tools": [],
-      "downstream_skills": [],
       "boundaries": [
         "Skill 不承担临床决策；不得判断患者是否适合治疗或推荐临床用药。",
         "缺失证据只能标记为 missing/unassessed，不能解释为阴性结果。",
         "高风险写入、HPC 提交、安装工具、下载参考库、删除或覆盖文件必须经过 human approval。",
         "Skill 目录不包含患者 BAM/FASTQ/VCF、大型参考库、VEP cache、NetMHCpan license、LOHHLA reference 或大型 conda env。"
-      ]
-    },
-    {
-      "name": "neoag-technical-report",
+      ],
       "category": "C",
       "category_label": "审阅/报告/实验设计型 Skills：解释结果、生成报告、设计实验验证和患者沟通材料",
-      "purpose": "技术审阅报告",
       "description": "Generate a technical report preserving tool versions, evidence completeness, fields, warnings and provenance.",
-      "use_when": [
-        "需要医生/生信团队审阅的技术报告"
-      ],
       "do_not_use_when": [
         "患者直接沟通应使用 neoag-patient-report"
       ],
-      "required_inputs": [
-        "result_dir_or_summary"
-      ],
+      "downstream_skills": [],
+      "external_tools": [],
+      "handler": "technical_report",
+      "name": "neoag-technical-report",
       "optional_inputs": [
         "doctor_report",
         "pipeline_manifest"
@@ -745,34 +763,101 @@
         "technical_report.md",
         "technical_report.html"
       ],
+      "purpose": "技术审阅报告",
+      "required_inputs": [
+        "result_dir_or_summary"
+      ],
       "risk_level": "LOW",
+      "use_when": [
+        "需要医生/生信团队审阅的技术报告"
+      ]
+    },
+    {
       "approval_required": false,
-      "handler": "technical_report",
-      "external_tools": [],
-      "downstream_skills": [],
       "boundaries": [
         "Skill 不承担临床决策；不得判断患者是否适合治疗或推荐临床用药。",
         "缺失证据只能标记为 missing/unassessed，不能解释为阴性结果。",
         "高风险写入、HPC 提交、安装工具、下载参考库、删除或覆盖文件必须经过 human approval。",
         "Skill 目录不包含患者 BAM/FASTQ/VCF、大型参考库、VEP cache、NetMHCpan license、LOHHLA reference 或大型 conda env。"
+      ],
+      "category": "C",
+      "category_label": "审阅/报告/实验设计型 Skills：解释结果、生成报告、设计实验验证和患者沟通材料",
+      "description": "Generate bounded explanations for APPM, CCF, HLA LOH, NetMHCpan, minigene, ELISpot and validation concepts.",
+      "do_not_use_when": [
+        "不要替代具体结果分析"
+      ],
+      "downstream_skills": [],
+      "external_tools": [],
+      "handler": "concept_explainer",
+      "name": "neoag-concept-explainer",
+      "optional_inputs": [
+        "audience"
+      ],
+      "outputs": [
+        "concept_explanation.md"
+      ],
+      "purpose": "术语解释与报告注释",
+      "required_inputs": [
+        "concept"
+      ],
+      "risk_level": "LOW",
+      "use_when": [
+        "用户询问术语解释",
+        "报告需要插入概念框"
       ]
     },
     {
-      "name": "neoag-doctor",
+      "approval_required": false,
+      "boundaries": [
+        "Skill 不承担临床决策；不得判断患者是否适合治疗或推荐临床用药。",
+        "缺失证据只能标记为 missing/unassessed，不能解释为阴性结果。",
+        "高风险写入、HPC 提交、安装工具、下载参考库、删除或覆盖文件必须经过 human approval。",
+        "Skill 目录不包含患者 BAM/FASTQ/VCF、大型参考库、VEP cache、NetMHCpan license、LOHHLA reference 或大型 conda env。"
+      ],
       "category": "D",
       "category_label": "工程治理/执行控制型 Skills：输入质控、环境健康检查、全流程编排、发布审计和受控执行",
-      "purpose": "只读环境健康检查",
-      "description": "Run controlled-execution read-only health check for tools, references and release boundaries.",
-      "use_when": [
-        "部署/HPC/新机器验证",
-        "用户问工具和参考库是否可用"
+      "description": "Inspect manifests/result directories and recommend workflow while listing missing inputs.",
+      "do_not_use_when": [
+        "不能用 input-qc 的缺失信息直接做生物学阴性结论"
       ],
+      "downstream_skills": [],
+      "external_tools": [],
+      "handler": "input_qc",
+      "name": "neoag-input-qc",
+      "optional_inputs": [],
+      "outputs": [
+        "input_status.json",
+        "input_qc_report.tsv",
+        "missing_inputs.tsv"
+      ],
+      "purpose": "输入状态检查与 workflow 推荐",
+      "required_inputs": [
+        "manifest_or_result_dir"
+      ],
+      "risk_level": "LOW",
+      "use_when": [
+        "任何任务的第一步",
+        "用户问能不能跑、缺什么输入"
+      ]
+    },
+    {
+      "approval_required": false,
+      "boundaries": [
+        "Skill 不承担临床决策；不得判断患者是否适合治疗或推荐临床用药。",
+        "缺失证据只能标记为 missing/unassessed，不能解释为阴性结果。",
+        "高风险写入、HPC 提交、安装工具、下载参考库、删除或覆盖文件必须经过 human approval。",
+        "Skill 目录不包含患者 BAM/FASTQ/VCF、大型参考库、VEP cache、NetMHCpan license、LOHHLA reference 或大型 conda env。"
+      ],
+      "category": "D",
+      "category_label": "工程治理/执行控制型 Skills：输入质控、环境健康检查、全流程编排、发布审计和受控执行",
+      "description": "Run controlled-execution read-only health check for tools, references and release boundaries.",
       "do_not_use_when": [
         "不要用 doctor 安装或修改工具"
       ],
-      "required_inputs": [
-        "project_root"
-      ],
+      "downstream_skills": [],
+      "external_tools": [],
+      "handler": "doctor",
+      "name": "neoag-doctor",
       "optional_inputs": [
         "tools_manifest",
         "reference_manifest"
@@ -782,133 +867,103 @@
         "doctor_summary.md",
         "blocking_issues.tsv"
       ],
-      "risk_level": "LOW",
-      "approval_required": false,
-      "handler": "doctor",
-      "external_tools": [],
-      "downstream_skills": [],
-      "boundaries": [
-        "Skill 不承担临床决策；不得判断患者是否适合治疗或推荐临床用药。",
-        "缺失证据只能标记为 missing/unassessed，不能解释为阴性结果。",
-        "高风险写入、HPC 提交、安装工具、下载参考库、删除或覆盖文件必须经过 human approval。",
-        "Skill 目录不包含患者 BAM/FASTQ/VCF、大型参考库、VEP cache、NetMHCpan license、LOHHLA reference 或大型 conda env。"
-      ]
-    },
-    {
-      "name": "neoag-gateway-submit",
-      "category": "D",
-      "category_label": "工程治理/执行控制型 Skills：输入质控、环境健康检查、全流程编排、发布审计和受控执行",
-      "purpose": "Gateway 受控提交",
-      "description": "Submit low/medium/high-risk skill or pipeline requests to NeoAg Gateway with approval controls.",
-      "use_when": [
-        "Agent 需要通过 Gateway 受控执行任务"
-      ],
-      "do_not_use_when": [
-        "不要直接执行 shell 或绕过 approval"
-      ],
+      "purpose": "只读环境健康检查",
       "required_inputs": [
-        "gateway_url",
-        "task"
-      ],
-      "optional_inputs": [],
-      "outputs": [
-        "gateway_job.json",
-        "gateway_submission.md"
-      ],
-      "risk_level": "HIGH",
-      "approval_required": true,
-      "handler": "gateway_submit",
-      "external_tools": [],
-      "downstream_skills": [],
-      "boundaries": [
-        "Skill 不承担临床决策；不得判断患者是否适合治疗或推荐临床用药。",
-        "缺失证据只能标记为 missing/unassessed，不能解释为阴性结果。",
-        "高风险写入、HPC 提交、安装工具、下载参考库、删除或覆盖文件必须经过 human approval。",
-        "Skill 目录不包含患者 BAM/FASTQ/VCF、大型参考库、VEP cache、NetMHCpan license、LOHHLA reference 或大型 conda env。"
-      ]
-    },
-    {
-      "name": "neoag-hpc-runner",
-      "category": "D",
-      "category_label": "工程治理/执行控制型 Skills：输入质控、环境健康检查、全流程编排、发布审计和受控执行",
-      "purpose": "HPC dry-run/job wrapper",
-      "description": "Create Slurm/SGE/PBS job manifests and submit only after explicit approval.",
-      "use_when": [
-        "需要在 HPC 上运行 pipeline-full 或重型工具"
-      ],
-      "do_not_use_when": [
-        "默认不得直接提交，应先 dry-run"
-      ],
-      "required_inputs": [
-        "job_manifest"
-      ],
-      "optional_inputs": [],
-      "outputs": [
-        "hpc_dry_run.sh",
-        "hpc_job_manifest.json",
-        "hpc_submission.md"
-      ],
-      "risk_level": "HIGH",
-      "approval_required": true,
-      "handler": "hpc_runner",
-      "external_tools": [],
-      "downstream_skills": [],
-      "boundaries": [
-        "Skill 不承担临床决策；不得判断患者是否适合治疗或推荐临床用药。",
-        "缺失证据只能标记为 missing/unassessed，不能解释为阴性结果。",
-        "高风险写入、HPC 提交、安装工具、下载参考库、删除或覆盖文件必须经过 human approval。",
-        "Skill 目录不包含患者 BAM/FASTQ/VCF、大型参考库、VEP cache、NetMHCpan license、LOHHLA reference 或大型 conda env。"
-      ]
-    },
-    {
-      "name": "neoag-input-qc",
-      "category": "D",
-      "category_label": "工程治理/执行控制型 Skills：输入质控、环境健康检查、全流程编排、发布审计和受控执行",
-      "purpose": "输入状态检查与 workflow 推荐",
-      "description": "Inspect manifests/result directories and recommend workflow while listing missing inputs.",
-      "use_when": [
-        "任何任务的第一步",
-        "用户问能不能跑、缺什么输入"
-      ],
-      "do_not_use_when": [
-        "不能用 input-qc 的缺失信息直接做生物学阴性结论"
-      ],
-      "required_inputs": [
-        "manifest_or_result_dir"
-      ],
-      "optional_inputs": [],
-      "outputs": [
-        "input_status.json",
-        "input_qc_report.tsv",
-        "missing_inputs.tsv"
+        "project_root"
       ],
       "risk_level": "LOW",
+      "use_when": [
+        "部署/HPC/新机器验证",
+        "用户问工具和参考库是否可用"
+      ]
+    },
+    {
       "approval_required": false,
-      "handler": "input_qc",
-      "external_tools": [],
-      "downstream_skills": [],
       "boundaries": [
         "Skill 不承担临床决策；不得判断患者是否适合治疗或推荐临床用药。",
         "缺失证据只能标记为 missing/unassessed，不能解释为阴性结果。",
         "高风险写入、HPC 提交、安装工具、下载参考库、删除或覆盖文件必须经过 human approval。",
         "Skill 目录不包含患者 BAM/FASTQ/VCF、大型参考库、VEP cache、NetMHCpan license、LOHHLA reference 或大型 conda env。"
+      ],
+      "category": "D",
+      "category_label": "工程治理/执行控制型 Skills：输入质控、环境健康检查、全流程编排、发布审计和受控执行",
+      "description": "Check external tool entrypoints, models, caches and references; stronger than simple PATH check.",
+      "do_not_use_when": [
+        "不要将工具 missing 解释为生物学阴性"
+      ],
+      "downstream_skills": [],
+      "external_tools": [],
+      "handler": "tool_reference_qc",
+      "name": "neoag-tool-reference-qc",
+      "optional_inputs": [
+        "tools_manifest",
+        "reference_manifest"
+      ],
+      "outputs": [
+        "tool_qc_report.tsv",
+        "reference_qc_report.tsv",
+        "tool_smoke_report.md"
+      ],
+      "purpose": "工具/参考库检查",
+      "required_inputs": [
+        "project_root"
+      ],
+      "risk_level": "LOW",
+      "use_when": [
+        "需要检查 VEP/NetMHCpan/MHCflurry/LOHHLA/FACETS 等"
       ]
     },
     {
-      "name": "neoag-pipeline-full",
+      "approval_required": false,
+      "boundaries": [
+        "Skill 不承担临床决策；不得判断患者是否适合治疗或推荐临床用药。",
+        "缺失证据只能标记为 missing/unassessed，不能解释为阴性结果。",
+        "高风险写入、HPC 提交、安装工具、下载参考库、删除或覆盖文件必须经过 human approval。",
+        "Skill 目录不包含患者 BAM/FASTQ/VCF、大型参考库、VEP cache、NetMHCpan license、LOHHLA reference 或大型 conda env。"
+      ],
       "category": "D",
       "category_label": "工程治理/执行控制型 Skills：输入质控、环境健康检查、全流程编排、发布审计和受控执行",
-      "purpose": "manifest-driven full pipeline runner",
+      "description": "Run or plan Project B run-demo, pytest and optional Nextflow smoke tests.",
+      "do_not_use_when": [
+        "不要在没有确认的生产目录覆盖结果"
+      ],
+      "downstream_skills": [],
+      "external_tools": [],
+      "handler": "run_demo_smoke",
+      "name": "neoag-run-demo-and-smoke",
+      "optional_inputs": [],
+      "outputs": [
+        "smoke_test_report.md",
+        "demo_output_manifest.tsv"
+      ],
+      "purpose": "demo/pytest/Nextflow smoke",
+      "required_inputs": [
+        "project_root"
+      ],
+      "risk_level": "MEDIUM",
+      "use_when": [
+        "release 验收",
+        "新环境最小可运行性测试"
+      ]
+    },
+    {
+      "approval_required": true,
+      "boundaries": [
+        "Skill 不承担临床决策；不得判断患者是否适合治疗或推荐临床用药。",
+        "缺失证据只能标记为 missing/unassessed，不能解释为阴性结果。",
+        "高风险写入、HPC 提交、安装工具、下载参考库、删除或覆盖文件必须经过 human approval。",
+        "Skill 目录不包含患者 BAM/FASTQ/VCF、大型参考库、VEP cache、NetMHCpan license、LOHHLA reference 或大型 conda env。"
+      ],
+      "category": "D",
+      "category_label": "工程治理/执行控制型 Skills：输入质控、环境健康检查、全流程编排、发布审计和受控执行",
       "description": "controlled-execution explicit pipeline-full DAG planner/executor with dry-run default.",
-      "use_when": [
-        "需要从 manifest 到报告的端到端规划或执行"
-      ],
       "do_not_use_when": [
         "不应绕过 Doctor 或 approval 直接执行重型任务"
       ],
-      "required_inputs": [
-        "sample_manifest"
-      ],
+      "downstream_skills": [],
+      "external_tools": [],
+      "handler": "pipeline_full",
+      "name": "neoag-pipeline-full",
       "optional_inputs": [
         "tools_manifest",
         "reference_manifest"
@@ -918,69 +973,110 @@
         "pipeline_status.tsv",
         "run_manifest.json"
       ],
+      "purpose": "manifest-driven full pipeline runner",
+      "required_inputs": [
+        "sample_manifest"
+      ],
       "risk_level": "HIGH",
-      "approval_required": true,
-      "handler": "pipeline_full",
-      "external_tools": [],
-      "downstream_skills": [],
+      "use_when": [
+        "需要从 manifest 到报告的端到端规划或执行"
+      ]
+    },
+    {
+      "approval_required": false,
       "boundaries": [
         "Skill 不承担临床决策；不得判断患者是否适合治疗或推荐临床用药。",
         "缺失证据只能标记为 missing/unassessed，不能解释为阴性结果。",
         "高风险写入、HPC 提交、安装工具、下载参考库、删除或覆盖文件必须经过 human approval。",
         "Skill 目录不包含患者 BAM/FASTQ/VCF、大型参考库、VEP cache、NetMHCpan license、LOHHLA reference 或大型 conda env。"
-      ]
-    },
-    {
-      "name": "neoag-release-qc",
+      ],
       "category": "D",
       "category_label": "工程治理/执行控制型 Skills：输入质控、环境健康检查、全流程编排、发布审计和受控执行",
-      "purpose": "发布边界审计",
       "description": "Scan for caches, runtime artifacts, hard-coded private paths and patient/site hints.",
-      "use_when": [
-        "生成发布包前",
-        "用户问 release 是否干净"
-      ],
       "do_not_use_when": [
         "不要自动删除文件，除非用户明确确认"
       ],
-      "required_inputs": [
-        "project_root"
-      ],
+      "downstream_skills": [],
+      "external_tools": [],
+      "handler": "release_qc",
+      "name": "neoag-release-qc",
       "optional_inputs": [],
       "outputs": [
         "release_audit_report.md",
         "release_boundary_findings.tsv"
       ],
+      "purpose": "发布边界审计",
+      "required_inputs": [
+        "project_root"
+      ],
       "risk_level": "LOW",
-      "approval_required": false,
-      "handler": "release_qc",
-      "external_tools": [],
-      "downstream_skills": [],
+      "use_when": [
+        "生成发布包前",
+        "用户问 release 是否干净"
+      ]
+    },
+    {
+      "approval_required": true,
       "boundaries": [
         "Skill 不承担临床决策；不得判断患者是否适合治疗或推荐临床用药。",
         "缺失证据只能标记为 missing/unassessed，不能解释为阴性结果。",
         "高风险写入、HPC 提交、安装工具、下载参考库、删除或覆盖文件必须经过 human approval。",
         "Skill 目录不包含患者 BAM/FASTQ/VCF、大型参考库、VEP cache、NetMHCpan license、LOHHLA reference 或大型 conda env。"
+      ],
+      "category": "D",
+      "category_label": "工程治理/执行控制型 Skills：输入质控、环境健康检查、全流程编排、发布审计和受控执行",
+      "description": "Submit low/medium/high-risk skill or pipeline requests to NeoAg Gateway with approval controls.",
+      "do_not_use_when": [
+        "不要直接执行 shell 或绕过 approval"
+      ],
+      "downstream_skills": [],
+      "external_tools": [],
+      "handler": "gateway_submit",
+      "name": "neoag-gateway-submit",
+      "optional_inputs": [],
+      "outputs": [
+        "gateway_job.json",
+        "gateway_submission.md"
+      ],
+      "purpose": "Gateway 受控提交",
+      "required_inputs": [
+        "gateway_url",
+        "task"
+      ],
+      "risk_level": "HIGH",
+      "use_when": [
+        "Agent 需要通过 Gateway 受控执行任务"
       ]
     },
     {
-      "name": "neoag-remote-deploy",
+      "approval_required": true,
+      "boundaries": [
+        "默认只做核心部署、smoke、Doctor 和 dry-run，不自动安装授权工具或下载大型参考库。",
+        "不得把患者数据、本机私有路径或 license 工具打进 release。",
+        "check-tools/which 不能等同于真实工具可用；需要 Doctor mini smoke 或标记 PARTIAL。",
+        "HPC 提交、删除、覆盖、安装工具、下载参考库必须人工确认。",
+        "Skill 不承担临床决策；不得判断患者是否适合治疗或推荐临床用药。",
+        "缺失证据只能标记为 missing/unassessed，不能解释为阴性结果。",
+        "高风险写入、HPC 提交、安装工具、下载参考库、删除或覆盖文件必须经过 human approval。",
+        "Skill 目录不包含患者 BAM/FASTQ/VCF、大型参考库、VEP cache、NetMHCpan license、LOHHLA reference 或大型 conda env。"
+      ],
       "category": "D",
       "category_label": "工程治理/执行控制型 Skills：输入质控、环境健康检查、全流程编排、发布审计和受控执行",
-      "purpose": "新机器迁移部署专用 SOP",
-      "description": "Deploy or migrate Project B to a new machine using a fixed skill-first SOP: checksum/unpack, preflight, core install, smoke tests, local manifests, Doctor, dry-run planning, and deployment report.",
-      "use_when": [
-        "用户要求把项目迁移到新机器",
-        "需要让目标机器上的编程 agent 快速部署、安装、检查和验收",
-        "需要生成 deployment_report.md 或判断 READY/PARTIAL/BLOCKED/UNSAFE"
-      ],
+      "description": "Deploy or migrate Project B to a new machine with checksum/unpack, preflight, core install, smoke tests, local manifests, Doctor, dry-run planning and deployment report.",
       "do_not_use_when": [
         "用户只是分析已有 ranked_peptides 或报告结果",
-        "用户要求直接运行患者级生产流程但尚未完成 Doctor 和 dry-run"
+        "尚未完成 Doctor 和 dry-run 时不应直接运行患者级生产流程"
       ],
-      "required_inputs": [
-        "project_root 或 release_tarball"
+      "downstream_skills": [
+        "neoag-doctor",
+        "neoag-tool-reference-qc",
+        "neoag-run-demo-and-smoke",
+        "neoag-pipeline-full",
+        "neoag-release-qc"
       ],
+      "external_tools": [],
+      "handler": "remote_deploy",
+      "name": "neoag-remote-deploy",
       "optional_inputs": [
         "sha256",
         "deployment_tier",
@@ -996,91 +1092,48 @@
         "doctor_summary.md",
         "local manifests"
       ],
-      "risk_level": "LOW_TO_HIGH_BY_STEP",
-      "approval_required": true,
-      "handler": "remote_deploy",
-      "external_tools": [],
-      "downstream_skills": [
-        "neoag-doctor",
-        "neoag-tool-reference-qc",
-        "neoag-run-demo-and-smoke",
-        "neoag-pipeline-full",
-        "neoag-release-qc"
+      "purpose": "新机器迁移部署专用 SOP",
+      "required_inputs": [
+        "project_root 或 release_tarball"
       ],
-      "boundaries": [
-        "默认只做核心部署、smoke、Doctor 和 dry-run，不自动安装授权工具或下载大型参考库。",
-        "不得把患者数据、本机私有路径或 license 工具打进 release。",
-        "check-tools/which 不能等同于真实工具可用；需要 Doctor mini smoke 或标记 PARTIAL。",
-        "HPC 提交、删除、覆盖、安装工具、下载参考库必须人工确认。"
+      "risk_level": "LOW_TO_HIGH_BY_STEP",
+      "use_when": [
+        "用户要求把项目迁移到新机器",
+        "需要让目标机器上的编程 agent 快速部署、安装、检查和验收",
+        "需要生成 deployment_report.md 或判断 READY/PARTIAL/BLOCKED/UNSAFE"
       ]
     },
     {
-      "name": "neoag-run-demo-and-smoke",
+      "approval_required": true,
+      "boundaries": [
+        "Skill 不承担临床决策；不得判断患者是否适合治疗或推荐临床用药。",
+        "缺失证据只能标记为 missing/unassessed，不能解释为阴性结果。",
+        "高风险写入、HPC 提交、安装工具、下载参考库、删除或覆盖文件必须经过 human approval。",
+        "Skill 目录不包含患者 BAM/FASTQ/VCF、大型参考库、VEP cache、NetMHCpan license、LOHHLA reference 或大型 conda env。"
+      ],
       "category": "D",
       "category_label": "工程治理/执行控制型 Skills：输入质控、环境健康检查、全流程编排、发布审计和受控执行",
-      "purpose": "demo/pytest/Nextflow smoke",
-      "description": "Run or plan Project B run-demo, pytest and optional Nextflow smoke tests.",
-      "use_when": [
-        "release 验收",
-        "新环境最小可运行性测试"
-      ],
+      "description": "Create Slurm/SGE/PBS job manifests and submit only after explicit approval.",
       "do_not_use_when": [
-        "不要在没有确认的生产目录覆盖结果"
+        "默认不得直接提交，应先 dry-run"
       ],
-      "required_inputs": [
-        "project_root"
-      ],
+      "downstream_skills": [],
+      "external_tools": [],
+      "handler": "hpc_runner",
+      "name": "neoag-hpc-runner",
       "optional_inputs": [],
       "outputs": [
-        "smoke_test_report.md",
-        "demo_output_manifest.tsv"
+        "hpc_dry_run.sh",
+        "hpc_job_manifest.json",
+        "hpc_submission.md"
       ],
-      "risk_level": "MEDIUM",
-      "approval_required": false,
-      "handler": "run_demo_smoke",
-      "external_tools": [],
-      "downstream_skills": [],
-      "boundaries": [
-        "Skill 不承担临床决策；不得判断患者是否适合治疗或推荐临床用药。",
-        "缺失证据只能标记为 missing/unassessed，不能解释为阴性结果。",
-        "高风险写入、HPC 提交、安装工具、下载参考库、删除或覆盖文件必须经过 human approval。",
-        "Skill 目录不包含患者 BAM/FASTQ/VCF、大型参考库、VEP cache、NetMHCpan license、LOHHLA reference 或大型 conda env。"
-      ]
-    },
-    {
-      "name": "neoag-tool-reference-qc",
-      "category": "D",
-      "category_label": "工程治理/执行控制型 Skills：输入质控、环境健康检查、全流程编排、发布审计和受控执行",
-      "purpose": "工具/参考库检查",
-      "description": "Check external tool entrypoints, models, caches and references; stronger than simple PATH check.",
-      "use_when": [
-        "需要检查 VEP/NetMHCpan/MHCflurry/LOHHLA/FACETS 等"
-      ],
-      "do_not_use_when": [
-        "不要将工具 missing 解释为生物学阴性"
-      ],
+      "purpose": "HPC dry-run/job wrapper",
       "required_inputs": [
-        "project_root"
+        "job_manifest"
       ],
-      "optional_inputs": [
-        "tools_manifest",
-        "reference_manifest"
-      ],
-      "outputs": [
-        "tool_qc_report.tsv",
-        "reference_qc_report.tsv",
-        "tool_smoke_report.md"
-      ],
-      "risk_level": "LOW",
-      "approval_required": false,
-      "handler": "tool_reference_qc",
-      "external_tools": [],
-      "downstream_skills": [],
-      "boundaries": [
-        "Skill 不承担临床决策；不得判断患者是否适合治疗或推荐临床用药。",
-        "缺失证据只能标记为 missing/unassessed，不能解释为阴性结果。",
-        "高风险写入、HPC 提交、安装工具、下载参考库、删除或覆盖文件必须经过 human approval。",
-        "Skill 目录不包含患者 BAM/FASTQ/VCF、大型参考库、VEP cache、NetMHCpan license、LOHHLA reference 或大型 conda env。"
+      "risk_level": "HIGH",
+      "use_when": [
+        "需要在 HPC 上运行 pipeline-full 或重型工具"
       ]
     }
   ]

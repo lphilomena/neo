@@ -206,6 +206,35 @@ neoag evidence-rank \
   --emit-event-ranking --compare-weighted --deterministic
 ```
 
+Agents should use the thin public Skill2 wrapper instead of reimplementing the
+ranking logic:
+
+```bash
+neoag-skill run open-neo-run \
+  --outdir results/sample/scoring/evidence_consensus \
+  --arg comprehensive_evidence=results/sample/scoring/comprehensive_peptide_evidence.tsv \
+  --arg weighted_baseline=results/sample/scoring/ranked_peptides.tsv
+```
+
+`open-neo-run` and the compatibility skill `neoag-ranking` both invoke the
+production `neoag evidence-rank` CLI. The Skill layer contains no independent
+R1-R4, Pareto, hard-fail, priority-cap, or event-deduplication implementation.
+
+Compare any two rankings with the generalized audit command:
+
+```bash
+neoag-ranking-compare \
+  --left results/sample/scoring/ranked_peptides.weighted_baseline.tsv \
+  --left-name weighted_baseline \
+  --right results/sample/scoring/ranked_peptides.evidence_consensus.tsv \
+  --right-name evidence_consensus \
+  --outdir results/sample/scoring/ranking_comparison
+```
+
+The comparison includes Top10/20/50/100 overlap, Spearman correlation,
+promotions/demotions, high-ranking hard-fail candidates, event-type and HLA
+composition, evidence conflicts, missing evidence, and manual-review cases.
+
 The first phase does not expose `--replace-primary-ranking`. See
 `docs/EVIDENCE_CONSENSUS.md` for field definitions and interpretation.
 

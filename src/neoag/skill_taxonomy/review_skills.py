@@ -9,9 +9,31 @@ from .io import ensure_dir, markdown_table, read_table, row_get, safe_float, wri
 def run_ranking_compare(args: dict[str, Any]) -> dict[str, Any]:
     from neoag.agent_skills.ranking_compare import main as ranking_compare_main
     outdir = ensure_dir(args["outdir"])
-    rc = ranking_compare_main(["--recommendation", str(args["recommendation"]), "--netmhcpan42", str(args["netmhcpan42"]), "--outdir", str(outdir)])
+    left = args.get("left") or args.get("netmhcpan42")
+    right = args.get("right") or args.get("recommendation")
+    left_name = args.get("left_name") or ("netmhcpan42" if args.get("netmhcpan42") else "left")
+    right_name = args.get("right_name") or ("recommendation" if args.get("recommendation") else "right")
+    if not left or not right:
+        res = {"status": "FAIL", "skill": "neoag-ranking-compare", "failure_reason": "MISSING_INPUT:left,right"}
+        write_json(outdir / "skill_result.json", res)
+        return res
+    rc = ranking_compare_main([
+        "--left", str(left), "--left-name", str(left_name),
+        "--right", str(right), "--right-name", str(right_name),
+        "--outdir", str(outdir),
+    ])
     status = "PASS" if rc == 0 else "FAIL"
-    res = {"status": status, "skill": "neoag-ranking-compare", "outputs": {"report": str(outdir / "ranking_compare_report.md")}, "summary": "Generated ranking comparison report"}
+    outputs = {
+        "report": str(outdir / "ranking_compare_report.md"),
+        "topn_overlap": str(outdir / "topn_overlap.tsv"),
+        "candidate_rank_changes": str(outdir / "candidate_rank_changes.tsv"),
+        "high_rank_hard_fail": str(outdir / "high_rank_hard_fail.tsv"),
+        "top_composition": str(outdir / "top_composition.tsv"),
+        "evidence_qc_summary": str(outdir / "evidence_qc_summary.tsv"),
+        "manual_review_candidates": str(outdir / "manual_review_candidates.tsv"),
+        "summary_json": str(outdir / "ranking_comparison_summary.json"),
+    }
+    res = {"status": status, "skill": "neoag-ranking-compare", "outputs": outputs, "summary": f"Compared {left_name} vs {right_name}"}
     write_json(outdir / "skill_result.json", res)
     return res
 

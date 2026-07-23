@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+import datetime
+import hashlib
 import json
 import math
 from pathlib import Path
@@ -10,6 +12,7 @@ from .utils import read_tsv, write_tsv
 
 
 EVIDENCE_SOURCE_PRECEDENCE_VERSION = "1.0"
+COMPREHENSIVE_EVIDENCE_SCHEMA_VERSION = "1.1"
 
 IDENTITY_FIELDS = {
     "peptide_id", "event_id", "sample_id", "peptide", "mutant_peptide",
@@ -315,12 +318,14 @@ def build_comprehensive_peptide_evidence(
                     candidates_by_field.setdefault(field, []).append((source, text))
 
         row: dict[str, str] = {}
+        field_sources: dict[str, str] = {}
         conflict_fields: set[str] = set()
         conflict_details: list[dict[str, str]] = []
         selected_overrides: list[str] = []
         for field, candidates in candidates_by_field.items():
             selected_source, selected_value = _select_value(field, candidates, base_name)
             row[field] = selected_value
+            field_sources[field] = selected_source
             if selected_source != base_name:
                 selected_overrides.append(f"{field}:{selected_source}")
             allowed_sources = set(FIELD_SOURCE_PRECEDENCE.get(field, ()))
@@ -362,6 +367,8 @@ def build_comprehensive_peptide_evidence(
             "COMPLETE" if "presentation_evidence" in evidence_sources and "ranked_peptides" in evidence_sources else "PARTIAL"
         )
         row["evidence_source_precedence_version"] = EVIDENCE_SOURCE_PRECEDENCE_VERSION
+        row["comprehensive_evidence_schema_version"] = COMPREHENSIVE_EVIDENCE_SCHEMA_VERSION
+        row["evidence_field_sources"] = json.dumps(field_sources, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
         row["evidence_conflict_fields"] = ",".join(sorted(conflict_fields))
         row["evidence_conflict_count"] = str(len(conflict_details))
         row["evidence_conflict_details"] = json.dumps(conflict_details, ensure_ascii=True, separators=(",", ":")) if conflict_details else "[]"
@@ -376,6 +383,7 @@ def build_comprehensive_peptide_evidence(
     for field in (
         "comprehensive_evidence_sources", "comprehensive_evidence_source_count",
         "comprehensive_evidence_status", "evidence_source_precedence_version",
+        "comprehensive_evidence_schema_version", "evidence_field_sources",
         "evidence_conflict_fields", "evidence_conflict_count", "evidence_conflict_details",
         "evidence_selected_source_overrides",
     ):
@@ -389,6 +397,45 @@ def build_comprehensive_peptide_evidence(
     conflict_path = Path(conflicts_tsv) if conflicts_tsv else output_path.with_name("evidence_conflicts.tsv")
     write_tsv(output_path, output_rows, fields)
     write_tsv(conflict_path, conflict_rows, CONFLICT_FIELDS)
+    manifest_path = output_path.with_name("comprehensive_evidence_manifest.json")
+    manifest_sources: dict[str, dict[str, Any]] = {}
+    manifest_inputs = {"annotated_peptides": annotated_peptides, **source_paths}
+    for source_name, source_path in manifest_inputs.items():
+        if not source_path or not Path(source_path).is_file():
+            continue
+        source_file = Path(source_path)
+        digest = hashlib.sha256()
+        with source_file.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+        manifest_sources[source_name] = {
+            "path": str(source_file),
+            "sha256": digest.hexdigest(),
+            "size_bytes": source_file.stat().st_size,
+            "rows": len(source_rows.get(source_name, [])) if source_name != base_name else len(base_rows),
+        }
+    output_digest = hashlib.sha256(output_path.read_bytes()).hexdigest()
+    manifest_payload = {
+        "schema_version": COMPREHENSIVE_EVIDENCE_SCHEMA_VERSION,
+        "generated_at": datetime.datetime.now(datetime.UTC).isoformat().replace("+00:00", "Z"),
+        "record_type": "PEPTIDE_HLA_EVIDENCE",
+        "source_precedence_version": EVIDENCE_SOURCE_PRECEDENCE_VERSION,
+        "base_source": base_name,
+        "inputs": manifest_sources,
+        "output": {
+            "path": str(output_path),
+            "sha256": output_digest,
+            "size_bytes": output_path.stat().st_size,
+            "rows": len(output_rows),
+            "columns": len(fields),
+        },
+        "conflicts": {
+            "path": str(conflict_path),
+            "rows": len(conflict_rows),
+            "peptide_rows_affected": sum(bool(row["evidence_conflict_fields"]) for row in output_rows),
+        },
+    }
+    manifest_path.write_text(json.dumps(manifest_payload, indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
     return {
         "output_tsv": str(output_path),
         "conflicts_tsv": str(conflict_path),
@@ -399,4 +446,5 @@ def build_comprehensive_peptide_evidence(
         "precedence_version": EVIDENCE_SOURCE_PRECEDENCE_VERSION,
         "base_source": base_name,
         "source_counts": source_counts,
+        "manifest": str(manifest_path),
     }

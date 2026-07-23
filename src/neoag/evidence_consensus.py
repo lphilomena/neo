@@ -51,6 +51,19 @@ DEFAULT_RULES: dict[str, Any] = {
     "output": {"peptide_id_tie_break": True, "event_deduplicate": True},
 }
 
+ALL_TOOL_RESULTS_SCHEMA_VERSION = "1.0"
+ALL_TOOL_RESULTS_REQUIRED_FIELDS = [
+    "all_tool_results_schema_version", "canonical_record_type", "canonical_record_id",
+    "peptide_id", "event_id", "peptide", "hla_allele",
+    "evidence_source_precedence_version", "evidence_field_sources",
+    "evidence_conflict_fields",
+]
+ALL_TOOL_RESULTS_CORE_FIELDS = ALL_TOOL_RESULTS_REQUIRED_FIELDS + [
+    "sample_id", "gene", "event_type", "peptide_consequence", "mhc_class",
+    "comprehensive_evidence_schema_version", "comprehensive_evidence_status",
+    "comprehensive_evidence_sources", "evidence_conflict_count",
+]
+
 BASE_DIMENSIONS = [
     "event_authenticity_grade",
     "rna_support_grade",
@@ -103,6 +116,8 @@ STATE_NAMES = (
     "evidence_completeness",
 )
 STATE_OUTPUT_FIELDS = tuple(f"{name}_state" for name in STATE_NAMES)
+STATE_REASON_CODE_FIELDS = tuple(f"{name}_reason_code" for name in STATE_NAMES)
+STATE_REASON_FIELDS = tuple(f"{name}_reason" for name in STATE_NAMES)
 GRADE_ORDER = {"R1": 1, "R2": 2, "R3": 3, "R4": 4}
 CAP_TO_GRADE = {
     "A": "R1", "NONE": "R1", "B": "R2", "B_CAUTION": "R2",
@@ -114,21 +129,23 @@ CAP_FIELDS = (
 )
 CONSENSUS_FIELDS = (
     "legacy_weighted_rank", "biological_event_track", "evidence_track", "pareto_dimensions",
-    "hard_failure", "hard_failure_reasons",
+    "hard_failure", "hard_failure_codes", "hard_failure_reasons",
     "legacy_priority_cap", "consensus_priority_cap", "evidence_grade_cap", "evidence_grade_cap_reasons",
     "manual_review_required", "manual_review_reason",
-    *STATE_OUTPUT_FIELDS, *DIMENSIONS, "safety_completeness_grade",
+    *STATE_OUTPUT_FIELDS, *STATE_REASON_CODE_FIELDS, *STATE_REASON_FIELDS,
+    *DIMENSIONS, "safety_completeness_grade",
     "ccf_confidence_state", "ccf_confidence_grade",
     "netmhcpan_tiebreak_rank", "mhcflurry_tiebreak_score",
     "evidence_grade_uncapped", "evidence_grade", "pareto_front", "track_rank",
     "evidence_rank", "evidence_rank_key", "evidence_consensus_score", "evidence_completeness_score",
     "evidence_assessed_layers", "evidence_missing_layers", "evidence_conflict_layers",
-    "evidence_layer_states", "consensus_action", "recommended_next_steps", "consensus_trace",
+    "evidence_layer_states", "evidence_reason_codes", "consensus_action",
+    "recommended_next_steps", "consensus_trace",
 )
 CONFLICT_FIELDS = (
     "peptide_id", "event_id", "gene", "evidence_track", "layer", "state",
     "field", "selected_source", "selected_value", "other_source", "other_value",
-    "precedence_version", "conflict_type", "reason", "recommended_action",
+    "precedence_version", "conflict_type", "reason_code", "reason", "recommended_action",
 )
 
 
@@ -492,9 +509,15 @@ def _normalized_row(
         f"{state.get('hard_code') or 'HARD_UNSPECIFIED'}:{name}:{state['reason']}"
         for name, state in states.items() if state["hard_fail"]
     ]
+    hard_codes = [
+        str(state.get("hard_code") or state.get("reason_code") or "HARD_UNSPECIFIED")
+        for state in states.values() if state["hard_fail"]
+    ]
     for name, state in states.items():
         row[f"{name}_state"] = str(state["state"])
         row[f"{name}_grade"] = str(state["grade"])
+        row[f"{name}_reason_code"] = str(state["reason_code"])
+        row[f"{name}_reason"] = str(state["reason"])
     row.update({key: str(value) for key, value in _pareto_derived_grades(
         source, states, biological_track, rules,
     ).items()})
@@ -522,6 +545,7 @@ def _normalized_row(
         review_reason = ";".join(value for value in (review_reason, source_reason) if value)
     row.update({
         "hard_failure": "yes" if hard else "no",
+        "hard_failure_codes": ",".join(dict.fromkeys(hard_codes)),
         "hard_failure_reasons": ";".join(hard),
         "legacy_priority_cap": cap,
         "consensus_priority_cap": grade_cap,
@@ -537,6 +561,7 @@ def _normalized_row(
         "evidence_missing_layers": ",".join(missing),
         "evidence_conflict_layers": ",".join(conflicts),
         "evidence_layer_states": ";".join(f"{name}:{state['state']}" for name, state in states.items()),
+        "evidence_reason_codes": ";".join(f"{name}:{state['reason_code']}" for name, state in states.items()),
         "consensus_action": action,
         "recommended_next_steps": next_steps,
         "pareto_front": "",
@@ -578,13 +603,14 @@ def _normalized_row(
         state_row[f"{name}_state"] = str(state["state"])
         state_row[f"{name}_grade"] = str(state["grade"])
         state_row[f"{name}_assessed"] = "yes" if state["assessed"] else "no"
+        state_row[f"{name}_reason_code"] = str(state["reason_code"])
         state_row[f"{name}_reason"] = str(state["reason"])
     state_row.update({field: row[field] for field in (
-        "hard_failure", "hard_failure_reasons", "legacy_priority_cap", "consensus_priority_cap",
+        "hard_failure", "hard_failure_codes", "hard_failure_reasons", "legacy_priority_cap", "consensus_priority_cap",
         "evidence_grade_cap", "evidence_grade_cap_reasons",
         "manual_review_required", "manual_review_reason", "evidence_grade_uncapped",
         "evidence_grade", "evidence_consensus_score", "evidence_completeness_score",
-        "evidence_assessed_layers", "evidence_missing_layers", "evidence_conflict_layers",
+        "evidence_assessed_layers", "evidence_missing_layers", "evidence_conflict_layers", "evidence_reason_codes",
         "consensus_action", "recommended_next_steps", "consensus_trace",
     )})
     conflict_rows = [{
@@ -601,6 +627,7 @@ def _normalized_row(
         "other_value": "",
         "precedence_version": str(source.get("evidence_source_precedence_version", "")),
         "conflict_type": "DERIVED_STATE_CONFLICT",
+        "reason_code": str(states[name]["reason_code"]),
         "reason": str(states[name]["reason"]),
         "recommended_action": "manual evidence reconciliation before candidate progression",
     } for name in conflicts if name != "source_precedence"]
@@ -623,6 +650,7 @@ def _normalized_row(
             "other_value": str(detail.get("other_value", "")),
             "precedence_version": str(detail.get("precedence_version", source.get("evidence_source_precedence_version", ""))),
             "conflict_type": str(detail.get("conflict_type", "NONEMPTY_SOURCE_DISAGREEMENT")),
+            "reason_code": "SOURCE_FIELD_VALUE_CONFLICT",
             "reason": f"authoritative source selected for field {detail.get('field', '')}",
             "recommended_action": "review source disagreement; retain precedence-selected value unless evidence provenance is wrong",
         })
@@ -868,6 +896,99 @@ def _materialize_alias(source: str | Path, target: str | Path) -> str:
     return str(target_path)
 
 
+def _write_canonical_all_tool_results(
+    comprehensive_tsv: str | Path,
+    output_tsv: str | Path,
+) -> tuple[str, str]:
+    """Materialize the stable user-facing evidence table and its audit manifest."""
+    source = Path(comprehensive_tsv)
+    target = Path(output_tsv)
+    rows = read_tsv(source)
+    canonical_rows: list[dict[str, str]] = []
+    for row in rows:
+        identity = "|".join(
+            str(row.get(field, ""))
+            for field in ("event_id", "peptide_id", "peptide", "hla_allele")
+        )
+        canonical = dict(row)
+        canonical.setdefault("evidence_source_precedence_version", "")
+        canonical.setdefault("evidence_field_sources", "{}")
+        canonical.setdefault("evidence_conflict_fields", "")
+        canonical["all_tool_results_schema_version"] = ALL_TOOL_RESULTS_SCHEMA_VERSION
+        canonical["canonical_record_type"] = "PEPTIDE_HLA_EVIDENCE"
+        canonical["canonical_record_id"] = hashlib.sha256(identity.encode()).hexdigest()[:24]
+        canonical_rows.append(canonical)
+
+    all_fields = {field for row in canonical_rows for field in row}
+    canonical_fields = [field for field in ALL_TOOL_RESULTS_CORE_FIELDS if field in all_fields]
+    canonical_fields.extend(sorted(all_fields - set(canonical_fields)))
+    write_tsv(target, canonical_rows, canonical_fields)
+
+    missing_required = [field for field in ALL_TOOL_RESULTS_REQUIRED_FIELDS if field not in canonical_fields]
+    record_ids = [row["canonical_record_id"] for row in canonical_rows]
+    duplicate_record_ids = len(record_ids) - len(set(record_ids))
+    invalid_schema_rows = sum(
+        row.get("all_tool_results_schema_version") != ALL_TOOL_RESULTS_SCHEMA_VERSION
+        or row.get("canonical_record_type") != "PEPTIDE_HLA_EVIDENCE"
+        for row in canonical_rows
+    )
+    validation_errors = []
+    if missing_required:
+        validation_errors.append("missing required fields: " + ",".join(missing_required))
+    if duplicate_record_ids:
+        validation_errors.append(f"duplicate canonical_record_id rows: {duplicate_record_ids}")
+    if invalid_schema_rows:
+        validation_errors.append(f"invalid schema metadata rows: {invalid_schema_rows}")
+
+    source_manifest_path = source.with_name("comprehensive_evidence_manifest.json")
+    source_manifest: dict[str, Any] = {}
+    if source_manifest_path.is_file():
+        try:
+            source_manifest = json.loads(source_manifest_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            source_manifest = {}
+    conflict_rows = sum(bool(str(row.get("evidence_conflict_fields", "")).strip()) for row in rows)
+    missing_rows = sum(
+        bool(str(row.get("safety_missing_layers", "")).strip() or str(row.get("event_safety_missing_layers", "")).strip())
+        for row in rows
+    )
+    manifest_path = target.with_name("all_tool_results.manifest.json")
+    payload = {
+        "schema_version": ALL_TOOL_RESULTS_SCHEMA_VERSION,
+        "generated_at": datetime.datetime.now(datetime.UTC).isoformat().replace("+00:00", "Z"),
+        "record_type": "PEPTIDE_HLA_EVIDENCE",
+        "canonical": True,
+        "input": {
+            "path": str(source),
+            "sha256": _sha256(source),
+            "size_bytes": source.stat().st_size,
+            "source_manifest": str(source_manifest_path) if source_manifest_path.is_file() else "",
+            "sources": source_manifest.get("inputs", {}),
+        },
+        "output": {
+            "path": str(target),
+            "sha256": _sha256(target),
+            "size_bytes": target.stat().st_size,
+            "rows": len(canonical_rows),
+            "columns": len(canonical_fields),
+        },
+        "quality": {
+            "rows_with_field_conflicts": conflict_rows,
+            "rows_with_missing_safety_layers": missing_rows,
+            "rows_with_field_source_map": sum(bool(str(row.get("evidence_field_sources", "")).strip()) for row in rows),
+        },
+        "required_fields": ALL_TOOL_RESULTS_REQUIRED_FIELDS,
+        "validation": {
+            "status": "PASS" if not validation_errors else "FAIL",
+            "errors": validation_errors,
+            "duplicate_record_ids": duplicate_record_ids,
+            "invalid_schema_rows": invalid_schema_rows,
+        },
+    }
+    manifest_path.write_text(json.dumps(payload, indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
+    return str(target), str(manifest_path)
+
+
 def _write_consensus_summary(
     path: str | Path,
     rows: list[dict[str, str]],
@@ -1018,7 +1139,9 @@ def rank_evidence_consensus(
     track_counts = dict(sorted(Counter(row["evidence_track"] for row in rows).items()))
     _write_consensus_summary(summary_path, rows, event_rows, conflicts)
     _write_comparison_markdown(comparison_md_path, comparison_rows, grade_counts, track_counts)
-    _materialize_alias(comprehensive_tsv, all_tool_results_path)
+    all_tool_results, all_tool_results_manifest = _write_canonical_all_tool_results(
+        comprehensive_tsv, all_tool_results_path,
+    )
     result = {
         "rows": len(rows),
         "events": len(event_rows),
@@ -1032,7 +1155,8 @@ def rank_evidence_consensus(
         "output_comparison_markdown": str(comparison_md_path),
         "output_summary": str(summary_path),
         "output_run_manifest": str(run_manifest_path),
-        "output_all_tool_results": str(all_tool_results_path),
+        "output_all_tool_results": all_tool_results,
+        "output_all_tool_results_manifest": all_tool_results_manifest,
         "grade_counts": grade_counts,
         "track_counts": track_counts,
         "legacy_ranking_modified": False,
@@ -1092,6 +1216,7 @@ def build_evidence_consensus(
         "summary": result["output_summary"],
         "run_manifest": result["output_run_manifest"],
         "all_tool_results": result["output_all_tool_results"],
+        "all_tool_results_manifest": result["output_all_tool_results_manifest"],
         "ranked_peptides_compat": result.get("output_ranked_peptides_compat", str(output_dir / "ranked_peptides.tsv")),
         "weighted_baseline": result.get("output_weighted_baseline", ""),
         "grade_counts": result["grade_counts"],
