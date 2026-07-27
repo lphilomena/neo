@@ -51,6 +51,43 @@ def normalize_chrom(chrom: str, references: set[str]) -> str:
     return chrom
 
 
+def variant_type(ref: str, alt: str) -> str:
+    if len(ref) == len(alt) == 1:
+        return "SNV"
+    if len(alt) > len(ref) and alt.startswith(ref):
+        return "INS"
+    if len(ref) > len(alt) and ref.startswith(alt):
+        return "DEL"
+    if len(ref) == len(alt):
+        return "MNV"
+    return "COMPLEX"
+
+
+def classify_observation(*, query_sequence: str, query_position: int, indel: int, ref: str, alt: str) -> str:
+    """Classify one pileup observation at the VCF anchor as ref, alt or other."""
+    kind = variant_type(ref, alt)
+    ref_u = ref.upper()
+    alt_u = alt.upper()
+    if kind == "SNV":
+        base = query_sequence[query_position].upper()
+        return "ref" if base == ref_u else ("alt" if base == alt_u else "other")
+    if kind == "INS":
+        expected = len(alt_u) - len(ref_u)
+        if indel == expected:
+            inserted = query_sequence[query_position + 1 : query_position + 1 + expected].upper()
+            return "alt" if inserted == alt_u[len(ref_u) :] else "other"
+        return "ref" if indel == 0 and query_sequence[query_position].upper() == ref_u[0] else "other"
+    if kind == "DEL":
+        expected = -(len(ref_u) - len(alt_u))
+        if indel == expected:
+            return "alt"
+        return "ref" if indel == 0 and query_sequence[query_position].upper() == ref_u[0] else "other"
+    if kind == "MNV" and indel == 0:
+        observed = query_sequence[query_position : query_position + len(ref_u)].upper()
+        return "ref" if observed == ref_u else ("alt" if observed == alt_u else "other")
+    return "other"
+
+
 def count_alleles(
     bam,
     chrom: str,
@@ -65,8 +102,6 @@ def count_alleles(
   import pysam
 
   chrom = normalize_chrom(chrom, references)
-  ref_u = ref.upper()
-  alt_u = alt.upper()
   ref_count = 0
   alt_count = 0
   try:
@@ -82,12 +117,18 @@ def count_alleles(
           if col.reference_pos != pos - 1:
               continue
           for pr in col.pileups:
-              if pr.is_refskip or pr.is_del:
+              if pr.is_refskip or pr.is_del or pr.query_position is None:
                   continue
-              base = pr.alignment.query_sequence[pr.query_position].upper()
-              if base == ref_u:
+              observation = classify_observation(
+                  query_sequence=pr.alignment.query_sequence,
+                  query_position=pr.query_position,
+                  indel=pr.indel,
+                  ref=ref,
+                  alt=alt,
+              )
+              if observation == "ref":
                   ref_count += 1
-              elif base == alt_u:
+              elif observation == "alt":
                   alt_count += 1
   except (ValueError, OSError):
       return 0, 0, 0
@@ -130,6 +171,8 @@ def main() -> None:
                 "rna_depth": str(depth),
                 "rna_vaf": f"{vaf:.4f}" if depth > 0 else "",
                 "variant_key": f"{chrom}:{pos}{ref}>{alt}",
+                "variant_type": variant_type(ref, alt),
+                "count_status": "ASSESSED" if variant_type(ref, alt) != "COMPLEX" else "UNASSESSED_COMPLEX",
             }
         )
         if seen % 500 == 0:
