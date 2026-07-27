@@ -159,6 +159,10 @@ def build_parser() -> argparse.ArgumentParser:
     review.add_argument("--clinical-context")
     review.add_argument("--disease-profile")
     review.add_argument("--therapy-context", default="research")
+    review.add_argument(
+        "--reports", type=_json_list, default=["patient", "technical", "onepage"],
+        help="Comma-separated report outputs: patient,technical,onepage; use none for review tables only",
+    )
     return ap
 
 

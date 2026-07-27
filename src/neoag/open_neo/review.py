@@ -297,8 +297,9 @@ def _write_onepage(path: Path, first_batch: list[dict[str, str]], integrity: dic
     return True
 
 
-def _write_reports(layout: RunLayout, context: dict[str, Any], review_rows: list[dict[str, str]], first_batch: list[dict[str, str]], artifacts: dict[str, str], integrity: dict[str, Any], support_outputs: dict[str, str]) -> dict[str, str]:
+def _write_reports(layout: RunLayout, context: dict[str, Any], review_rows: list[dict[str, str]], first_batch: list[dict[str, str]], artifacts: dict[str, str], integrity: dict[str, Any], support_outputs: dict[str, str], reports: set[str]) -> dict[str, str]:
     uncertainties = sum(row["review_status"] == "COMPLETE_EVIDENCE" for row in review_rows)
+    outputs: dict[str, str] = {}
     patient_sections = [
         ("样本与分析背景", _context_summary(context)),
         ("主要发现", f"共审阅 {len(review_rows)} 个事件级候选；{len(first_batch)} 个进入第一批研究验证集合。候选经过事件、单倍型和重复窗口去重。"),
@@ -307,11 +308,15 @@ def _write_reports(layout: RunLayout, context: dict[str, Any], review_rows: list
         ("建议补充验证", "错义突变采用 MT/WT 成对短肽；移码采用 novel-tail long peptide/minigene；融合和剪接先确认异常转录本，再进行 long peptide/minigene。"),
         ("研究性边界", "这些结果是计算候选和实验优先级，不代表已经确认新抗原、确定治疗方案、临床耐药或预期获益。"),
     ]
-    patient_md = ["# Open-Neo 患者沟通版审阅报告", ""]
-    for heading, body in patient_sections: patient_md += [f"## {heading}", "", body, ""]
-    patient_md += ["## 第一批实验候选", "", markdown_table(first_batch, columns=["first_batch_rank", "gene", "event_kind", "pipeline_r_grade", "experiment_priority", "recommended_validation"], max_rows=30)]
-    patient_path = layout.reports / "patient_report.md"; patient_path.write_text("\n".join(patient_md) + "\n", encoding="utf-8")
-    patient_html = layout.reports / "patient_report.html"; patient_html.write_text("<html><body><pre>" + html.escape("\n".join(patient_md)) + "</pre></body></html>", encoding="utf-8")
+    if "patient" in reports:
+        patient_md = ["# Open-Neo 患者沟通版审阅报告", ""]
+        for heading, body in patient_sections: patient_md += [f"## {heading}", "", body, ""]
+        patient_md += ["## 第一批实验候选", "", markdown_table(first_batch, columns=["first_batch_rank", "gene", "event_kind", "pipeline_r_grade", "experiment_priority", "recommended_validation"], max_rows=30)]
+        patient_path = layout.reports / "patient_report.md"; patient_path.write_text("\n".join(patient_md) + "\n", encoding="utf-8")
+        patient_html = layout.reports / "patient_report.html"; patient_html.write_text("<html><body><pre>" + html.escape("\n".join(patient_md)) + "</pre></body></html>", encoding="utf-8")
+        outputs.update({"patient_report_md": str(patient_path), "patient_report_html": str(patient_html)})
+        patient_docx = layout.reports / "patient_report.docx"
+        if _write_docx(patient_docx, "Open-Neo 新抗原筛选报告（患者沟通版）", patient_sections, first_batch): outputs["patient_report_docx"] = str(patient_docx)
 
     technical_sections = [
         ("Integrity and provenance", markdown_table(integrity.get("checks", []), max_rows=100)),
@@ -323,17 +328,17 @@ def _write_reports(layout: RunLayout, context: dict[str, Any], review_rows: list
         ("Evidence-domain event review", markdown_table(review_rows, max_rows=100)),
         ("Interpretation boundary", "Pipeline R grades and event ranks are preserved. Review status and experiment priority are independent fields. Missing evidence is not a negative result."),
     ]
-    technical_md = ["# Open-Neo technical review report", ""]
-    for heading, body in technical_sections: technical_md += [f"## {heading}", "", body, ""]
-    technical_path = layout.reports / "technical_report.md"; technical_path.write_text("\n".join(technical_md) + "\n", encoding="utf-8")
-    technical_html = layout.reports / "technical_report.html"; technical_html.write_text("<html><body><pre>" + html.escape("\n".join(technical_md)) + "</pre></body></html>", encoding="utf-8")
-    outputs = {"patient_report_md": str(patient_path), "patient_report_html": str(patient_html), "technical_report_md": str(technical_path), "technical_report_html": str(technical_html)}
-    patient_docx = layout.reports / "patient_report.docx"
-    if _write_docx(patient_docx, "Open-Neo 新抗原筛选报告（患者沟通版）", patient_sections, first_batch): outputs["patient_report_docx"] = str(patient_docx)
-    technical_docx = layout.reports / "technical_report.docx"
-    if _write_docx(technical_docx, "Open-Neo Technical Review", technical_sections, first_batch): outputs["technical_report_docx"] = str(technical_docx)
-    onepage = layout.reports / "onepage_summary.pptx"
-    if _write_onepage(onepage, first_batch, integrity): outputs["onepage_summary_pptx"] = str(onepage)
+    if "technical" in reports:
+        technical_md = ["# Open-Neo technical review report", ""]
+        for heading, body in technical_sections: technical_md += [f"## {heading}", "", body, ""]
+        technical_path = layout.reports / "technical_report.md"; technical_path.write_text("\n".join(technical_md) + "\n", encoding="utf-8")
+        technical_html = layout.reports / "technical_report.html"; technical_html.write_text("<html><body><pre>" + html.escape("\n".join(technical_md)) + "</pre></body></html>", encoding="utf-8")
+        outputs.update({"technical_report_md": str(technical_path), "technical_report_html": str(technical_html)})
+        technical_docx = layout.reports / "technical_report.docx"
+        if _write_docx(technical_docx, "Open-Neo Technical Review", technical_sections, first_batch): outputs["technical_report_docx"] = str(technical_docx)
+    if "onepage" in reports:
+        onepage = layout.reports / "onepage_summary.pptx"
+        if _write_onepage(onepage, first_batch, integrity): outputs["onepage_summary_pptx"] = str(onepage)
     return outputs
 
 
@@ -357,13 +362,37 @@ def _run_appm_ccf_reviews(layout: RunLayout, artifacts: dict[str, str]) -> dict[
     }
 
 
+def _normalize_reports(value: Any) -> set[str]:
+    if value is None:
+        return {"patient", "technical", "onepage"}
+    if isinstance(value, str):
+        values = [item.strip().lower() for item in value.split(",") if item.strip()]
+    else:
+        values = [str(item).strip().lower() for item in value if str(item).strip()]
+    selected = set(values)
+    if not selected or selected == {"none"}:
+        return set()
+    allowed = {"patient", "technical", "onepage"}
+    unknown = selected - allowed
+    if unknown:
+        raise ValueError("unsupported reports: " + ",".join(sorted(unknown)))
+    return selected
+
+
 def run_review(args: dict[str, Any]) -> dict[str, Any]:
     result_dir = Path(args.get("result_dir") or args.get("input") or "").resolve()
     case_id = safe_identifier(str(args.get("case_id") or result_dir.name or "REVIEW"))
     layout = RunLayout.create(args.get("outdir") or f"work/open-neo-review/{case_id}")
     top_n = int(args.get("top_n") or 12)
     result = MacroResult("open-neo-review", case_id, new_run_id(case_id, "review"), "review")
-    audit(layout, "open_neo_review.start", "START", result_dir=str(result_dir), top_n=top_n)
+    try:
+        selected_reports = _normalize_reports(args.get("reports"))
+    except ValueError as exc:
+        result.blocking_issues.append(FailureCode.INVALID_REPORT_SELECTION.value)
+        result.steps.append(MacroStep("00", "report-selection", "BLOCKED", str(exc), failure_code=FailureCode.INVALID_REPORT_SELECTION.value))
+        result.finish("BLOCKED").write(layout.skill_result)
+        return result.to_dict()
+    audit(layout, "open_neo_review.start", "START", result_dir=str(result_dir), top_n=top_n, reports=sorted(selected_reports))
     if layout.root.resolve() == result_dir:
         result.blocking_issues.append(FailureCode.REPORT_BOUNDARY_VIOLATION.value)
         result.steps.append(MacroStep("00", "report-output-boundary", "BLOCKED", "Review outdir must differ from source result_dir", failure_code=FailureCode.REPORT_BOUNDARY_VIOLATION.value))
@@ -398,23 +427,29 @@ def run_review(args: dict[str, Any]) -> dict[str, Any]:
     result.steps.append(MacroStep("05", "hla-loh-appm-ccf-review", "PASS", outputs=mechanism_outputs))
 
     concept_outputs: dict[str, str] = {}
-    for concept in ("appm", "ccf", "hla loh", "minigene", "elispot"):
-        concept_result = run_concept_explainer({"outdir": str(layout.reports / "concepts" / concept.replace(" ", "_")), "concept": concept, "audience": "patient"})
-        concept_outputs[concept.replace(" ", "_")] = concept_result["outputs"]["concept_explanation"]
+    if selected_reports:
+        for concept in ("appm", "ccf", "hla loh", "minigene", "elispot"):
+            concept_result = run_concept_explainer({"outdir": str(layout.reports / "concepts" / concept.replace(" ", "_")), "concept": concept, "audience": "patient"})
+            concept_outputs[concept.replace(" ", "_")] = concept_result["outputs"]["concept_explanation"]
     context = _read_context(args.get("disease_profile"), args.get("clinical_context"))
     support_outputs = {**mechanism_outputs, "ranking_compare_report": cmp.get("outputs", {}).get("report", "")}
-    report_outputs = _write_reports(layout, context, review_rows, first_batch, artifacts, integrity, support_outputs)
-    patient = run_patient_report({
-        "outdir": str(layout.reports / "production_patient"),
-        "recommendation": str(candidate_review),
-        "evidence_report": artifacts.get("evidence_report", ""),
-        "ranking_compare_report": cmp.get("outputs", {}).get("report", ""),
-        "appm_review": mechanism_outputs.get("appm_review", ""),
-        "ccf_review": mechanism_outputs.get("ccf_review", ""),
-    })
-    technical = run_technical_report({"outdir": str(layout.reports / "production_technical"), "result_dir_or_summary": str(result_dir), "pipeline_manifest": artifacts.get("run_manifest", "")})
-    production_reports = {**{f"production_patient_{key}": value for key, value in patient.get("outputs", {}).items()}, **{f"production_technical_{key}": value for key, value in technical.get("outputs", {}).items()}}
-    result.steps.append(MacroStep("06", "reports-and-concept-explanations", "PASS", outputs={**report_outputs, **concept_outputs, **production_reports}))
+    report_outputs = _write_reports(layout, context, review_rows, first_batch, artifacts, integrity, support_outputs, selected_reports)
+    production_reports: dict[str, str] = {}
+    if "patient" in selected_reports:
+        patient = run_patient_report({
+            "outdir": str(layout.reports / "production_patient"),
+            "recommendation": str(candidate_review),
+            "evidence_report": artifacts.get("evidence_report", ""),
+            "ranking_compare_report": cmp.get("outputs", {}).get("report", ""),
+            "appm_review": mechanism_outputs.get("appm_review", ""),
+            "ccf_review": mechanism_outputs.get("ccf_review", ""),
+        })
+        production_reports.update({f"production_patient_{key}": value for key, value in patient.get("outputs", {}).items()})
+    if "technical" in selected_reports:
+        technical = run_technical_report({"outdir": str(layout.reports / "production_technical"), "result_dir_or_summary": str(result_dir), "pipeline_manifest": artifacts.get("run_manifest", "")})
+        production_reports.update({f"production_technical_{key}": value for key, value in technical.get("outputs", {}).items()})
+    report_status = "PASS" if selected_reports else "SKIPPED"
+    result.steps.append(MacroStep("06", "reports-and-concept-explanations", report_status, outputs={**report_outputs, **concept_outputs, **production_reports}))
 
     result.outputs.update({
         "candidate_review": str(candidate_review), "first_batch_experiment_set": str(first_batch_path),
@@ -426,9 +461,9 @@ def run_review(args: dict[str, Any]) -> dict[str, Any]:
     final_status = "PASS_WITH_WARNINGS" if integrity["status"] == "PARTIAL" or completion else "PASS"
     if final_status == "PASS_WITH_WARNINGS": result.warnings.append("Some events or integrity layers require evidence completion; missing evidence was not interpreted as negative")
     result.warnings.append("first_batch_experiment_set is a deterministic research heuristic, not an optimized vaccine or treatment set")
-    write_json(layout.run_manifest, {"schema_version": "open-neo-review-manifest-v2", "run_id": result.run_id, "case_id": case_id, "source_result_dir": str(result_dir), "source_run_manifest": artifacts["run_manifest"], "source_artifacts": artifacts, "integrity": integrity, "review_outputs": result.outputs, "top_n": top_n, "status": final_status})
+    write_json(layout.run_manifest, {"schema_version": "open-neo-review-manifest-v2", "run_id": result.run_id, "case_id": case_id, "source_result_dir": str(result_dir), "source_run_manifest": artifacts["run_manifest"], "source_artifacts": artifacts, "integrity": integrity, "review_outputs": result.outputs, "top_n": top_n, "reports": sorted(selected_reports), "status": final_status})
     result.outputs["review_manifest"] = str(layout.run_manifest)
     update_case_state(layout, case_id=case_id, current_intent="review", status=final_status, source_result_dir=str(result_dir), outputs=result.outputs)
-    audit(layout, "open_neo_review.finish", final_status, candidates=len(review_rows), first_batch=len(first_batch))
+    audit(layout, "open_neo_review.finish", final_status, candidates=len(review_rows), first_batch=len(first_batch), reports=sorted(selected_reports))
     result.finish(final_status).write(layout.skill_result)
     return result.to_dict()

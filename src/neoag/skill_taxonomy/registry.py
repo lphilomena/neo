@@ -226,7 +226,7 @@ SKILL_SPECS: list[SkillSpec] = [
         description="Read event-level evidence consensus, compare rankings, design event-deduplicated validation experiments and generate patient/technical reports without mutating pipeline outputs.",
         use_when=["需要解释 Evidence consensus 与 weighted 差异", "需要按事件去重生成第一批实验候选", "需要患者版或技术版报告"],
         do_not_use_when=["尚未生成 ranked_events.evidence_consensus.tsv；应先运行 open-neo-run"],
-        required_inputs=["result_dir"], optional_inputs=["top_n", "clinical_context", "disease_profile", "therapy_context"],
+        required_inputs=["result_dir"], optional_inputs=["top_n", "clinical_context", "disease_profile", "therapy_context", "reports"],
         outputs=["review_integrity.json", "candidate_review.tsv", "first_batch_experiment_set.tsv", "experiment_candidates.tsv", "short_peptide_pool.tsv", "long_peptide_design.tsv", "minigene_design.tsv", "targeted_rna_validation_plan.tsv", "manual_review_candidates.tsv", "patient_report.docx/md/html", "technical_report.docx/md/html", "onepage_summary.pptx"],
         risk_level="LOW_TO_MEDIUM", visibility="public",
         composes=["neoag-ranking-compare", "neoag-experiment-design", "neoag-hla-loh-appm-review", "neoag-ccf-clonality-review", "neoag-patient-report", "neoag-technical-report", "neoag-concept-explainer"],

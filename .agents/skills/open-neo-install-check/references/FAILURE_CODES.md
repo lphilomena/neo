@@ -30,6 +30,7 @@ belong in the step `detail` field. Code definitions are owned by
 - `REVIEW_INTEGRITY_BLOCKED`: run/hash/evidence integrity checks failed.
 - `EVENT_MAPPING_FAILED`: event representatives cannot map to peptide rows.
 - `REPORT_BOUNDARY_VIOLATION`: review output would overwrite source results.
+- `INVALID_REPORT_SELECTION`: use only `patient`, `technical`, `onepage`, or `none`.
 
 `APPROVAL_REQUIRED` uses CLI exit code 3; `NEEDS_RANKING` uses 4; other
 terminal failures use 2. Gateway may map approval to HTTP 403 and state or

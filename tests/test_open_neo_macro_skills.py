@@ -9,6 +9,7 @@ from pathlib import Path
 from neoag.open_neo.contracts import MacroResult, MacroStep, RunInput, validate_json_schema
 from neoag.open_neo.errors import FailureCode, exit_code_for_result
 from neoag.open_neo.install_check import run_install_check
+from neoag.open_neo.cli import build_parser
 from neoag.open_neo.review import build_review_rows, run_review, select_first_batch
 from neoag.open_neo.routing import inspect_manifest
 from neoag.open_neo.run import run_open_neo
@@ -64,6 +65,20 @@ def test_failure_codes_have_stable_cli_exit_mapping():
     assert exit_code_for_result({"status": "PASS"}) == 0
     assert exit_code_for_result({"status": "BLOCKED", "blocking_issues": [FailureCode.APPROVAL_REQUIRED.value]}) == 3
     assert exit_code_for_result({"status": "NEEDS_RANKING", "blocking_issues": [FailureCode.NEEDS_RANKING.value]}) == 4
+
+
+def test_review_cli_accepts_report_selection():
+    args = build_parser().parse_args([
+        "review", "--result-dir", "results/case", "--outdir", "reviews/case",
+        "--reports", "patient,technical",
+    ])
+    assert args.reports == ["patient", "technical"]
+    schema = json.loads(
+        (Path.cwd() / ".agents/skills/open-neo-review/references/INPUT_SCHEMA.json").read_text(encoding="utf-8")
+    )
+    assert validate_json_schema(vars(args), schema) == []
+    invalid = dict(vars(args), reports=["clinical"])
+    assert "INVALID_ITEM_ENUM:reports" in validate_json_schema(invalid, schema)
 
 
 def test_public_macro_registry_and_internal_composition():
@@ -458,6 +473,23 @@ def test_open_neo_review_is_event_level_and_non_mutating(tmp_path: Path):
     assert (outdir / "reports/technical_report.md").is_file()
     assert review_rows[0]["pipeline_r_grade"] == "R1"
     assert review_rows[0]["experiment_priority"] == "EXPERIMENT_PRIORITY_HIGH"
+
+
+def test_open_neo_review_can_skip_document_generation(tmp_path: Path):
+    result_dir = tmp_path / "result"
+    _write_review_fixture(result_dir)
+    outdir = tmp_path / "review"
+    result = run_review({"result_dir": str(result_dir), "reports": ["none"], "outdir": str(outdir)})
+    assert result["status"] == "PASS_WITH_WARNINGS"
+    assert not (outdir / "reports/patient_report.md").exists()
+    assert not (outdir / "reports/technical_report.md").exists()
+    assert next(step for step in result["steps"] if step["step_id"] == "06")["status"] == "SKIPPED"
+
+
+def test_open_neo_review_rejects_unknown_report_type(tmp_path: Path):
+    result = run_review({"result_dir": str(tmp_path / "result"), "reports": ["clinical"], "outdir": str(tmp_path / "review")})
+    assert result["status"] == "BLOCKED"
+    assert "INVALID_REPORT_SELECTION" in result["blocking_issues"]
 
 
 def test_open_neo_review_blocks_incomplete_required_result_set(tmp_path: Path):

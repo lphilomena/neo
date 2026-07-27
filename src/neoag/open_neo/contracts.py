@@ -58,9 +58,12 @@ def validate_json_schema(data: dict[str, Any], schema: dict[str, Any]) -> list[s
         if isinstance(value, list):
             if "minItems" in spec and len(value) < spec["minItems"]:
                 errors.append(f"TOO_FEW_ITEMS:{key}:{spec['minItems']}")
-            item_type = (spec.get("items") or {}).get("type")
+            item_spec = spec.get("items") or {}
+            item_type = item_spec.get("type")
             if item_type and any(not matches_type(item, item_type) for item in value):
                 errors.append(f"INVALID_ITEM_TYPE:{key}")
+            if item_spec.get("enum") and any(item not in item_spec["enum"] for item in value):
+                errors.append(f"INVALID_ITEM_ENUM:{key}")
     return errors
 
 
@@ -112,6 +115,7 @@ class ReviewInput(MacroInput):
     clinical_context: str = ""
     disease_profile: str = ""
     therapy_context: str = "research"
+    reports: list[str] = field(default_factory=lambda: ["patient", "technical", "onepage"])
 
 
 @dataclass

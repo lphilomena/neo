@@ -9,6 +9,7 @@
     "clinical_context": {"type": "string"},
     "disease_profile": {"type": "string"},
     "therapy_context": {"type": "string"},
+    "reports": {"type": "array", "items": {"type": "string", "enum": ["patient", "technical", "onepage", "none"]}},
     "outdir": {"type": "string", "description": "Must differ from result_dir"}
   }
 }

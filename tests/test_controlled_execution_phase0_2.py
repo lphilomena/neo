@@ -96,7 +96,7 @@ def test_gateway_validation_and_risk_policy(tmp_path):
     except Exception as exc:
         assert getattr(exc, "status", "") == "BAD_REQUEST"
 
-    assert _risk("/patient-report", {}) == "LOW"
+    assert _risk("/patient-report", {}) == "MEDIUM"
     assert _risk("/pipeline-full", {"sample_manifest": "sample.json", "execute": True}) == "HIGH"
     assert _approval_required("/pipeline-full", {"sample_manifest": "sample.json", "execute": True}) is True
     assert _approval_required("/pipeline-full", {"sample_manifest": "sample.json", "execute": True, "approved": True}) is False
@@ -112,11 +112,16 @@ def test_gateway_job_store_persists_status(tmp_path):
     from neoag.controlled_execution.gateway import JobStore
 
     store = JobStore(tmp_path / "jobs")
-    job_id = store.add({"route": "/health", "status": "QUEUED"})
+    job_id = store.add({"route": "/health", "status": "QUEUED", "risk_level": "LOW", "request": {"case_id": "C1"}})
     store.update(job_id, status="PASS", result={"ok": True})
     loaded = store.get(job_id)
     assert loaded["status"] == "PASS"
     assert loaded["result"]["ok"] is True
+    paths = store.paths(job_id)
+    assert json.loads(paths["request"].read_text(encoding="utf-8"))["case_id"] == "C1"
+    assert json.loads(paths["approval"].read_text(encoding="utf-8"))["approval_status"] == "not_required"
+    assert json.loads(paths["status"].read_text(encoding="utf-8"))["status"] == "PASS"
+    assert len(paths["audit"].read_text(encoding="utf-8").splitlines()) >= 2
 
 
 def test_gateway_route_registry_includes_expected_routes():
@@ -180,6 +185,14 @@ def test_gateway_request_metadata_has_mvp_audit_fields():
         assert key in meta
     assert meta["approval_status"] == "approved"
     assert meta["input_manifest"] == "sample.yaml"
+
+    open_meta = _request_metadata(
+        "/open/run", {"result_dir": "results/S1"}, job_id="job-2",
+        risk="MEDIUM", status="QUEUED", output_dir="work/out",
+    )
+    assert open_meta["task_type"] == "open_run"
+    assert open_meta["skill_or_pipeline"] == "open_run"
+    assert open_meta["command_preview"] == "open-neo run"
 
 
 

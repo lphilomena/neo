@@ -26,6 +26,10 @@ The only CLI entry is `result_dir`, but the directory must contain:
 
 Optional evidence includes APPM, HLA LOH, CCF, purity, peptide safety, conflicts, ranking comparison, `clinical_context.yaml`, and `disease_profile.yaml`.
 
+Use `--reports patient,technical,onepage` to select report artifacts. Use
+`--reports none` for event review and experiment tables without document/PPT
+generation. Report generation is MEDIUM risk; table-only review is LOW risk.
+
 ## Procedure
 
 1. Verify required files, run identity, available input/reference hashes, Evidence consensus completion, event-peptide mapping, hard-fail propagation, and missing-evidence semantics.

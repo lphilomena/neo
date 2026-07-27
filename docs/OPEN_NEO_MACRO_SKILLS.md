@@ -74,8 +74,12 @@ open-neo review \
   --clinical-context configs/cases/CASE001.clinical.yaml \
   --disease-profile configs/diseases/sarcoma.yaml \
   --top-n 12 \
+  --reports patient,technical \
   --outdir reviews/CASE001
 ```
+
+Use `--reports none` for event review and experiment tables without generating
+patient/technical documents or the one-page PPTX.
 
 `result_dir` is the only required source entrypoint. Before reviewing any
 candidate, Skill3 verifies that the run manifest, event- and peptide-level
@@ -131,3 +135,30 @@ alt/VAF tables are reused. With tumor RNA FASTQ and a declared Salmon index
 plus tx2gene (or an RSEM reference), Skill2 generates both gene and transcript
 TPM. With tumor RNA BAM plus somatic VCF, it generates RNA ref/alt reads, depth
 and VAF. Fusion/splice junction-read fields remain separate event evidence.
+
+## Gateway task contract
+
+The existing compatible endpoints remain:
+
+- `POST /open/install-check` (`task_type=open_install_check`)
+- `POST /open/run` (`task_type=open_run`)
+- `POST /open/review` (`task_type=open_review`)
+
+Risk is assigned from the requested work: plan/dry-run and report-free review
+are LOW; execution from precomputed evidence and document/PPT generation are
+MEDIUM; install/repair and BAM/FASTQ or production-manifest execution are HIGH.
+HIGH requests require `approved=true`. HPC submission is not part of these
+public macro Skills.
+
+Each accepted or approval-blocked request writes:
+
+```text
+work/neoag_gateway/jobs/<job_id>/
+  request.json
+  approval.json
+  job_status.json
+  audit_log.jsonl
+```
+
+The Gateway also retains its global audit log and legacy flat job-status JSON
+for compatibility with existing clients.
