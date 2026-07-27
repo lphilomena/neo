@@ -27,6 +27,7 @@ DEFAULT_TOOL_EXECUTABLES = {
     "netmhcpan": "netMHCpan",
     "netmhcstabpan": "NetMHCstabpan",
     "mhcflurry": "mhcflurry-predict",
+    "pvacseq": "pvacseq",
     "prime": "PRIME",
     "bigmhc_im": "bigmhc_predict",
     "deepimmuno": "deepimmuno-cnn.py",
@@ -44,6 +45,8 @@ DEFAULT_TOOL_EXECUTABLES = {
     "easyfuse": "easyfuse",
     "pyclone": "pyclone",
     "pyclone_vi": "pyclone-vi",
+    "snaf": "snaf",
+    "splicemutr": "splicemutr",
 }
 
 CRITICAL_REFERENCES = ["reference_fasta", "gencode_gtf", "vep_cache"]

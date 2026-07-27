@@ -199,7 +199,7 @@ SKILL_SPECS: list[SkillSpec] = [
         use_when=["需要把 Open-Neo 部署到新机器", "需要判断 review/core/prediction/full 部署等级是否 READY"],
         do_not_use_when=["用户只需要运行已安装项目或解读已有结果"],
         required_inputs=["project_root 或 release_tarball"],
-        optional_inputs=["sha256", "deployment_tier", "tools_manifest", "reference_manifest", "sample_manifest", "mode", "approved"],
+        optional_inputs=["sha256", "deployment_tier", "tools_manifest", "reference_manifest", "sample_manifest", "mode", "approved", "asset_manifest", "asset_source_host", "asset_source_root", "deployment_reference_manifest", "install_timeout"],
         outputs=["environment_inventory.tsv", "doctor_status.json", "deployment_status.tsv", "deployment_report.md", "local manifests"],
         risk_level="LOW_TO_HIGH_BY_STEP", approval_required=True, visibility="public",
         composes=["neoag-remote-deploy", "neoag-doctor", "neoag-tool-reference-qc", "neoag-run-demo-and-smoke", "neoag-release-qc"],

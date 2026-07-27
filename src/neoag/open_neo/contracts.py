@@ -96,6 +96,7 @@ class InstallCheckInput(MacroInput):
     deployment_tier: str = "review"
     mode: str = "plan"
     approved: bool = False
+    install_timeout: int = 7200
 
 
 @dataclass

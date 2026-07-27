@@ -16,6 +16,7 @@ def test_open_neo_gateway_mode_risk():
     assert _risk("/open/run", {"mode": "resume", "production_manifest": "production.toml"}) == "HIGH"
     assert _risk("/open/install-check", {"mode": "verify"}) == "LOW"
     assert _risk("/open/install-check", {"mode": "install"}) == "HIGH"
+    assert _risk("/open/install-check", {"mode": "resume"}) == "HIGH"
     assert _risk("/open/review", {"reports": ["none"]}) == "LOW"
     assert _risk("/open/review", {"reports": ["patient", "technical"]}) == "MEDIUM"
 

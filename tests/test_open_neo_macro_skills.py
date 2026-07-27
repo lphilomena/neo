@@ -1,19 +1,30 @@
 from __future__ import annotations
 
 import csv
+import io
 import json
 import subprocess
 import sys
+import tarfile
 from pathlib import Path
 
 from neoag.open_neo.contracts import MacroResult, MacroStep, RunInput, validate_json_schema
 from neoag.open_neo.errors import FailureCode, exit_code_for_result
-from neoag.open_neo.install_check import run_install_check
+from neoag.controlled_execution.doctor import CheckRow
+from neoag.open_neo.install_check import (
+    _assess_tier,
+    _required_asset_sources_missing,
+    _rewrite_asset_manifest,
+    _run_deployment,
+    _stage_release,
+    _write_local_manifest_templates,
+    run_install_check,
+)
 from neoag.open_neo.cli import build_parser
 from neoag.open_neo.review import build_review_rows, run_review, select_first_batch
 from neoag.open_neo.routing import inspect_manifest
 from neoag.open_neo.run import run_open_neo
-from neoag.open_neo.state import load_run_state, resume_step_decision
+from neoag.open_neo.state import RunLayout, load_run_state, resume_step_decision
 from neoag.open_neo.rna_preprocessing import prepare_rna_evidence
 from neoag.open_neo.rna_fusion_splice_profile import (
     generate_rna_fusion_splice_manifest,
@@ -142,6 +153,144 @@ def test_install_check_release_requires_checksum(tmp_path: Path):
     })
     assert result["status"] == "BLOCKED"
     assert "CHECKSUM_REQUIRED" in result["blocking_issues"]
+
+
+def test_install_check_safely_stages_release_tarball(tmp_path: Path):
+    source = tmp_path / "source/release"
+    source.mkdir(parents=True)
+    (source / "pyproject.toml").write_text("[project]\nname='release'\n", encoding="utf-8")
+    (source / "README.md").write_text("release\n", encoding="utf-8")
+    archive = tmp_path / "release.tar.gz"
+    with tarfile.open(archive, "w:gz") as handle:
+        handle.add(source, arcname="release")
+    import hashlib
+    digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+    layout = RunLayout.create(tmp_path / "install")
+    project_root, outputs, reused = _stage_release(archive, digest, layout)
+    assert (project_root / "pyproject.toml").is_file()
+    assert Path(outputs["release_staging"]).is_file()
+    assert reused is False
+    project_root_2, _, reused_2 = _stage_release(archive, digest, layout)
+    assert project_root_2 == project_root
+    assert reused_2 is True
+
+
+def test_install_check_rejects_unsafe_release_member(tmp_path: Path):
+    archive = tmp_path / "unsafe.tar"
+    payload = b"unsafe\n"
+    with tarfile.open(archive, "w") as handle:
+        member = tarfile.TarInfo("../escape.txt")
+        member.size = len(payload)
+        handle.addfile(member, io.BytesIO(payload))
+    import hashlib
+    digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+    layout = RunLayout.create(tmp_path / "install")
+    try:
+        _stage_release(archive, digest, layout)
+        assert False, "unsafe archive should be rejected"
+    except ValueError as exc:
+        assert "unsafe archive path" in str(exc)
+    assert not (tmp_path / "escape.txt").exists()
+
+
+def test_prediction_tier_requires_complete_reference_manifest(tmp_path: Path):
+    tools = ["python", "neoag", "neoag-skill", "vep", "netmhcpan", "mhcflurry", "pvacseq", "prime"]
+    rows = [CheckRow("tool", name, "OK") for name in tools]
+    status, requirements = _assess_tier("prediction", rows, None)
+    assert status == "PARTIAL"
+    assert any(row["kind"] == "reference" and row["status"] == "MISSING" for row in requirements)
+
+    fasta = tmp_path / "ref.fa"
+    fasta.write_text(">chr1\nA\n", encoding="utf-8")
+    Path(str(fasta) + ".fai").write_text("chr1\t1\t6\t1\t2\n", encoding="utf-8")
+    fasta.with_suffix(".dict").write_text("@HD\tVN:1.6\n", encoding="utf-8")
+    gtf = tmp_path / "gencode.gtf"; gtf.write_text("# gtf\n", encoding="utf-8")
+    vep = tmp_path / "vep"; vep.mkdir()
+    proteome = tmp_path / "normal.fa"; proteome.write_text(">P\nA\n", encoding="utf-8")
+    manifest = tmp_path / "references.json"
+    manifest.write_text(json.dumps({"references": {
+        "reference_fasta": {"path": str(fasta)}, "gencode_gtf": {"path": str(gtf)},
+        "vep_cache": {"path": str(vep)}, "normal_proteome": {"path": str(proteome)},
+    }}), encoding="utf-8")
+    status, requirements = _assess_tier("prediction", rows, manifest)
+    assert status == "READY"
+    Path(str(fasta) + ".fai").unlink()
+    status, _ = _assess_tier("prediction", rows, manifest)
+    assert status == "PARTIAL"
+
+
+def test_install_check_writes_comprehensive_local_manifests(tmp_path: Path):
+    layout = RunLayout.create(tmp_path / "install")
+    outputs = _write_local_manifest_templates(layout, Path.cwd(), {"deploy_root": tmp_path / "neoag"})
+    tools = Path(outputs["tools_manifest_template"]).read_text(encoding="utf-8")
+    refs = Path(outputs["reference_manifest_template"]).read_text(encoding="utf-8")
+    assert all(name in tools for name in ["netmhcpan", "spechla", "purple", "easyfuse", "splicemutr"])
+    assert all(name in refs for name in ["normal_ligandome", "normal_junctions", "ctat_genome_lib", "sequenza_gc_wiggle"])
+    assert str(tmp_path / "neoag/refs/data/ref/hg38") in refs
+    asset_manifest = Path(outputs["asset_manifest_local"])
+    target_paths = [line.split("\t")[2] for line in asset_manifest.read_text(encoding="utf-8").splitlines() if "\t" in line and not line.startswith("#")]
+    assert all(not path.startswith("/srv/") for path in target_paths[1:])
+
+
+def test_local_asset_manifest_rewrites_source_and_target_roots(tmp_path: Path):
+    source = tmp_path / "assets.tsv"
+    source.write_text(
+        "asset_name\tsource_path\ttarget_path\tkind\trequired\tsha256\tmarker\n"
+        "ref\t/srv/neoag-assets/source/data/ref.fa\t/srv/neoag-assets/install/data/ref.fa\tfile\t1\t-\t-\n"
+        "tool\t/srv/neoag-assets/source/tools/tool\t/srv/neoag-tools/tools/tool\tdir\t1\t-\tbin/tool\n"
+        "licensed\t/srv/neoag-assets/source/licensed/tool\t/srv/neoag-licensed/tool\tdir\t0\t-\ttool\n",
+        encoding="utf-8",
+    )
+    source_root = tmp_path / "source"
+    (source_root / "data").mkdir(parents=True)
+    (source_root / "data/ref.fa").write_text(">chr1\nA\n", encoding="utf-8")
+    output = _rewrite_asset_manifest(
+        source, tmp_path / "local.tsv", tools_root=tmp_path / "tools",
+        reference_root=tmp_path / "refs", licensed_root=tmp_path / "licensed",
+        source_root=source_root,
+    )
+    text = output.read_text(encoding="utf-8")
+    assert str(source_root / "data/ref.fa") in text
+    assert str(tmp_path / "refs/data/ref.fa") in text
+    assert str(tmp_path / "tools/tools/tool") in text
+    assert str(tmp_path / "licensed/tool") in text
+    assert _required_asset_sources_missing(output, "") == [f"tool={source_root}/tools/tool"]
+    assert _required_asset_sources_missing(output, "asset-host") == []
+
+
+def test_install_checkpoint_can_be_reused(tmp_path: Path):
+    command = ["bash", "-c", "printf done"]
+    checkpoint = tmp_path / "checkpoint.json"
+    log = tmp_path / "install.log"
+    status, _, failure = _run_deployment(command, tmp_path, log, checkpoint, timeout=30, resume=False)
+    assert status == "PASS" and failure == ""
+    status, _, failure = _run_deployment(command, tmp_path, log, checkpoint, timeout=30, resume=True)
+    assert status == "REUSED" and failure == ""
+
+
+def test_install_checkpoint_records_timeout(tmp_path: Path, monkeypatch):
+    def timeout(*args, **kwargs):
+        raise subprocess.TimeoutExpired(cmd=args[0], timeout=kwargs["timeout"], output=b"partial output")
+
+    monkeypatch.setattr(subprocess, "run", timeout)
+    checkpoint = tmp_path / "checkpoint.json"
+    status, log, failure = _run_deployment(
+        ["bash", "installer.sh"], tmp_path, tmp_path / "install.log", checkpoint,
+        timeout=60, resume=False,
+    )
+    assert status == "FAILED"
+    assert "timed out after 60 seconds" in failure
+    assert Path(log).read_text(encoding="utf-8") == "partial output"
+    assert json.loads(checkpoint.read_text(encoding="utf-8"))["status"] == "FAILED"
+
+
+def test_install_resume_requires_approval(tmp_path: Path):
+    result = run_install_check({
+        "project_root": str(Path.cwd()), "deployment_tier": "review",
+        "mode": "resume", "release_audit": False, "outdir": str(tmp_path / "install"),
+    })
+    assert result["status"] == "APPROVAL_REQUIRED"
+    assert "APPROVAL_REQUIRED" in result["blocking_issues"]
 
 
 def test_open_neo_run_plan_writes_route_and_config(tmp_path: Path):

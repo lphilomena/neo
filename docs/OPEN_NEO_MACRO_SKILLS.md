@@ -17,6 +17,22 @@ open-neo install-check \
 additional `--allow-download` flag, and licensed assets remain host-mounted or
 machine-local. A supplied release tarball must include `--sha256`.
 
+Release archives are safely staged under the Skill output directory; absolute,
+traversal, link and device members are rejected. The staged tree must contain
+one unambiguous `pyproject.toml` or `setup.py` root. Mutating modes record a
+timeout-protected `deployment_checkpoint.json`; `--mode resume` reuses only a
+matching successful checkpoint and otherwise reruns the idempotent installer.
+
+For prediction/full tiers, READY requires the declared reference manifest,
+FASTA sidecars and the required tier assets. Skill1 runs Doctor before and
+after an approved installation and records `deployment_delta.tsv` plus the
+authoritative `tier_requirements.tsv`.
+
+Skill1 also writes `manifests/production_assets.local.tsv`, replacing generic
+tool, licensed-tool and reference targets with the selected local roots. Use
+`--asset-source-root` for a mounted asset tree or `--asset-source-host` for a
+remote source. Required sources are checked before installation begins.
+
 ## 2. Input detection, Pipeline, and two rankings
 
 Plan:
