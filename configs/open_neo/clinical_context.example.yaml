@@ -1,0 +1,6 @@
+case_id: CASE001
+tumor_type: DSRCT
+sampling_site: liver metastasis
+report_audience: patient_and_family
+therapy_context: research_vaccine
+notes: "Do not place patient identifiers or clinical prescriptions in this file."

@@ -1,0 +1,31 @@
+schema_version: open-neo-sample-v1
+case_id: CASE001
+sample_id: TUMOR001
+genome_build: GRCh38
+tumor_type: DSRCT
+
+inputs:
+  somatic_vcf: /path/to/tumor.normal.somatic.vcf.gz
+  fusion_tsv: /path/to/fusions.pass.tsv
+  splice_junction_tsv: /path/to/regtools.splice.tsv
+  hla_alleles:
+    - HLA-A*02:01
+    - HLA-B*07:02
+  expression_tsv: /path/to/gene_tpm.tsv
+  rna_evidence_tsv: /path/to/rna_alt_vaf.tsv
+  purity_tsv: /path/to/purity.tsv
+  cnv_tsv: /path/to/cnv_segments.tsv
+  hla_loh_tsv: /path/to/hla_loh.tsv
+  normal_expression: /path/to/normal_expression.tsv
+  normal_hla_ligands: /path/to/normal_ligandome.tsv
+  reference_proteome: /path/to/normal_proteome.fa
+  normal_junctions: /path/to/normal_junctions.tsv
+  reference_fasta: /path/to/GRCh38.fa
+  gencode_gtf: /path/to/gencode.gtf
+  vep_cache: /path/to/vep_cache
+
+execution:
+  mode: dry-run
+  profile: sarcoma_rna_supported
+  backend: production-run
+  reuse_existing: true

@@ -1,0 +1,56 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+
+FAILURE_CODES = {
+    # Install/check
+    "CHECKSUM_FAILED",
+    "CHECKSUM_REQUIRED",
+    "CORE_INSTALL_FAILED",
+    "PYTHON_VERSION_UNSUPPORTED",
+    "TOOL_MISSING",
+    "TOOL_SMOKE_FAILED",
+    "REFERENCE_MISSING",
+    "REFERENCE_HASH_MISMATCH",
+    "LICENSE_BLOCKED",
+    "PRIVATE_PATH_DETECTED",
+    "PATIENT_DATA_IN_RELEASE",
+    # Run
+    "AMBIGUOUS_INPUT",
+    "SAMPLE_ID_MISMATCH",
+    "GENOME_BUILD_MISMATCH",
+    "TUMOR_NORMAL_MISMATCH",
+    "HLA_MISSING",
+    "UNSUPPORTED_INPUT",
+    "DOCTOR_BLOCKED",
+    "ROUTE_FAILED",
+    "PIPELINE_STAGE_FAILED",
+    "REQUIRED_OUTPUT_MISSING",
+    "EVIDENCE_BUILD_FAILED",
+    "WEIGHTED_RANKING_FAILED",
+    "CONSENSUS_RANKING_FAILED",
+    "APPROVAL_REQUIRED",
+    "SV_REQUIRES_PRODUCTION_MANIFEST_OR_PREBUILT_RAW",
+    "RESUME_REQUIRES_PRODUCTION_MANIFEST_OR_RESULT_DIR",
+    # Review
+    "RUN_MANIFEST_MISSING",
+    "RUN_INCOMPLETE",
+    "CONSENSUS_RANKING_MISSING",
+    "EVENT_MAPPING_FAILED",
+    "EVIDENCE_CONFLICT_UNRESOLVED",
+    "EXPERIMENT_PLAN_PARTIAL",
+    "REPORT_GENERATION_FAILED",
+    "REPORT_BOUNDARY_VIOLATION",
+}
+
+
+@dataclass
+class OpenNeoError(RuntimeError):
+    code: str
+    message: str
+
+    def __post_init__(self) -> None:
+        if self.code not in FAILURE_CODES:
+            self.code = "PIPELINE_STAGE_FAILED"
+        RuntimeError.__init__(self, f"{self.code}: {self.message}")

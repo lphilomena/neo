@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "open-neo-install-check input",
+  "type": "object",
+  "properties": {
+    "project_root": {"type": "string"},
+    "release_tarball": {"type": "string"},
+    "sha256": {"type": "string"},
+    "deployment_tier": {"enum": ["review", "core", "prediction", "full"]},
+    "mode": {"enum": ["plan", "verify", "repair", "install"]},
+    "tools_manifest": {"type": "string"},
+    "reference_manifest": {"type": "string"},
+    "approved": {"type": "boolean"},
+    "deploy_root": {"type": "string"},
+    "tools_root": {"type": "string"},
+    "reference_root": {"type": "string"},
+    "licensed_root": {"type": "string"},
+    "asset_source_host": {"type": "string"},
+    "allow_download": {"type": "boolean"},
+    "installer_profile": {"enum": ["minimal", "standard", "all-open", "all"]},
+    "no_sync_assets": {"type": "boolean"}
+  },
+  "anyOf": [{"required": ["project_root"]}, {"required": ["release_tarball"]}]
+}

@@ -873,3 +873,13 @@ neoag-skill run neoag-peptide-csv --outdir work/peptides --arg peptide_csv=pepti
 ```
 
 Skills 是 SOP 封装，不承担临床决策，不包含患者 BAM/FASTQ/VCF 或大型参考库；HPC、安装、覆盖、删除等高风险路径默认 dry-run 或需要人工确认。
+
+## Open-Neo 宏 Skills
+
+新增三个稳定的对外入口，并继续复用现有 A/B/C/D Skills 与正式算法：
+
+- `open-neo install-check`：迁移部署计划、经批准的安装/修复、Doctor、参考数据与 smoke 验收。
+- `open-neo run`：确定性输入路由、生产执行或续跑、综合证据表、旧加权基线与证据共识排序。
+- `open-neo review`：事件级审阅、R1/R2 首批实验清单、R3 补证据队列及患者版/技术版报告。
+
+`plan`、`verify` 和结果审阅不改动生产结果；安装、修复、执行和续跑必须显式批准。详见 [docs/OPEN_NEO_MACRO_SKILLS.md](docs/OPEN_NEO_MACRO_SKILLS.md)。

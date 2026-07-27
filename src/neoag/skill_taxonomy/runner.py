@@ -9,6 +9,7 @@ from .governance_skills import run_demo_smoke, run_doctor, run_gateway_submit, r
 from .registry import SKILLS_BY_NAME, SkillSpec
 from .review_skills import run_concept_explainer, run_experiment_design, run_patient_report, run_ranking_compare, run_technical_report
 from .io import ensure_dir, write_json
+from neoag.open_neo.skill_handlers import run_open_neo_install_check, run_open_neo_run, run_open_neo_review
 
 HANDLERS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
     "vcf": run_vcf,
@@ -39,6 +40,9 @@ HANDLERS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
     "remote_deploy": run_remote_deploy,
     "gateway_submit": run_gateway_submit,
     "hpc_runner": run_hpc_runner,
+    "open_neo_install_check": run_open_neo_install_check,
+    "open_neo_run": run_open_neo_run,
+    "open_neo_review": run_open_neo_review,
 }
 
 

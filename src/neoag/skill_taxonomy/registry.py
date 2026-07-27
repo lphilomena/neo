@@ -22,6 +22,9 @@ class SkillSpec:
     external_tools: list[str] = field(default_factory=list)
     downstream_skills: list[str] = field(default_factory=list)
     boundaries: list[str] = field(default_factory=list)
+    visibility: str = "internal"
+    composes: list[str] = field(default_factory=list)
+    entrypoint: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -32,6 +35,7 @@ CATEGORY_LABELS = {
     "B": "公共证据分析型 Skills：对所有入口共用的 HLA、表达、CCF、APPM、安全和排序证据层进行标准化分析",
     "C": "审阅/报告/实验设计型 Skills：解释结果、生成报告、设计实验验证和患者沟通材料",
     "D": "工程治理/执行控制型 Skills：输入质控、环境健康检查、全流程编排、发布审计和受控执行",
+    "M": "对外宏 Skills：为代码智能体提供安装检查、完整运行和结果审阅三个稳定入口",
 }
 
 COMMON_BOUNDARIES = [
@@ -187,15 +191,47 @@ SKILL_SPECS: list[SkillSpec] = [
         outputs=["all_tool_results.tsv", "ranked_peptides.weighted_baseline.tsv", "ranked_peptides.evidence_consensus.tsv", "ranked_events.evidence_consensus.tsv", "ranking_compare_weighted_vs_consensus.md"], risk_level="LOW",
         boundaries=["Skill 只调用 neoag evidence-rank；正式排序算法只由 src/neoag/evidence_consensus.py 维护。"],
     ),
+    # M: Public macro Skills. Fine-grained A/B/C/D Skills remain the internal implementation layer.
     _spec(
-        name="open-neo-run", category="B", handler="ranking",
-        purpose="对外宏 Skill2：执行生产级并行证据排序",
-        description="Public macro Skill2 alias that invokes neoag evidence-rank through the shared production CLI wrapper.",
-        use_when=["外部 Agent 需要用统一 Skill2 入口生成加权基线与证据共识并行结果"],
-        do_not_use_when=["尚未生成 comprehensive evidence 或 weighted baseline"],
-        required_inputs=["comprehensive_evidence", "weighted_baseline"], optional_inputs=["rules", "provenance", "track"],
-        outputs=["all_tool_results.tsv", "ranked_peptides.weighted_baseline.tsv", "ranked_peptides.evidence_consensus.tsv", "ranked_events.evidence_consensus.tsv", "ranking_compare_weighted_vs_consensus.md"], risk_level="LOW",
-        boundaries=["Skill = SOP/包装层；不得在 Skill 中复制 R1-R4、Pareto、hard fail 或 priority-cap 算法。"],
+        name="open-neo-install-check", category="M", handler="open_neo_install_check",
+        purpose="对外宏 Skill1：安装、环境、工具、参考数据与迁移验收",
+        description="Stable public entrypoint for new-machine preflight, local manifest generation, Doctor, smoke tests and deployment-tier status.",
+        use_when=["需要把 Open-Neo 部署到新机器", "需要判断 review/core/prediction/full 部署等级是否 READY"],
+        do_not_use_when=["用户只需要运行已安装项目或解读已有结果"],
+        required_inputs=["project_root 或 release_tarball"],
+        optional_inputs=["sha256", "deployment_tier", "tools_manifest", "reference_manifest", "sample_manifest", "mode", "approved"],
+        outputs=["environment_inventory.tsv", "doctor_status.json", "deployment_status.tsv", "deployment_report.md", "local manifests"],
+        risk_level="LOW_TO_HIGH_BY_STEP", approval_required=True, visibility="public",
+        composes=["neoag-remote-deploy", "neoag-doctor", "neoag-tool-reference-qc", "neoag-run-demo-and-smoke", "neoag-release-qc"],
+        entrypoint="open-neo install-check",
+        boundaries=["verify/plan 为只读；repair/install、下载、覆盖、授权资产迁移必须显式 approved。"],
+    ),
+    _spec(
+        name="open-neo-run", category="M", handler="open_neo_run",
+        purpose="对外宏 Skill2：输入检测、路由、Pipeline、综合证据表和双排序",
+        description="Detect VCF/fusion/splice/SV/peptide/result inputs, compose internal Skills, execute or plan the pipeline, and emit weighted plus evidence-consensus rankings.",
+        use_when=["外部 Agent 需要从用户输入运行完整分析", "需要自动识别多入口并生成 all_tool_results 与双排序", "需要复用已有结果补生成 evidence-consensus"],
+        do_not_use_when=["只需解释 event-level 结果和生成报告，应使用 open-neo-review"],
+        required_inputs=["sample_manifest，或受支持的输入文件/已有 result_dir"],
+        optional_inputs=["mode", "approved", "tools_manifest", "reference_manifest", "rules", "production_manifest", "stub"],
+        outputs=["input_status.json", "route_plan.json", "all_tool_results.tsv", "ranked_peptides.weighted_baseline.tsv", "ranked_peptides.evidence_consensus.tsv", "ranked_events.evidence_consensus.tsv", "ranking_compare_weighted_vs_consensus.md", "run_manifest.json"],
+        risk_level="LOW_TO_HIGH_BY_MODE", approval_required=True, visibility="public",
+        composes=["neoag-input-qc", "neoag-vcf", "neoag-fusion", "neoag-splice", "neoag-sv-wgs", "neoag-sv-wes", "neoag-peptide-csv", "neoag-hla-typing-loh", "neoag-presentation", "neoag-expression", "neoag-rna-evidence", "neoag-ccf", "neoag-appm-escape", "neoag-safety", "neoag-ranking", "neoag-doctor", "neoag-pipeline-full"],
+        entrypoint="open-neo run",
+        boundaries=["plan/dry-run 不执行重型任务；execute/resume 必须 approved。", "双排序并行输出，不得覆盖 weighted baseline。"],
+    ),
+    _spec(
+        name="open-neo-review", category="M", handler="open_neo_review",
+        purpose="对外宏 Skill3：event-level 共识审阅、实验优先级与报告",
+        description="Read event-level evidence consensus, compare rankings, design event-deduplicated validation experiments and generate patient/technical reports without mutating pipeline outputs.",
+        use_when=["需要解释 Evidence consensus 与 weighted 差异", "需要按事件去重生成第一批实验候选", "需要患者版或技术版报告"],
+        do_not_use_when=["尚未生成 ranked_events.evidence_consensus.tsv；应先运行 open-neo-run"],
+        required_inputs=["result_dir"], optional_inputs=["top_n", "clinical_context", "therapy_context"],
+        outputs=["candidate_review.tsv", "first_batch_experiment_set.tsv", "experiment_candidates.tsv", "patient_report.docx/md/html", "technical_report.md/html"],
+        risk_level="LOW_TO_MEDIUM", visibility="public",
+        composes=["neoag-ranking-compare", "neoag-experiment-design", "neoag-patient-report", "neoag-technical-report", "neoag-concept-explainer"],
+        entrypoint="open-neo review",
+        boundaries=["以 event-level consensus 为主；不修改 Skill2 的 R 等级或 pipeline rank。", "第一批集合是研究性启发式清单，不是已验证的最优治疗组合。"],
     ),
     # C: Review/report/design
     _spec(
@@ -290,7 +326,7 @@ def list_specs(category: str | None = None) -> list[SkillSpec]:
 
 def registry_dict() -> dict[str, Any]:
     return {
-        "schema_version": "neoag-skill-taxonomy-v1",
+        "schema_version": "neoag-skill-taxonomy-v2",
         "categories": CATEGORY_LABELS,
         "skills": [s.to_dict() for s in SKILL_SPECS],
     }

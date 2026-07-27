@@ -10,7 +10,7 @@ from neoag.skill_taxonomy.runner import run_skill, validate_skill_dirs
 
 def test_abcd_registry_complete():
     reg = registry_dict()
-    assert set(reg["categories"]) == {"A", "B", "C", "D"}
+    assert set(reg["categories"]) == {"A", "B", "C", "D", "M"}
     assert "neoag-vcf" in SKILLS_BY_NAME
     assert "neoag-ranking" in SKILLS_BY_NAME
     assert "open-neo-run" in SKILLS_BY_NAME

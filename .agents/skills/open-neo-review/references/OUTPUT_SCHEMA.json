@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "open-neo-review output",
+  "type": "object",
+  "required": ["schema_version", "skill", "status", "outputs"],
+  "properties": {
+    "schema_version": {"const": "open-neo-macro-skill-v1"},
+    "skill": {"const": "open-neo-review"},
+    "status": {"enum": ["PASS", "PASS_WITH_WARNINGS", "PARTIAL", "BLOCKED", "FAILED"]},
+    "outputs": {"type": "object"}
+  }
+}

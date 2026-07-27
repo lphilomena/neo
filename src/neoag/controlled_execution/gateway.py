@@ -87,6 +87,25 @@ ROUTE_SPECS: dict[str, RouteSpec] = {
         high_risk_when=("execute", "overwrite", "hpc_submit"),
         description="Manifest-driven full pipeline; dry-run by default.",
     ),
+    "/open/install-check": RouteSpec(
+        route="/open/install-check",
+        risk_level="LOW",
+        optional=("outdir", "case_id", "project_root", "release_tarball", "sha256", "deployment_tier", "mode", "tools_manifest", "reference_manifest", "sample_manifest", "profile", "run_demo", "run_pytest", "run_nextflow", "mini_smoke", "release_audit", "approved", "deploy_root", "tools_root", "reference_root", "licensed_root", "asset_source_host", "allow_download", "installer_profile", "no_sync_assets"),
+        description="Open-Neo public macro Skill1.",
+    ),
+    "/open/run": RouteSpec(
+        route="/open/run",
+        risk_level="LOW",
+        optional=("outdir", "case_id", "sample_id", "project_root", "sample_manifest", "mode", "approved", "allow_partial", "doctor", "tools_manifest", "reference_manifest", "execution_profile", "mini_smoke", "release_audit", "stub", "profile", "genome_build", "somatic_vcf", "fusion_tsv", "splice_junction_tsv", "sv_vcf", "capture_bed", "peptide_csv", "raw_events", "raw_peptides", "sv_raw_events", "sv_raw_peptides", "hla_file", "hla_alleles", "expression_tsv", "transcript_expression_tsv", "rna_evidence_tsv", "purity_tsv", "cnv_tsv", "hla_loh_tsv", "normal_expression", "normal_hla_ligands", "reference_proteome", "normal_junctions", "reference_fasta", "gencode_gtf", "vep_cache", "production_manifest", "result_dir", "comprehensive_evidence", "weighted_baseline", "rules", "provenance", "force", "timeout"),
+        description="Open-Neo public macro Skill2.",
+    ),
+    "/open/review": RouteSpec(
+        route="/open/review",
+        risk_level="LOW",
+        required=("result_dir",),
+        optional=("outdir", "case_id", "top_n", "clinical_context", "therapy_context"),
+        description="Open-Neo public macro Skill3.",
+    ),
 }
 
 
@@ -143,6 +162,11 @@ def _risk(route: str, data: dict[str, Any]) -> str:
     spec = ROUTE_SPECS.get(route)
     if not spec:
         return "LOW"
+    mode = str(data.get("mode") or "").lower()
+    if route == "/open/run" and mode in {"execute", "resume"}:
+        return "HIGH"
+    if route == "/open/install-check" and mode in {"repair", "install"}:
+        return "HIGH"
     if any(_truthy(data, flag) for flag in set(spec.high_risk_when) | HIGH_RISK_FLAGS):
         return "HIGH"
     return spec.risk_level
@@ -356,6 +380,23 @@ class GatewayHandler(BaseHTTPRequestHandler):
 
     def _dispatch(self, route: str, data: dict[str, Any], job_id: str) -> dict[str, Any]:
         outdir = self._job_outdir(data, job_id)
+        if route == "/open/install-check":
+            from neoag.open_neo.install_check import run_install_check
+            payload = dict(data)
+            payload["outdir"] = str(outdir)
+            payload.setdefault("project_root", str(self.project_root))
+            return run_install_check(payload)
+        if route == "/open/run":
+            from neoag.open_neo.run import run_open_neo
+            payload = dict(data)
+            payload["outdir"] = str(outdir)
+            payload.setdefault("project_root", str(self.project_root))
+            return run_open_neo(payload)
+        if route == "/open/review":
+            from neoag.open_neo.review import run_review
+            payload = dict(data)
+            payload["outdir"] = str(outdir)
+            return run_review(payload)
         if route == "/doctor":
             res = run_doctor(
                 project_root=data.get("project_root") or self.project_root,
