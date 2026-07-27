@@ -1,39 +1,61 @@
 ---
 name: open-neo-review
-description: Public macro Skill3 that reads event-level Evidence consensus results, compares rankings, creates an event-deduplicated experimental priority set, and generates patient and technical reports without changing Pipeline ranks.
+description: Public macro Skill3 for read-only event-level integrity review, evidence-driven experiment priority, validation design, ranking comparison, and bounded patient/technical reporting.
 ---
 
 # Open-Neo Review
 
 ## Use when
 
-- `open-neo-run` has produced peptide- and event-level Evidence consensus results.
-- The user wants to know which events should be validated first and why.
-- A patient-facing or technical review report is required.
+- `open-neo-run` has completed Evidence consensus ranking.
+- The user asks which events deserve validation, why rankings differ, or which assay should be run first.
+- Patient-facing and technical review artifacts are required.
 
 ## Required input
 
-- `result_dir` containing `ranked_events.evidence_consensus.tsv` and `ranked_peptides.evidence_consensus.tsv`. The weighted baseline is optional and enables comparison output.
+The only CLI entry is `result_dir`, but the directory must contain:
+
+- `run_manifest.json`
+- `ranked_events.evidence_consensus.tsv`
+- `ranked_peptides.evidence_consensus.tsv`
+- `ranked_peptides.weighted_baseline.tsv`
+- `all_tool_results.tsv`
+- `validation_plan.tsv`
+
+Optional evidence includes APPM, HLA LOH, CCF, purity, peptide safety, conflicts, ranking comparison, `clinical_context.yaml`, and `disease_profile.yaml`.
 
 ## Procedure
 
-1. Verify that all files refer to a coherent result set.
-2. Use the event-level consensus table as the primary review input.
-3. Keep no more than one or two representative peptide-HLA pairs per event/phase group.
-4. Map R1-R4 and missing evidence to an independent experiment-priority state.
-5. Invoke the internal experiment-design and ranking-compare Skills.
-6. Create a deterministic R1/R2 first-batch set with event, HLA, and assay diversity; keep R3 in a separate evidence-completion queue.
-7. Generate patient and technical reports while preserving research boundaries.
+1. Verify required files, run identity, available input/reference hashes, Evidence consensus completion, event-peptide mapping, hard-fail propagation, and missing-evidence semantics.
+2. Return `NEEDS_RANKING` when event-level consensus is absent. Never substitute weighted Top20.
+3. Preserve `pipeline_r_grade` and `pipeline_event_rank`; write independent `review_status`, `review_reason`, and `experiment_priority` fields.
+4. Review event-level representatives, with at most two peptide-HLA pairs per event and explicit phase/redundancy handling.
+5. Invoke ranking comparison, experiment design, HLA-LOH/APPM review, CCF/clonality review, patient report, technical report, and bounded concept explanations.
+6. Build a deterministic first-batch research set considering grade, RNA, safety, HLA diversity, clonality, event type, phase and redundancy. It is not a vaccine optimizer.
+7. Generate short-peptide, long-peptide, minigene, targeted-RNA, and manual-review lanes.
 
 ## Outputs
 
+- `review_integrity.json`, `review_integrity_checks.tsv`, `review_blocking_issues.tsv`
 - `candidate_review.tsv`
 - `first_batch_experiment_set.tsv`
-- `experiment_design/experiment_candidates.tsv`
-- short-peptide, long-peptide, minigene, and targeted-RNA plans
-- patient report (`md/html/docx` when python-docx is available)
-- technical report (`md/html`)
+- `evidence_completion_queue.tsv`
+- `manual_review_candidates.tsv`
+- `experiment_candidates.tsv`
+- `short_peptide_pool.tsv`
+- `long_peptide_design.tsv`
+- `minigene_design.tsv`
+- `targeted_rna_validation_plan.tsv`
+- APPM/HLA-LOH and CCF review files
+- weighted-vs-consensus comparison files
+- patient report (`md/html/docx`)
+- technical report (`md/html/docx` when available)
+- `onepage_summary.pptx` when `python-pptx` is available
 
-## Boundary
+## Clinical boundary
 
-The first-batch set is a transparent heuristic for wet-lab planning, not a validated vaccine-set optimizer. This Skill must never rewrite the Pipeline's R grade, weighted rank, or Evidence consensus rank.
+Allowed wording: computational candidate, experiment priority, missing evidence, suggested research validation route.
+
+Forbidden wording: confirmed neoantigen, guaranteed benefit, clinical resistance, ineffective immunotherapy, drug recommendation, or established vaccine/treatment plan.
+
+Skill3 is read-only with respect to Skill2 outputs.

@@ -103,7 +103,7 @@ ROUTE_SPECS: dict[str, RouteSpec] = {
         route="/open/review",
         risk_level="LOW",
         required=("result_dir",),
-        optional=("outdir", "case_id", "top_n", "clinical_context", "therapy_context"),
+        optional=("outdir", "case_id", "top_n", "clinical_context", "disease_profile", "therapy_context"),
         description="Open-Neo public macro Skill3.",
     ),
 }

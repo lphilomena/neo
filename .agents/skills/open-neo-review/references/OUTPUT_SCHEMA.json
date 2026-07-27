@@ -6,7 +6,7 @@
   "properties": {
     "schema_version": {"const": "open-neo-macro-skill-v1"},
     "skill": {"const": "open-neo-review"},
-    "status": {"enum": ["PASS", "PASS_WITH_WARNINGS", "PARTIAL", "BLOCKED", "FAILED"]},
+    "status": {"enum": ["PASS", "PASS_WITH_WARNINGS", "PARTIAL", "NEEDS_RANKING", "BLOCKED", "FAILED"]},
     "outputs": {"type": "object"}
   }
 }

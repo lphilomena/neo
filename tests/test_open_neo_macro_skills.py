@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 
 from neoag.open_neo.install_check import run_install_check
-from neoag.open_neo.review import run_review
+from neoag.open_neo.review import build_review_rows, run_review, select_first_batch
 from neoag.open_neo.routing import inspect_manifest
 from neoag.open_neo.run import run_open_neo
 from neoag.open_neo.rna_preprocessing import prepare_rna_evidence
@@ -247,11 +247,14 @@ def _write_review_fixture(root: Path) -> None:
         "peptide_id\tefficacy_score\tfinal_priority\nP1\t0.8\tB\nP2\t0.7\tC\n", encoding="utf-8"
     )
     (scoring / "ranked_peptides.evidence_consensus.tsv").write_text(
-        "evidence_rank\tpeptide_id\tevent_id\tevent_type\tgene\tpeptide\thla_allele\tevidence_grade\tpareto_front\n"
-        "1\tP1\tE1\tSNV\tGENE1\tSYFPEITHI\tHLA-A*02:01\tR1\t1\n"
-        "2\tP2\tE2\tfusion\tGENE2::GENE3\tABCDEFGHI\tHLA-B*07:02\tR3\t1\n",
+        "evidence_rank\tpeptide_id\tevent_id\tevent_type\tgene\tpeptide\thla_allele\tevidence_grade\tpareto_front\trna_support_state\tsafety_state\tpresentation_consensus_state\tmutant_specificity_state\tclonality_state\tccf_confidence\thla_appm_state\tevidence_completeness_state\thard_failure\n"
+        "1\tP1\tE1\tSNV\tGENE1\tSYFPEITHI\tHLA-A*02:01\tR1\t1\tRNA_CONFIRMED\tSAFETY_PASS\tPRESENTATION_CONSISTENT_STRONG\tMT_SPECIFIC\tCLONAL_LIKE\thigh\tHLA_APPM_RETAINED\tCOMPLETE\tno\n"
+        "2\tP2\tE2\tfusion\tGENE2::GENE3\tABCDEFGHI\tHLA-B*07:02\tR3\t1\tRNA_UNASSESSED\tSAFETY_PARTIAL\tPRESENTATION_SINGLE_TOOL\tNOVEL_JUNCTION\tunresolved\tlow\tHLA_LOH_UNASSESSED\tPARTIAL\tno\n",
         encoding="utf-8",
     )
+    (scoring / "all_tool_results.tsv").write_text((scoring / "ranked_peptides.evidence_consensus.tsv").read_text(encoding="utf-8"), encoding="utf-8")
+    (scoring / "validation_plan.tsv").write_text("event_id\trecommended_validation\nE1\tMT/WT pair\nE2\ttargeted RNA\n", encoding="utf-8")
+    (scoring / "run_manifest.json").write_text(json.dumps({"schema_version": "1.0", "algorithm": "discrete_state_grade_track_pareto_v2", "status": "PROVISIONAL_RESEARCH_ONLY", "outputs": {}}) + "\n", encoding="utf-8")
     (scoring / "ranked_events.evidence_consensus.tsv").write_text(
         "event_evidence_rank\tevent_group_id\tevent_id\tgene\tevent_type\tbest_evidence_grade\tbest_pareto_front\tmanual_review_required\trecommended_next_steps\tevent_consensus_trace\t"
         "representative_1_peptide_id\trepresentative_1_peptide\trepresentative_1_hla_allele\n"
@@ -265,27 +268,79 @@ def test_open_neo_review_is_event_level_and_non_mutating(tmp_path: Path):
     result_dir = tmp_path / "result"
     _write_review_fixture(result_dir)
     weighted = result_dir / "scoring/ranked_peptides.weighted_baseline.tsv"
-    before = weighted.read_bytes()
+    source_hashes = {path: path.read_bytes() for path in (result_dir / "scoring").iterdir() if path.is_file()}
     outdir = tmp_path / "review"
     result = run_review({"result_dir": str(result_dir), "top_n": 2, "outdir": str(outdir)})
     assert result["status"] == "PASS_WITH_WARNINGS"
-    assert weighted.read_bytes() == before
+    assert weighted.read_bytes() == source_hashes[weighted]
+    assert all(path.read_bytes() == content for path, content in source_hashes.items())
     review_rows = list(csv.DictReader((outdir / "review/candidate_review.tsv").open(), delimiter="\t"))
     assert [row["gene"] for row in review_rows] == ["GENE1", "GENE2::GENE3"]
     assert (outdir / "review/first_batch_experiment_set.tsv").is_file()
     first_batch = list(csv.DictReader((outdir / "review/first_batch_experiment_set.tsv").open(), delimiter="\t"))
-    assert [row["gene"] for row in first_batch] == ["GENE1"]
+    assert [row["gene"] for row in first_batch] == ["GENE1", "GENE2::GENE3"]
+    assert first_batch[1]["experiment_priority"] == "TARGETED_RNA_FIRST"
     completion = list(csv.DictReader((outdir / "review/evidence_completion_queue.tsv").open(), delimiter="\t"))
     assert [row["gene"] for row in completion] == ["GENE2::GENE3"]
     assert (outdir / "reports/patient_report.md").is_file()
+    assert (outdir / "review/integrity/review_integrity.json").is_file()
+    assert (outdir / "review/experiment_design/short_peptide_pool.tsv").is_file()
+    assert (outdir / "review/experiment_design/targeted_rna_validation_plan.tsv").is_file()
+    assert (outdir / "review/hla_loh_appm_review/appm_escape_review.md").is_file()
+    assert (outdir / "review/ccf_clonality_review/ccf_clonality_review.md").is_file()
+    assert (outdir / "reports/technical_report.md").is_file()
+    assert review_rows[0]["pipeline_r_grade"] == "R1"
+    assert review_rows[0]["experiment_priority"] == "EXPERIMENT_PRIORITY_HIGH"
 
 
-def test_open_neo_review_allows_missing_weighted_baseline(tmp_path: Path):
+def test_open_neo_review_blocks_incomplete_required_result_set(tmp_path: Path):
     result_dir = tmp_path / "result"
     _write_review_fixture(result_dir)
     (result_dir / "scoring/ranked_peptides.weighted_baseline.tsv").unlink()
     result = run_review({"result_dir": str(result_dir), "outdir": str(tmp_path / "review")})
-    assert result["status"] == "PASS_WITH_WARNINGS"
+    assert result["status"] == "BLOCKED"
+    assert "REVIEW_INTEGRITY_BLOCKED" in result["blocking_issues"]
+
+
+def test_open_neo_review_returns_needs_ranking_without_event_consensus(tmp_path: Path):
+    result_dir = tmp_path / "result"
+    _write_review_fixture(result_dir)
+    (result_dir / "scoring/ranked_events.evidence_consensus.tsv").unlink()
+    result = run_review({"result_dir": str(result_dir), "outdir": str(tmp_path / "review")})
+    assert result["status"] == "NEEDS_RANKING"
+    assert "NEEDS_RANKING" in result["blocking_issues"]
+
+
+def test_open_neo_review_blocks_promoted_hard_failure(tmp_path: Path):
+    result_dir = tmp_path / "result"
+    _write_review_fixture(result_dir)
+    peptide = result_dir / "scoring/ranked_peptides.evidence_consensus.tsv"
+    text = peptide.read_text(encoding="utf-8").replace("\tCOMPLETE\tno\n", "\tCOMPLETE\tyes\n", 1)
+    peptide.write_text(text, encoding="utf-8")
+    (result_dir / "scoring/all_tool_results.tsv").write_text(text, encoding="utf-8")
+    result = run_review({"result_dir": str(result_dir), "outdir": str(tmp_path / "review")})
+    assert result["status"] == "BLOCKED"
+
+
+def test_review_priority_uses_evidence_reason_codes_and_phase_deduplication():
+    events = [
+        {"event_evidence_rank": "1", "event_group_id": "G1", "event_id": "E1", "gene": "FUS", "event_type": "Fusion", "best_evidence_grade": "R3", "representative_1_peptide_id": "P1", "representative_1_peptide": "AAAA", "representative_1_hla_allele": "HLA-A*02:01"},
+        {"event_evidence_rank": "2", "event_group_id": "G2", "event_id": "E2", "gene": "SPL", "event_type": "Splice", "best_evidence_grade": "R3", "phase_group_id": "PH1", "representative_1_peptide_id": "P2", "representative_1_peptide": "BBBB", "representative_1_hla_allele": "HLA-B*07:02"},
+        {"event_evidence_rank": "3", "event_group_id": "G3", "event_id": "E3", "gene": "DRV", "event_type": "SNV", "best_evidence_grade": "R4", "manual_review_required": "yes", "phase_group_id": "PH1", "representative_1_peptide_id": "P3", "representative_1_peptide": "CCCC", "representative_1_hla_allele": "HLA-C*07:02"},
+    ]
+    peptides = [
+        {"peptide_id": "P1", "rna_support_state": "RNA_UNASSESSED", "safety_state": "SAFETY_PARTIAL"},
+        {"peptide_id": "P2", "rna_support_state": "RNA_UNASSESSED", "safety_state": "SAFETY_PARTIAL"},
+        {"peptide_id": "P3", "rna_support_state": "RNA_CONFIRMED", "safety_state": "SAFETY_PASS"},
+    ]
+    all_tool = [{"peptide_id": "P1", "fusion_consensus_status": "SINGLE_CALLER_SUPPORTED"}]
+    rows = build_review_rows(events, peptides, all_tool)
+    assert rows[0]["experiment_priority"] == "FUSION_CONFIRMATION_FIRST"
+    assert rows[0]["review_reason"] == "REVIEW_FUSION_SINGLE_CALLER"
+    assert rows[1]["experiment_priority"] == "TARGETED_RNA_FIRST"
+    assert rows[2]["experiment_priority"] == "MANUAL_REVIEW_ONLY"
+    selected = select_first_batch(rows, 12)
+    assert len([row for row in selected if row.get("phase_group_id") == "PH1"]) <= 1
 
 
 def test_open_neo_review_blocks_source_output_mutation(tmp_path: Path):

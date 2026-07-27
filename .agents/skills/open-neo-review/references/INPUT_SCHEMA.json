@@ -7,6 +7,7 @@
     "result_dir": {"type": "string"},
     "top_n": {"type": "integer", "minimum": 1, "maximum": 100},
     "clinical_context": {"type": "string"},
+    "disease_profile": {"type": "string"},
     "therapy_context": {"type": "string"},
     "outdir": {"type": "string", "description": "Must differ from result_dir"}
   }

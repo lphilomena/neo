@@ -55,18 +55,54 @@ open-neo run \
 ```bash
 open-neo review \
   --result-dir results/CASE001 \
+  --clinical-context configs/cases/CASE001.clinical.yaml \
+  --disease-profile configs/diseases/sarcoma.yaml \
   --top-n 12 \
   --outdir reviews/CASE001
 ```
 
-The weighted baseline is optional for review. When present it enables ranking
-comparison. R1/R2 events may enter the first experimental batch; R3 events are
-written to a separate evidence-completion queue. The review output directory
-must differ from the source result directory.
+`result_dir` is the only required source entrypoint. Before reviewing any
+candidate, Skill3 verifies that the run manifest, event- and peptide-level
+evidence-consensus rankings, weighted baseline, canonical all-tool evidence,
+and validation plan belong to a consistent run. Missing event-level consensus
+returns `NEEDS_RANKING`; hash/run mismatches, promoted hard failures, and
+incorrect missing-evidence semantics return `BLOCKED`.
+
+Review is event-first. It preserves `pipeline_r_grade` and
+`pipeline_event_rank`, then adds independent review fields such as
+`review_status`, `review_reason`, `experiment_priority`, and
+`recommended_validation`. One event contributes at most one or two
+representative peptide-HLA pairs; phase and redundancy groups are deduplicated.
+
+R1/R2 events with adequate RNA, presentation, safety, HLA/APPM, and clonality
+evidence may enter the direct experimental-priority set. Eligible R3 events
+may enter a clearly labelled evidence-completion set for targeted RNA,
+fusion confirmation, or phasing. R4 drivers remain manual-review-only and are
+never upgraded because of biological importance alone.
+
+The deterministic first batch is an experimental planning set, not an
+optimized vaccine design. It balances event type, HLA coverage, clonality,
+RNA evidence, and safety while removing redundant windows. Outputs include:
+
+- `candidate_review.tsv` and `first_batch_experiment_set.tsv`
+- `experiment_candidates.tsv`, paired short-peptide, long-peptide, minigene,
+  targeted-RNA, and manual-review tables
+- weighted-versus-consensus ranking comparison
+- APPM/HLA-LOH and CCF/clonality review summaries
+- patient and technical reports, with optional DOCX/HTML/PPTX renderings when
+  their document dependencies are installed
+- integrity checks, hashes, reason codes, and a review run manifest
+
+The review output directory must differ from the source result directory.
 
 ## Architecture boundary
 
 The public macro Skills compose fine-grained Skills and production CLIs. They do not duplicate biological algorithms. `open-neo-run` never overwrites the weighted baseline, and `open-neo-review` never modifies Pipeline ranking outputs.
+
+Skill3 can describe computational candidates, evidence gaps, experiment
+priority, and research validation routes. It must not claim a confirmed
+neoantigen, guaranteed benefit, clinical resistance, treatment failure, a drug
+recommendation, or a finalized vaccine design.
 
 Plan and dry-run use Input QC, Doctor and `pipeline-full`; approved
 `open-neo-run` execute/resume requests are submitted to

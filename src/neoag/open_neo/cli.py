@@ -135,6 +135,7 @@ def build_parser() -> argparse.ArgumentParser:
     review.add_argument("--result-dir", required=True)
     review.add_argument("--top-n", type=int, default=12)
     review.add_argument("--clinical-context")
+    review.add_argument("--disease-profile")
     review.add_argument("--therapy-context", default="research")
     return ap
 
@@ -155,7 +156,7 @@ def main(argv: list[str] | None = None) -> int:
     else:
         result = run_review(args)
     print(json.dumps(result, ensure_ascii=False, indent=2))
-    return 0 if result.get("status") not in {"BLOCKED", "FAILED", "UNSAFE", "APPROVAL_REQUIRED"} else 2
+    return 0 if result.get("status") not in {"BLOCKED", "FAILED", "UNSAFE", "APPROVAL_REQUIRED", "NEEDS_RANKING"} else 2
 
 
 if __name__ == "__main__":
