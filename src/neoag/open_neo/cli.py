@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import argparse
 import json
+from pathlib import Path
 from typing import Any
 
+from .contracts import InstallCheckInput, ReviewInput, RunInput, validate_json_schema
+from .errors import exit_code_for_result
 from .install_check import run_install_check
 from .run import run_open_neo
 from .review import run_review
@@ -30,6 +33,18 @@ def _tool_result(value: str) -> tuple[str, str, str]:
     left, path = value.split("=", 1)
     domain, tool = left.split(":", 1)
     return domain.strip(), tool.strip(), path.strip()
+
+
+def _validate_public_input(command: str, args: dict[str, Any]) -> list[str]:
+    skill = {"install-check": "open-neo-install-check", "run": "open-neo-run", "review": "open-neo-review"}[command]
+    contract = {"install-check": InstallCheckInput, "run": RunInput, "review": ReviewInput}[command]
+    normalized = contract.from_mapping(args).to_mapping()
+    root = Path(__file__).resolve().parents[3]
+    schema_path = root / ".agents" / "skills" / skill / "references" / "INPUT_SCHEMA.json"
+    if not schema_path.is_file():
+        return []
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    return validate_json_schema(normalized, schema)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -152,18 +167,30 @@ def main(argv: list[str] | None = None) -> int:
     command = args.pop("command")
     if command == "install-check":
         args["release_audit"] = not args.pop("no_release_audit", False)
-        result = run_install_check(args)
     elif command == "run":
         tool_results: dict[str, dict[str, str]] = {}
         for domain, tool, path in args.pop("tool_result", []):
             tool_results.setdefault(domain, {})[tool] = path
         if tool_results:
             args["tool_results"] = tool_results
+    validation_errors = _validate_public_input(command, args)
+    if validation_errors:
+        result = {
+            "schema_version": "open-neo-macro-skill-v1",
+            "skill": f"open-neo-{command}",
+            "status": "BLOCKED",
+            "blocking_issues": validation_errors,
+            "steps": [],
+            "outputs": {},
+        }
+    elif command == "install-check":
+        result = run_install_check(args)
+    elif command == "run":
         result = run_open_neo(args)
     else:
         result = run_review(args)
     print(json.dumps(result, ensure_ascii=False, indent=2))
-    return 0 if result.get("status") not in {"BLOCKED", "FAILED", "UNSAFE", "APPROVAL_REQUIRED", "NEEDS_RANKING"} else 2
+    return exit_code_for_result(result)
 
 
 if __name__ == "__main__":

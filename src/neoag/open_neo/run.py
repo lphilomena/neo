@@ -15,6 +15,7 @@ from neoag.skill_taxonomy.entry_skills import run_sv_wes, run_sv_wgs
 from neoag.utils import read_tsv as read_rows
 
 from .contracts import MacroResult, MacroStep
+from .errors import FailureCode
 from .execution_adapters import (
     discover_result_artifacts,
     ensure_parallel_ranking,
@@ -37,7 +38,16 @@ from .routing import (
     inspect_manifest,
     write_routing_outputs,
 )
-from .state import RunLayout, audit, new_run_id, safe_identifier, update_case_state
+from .state import (
+    RunLayout,
+    audit,
+    build_resume_plan,
+    load_run_state,
+    new_run_id,
+    persist_result_state,
+    safe_identifier,
+    update_case_state,
+)
 
 
 def _result_from_args(args: dict[str, Any], layout: RunLayout) -> RoutingResult:
@@ -237,7 +247,14 @@ def run_open_neo(args: dict[str, Any]) -> dict[str, Any]:
     approved = bool(args.get("approved", False))
     case_id = safe_identifier(routing.case_id)
     layout = temp_layout
+    previous_state = load_run_state(layout.run_state)
     result = MacroResult("open-neo-run", case_id, new_run_id(case_id, "run"), mode, approval_required=mode in {"execute", "resume"}, approved=approved)
+    if mode == "resume":
+        resume_plan = build_resume_plan(previous_state)
+        write_tsv(layout.manifests / "resume_plan.tsv", resume_plan)
+        result.outputs["resume_plan"] = str(layout.manifests / "resume_plan.tsv")
+        result.provenance["previous_run_id"] = str(previous_state.get("run_id") or "")
+        result.provenance["resume_reuse_steps"] = sum(1 for row in resume_plan if row["decision"] == "REUSE")
     audit(layout, "open_neo_run.start", "START", mode=mode, routes=[r.route for r in routing.routes])
 
     route_outputs = write_routing_outputs(routing, layout.input_qc)
@@ -248,23 +265,23 @@ def run_open_neo(args: dict[str, Any]) -> dict[str, Any]:
     result.missing_evidence.extend([x["field"] for x in routing.missing])
     if routing.status == "BLOCKED":
         if any(x.get("field") == "hla_alleles_or_hla_file" for x in routing.missing):
-            result.blocking_issues.append("HLA_MISSING")
+            result.blocking_issues.append(FailureCode.HLA_MISSING.value)
         else:
-            result.blocking_issues.append("AMBIGUOUS_INPUT" if routing.ambiguous else "ROUTE_FAILED")
+            result.blocking_issues.append(FailureCode.AMBIGUOUS_INPUT.value if routing.ambiguous else FailureCode.ROUTE_FAILED.value)
         result.finish("BLOCKED").write(layout.skill_result)
         return result.to_dict()
 
     if mode in {"execute", "resume"} and not approved:
-        result.steps.append(MacroStep("02", "approval-gate", "APPROVAL_REQUIRED", "Execution requires --approved", failure_code="APPROVAL_REQUIRED"))
-        result.blocking_issues.append("APPROVAL_REQUIRED")
+        result.steps.append(MacroStep("02", "approval-gate", "APPROVAL_REQUIRED", "Execution requires --approved", failure_code=FailureCode.APPROVAL_REQUIRED.value))
+        result.blocking_issues.append(FailureCode.APPROVAL_REQUIRED.value)
         result.finish("APPROVAL_REQUIRED").write(layout.skill_result)
         return result.to_dict()
 
     if mode in {"execute", "resume"} and not bool(args.get("_gateway_dispatched", False)):
         gateway_url = str(args.get("gateway_url") or "")
         if not gateway_url:
-            result.steps.append(MacroStep("02", "gateway-execution-boundary", "BLOCKED", "Direct heavy execution is disabled; submit through NeoAg Gateway with --gateway-url", failure_code="GATEWAY_REQUIRED"))
-            result.blocking_issues.append("GATEWAY_REQUIRED")
+            result.steps.append(MacroStep("02", "gateway-execution-boundary", "BLOCKED", "Direct heavy execution is disabled; submit through NeoAg Gateway with --gateway-url", failure_code=FailureCode.GATEWAY_REQUIRED.value))
+            result.blocking_issues.append(FailureCode.GATEWAY_REQUIRED.value)
             result.finish("BLOCKED").write(layout.skill_result)
             return result.to_dict()
         gateway_payload = {key: value for key, value in args.items() if not key.startswith("_gateway") and key not in {"gateway_url", "gateway_wait"} and value is not None and value != ""}
@@ -285,8 +302,8 @@ def run_open_neo(args: dict[str, Any]) -> dict[str, Any]:
         or routing.inputs.get("result_dir")
         or is_rna_fastq_profile_candidate(routing.inputs)
     ):
-        result.steps.append(MacroStep("02", "resume-input-check", "BLOCKED", "Resume requires a production manifest or an existing result directory", failure_code="RESUME_REQUIRES_PRODUCTION_MANIFEST_OR_RESULT_DIR"))
-        result.blocking_issues.append("RESUME_REQUIRES_PRODUCTION_MANIFEST_OR_RESULT_DIR")
+        result.steps.append(MacroStep("02", "resume-input-check", "BLOCKED", "Resume requires a production manifest or an existing result directory", failure_code=FailureCode.RESUME_INPUT_REQUIRED.value))
+        result.blocking_issues.append(FailureCode.RESUME_INPUT_REQUIRED.value)
         result.finish("BLOCKED").write(layout.skill_result)
         return result.to_dict()
 
@@ -317,7 +334,7 @@ def run_open_neo(args: dict[str, Any]) -> dict[str, Any]:
         ))
         if execute and not auto_rna_profile["ready_for_execute"]:
             result.blocking_issues.extend(
-                f"RNA_FUSION_SPLICE_MISSING:{field}" for field in auto_rna_profile["missing_required"]
+                f"{FailureCode.RNA_FUSION_SPLICE_MISSING.value}:{field}" for field in auto_rna_profile["missing_required"]
             )
             result.finish("BLOCKED").write(layout.skill_result)
             return result.to_dict()
@@ -326,7 +343,7 @@ def run_open_neo(args: dict[str, Any]) -> dict[str, Any]:
     result.steps.append(MacroStep("02", "doctor-preflight", preflight["status"], outputs=preflight.get("outputs", {})))
     result.outputs.update({f"doctor_{k}": v for k, v in preflight.get("outputs", {}).items()})
     if preflight["status"] in {"BLOCKED", "UNSAFE"} and execute and not bool(args.get("allow_partial", False)):
-        result.blocking_issues.append("DOCTOR_BLOCKED")
+        result.blocking_issues.append(FailureCode.DOCTOR_BLOCKED.value)
         result.finish(preflight["status"]).write(layout.skill_result)
         return result.to_dict()
 
@@ -416,7 +433,7 @@ def run_open_neo(args: dict[str, Any]) -> dict[str, Any]:
         elif all(r.route == "production_inputs" for r in routing.routes):
             success = False
             result.steps[-1].status = "BLOCKED"
-            result.steps[-1].failure_code = "PRODUCTION_MANIFEST_REQUIRED"
+            result.steps[-1].failure_code = FailureCode.PRODUCTION_MANIFEST_REQUIRED.value
             result.steps[-1].detail = "BAM/FASTQ execution requires an explicit production_manifest with approved stage commands"
         elif len(routing.routes) == 1 and routing.routes[0].route in {"sv_wgs", "sv_wes"}:
             command_result = _run_sv_only(args, routing, layout)
@@ -438,10 +455,10 @@ def run_open_neo(args: dict[str, Any]) -> dict[str, Any]:
         success = False
         result.steps[-1].status = "FAILED"
         result.steps[-1].detail = str(exc)
-        result.steps[-1].failure_code = "PIPELINE_STAGE_FAILED"
+        result.steps[-1].failure_code = FailureCode.PIPELINE_STAGE_FAILED.value
 
     if not success:
-        result.blocking_issues.append(result.steps[-1].failure_code or "PIPELINE_STAGE_FAILED")
+        result.blocking_issues.append(result.steps[-1].failure_code or FailureCode.PIPELINE_STAGE_FAILED.value)
         result.finish("BLOCKED" if result.steps[-1].status == "BLOCKED" else "FAILED").write(layout.skill_result)
         return result.to_dict()
 
@@ -472,8 +489,8 @@ def run_open_neo(args: dict[str, Any]) -> dict[str, Any]:
     if ranking["status"] == "FAILED" or absent:
         result.steps[-1].status = "FAILED"
         result.steps[-1].detail = "missing artifacts: " + ",".join(absent)
-        result.steps[-1].failure_code = "CONSENSUS_RANKING_FAILED"
-        result.blocking_issues.append("CONSENSUS_RANKING_FAILED")
+        result.steps[-1].failure_code = FailureCode.CONSENSUS_RANKING_FAILED.value
+        result.blocking_issues.append(FailureCode.CONSENSUS_RANKING_FAILED.value)
         result.finish("FAILED").write(layout.skill_result)
         return result.to_dict()
     result.steps[-1].status = "PASS" if ranking["status"] == "PASS" else "REUSED"
@@ -513,4 +530,5 @@ def run_open_neo(args: dict[str, Any]) -> dict[str, Any]:
         payload["production_command"] = "neoag evidence-rank"
         payload["algorithm_owner"] = "src/neoag/evidence_consensus.py"
     write_json(layout.skill_result, payload)
+    persist_result_state(layout.skill_result, payload)
     return payload

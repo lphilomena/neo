@@ -5,6 +5,10 @@ description: Public macro Skill2 that detects Open-Neo inputs, routes VCF/fusion
 
 # Open-Neo Run
 
+The canonical stage order, critical/evidence-missing behavior, RNA FASTQ production profile, and resume contract are defined in `references/PIPELINE_STAGES.md`. Validate requests with `references/INPUT_SCHEMA.json` and preserve `references/OUTPUT_SCHEMA.json`.
+
+`--mode resume` reads the prior `run_state.json`. A completed macro step is reusable only when its recorded input and output signatures still match; production-stage reuse remains delegated to the production runner's declared-output checks.
+
 ## Use when
 
 - A code-capable agent receives a sample manifest or one or more supported input files.

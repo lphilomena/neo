@@ -1,9 +1,31 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
 
 
-FAILURE_CODES = {
+class FailureCode(str, Enum):
+    CHECKSUM_FAILED = "CHECKSUM_FAILED"
+    CHECKSUM_REQUIRED = "CHECKSUM_REQUIRED"
+    CORE_INSTALL_FAILED = "CORE_INSTALL_FAILED"
+    APPROVAL_REQUIRED = "APPROVAL_REQUIRED"
+    HLA_MISSING = "HLA_MISSING"
+    AMBIGUOUS_INPUT = "AMBIGUOUS_INPUT"
+    ROUTE_FAILED = "ROUTE_FAILED"
+    GATEWAY_REQUIRED = "GATEWAY_REQUIRED"
+    DOCTOR_BLOCKED = "DOCTOR_BLOCKED"
+    PIPELINE_STAGE_FAILED = "PIPELINE_STAGE_FAILED"
+    CONSENSUS_RANKING_FAILED = "CONSENSUS_RANKING_FAILED"
+    PRODUCTION_MANIFEST_REQUIRED = "PRODUCTION_MANIFEST_REQUIRED"
+    RESUME_INPUT_REQUIRED = "RESUME_REQUIRES_PRODUCTION_MANIFEST_OR_RESULT_DIR"
+    REPORT_BOUNDARY_VIOLATION = "REPORT_BOUNDARY_VIOLATION"
+    NEEDS_RANKING = "NEEDS_RANKING"
+    REVIEW_INTEGRITY_BLOCKED = "REVIEW_INTEGRITY_BLOCKED"
+    EVENT_MAPPING_FAILED = "EVENT_MAPPING_FAILED"
+    RNA_FUSION_SPLICE_MISSING = "RNA_FUSION_SPLICE_MISSING"
+
+
+LEGACY_FAILURE_CODES = {
     # Install/check
     "CHECKSUM_FAILED",
     "CHECKSUM_REQUIRED",
@@ -48,14 +70,41 @@ FAILURE_CODES = {
     "REPORT_GENERATION_FAILED",
     "REPORT_BOUNDARY_VIOLATION",
 }
+FAILURE_CODES = LEGACY_FAILURE_CODES | {code.value for code in FailureCode}
+
+FAILURE_HTTP_STATUS = {
+    FailureCode.APPROVAL_REQUIRED.value: 403,
+    FailureCode.GATEWAY_REQUIRED.value: 409,
+    FailureCode.NEEDS_RANKING.value: 409,
+    FailureCode.REVIEW_INTEGRITY_BLOCKED.value: 422,
+    FailureCode.REPORT_BOUNDARY_VIOLATION.value: 422,
+}
+FAILURE_EXIT_CODE = {
+    FailureCode.APPROVAL_REQUIRED.value: 3,
+    FailureCode.NEEDS_RANKING.value: 4,
+}
+
+
+def code_value(code: str | FailureCode) -> str:
+    return code.value if isinstance(code, FailureCode) else str(code)
+
+
+def exit_code_for_result(result: dict) -> int:
+    status = str(result.get("status") or "")
+    issues = [str(value).split(":", 1)[0] for value in result.get("blocking_issues") or []]
+    for issue in issues:
+        if issue in FAILURE_EXIT_CODE:
+            return FAILURE_EXIT_CODE[issue]
+    return 2 if status in {"BLOCKED", "FAILED", "UNSAFE", "APPROVAL_REQUIRED", "NEEDS_RANKING"} else 0
 
 
 @dataclass
 class OpenNeoError(RuntimeError):
-    code: str
+    code: str | FailureCode
     message: str
 
     def __post_init__(self) -> None:
+        self.code = code_value(self.code)
         if self.code not in FAILURE_CODES:
             self.code = "PIPELINE_STAGE_FAILED"
         RuntimeError.__init__(self, f"{self.code}: {self.message}")

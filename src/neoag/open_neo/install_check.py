@@ -12,6 +12,7 @@ from neoag.controlled_execution.doctor import run_doctor
 from neoag.controlled_execution.io_utils import markdown_table, sha256_file, write_json, write_tsv
 
 from .contracts import MacroResult, MacroStep
+from .errors import FailureCode
 from .state import RunLayout, audit, new_run_id, safe_identifier, update_case_state
 
 TIER_TOOLS = {
@@ -152,21 +153,21 @@ def run_install_check(args: dict[str, Any]) -> dict[str, Any]:
     result.steps[-1].outputs = {"environment_inventory": str(layout.root / "environment_inventory.tsv")}
 
     if args.get("release_tarball") and not args.get("sha256"):
-        result.blocking_issues.append("CHECKSUM_REQUIRED")
-        result.steps.append(MacroStep("02", "release-checksum", "BLOCKED", "A release tarball requires --sha256", failure_code="CHECKSUM_REQUIRED"))
+        result.blocking_issues.append(FailureCode.CHECKSUM_REQUIRED.value)
+        result.steps.append(MacroStep("02", "release-checksum", "BLOCKED", "A release tarball requires --sha256", failure_code=FailureCode.CHECKSUM_REQUIRED.value))
         result.finish("BLOCKED").write(layout.skill_result)
         return result.to_dict()
     if args.get("release_tarball") and args.get("sha256"):
         tarball = Path(str(args["release_tarball"]))
         if not tarball.is_file():
-            result.blocking_issues.append("CHECKSUM_FAILED")
-            result.steps.append(MacroStep("02", "release-checksum", "FAILED", f"file not found: {tarball}", failure_code="CHECKSUM_FAILED"))
+            result.blocking_issues.append(FailureCode.CHECKSUM_FAILED.value)
+            result.steps.append(MacroStep("02", "release-checksum", "FAILED", f"file not found: {tarball}", failure_code=FailureCode.CHECKSUM_FAILED.value))
             result.finish("BLOCKED").write(layout.skill_result)
             return result.to_dict()
         observed = sha256_file(tarball)
         if observed != str(args["sha256"]):
-            result.blocking_issues.append("CHECKSUM_FAILED")
-            result.steps.append(MacroStep("02", "release-checksum", "FAILED", f"observed={observed}", failure_code="CHECKSUM_FAILED"))
+            result.blocking_issues.append(FailureCode.CHECKSUM_FAILED.value)
+            result.steps.append(MacroStep("02", "release-checksum", "FAILED", f"observed={observed}", failure_code=FailureCode.CHECKSUM_FAILED.value))
             result.finish("BLOCKED").write(layout.skill_result)
             return result.to_dict()
 
@@ -175,8 +176,8 @@ def run_install_check(args: dict[str, Any]) -> dict[str, Any]:
     result.steps.append(MacroStep("02", "local-manifest-templates", "PASS", outputs=templates))
 
     if mode in {"repair", "install"} and not result.approved:
-        result.blocking_issues.append("APPROVAL_REQUIRED")
-        result.steps.append(MacroStep("03", "approval-gate", "APPROVAL_REQUIRED", "Installation or repair requires explicit approval", failure_code="APPROVAL_REQUIRED"))
+        result.blocking_issues.append(FailureCode.APPROVAL_REQUIRED.value)
+        result.steps.append(MacroStep("03", "approval-gate", "APPROVAL_REQUIRED", "Installation or repair requires explicit approval", failure_code=FailureCode.APPROVAL_REQUIRED.value))
         result.finish("APPROVAL_REQUIRED").write(layout.skill_result)
         return result.to_dict()
 
@@ -185,15 +186,15 @@ def run_install_check(args: dict[str, Any]) -> dict[str, Any]:
     result.outputs["deployment_command"] = str(layout.root / "deployment_command.json")
     if mode in {"repair", "install"}:
         if not Path(deploy_command[1]).is_file():
-            result.blocking_issues.append("CORE_INSTALL_FAILED")
-            result.steps.append(MacroStep("03", "portable-deployment", "BLOCKED", f"installer not found: {deploy_command[1]}", failure_code="CORE_INSTALL_FAILED"))
+            result.blocking_issues.append(FailureCode.CORE_INSTALL_FAILED.value)
+            result.steps.append(MacroStep("03", "portable-deployment", "BLOCKED", f"installer not found: {deploy_command[1]}", failure_code=FailureCode.CORE_INSTALL_FAILED.value))
             result.finish("BLOCKED").write(layout.skill_result)
             return result.to_dict()
         ok, deploy_log = _run_deployment(deploy_command, project_root, layout.logs / "portable_deployment.log")
-        result.steps.append(MacroStep("03", "portable-deployment", "PASS" if ok else "FAILED", outputs={"log": deploy_log}, failure_code="" if ok else "CORE_INSTALL_FAILED"))
+        result.steps.append(MacroStep("03", "portable-deployment", "PASS" if ok else "FAILED", outputs={"log": deploy_log}, failure_code="" if ok else FailureCode.CORE_INSTALL_FAILED.value))
         result.outputs["deployment_log"] = deploy_log
         if not ok:
-            result.blocking_issues.append("CORE_INSTALL_FAILED")
+            result.blocking_issues.append(FailureCode.CORE_INSTALL_FAILED.value)
             result.finish("FAILED").write(layout.skill_result)
             return result.to_dict()
 

@@ -17,6 +17,7 @@ from neoag.skill_taxonomy.review_skills import (
 )
 
 from .contracts import MacroResult, MacroStep
+from .errors import FailureCode
 from .execution_adapters import discover_result_artifacts
 from .review_integrity import audit_review_inputs
 from .state import RunLayout, audit, new_run_id, safe_identifier, update_case_state
@@ -364,8 +365,8 @@ def run_review(args: dict[str, Any]) -> dict[str, Any]:
     result = MacroResult("open-neo-review", case_id, new_run_id(case_id, "review"), "review")
     audit(layout, "open_neo_review.start", "START", result_dir=str(result_dir), top_n=top_n)
     if layout.root.resolve() == result_dir:
-        result.blocking_issues.append("REPORT_BOUNDARY_VIOLATION")
-        result.steps.append(MacroStep("00", "report-output-boundary", "BLOCKED", "Review outdir must differ from source result_dir", failure_code="REPORT_BOUNDARY_VIOLATION"))
+        result.blocking_issues.append(FailureCode.REPORT_BOUNDARY_VIOLATION.value)
+        result.steps.append(MacroStep("00", "report-output-boundary", "BLOCKED", "Review outdir must differ from source result_dir", failure_code=FailureCode.REPORT_BOUNDARY_VIOLATION.value))
         result.finish("BLOCKED").write(layout.skill_result); return result.to_dict()
 
     artifacts = discover_result_artifacts(result_dir)
@@ -374,14 +375,14 @@ def run_review(args: dict[str, Any]) -> dict[str, Any]:
     result.steps.append(MacroStep("01", "result-integrity-check", integrity["status"], detail="missing=" + ",".join(integrity["missing_artifacts"]), outputs=integrity_outputs))
     result.outputs.update(integrity_outputs)
     if integrity["status"] == "NEEDS_RANKING":
-        result.blocking_issues.append("NEEDS_RANKING"); result.finish("NEEDS_RANKING").write(layout.skill_result); return result.to_dict()
+        result.blocking_issues.append(FailureCode.NEEDS_RANKING.value); result.finish("NEEDS_RANKING").write(layout.skill_result); return result.to_dict()
     if integrity["status"] == "BLOCKED":
-        result.blocking_issues.append("REVIEW_INTEGRITY_BLOCKED"); result.finish("BLOCKED").write(layout.skill_result); return result.to_dict()
+        result.blocking_issues.append(FailureCode.REVIEW_INTEGRITY_BLOCKED.value); result.finish("BLOCKED").write(layout.skill_result); return result.to_dict()
 
     _, events = read_tsv(artifacts["consensus_events"]); _, peptides = read_tsv(artifacts["consensus_peptides"]); _, all_tool = read_tsv(artifacts["all_tool_results"])
     review_rows = build_review_rows(events, peptides, all_tool)
     if not review_rows:
-        result.blocking_issues.append("EVENT_MAPPING_FAILED"); result.finish("BLOCKED").write(layout.skill_result); return result.to_dict()
+        result.blocking_issues.append(FailureCode.EVENT_MAPPING_FAILED.value); result.finish("BLOCKED").write(layout.skill_result); return result.to_dict()
     candidate_review = layout.review / "candidate_review.tsv"; write_tsv(candidate_review, review_rows)
     first_batch = select_first_batch(review_rows, top_n); first_batch_path = layout.review / "first_batch_experiment_set.tsv"; write_tsv(first_batch_path, first_batch)
     completion = [row for row in review_rows if row["review_status"] == "COMPLETE_EVIDENCE"]

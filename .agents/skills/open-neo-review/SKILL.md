@@ -5,6 +5,8 @@ description: Public macro Skill3 for read-only event-level integrity review, evi
 
 # Open-Neo Review
 
+The event-first selection rules, experiment recommendations, report boundaries, and `NEEDS_RANKING` behavior are defined in `references/REVIEW_RULES.md`. Public inputs and outputs must conform to the JSON schemas in this Skill directory.
+
 ## Use when
 
 - `open-neo-run` has completed Evidence consensus ranking.

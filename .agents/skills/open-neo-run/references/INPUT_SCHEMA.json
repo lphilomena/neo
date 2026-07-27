@@ -2,7 +2,9 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "open-neo-run input",
   "type": "object",
+  "required": ["outdir"],
   "properties": {
+    "outdir": {"type": "string"},
     "sample_manifest": {"type": "string"},
     "mode": {"enum": ["plan", "dry-run", "execute", "resume", "ranking-only"]},
     "approved": {"type": "boolean"},
@@ -12,11 +14,18 @@
     "tumor_rna_bam": {"type": "string"},
     "tumor_dna_fastq": {"type": "array", "items": {"type": "string"}},
     "normal_dna_fastq": {"type": "array", "items": {"type": "string"}},
-    "tumor_rna_fastq": {"type": "array", "items": {"type": "string"}},
+    "tumor_rna_fastq": {"type": "array", "minItems": 1, "items": {"type": "string"}},
     "rna_quant_method": {"enum": ["auto", "salmon", "rsem"]},
     "salmon_index": {"type": "string"},
     "tx2gene": {"type": "string"},
     "rsem_reference": {"type": "string"},
+    "star_index": {"type": "string"},
+    "ctat_genome_lib": {"type": "string"},
+    "easyfuse_ref": {"type": "string"},
+    "normal_readthrough": {"type": "string"},
+    "snaf_workflow": {"type": "string"},
+    "splicemutr_workflow": {"type": "string"},
+    "rna_threads": {"type": "integer", "minimum": 1},
     "somatic_vcf": {"type": "string"},
     "fusion_tsv": {"type": "string"},
     "splice_junction_tsv": {"type": "string"},
@@ -46,5 +55,6 @@
     ,{"required": ["input_dir"]}
     ,{"required": ["tumor_dna_bam"]}
     ,{"required": ["tumor_rna_bam"]}
+    ,{"required": ["tumor_rna_fastq"]}
   ]
 }

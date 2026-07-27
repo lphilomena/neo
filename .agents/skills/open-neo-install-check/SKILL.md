@@ -49,3 +49,10 @@ description: Public macro Skill1 for Open-Neo installation, new-machine migratio
 ## Safety boundary
 
 Do not install or redistribute licensed tools, download large references, overwrite production settings, delete files, or submit HPC jobs unless the user explicitly approves the operation.
+
+## Contracts and failure handling
+
+- Validate public inputs against `references/INPUT_SCHEMA.json` before execution.
+- Emit the stable result contract described by `references/OUTPUT_SCHEMA.json`.
+- Use the canonical failure codes and remediation in `references/FAILURE_CODES.md`.
+- Every invocation writes `skill_result.json` and a sibling `run_state.json`; install and repair actions remain approval gated.

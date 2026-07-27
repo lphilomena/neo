@@ -6,10 +6,13 @@ import subprocess
 import sys
 from pathlib import Path
 
+from neoag.open_neo.contracts import MacroResult, MacroStep, RunInput, validate_json_schema
+from neoag.open_neo.errors import FailureCode, exit_code_for_result
 from neoag.open_neo.install_check import run_install_check
 from neoag.open_neo.review import build_review_rows, run_review, select_first_batch
 from neoag.open_neo.routing import inspect_manifest
 from neoag.open_neo.run import run_open_neo
+from neoag.open_neo.state import load_run_state, resume_step_decision
 from neoag.open_neo.rna_preprocessing import prepare_rna_evidence
 from neoag.open_neo.rna_fusion_splice_profile import (
     generate_rna_fusion_splice_manifest,
@@ -19,6 +22,48 @@ from neoag.open_neo.tool_consensus import build_tool_consensus
 from neoag.production_runner import load_production_manifest, run_production
 from neoag.skill_taxonomy.registry import SKILLS_BY_NAME
 from neoag.skill_taxonomy.runner import run_skill
+
+
+def test_run_input_contract_and_public_schema_accept_rna_fastq():
+    schema = json.loads(
+        (Path.cwd() / ".agents/skills/open-neo-run/references/INPUT_SCHEMA.json").read_text(encoding="utf-8")
+    )
+    request = RunInput.from_mapping({
+        "outdir": "work/run",
+        "tumor_rna_fastq": ["tumor_R1.fastq.gz", "tumor_R2.fastq.gz"],
+        "star_index": "/ref/star",
+        "ctat_genome_lib": "/ref/ctat",
+        "rna_threads": 8,
+    }).to_mapping()
+    assert validate_json_schema(request, schema) == []
+    assert validate_json_schema({"outdir": "work/run"}, schema)
+    invalid = dict(request, rna_threads=0, tumor_rna_fastq=[1])
+    assert "BELOW_MINIMUM:rna_threads:1" in validate_json_schema(invalid, schema)
+    assert "INVALID_ITEM_TYPE:tumor_rna_fastq" in validate_json_schema(invalid, schema)
+
+
+def test_run_state_requires_matching_output_signature_for_reuse(tmp_path: Path):
+    source = tmp_path / "source.tsv"
+    source.write_text("input\n", encoding="utf-8")
+    output = tmp_path / "result.tsv"
+    output.write_text("a\n", encoding="utf-8")
+    result_path = tmp_path / "skill_result.json"
+    result = MacroResult(skill="open-neo-run", run_id="RUN1", case_id="CASE1", mode="execute")
+    result.steps.append(MacroStep("ranking", "ranking", "PASS", inputs={"source": str(source)}, outputs={"table": str(output)}))
+    result.finish("PASS").write(result_path)
+    state = load_run_state(tmp_path / "run_state.json")
+    decision = resume_step_decision(state, "ranking")
+    assert decision["decision"] == "REUSE"
+    output.write_text("changed\n", encoding="utf-8")
+    decision = resume_step_decision(state, "ranking")
+    assert decision["decision"] == "RUN"
+    assert decision["reason"].startswith("OUTPUT_HASH_CHANGED:")
+
+
+def test_failure_codes_have_stable_cli_exit_mapping():
+    assert exit_code_for_result({"status": "PASS"}) == 0
+    assert exit_code_for_result({"status": "BLOCKED", "blocking_issues": [FailureCode.APPROVAL_REQUIRED.value]}) == 3
+    assert exit_code_for_result({"status": "NEEDS_RANKING", "blocking_issues": [FailureCode.NEEDS_RANKING.value]}) == 4
 
 
 def test_public_macro_registry_and_internal_composition():
