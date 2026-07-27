@@ -2,15 +2,15 @@
 set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "$0")/../../../.." && pwd)"
-TOOLS_ROOT="/root/neo/env_tool"
-LICENSED_ROOT="/root/neo/licensed_tools"
+TOOLS_ROOT="${NEOAG_TOOLS_ROOT:-$PROJECT_ROOT/.neoag/tools}"
+LICENSED_ROOT="${NEOAG_LICENSED_ROOT:-$PROJECT_ROOT/.neoag/licensed_tools}"
 CONDA_BASE=""
 OUTDIR=""
-SAMPLE_ID="M1ML150017383_L01_438"
+SAMPLE_ID="SMOKE_SAMPLE"
 TOP_N=50
-RAW_VCF="/mnt/zjl-bgi-zzb/peixunban/gl/data/chenxiaoliang_data/data/liver_0520_WGS_shortReads/somatic/M1ML150017383_L01_438.align.somatic.pass.vcf.gz"
-ANNOTATED_VCF="/mnt/zzb/peixunban/gl/data/chenxiaoliang_data/work/neoag_sliding/M1ML150017383_L01_438_agent_20260708/upstream/tools/M1ML150017383_L01_438.vep.annotated.vcf"
-HLA_ALLELES="HLA-A*02:06,HLA-A*30:01,HLA-B*13:02,HLA-B*48:01,HLA-C*06:02,HLA-C*08:01"
+RAW_VCF=""
+ANNOTATED_VCF=""
+HLA_ALLELES=""
 HLA_FILE=""
 SKIP_MHCFLURRY=0
 SKIP_BIGMHC_IM=0
@@ -21,21 +21,21 @@ usage() {
   cat <<USAGE
 Usage: 14_run_real_vcf_smoke.sh [options]
 
-Run a real-data smoke test from the default M1ML150017383 somatic VCF. The
-script uses a VEP-annotated VCF for peptide extraction, builds a top-N
+Run an explicitly supplied real-data smoke test. The script uses a
+VEP-annotated VCF for peptide extraction, builds a top-N
 peptide-HLA table, then runs peptide-predict with NetMHCpan, PRIME, BigMHC_IM
 and optional predictors.
 
 Options:
   --project-root DIR       Project checkout (default: auto-detected)
-  --tools-root DIR         Tool/env root (default: /root/neo/env_tool)
-  --licensed-root DIR      Licensed tool root (default: /root/neo/licensed_tools)
+  --tools-root DIR         Tool/env root (default: NEOAG_TOOLS_ROOT or project-local)
+  --licensed-root DIR      Licensed tool root (default: NEOAG_LICENSED_ROOT or project-local)
   --conda-base DIR         Conda base (default: tools-root/miniforge3)
   --outdir DIR             Output directory (default: work/agent_deploy/real_vcf_smoke_<timestamp>)
-  --raw-vcf FILE           Raw somatic VCF used as the test anchor
-  --annotated-vcf FILE     VEP-annotated VCF for peptide extraction
-  --sample-id ID           Sample id (default: M1ML150017383_L01_438)
-  --hla-alleles LIST       Comma-separated HLA alleles
+  --raw-vcf FILE           Raw somatic VCF used as the test anchor (required)
+  --annotated-vcf FILE     VEP-annotated VCF for peptide extraction (required unless --skip-extraction)
+  --sample-id ID           Non-identifying sample id (default: SMOKE_SAMPLE)
+  --hla-alleles LIST       Comma-separated HLA alleles (required unless --hla-file)
   --hla-file FILE          Optional file containing HLA alleles
   --top-n N                Number of unique peptides to predict (default: 50)
   --skip-extraction        Reuse outdir/variant_peptides.annotated.tsv
@@ -72,6 +72,11 @@ while [[ $# -gt 0 ]]; do
 done
 
 cd "$PROJECT_ROOT"
+[[ -n "$RAW_VCF" ]] || { echo "ERROR: --raw-vcf is required" >&2; exit 2; }
+if [[ "$SKIP_EXTRACTION" != "1" ]]; then
+  [[ -n "$ANNOTATED_VCF" ]] || { echo "ERROR: --annotated-vcf is required unless --skip-extraction is used" >&2; exit 2; }
+fi
+[[ -n "$HLA_ALLELES" || -n "$HLA_FILE" ]] || { echo "ERROR: provide --hla-alleles or --hla-file" >&2; exit 2; }
 if [[ -z "$OUTDIR" ]]; then
   OUTDIR="work/agent_deploy/real_vcf_smoke_$(date +%Y%m%d_%H%M%S)"
 fi

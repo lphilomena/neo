@@ -128,14 +128,14 @@ Tool groups:
   --all                      Install supported default groups, including VEP cache; NetMHCstabpan remains explicit opt-in
   --verify                   Run scripts/verify_all_tools_and_refs.sh after installs
   --strict-verify            Treat optional missing tools as failure during verify
-  --run-real-vcf-smoke       Run default M1ML150017383 real VCF top-N smoke test
+  --run-real-vcf-smoke       Run an explicitly configured real VCF top-N smoke test
   --real-vcf-smoke-top-n N   Number of unique peptides for real VCF smoke (default: 50)
   --skip-real-vcf-mhcflurry Skip MHCflurry only for the real VCF smoke fallback
   --skip-real-vcf-bigmhc    Skip BigMHC_IM only for the real VCF smoke fallback
-  --real-vcf FILE           Override raw VCF path for real VCF smoke
-  --real-annotated-vcf FILE Override VEP-annotated VCF path for real VCF smoke
-  --real-vcf-hla-alleles L  Override comma-separated HLA alleles for real VCF smoke
-  --real-vcf-hla-file FILE  Override HLA file for real VCF smoke
+  --real-vcf FILE           Raw VCF path required for real VCF smoke
+  --real-annotated-vcf FILE VEP-annotated VCF required for real VCF smoke
+  --real-vcf-hla-alleles L  Comma-separated HLA alleles for real VCF smoke
+  --real-vcf-hla-file FILE  HLA file for real VCF smoke
   --bigmhc-models-dir DIR   Copy BigMHC models from local/source directory into tools-root
   --bigmhc-models-host HOST Optional source host for --bigmhc-models-dir, e.g. na@10.200.50.134
   --asset-manifest FILE    TSV manifest for large assets (default: configs/assets/production_assets.tsv)
@@ -498,7 +498,7 @@ repair_netmhcpan_frontend() {
   [[ "$EXECUTE" == "1" ]] || return 0
   local nm="$LICENSED_ROOT/netMHCpan/netMHCpan"
   [[ -f "$nm" ]] || return 0
-  if grep -q '/home/na/miniforge3' "$nm" || grep -q 'CONDA_BASE=.*miniforge3' "$nm"; then
+  if grep -qE '/(home|root)/[^/]+/(mini(conda|forge)|mambaforge)' "$nm" || grep -q 'CONDA_BASE=.*mini.*forge' "$nm"; then
     run "repair NetMHCpan frontend conda sysroot path" bash -lc "cp '$nm' '$nm.bak_\$(date +%Y%m%d_%H%M%S)' && perl -0pi -e 's#CONDA_BASE=\"\\\$\\{CONDA_BASE:-[^}]+\\}\"#CONDA_BASE=\"\\\${CONDA_BASE:-$CONDA_BASE}\"#' '$nm'"
   fi
   run "validate NetMHCpan frontend" bash -lc "CONDA_BASE='$CONDA_BASE' '$nm' -h >/dev/null"
@@ -722,6 +722,12 @@ if [[ "$RUN_VERIFY" == "1" ]]; then
 fi
 
 if [[ "$RUN_REAL_VCF_SMOKE" == "1" ]]; then
+  [[ -n "$REAL_VCF_RAW" ]] || { echo "REAL_VCF_REQUIRED: use --real-vcf" >&2; exit 46; }
+  [[ -n "$REAL_VCF_ANNOTATED" ]] || { echo "REAL_ANNOTATED_VCF_REQUIRED: use --real-annotated-vcf" >&2; exit 46; }
+  [[ -n "$REAL_VCF_HLA_ALLELES" || -n "$REAL_VCF_HLA_FILE" ]] || {
+    echo "REAL_VCF_HLA_REQUIRED: use --real-vcf-hla-alleles or --real-vcf-hla-file" >&2
+    exit 46
+  }
   real_vcf_outdir="$OUTDIR/real_vcf_smoke"
   real_vcf_args=(
     --project-root "$PROJECT_ROOT"
@@ -737,7 +743,7 @@ if [[ "$RUN_REAL_VCF_SMOKE" == "1" ]]; then
   [[ -n "$REAL_VCF_HLA_FILE" ]] && real_vcf_args+=(--hla-file "$REAL_VCF_HLA_FILE")
   [[ "$REAL_VCF_SMOKE_SKIP_MHCFLURRY" == "1" ]] && real_vcf_args+=(--skip-mhcflurry)
   [[ "$REAL_VCF_SMOKE_SKIP_BIGMHC" == "1" ]] && real_vcf_args+=(--skip-bigmhc-im)
-  run "run default real VCF smoke test" bash .agents/skills/neoag-remote-deploy/scripts/14_run_real_vcf_smoke.sh "${real_vcf_args[@]}"
+  run "run configured real VCF smoke test" bash .agents/skills/neoag-remote-deploy/scripts/14_run_real_vcf_smoke.sh "${real_vcf_args[@]}"
 fi
 
 {

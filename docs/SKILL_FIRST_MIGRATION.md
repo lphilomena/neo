@@ -145,9 +145,9 @@ conf/tools.env.local.sh
 Do not hard-code paths such as:
 
 ```text
-/home/na/...
-/mnt/zjl-bgi-zzb/...
-/root/miniconda3/...
+source-machine home paths
+site-specific mounted storage paths
+source-machine conda prefixes
 patient-specific BAM/FASTQ/VCF paths
 ```
 

@@ -84,7 +84,7 @@ Cause: copied wrappers may hard-code an old conda sysroot or old host paths.
 Observed error:
 
 ```text
-netMHCpan: conda sysroot loader missing at /home/na/miniforge3/envs/neoag-tools/x86_64-conda-linux-gnu/sysroot/lib/ld-linux-x86-64.so.2
+netMHCpan: conda sysroot loader missing under a stale source-machine conda prefix
 ```
 
 Fix:
@@ -97,7 +97,7 @@ Fix:
 - validate with `netMHCpan -h` and a small prediction smoke test.
 
 `scripts/install_netmhcpan.sh --repair` must rewrite tcsh launchers and any
-frontend containing stale `/home/na/miniforge3` or other old-machine conda
+frontend containing a stale source-machine conda
 defaults.
 
 ### MHCflurry Fails With Keras Cannot Be Imported
@@ -181,7 +181,7 @@ Fix:
 ### Asset Symlinks Resolve On Source But Not Target
 
 Observed with VEP plugins and SpecHLA DB: `/mnt/.../neodata4git` entries were
-absolute symlinks to `/home/na/...`. They resolved on the source host but not on
+absolute symlinks to a source-machine home directory. They resolved on the source host but not on
 the new machine.
 
 Fix:

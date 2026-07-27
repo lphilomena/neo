@@ -119,7 +119,7 @@ the target machine:
 - MixMHCpred wrapper and Python environment
 - `MIXMHCPRED_REAL_BIN`, `PRIME_HOME`, `MIXMHCPRED_BIN`, `BIGMHC_DIR`
 
-Private old paths such as `/home/na`, stale `/mnt/...` mounts, and old conda
+Private old home paths, stale site-specific mounts, and old conda
 prefixes are allowed only in local untracked configuration when they are valid on
 the target machine. They must not be committed to source.
 

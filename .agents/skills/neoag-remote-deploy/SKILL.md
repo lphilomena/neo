@@ -149,11 +149,11 @@ TensorFlow/Keras by installing the matching `tf-keras` shim and exporting
 `TF_USE_LEGACY_KERAS=1` in generated activation files.
 
 NetMHCpan repair must rewrite any copied frontend that still defaults to an old
-conda prefix such as `/home/na/miniforge3`; after repair, `netMHCpan -h` must
+conda prefix from another host; after repair, `netMHCpan -h` must
 work with `CONDA_BASE=<target-env_tool>/miniforge3`.
 
 `13_install_readme_tools.sh --run-real-vcf-smoke` runs the default
-M1ML150017383 VCF smoke test after installation. The smoke test runs
+an explicitly supplied VCF smoke test after installation. The smoke test runs
 MHCflurry by default, skips NetMHCstabpan by default because it is slow,
 and accepts `--real-vcf-smoke-top-n <N>` for a smaller or larger test.
 Use `--skip-real-vcf-mhcflurry` only as a temporary fallback on hosts with
