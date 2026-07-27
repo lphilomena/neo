@@ -282,21 +282,21 @@ case "${WORKFLOW}" in
     if [[ -n "${REFERENCE_FASTA}" ]]; then
       check_file "Reference FASTA" "${REFERENCE_FASTA}"
       # Check for .fai
-      local fai="${REFERENCE_FASTA}.fai"
-      [[ -f "${fai}" ]] || warn "Reference index not found: ${fai}"
+      _fai="${REFERENCE_FASTA}.fai"
+      [[ -f "${_fai}" ]] || warn "Reference index not found: ${_fai}"
       # Check for .dict
-      local fasta_base="${REFERENCE_FASTA}"
-      local dict=""
-      if [[ "${fasta_base}" == *.chr.fa ]]; then
-        dict="${fasta_base%.chr.fa}.dict"
-      elif [[ "${fasta_base}" == *.chr.fasta ]]; then
-        dict="${fasta_base%.chr.fasta}.dict"
-      elif [[ "${fasta_base}" == *.fa ]]; then
-        dict="${fasta_base%.fa}.dict"
-      elif [[ "${fasta_base}" == *.fasta ]]; then
-        dict="${fasta_base%.fasta}.dict"
+      _fasta_base="${REFERENCE_FASTA}"
+      _dict=""
+      if [[ "${_fasta_base}" == *.chr.fa ]]; then
+        _dict="${_fasta_base%.chr.fa}.dict"
+      elif [[ "${_fasta_base}" == *.chr.fasta ]]; then
+        _dict="${_fasta_base%.chr.fasta}.dict"
+      elif [[ "${_fasta_base}" == *.fa ]]; then
+        _dict="${_fasta_base%.fa}.dict"
+      elif [[ "${_fasta_base}" == *.fasta ]]; then
+        _dict="${_fasta_base%.fasta}.dict"
       fi
-      [[ -n "${dict}" && -f "${dict}" ]] || warn "Reference dict not found: ${dict:-N/A}"
+      [[ -n "${_dict}" && -f "${_dict}" ]] || warn "Reference dict not found: ${_dict:-N/A}"
     else
       fail "REFERENCE_FASTA not set. Use --reference_fasta or set NEOAG_REFERENCE_FASTA."
     fi

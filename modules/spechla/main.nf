@@ -24,9 +24,9 @@ process SPECHLA {
     path "versions.yml",         emit: versions
 
   script:
-  def runner_mode = System.getenv('NEOAG_RUNNER_MODE') ?: 'conda'
-  """
-  mkdir -p spechla_output
+    def runner_mode = System.getenv('NEOAG_RUNNER_MODE') ?: 'conda'
+    """
+    mkdir -p spechla_output
 
   if [ "${runner_mode}" = "docker" ]; then
     # --- Docker mode: run SpecHLA via self-built image ---

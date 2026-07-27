@@ -1,6 +1,6 @@
 process GATK_MUTECT2 {
     tag "${sample_id}"
-    label 'huge'
+    label 'large'
     container 'broadinstitute/gatk:4.6.2.0'
     time '168.h'
     publishDir "${params.outdir}/calling/mutect2", mode: 'copy'
@@ -17,11 +17,20 @@ process GATK_MUTECT2 {
     val normal_sample_name
 
     output:
-    path "${sample_id}.mutect2.raw.vcf.gz", emit: raw_vcf
+    path "${sample_id}.mutect2.raw.vcf.gz",       emit: raw_vcf
+    path "${sample_id}.mutect2.raw.vcf.gz.tbi",   emit: raw_vcf_idx
+    path "${sample_id}.mutect2.raw.vcf.gz.stats", emit: raw_vcf_stats
 
     script:
     def intervals = (intervals_bed && intervals_bed != '') ? "-L ${intervals_bed}" : ""
     """
+    # When running inside the GATK Docker container, nextflow.config env.PATH
+    # replaces the container's default PATH, shadowing /gatk and Python.
+    # Restore the container's essential paths first.
+    if [ -d "/gatk" ]; then
+      export PATH="/gatk:/opt/miniconda/envs/gatk/bin:\$PATH"
+    fi
+
     # Index BAMs if needed (GATK requires .bai indices).
     # Also check next to the original file (symlink target) on NFS — avoids
     # re-indexing multi-hundred-GB BAMs on every run.
@@ -41,6 +50,13 @@ process GATK_MUTECT2 {
       fi
     done
 
+    # Resolve GATK binary: /gatk/gatk inside the Docker container, gatk on conda PATH.
+    if [ -x "/gatk/gatk" ]; then
+      _GATK="/gatk/gatk"
+    else
+      _GATK="gatk"
+    fi
+
     # GATK/htsjdk looks for <ref>.dict by *replacing* the .fa/.fasta extension,
     # NOT by appending .dict.  E.g. assembly.chr.fa → assembly.chr.dict
     # (htsjdk: ReferenceSequenceFileFactory.getDefaultDictionaryForReferenceSequence)
@@ -51,15 +67,19 @@ process GATK_MUTECT2 {
     ref_dict_gatk="\$(echo '${reference_fasta}' | sed -e 's/\\.fasta\$/.dict/' -e 's/\\.fa\$/.dict/')"
     if [ ! -f "\$ref_dict_gatk" ]; then
       echo "Generating sequence dictionary: \$ref_dict_gatk"
-      gatk CreateSequenceDictionary -R '${reference_fasta}' -O "\$ref_dict_gatk"
+      \$_GATK CreateSequenceDictionary -R '${reference_fasta}' -O "\$ref_dict_gatk"
     fi
 
-    gatk Mutect2 \\
+    \$_GATK Mutect2 \\
       -R ${reference_fasta} \\
       -I ${tumor_bam} \\
       -I ${normal_bam} \\
       -normal ${normal_sample_name} \\
       ${intervals} \\
       -O ${sample_id}.mutect2.raw.vcf.gz
+
+    # Index the output VCF (required by downstream FilterMutectCalls / GATK tools)
+    echo "Indexing output VCF..."
+    \$_GATK IndexFeatureFile -I ${sample_id}.mutect2.raw.vcf.gz
     """
 }

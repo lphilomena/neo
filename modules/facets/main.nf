@@ -25,10 +25,10 @@ process FACETS {
     path "versions.yml",        emit: versions
 
   script:
-  def runner_mode = System.getenv('NEOAG_RUNNER_MODE') ?: 'conda'
-  def pileup_bin = System.getenv('NEOAG_SNP_PILEUP_BIN') ?: 'snp-pileup'
-  """
-  mkdir -p facets_output
+    def runner_mode = System.getenv('NEOAG_RUNNER_MODE') ?: 'conda'
+    def pileup_bin = System.getenv('NEOAG_SNP_PILEUP_BIN') ?: 'snp-pileup'
+    """
+    mkdir -p facets_output
 
   if [ "${runner_mode}" = "docker" ]; then
     # --- Docker mode: run FACETS via self-built image ---

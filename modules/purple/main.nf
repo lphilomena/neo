@@ -25,9 +25,9 @@ process PURPLE {
     path "versions.yml",        emit: versions
 
   script:
-  def runner_mode = System.getenv('NEOAG_RUNNER_MODE') ?: 'conda'
-  """
-  mkdir -p purple_output
+    def runner_mode = System.getenv('NEOAG_RUNNER_MODE') ?: 'conda'
+    """
+    mkdir -p purple_output
 
   if [ "${runner_mode}" = "docker" ]; then
     # --- Docker mode: run PURPLE via self-built image ---

@@ -13,7 +13,7 @@ process PARSE_PVAC {
     path "versions.yml", emit: versions
 
   script:
-  def files = pvac_files.collect{ it.toString() }.join(' ')
+    def files = pvac_files.collect{ it.toString() }.join(' ')
   """
   neoag-v03 parse-pvac \
     --sample-id '${sample_id}' \

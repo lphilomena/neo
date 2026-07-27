@@ -31,10 +31,10 @@ enabled = ["pvacseq", "netmhcpan", "mhcflurry", "vep"]
 
 [inputs]
 hla_alleles = ["${hla}"]
-tumor_vcf = "${filtered_vcf}"
+tumor_vcf = "${params.outdir}/calling/filter/${sample_id}.mutect2.filtered.vcf.gz"
 tumor_sample_name = "${tumor_sample_name}"
 normal_sample_name = "${normal_sample_name}"
-variants_vcf = "${filtered_vcf}"
+variants_vcf = "${params.outdir}/calling/filter/${sample_id}.mutect2.filtered.vcf.gz"
 extract_appm_from_vcf = true
 expression = "${params.expression_tsv ?: projectDir + '/../data/fixtures/gene_expression.tsv'}"
 cnv = "${params.cnv_tsv ?: projectDir + '/../data/fixtures/cnv_segments.tsv'}"

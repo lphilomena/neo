@@ -22,10 +22,10 @@ process OPTITYPE {
     path "versions.yml", emit: versions
 
   script:
-  def stype = seq_type == 'rna' ? '--rna' : '--dna'
-  // neoag-tools/bin/optitype uses #!/usr/bin/env python3.11 which may not
-  // exist; neoag-optitype/bin/optitype uses an embedded correct Python path.
-  def opti_bin = "${System.getenv('NEOAG_CONDA_BASE') ?: '/home/na/miniforge3'}/envs/neoag-optitype/bin/optitype"
+    def stype = seq_type == 'rna' ? '--rna' : '--dna'
+    // neoag-tools/bin/optitype uses #!/usr/bin/env python3.11 which may not
+    // exist; neoag-optitype/bin/optitype uses an embedded correct Python path.
+    def opti_bin = "${System.getenv('NEOAG_CONDA_BASE') ?: '/home/na/miniforge3'}/envs/neoag-optitype/bin/optitype"
   """
   # Index the input BAM if needed (shared mount BAMs may lack .bai).
   if [ ! -f '${input_bam}.bai' ] && [ ! -f '${input_bam}.csi' ]; then

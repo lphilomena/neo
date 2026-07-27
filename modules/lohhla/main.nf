@@ -26,9 +26,12 @@ process LOHHLA {
     path "versions.yml",        emit: versions
 
   script:
-  def runner_mode = System.getenv('NEOAG_RUNNER_MODE') ?: 'conda'
-  def hla_str = hla_alleles instanceof List ? hla_alleles.join(';') : hla_alleles.toString()
-  """
+    def runner_mode = System.getenv('NEOAG_RUNNER_MODE') ?: 'conda'
+    def hla_str = hla_alleles instanceof List ? hla_alleles.join(';') : hla_alleles.toString()
+    // Pre-compute space-separated HLA list for bash for-loop; avoid ${hla_str//;/ }
+    // inside the triple-quoted string because the // triggers a Groovy comment.
+    def hla_space = hla_str.replace(';', ' ')
+    """
   mkdir -p LOHHLA_output
 
   if [ "${runner_mode}" = "docker" ]; then
@@ -72,7 +75,7 @@ process LOHHLA {
     # LOHHLA may not produce output if no HLA LOH detected or tool failed.
     # Emit an empty-but-valid hla_loh.tsv so downstream doesn't break.
     echo -e "hla_allele\\tloh_status" > hla_loh.tsv
-    for a in ${hla_str//;/ }; do
+    for a in ${hla_space}; do
       echo -e "\${a}\\tno_data" >> hla_loh.tsv
     done
   fi

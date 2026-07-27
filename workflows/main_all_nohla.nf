@@ -126,6 +126,7 @@ workflow {
   GATK_FILTER_MUTECT_CALLS(
     sample_id,
     GATK_MUTECT2.out.raw_vcf,
+    GATK_MUTECT2.out.raw_vcf_stats,
     ref_fasta,
     ref_fai,
     ref_dict,
