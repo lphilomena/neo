@@ -5,6 +5,9 @@ import os
 import shutil
 import subprocess
 import sys
+import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -12,6 +15,16 @@ from neoag.controlled_execution.io_utils import sha256_file, write_json
 
 
 ARTIFACT_NAMES: dict[str, tuple[str, ...]] = {
+    "raw_events": ("raw_events.tsv",),
+    "raw_peptides": ("raw_peptides.tsv",),
+    "presentation_evidence": ("presentation_evidence.tsv",),
+    "expression_evidence": ("expression_evidence.tsv",),
+    "rna_evidence": ("rna_evidence.tsv", "rna_junction_evidence.tsv"),
+    "rna_alt_vaf": ("rna_alt_vaf.tsv", "rna_alt_evidence.tsv"),
+    "gene_tpm": ("gene_tpm.tsv",),
+    "transcript_tpm": ("transcript_tpm.tsv",),
+    "appm_summary": ("appm_summary.tsv",),
+    "peptide_safety": ("peptide_safety.tsv",),
     "weighted_baseline": ("ranked_peptides.weighted_baseline.tsv", "ranked_peptides.tsv", "ranked_peptides.v03.tsv"),
     "consensus_peptides": ("ranked_peptides.evidence_consensus.tsv",),
     "consensus_events": ("ranked_events.evidence_consensus.tsv",),
@@ -25,6 +38,38 @@ ARTIFACT_NAMES: dict[str, tuple[str, ...]] = {
     "comparison_md": ("ranking_compare_weighted_vs_consensus.md",),
     "comparison_tsv": ("ranking_compare_weighted_vs_consensus.tsv", "weighted_vs_consensus_comparison.tsv"),
 }
+
+
+def submit_gateway_run(gateway_url: str, payload: dict[str, Any], *, wait: bool = False, timeout: int = 86400) -> dict[str, Any]:
+    base = gateway_url.rstrip("/")
+    request = urllib.request.Request(
+        base + "/open/run",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            submitted = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        return {"status": "FAILED", "failure_code": "GATEWAY_SUBMISSION_FAILED", "message": body or str(exc)}
+    except OSError as exc:
+        return {"status": "FAILED", "failure_code": "GATEWAY_SUBMISSION_FAILED", "message": str(exc)}
+    if not wait or not submitted.get("job_id"):
+        return submitted
+    deadline = time.monotonic() + timeout
+    status_url = base + str(submitted.get("status_url") or f"/job-status/{submitted['job_id']}")
+    while time.monotonic() < deadline:
+        try:
+            with urllib.request.urlopen(status_url, timeout=30) as response:
+                job = json.loads(response.read().decode("utf-8"))
+        except OSError as exc:
+            return {"status": "FAILED", "failure_code": "GATEWAY_STATUS_FAILED", "message": str(exc), "job_id": submitted.get("job_id")}
+        if job.get("status") not in {"QUEUED", "RUNNING"}:
+            return job
+        time.sleep(2)
+    return {"status": "FAILED", "failure_code": "GATEWAY_TIMEOUT", "job_id": submitted.get("job_id")}
 
 
 def run_cli(args: list[str], *, cwd: str | Path, log_path: str | Path | None = None, env: dict[str, str] | None = None, timeout: int = 3600) -> dict[str, Any]:
@@ -222,3 +267,20 @@ def write_output_manifest(result_dir: str | Path, path: str | Path) -> Path:
                 "sha256": sha256_file(p) if p.stat().st_size < 50 * 1024 * 1024 else "not_computed_large_file",
             })
     return write_json(path, {"result_dir": str(root.resolve()), "files": files})
+
+
+def write_named_output_manifest(outputs: dict[str, Any], path: str | Path) -> Path:
+    files = []
+    for label, value in sorted(outputs.items()):
+        if not isinstance(value, str) or not value:
+            continue
+        item = Path(value)
+        if not item.is_file():
+            continue
+        files.append({
+            "label": label,
+            "path": str(item.resolve()),
+            "size_bytes": item.stat().st_size,
+            "sha256": sha256_file(item) if item.stat().st_size < 50 * 1024 * 1024 else "not_computed_large_file",
+        })
+    return write_json(path, {"schema_version": "open-neo-output-manifest-v1", "files": files})

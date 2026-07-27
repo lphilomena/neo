@@ -36,6 +36,8 @@ QUANT_DIR="$OUTDIR/salmon_quant"
 LOG="$OUTDIR/salmon_quant.log"
 "$SALMON_BIN" quant -i "$SALMON_INDEX" -l A -1 "$FASTQ1" -2 "$FASTQ2" -p "$THREADS" --validateMappings -o "$QUANT_DIR" >"$LOG" 2>&1
 python "$(dirname "$0")/salmon_quant_to_gene_tpm.py" --quant-sf "$QUANT_DIR/quant.sf" --tx2gene "$TX2GENE" --out "$OUTDIR/gene_tpm.tsv"
+awk 'BEGIN{FS=OFS="\t"} NR==1{for(i=1;i<=NF;i++){if($i=="Name") id=i; if($i=="TPM") tpm=i} print "transcript_id","tpm"; next} id && tpm {print $id,$tpm}' \
+  "$QUANT_DIR/quant.sf" > "$OUTDIR/transcript_tpm.tsv"
 cat > "$OUTDIR/rna_fastq_to_tpm.summary.json" <<JSON
 {
   "sample_id": "$SAMPLE_ID",
@@ -46,6 +48,7 @@ cat > "$OUTDIR/rna_fastq_to_tpm.summary.json" <<JSON
   "tx2gene": "$TX2GENE",
   "quant_sf": "$QUANT_DIR/quant.sf",
   "gene_tpm": "$OUTDIR/gene_tpm.tsv",
+  "transcript_tpm": "$OUTDIR/transcript_tpm.tsv",
   "log": "$LOG"
 }
 JSON

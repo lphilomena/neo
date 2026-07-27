@@ -96,7 +96,7 @@ ROUTE_SPECS: dict[str, RouteSpec] = {
     "/open/run": RouteSpec(
         route="/open/run",
         risk_level="LOW",
-        optional=("outdir", "case_id", "sample_id", "project_root", "sample_manifest", "mode", "approved", "allow_partial", "doctor", "tools_manifest", "reference_manifest", "execution_profile", "mini_smoke", "release_audit", "stub", "profile", "genome_build", "somatic_vcf", "fusion_tsv", "splice_junction_tsv", "sv_vcf", "capture_bed", "peptide_csv", "raw_events", "raw_peptides", "sv_raw_events", "sv_raw_peptides", "hla_file", "hla_alleles", "expression_tsv", "transcript_expression_tsv", "rna_evidence_tsv", "purity_tsv", "cnv_tsv", "hla_loh_tsv", "normal_expression", "normal_hla_ligands", "reference_proteome", "normal_junctions", "reference_fasta", "gencode_gtf", "vep_cache", "production_manifest", "result_dir", "comprehensive_evidence", "weighted_baseline", "rules", "provenance", "force", "timeout"),
+        optional=("outdir", "case_id", "sample_id", "project_root", "sample_manifest", "mode", "approved", "allow_partial", "doctor", "tools_manifest", "reference_manifest", "execution_profile", "mini_smoke", "release_audit", "stub", "profile", "genome_build", "input_dir", "tumor_dna_bam", "normal_dna_bam", "tumor_rna_bam", "tumor_dna_fastq", "normal_dna_fastq", "tumor_rna_fastq", "tumor_sample_id", "normal_sample_id", "assay_type", "somatic_vcf", "fusion_tsv", "splice_junction_tsv", "sv_vcf", "capture_bed", "peptide_csv", "raw_events", "raw_peptides", "sv_raw_events", "sv_raw_peptides", "hla_file", "hla_alleles", "expression_tsv", "transcript_expression_tsv", "rna_evidence_tsv", "rna_quant_method", "salmon_index", "tx2gene", "rsem_reference", "purity_tsv", "cnv_tsv", "hla_loh_tsv", "normal_expression", "normal_hla_ligands", "reference_proteome", "normal_junctions", "reference_fasta", "gencode_gtf", "vep_cache", "production_manifest", "result_dir", "comprehensive_evidence", "weighted_baseline", "rules", "provenance", "force", "timeout", "tool_results"),
         description="Open-Neo public macro Skill2.",
     ),
     "/open/review": RouteSpec(
@@ -391,6 +391,7 @@ class GatewayHandler(BaseHTTPRequestHandler):
             payload = dict(data)
             payload["outdir"] = str(outdir)
             payload.setdefault("project_root", str(self.project_root))
+            payload["_gateway_dispatched"] = True
             return run_open_neo(payload)
         if route == "/open/review":
             from neoag.open_neo.review import run_review

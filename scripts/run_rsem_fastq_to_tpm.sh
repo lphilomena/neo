@@ -53,6 +53,11 @@ GENES_RESULTS="$OUT_PREFIX.genes.results"
 awk 'BEGIN{FS=OFS="\t"} NR==1{for(i=1;i<=NF;i++){if($i=="gene_id") gid=i; if($i=="TPM") tpm=i} print "gene_id","tpm"; next} gid && tpm {print $gid,$tpm}' \
   "$GENES_RESULTS" > "$OUTDIR/gene_tpm.tsv"
 
+ISOFORM_RESULTS="$OUT_PREFIX.isoforms.results"
+[[ -f "$ISOFORM_RESULTS" ]] || { echo "ERROR: expected RSEM isoform result missing: $ISOFORM_RESULTS" >&2; exit 4; }
+awk 'BEGIN{FS=OFS="\t"} NR==1{for(i=1;i<=NF;i++){if($i=="transcript_id") tid=i; if($i=="TPM") tpm=i} print "transcript_id","tpm"; next} tid && tpm {print $tid,$tpm}' \
+  "$ISOFORM_RESULTS" > "$OUTDIR/transcript_tpm.tsv"
+
 cat > "$OUTDIR/rna_fastq_to_tpm.summary.json" <<JSON
 {
   "method": "rsem",
@@ -62,6 +67,7 @@ cat > "$OUTDIR/rna_fastq_to_tpm.summary.json" <<JSON
   "rsem_reference": "$RSEM_REFERENCE",
   "genes_results": "$GENES_RESULTS",
   "gene_tpm": "$OUTDIR/gene_tpm.tsv",
+  "transcript_tpm": "$OUTDIR/transcript_tpm.tsv",
   "log": "$LOG"
 }
 JSON

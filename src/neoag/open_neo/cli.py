@@ -24,6 +24,14 @@ def _json_list(value: str) -> list[str]:
     return [x for x in value.replace(";", ",").split(",") if x]
 
 
+def _tool_result(value: str) -> tuple[str, str, str]:
+    if "=" not in value or ":" not in value.split("=", 1)[0]:
+        raise argparse.ArgumentTypeError("tool result must use DOMAIN:TOOL=PATH")
+    left, path = value.split("=", 1)
+    domain, tool = left.split(":", 1)
+    return domain.strip(), tool.strip(), path.strip()
+
+
 def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(description="Open-Neo public macro Skills CLI")
     sub = ap.add_subparsers(dest="command", required=True)
@@ -58,7 +66,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_common_output(run)
     run.add_argument("--project-root", default=".")
     run.add_argument("--sample-manifest")
-    run.add_argument("--mode", choices=["plan", "dry-run", "execute", "resume", "ranking-only"], default="plan")
+    run.add_argument("--mode", choices=["plan", "dry-run", "execute", "resume", "ranking-only"])
     run.add_argument("--approved", action="store_true")
     run.add_argument("--allow-partial", action="store_true")
     run.add_argument("--doctor", action=argparse.BooleanOptionalAction, default=True)
@@ -71,6 +79,16 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--profile", default="default")
     run.add_argument("--genome-build", default="GRCh38")
     run.add_argument("--sample-id")
+    run.add_argument("--input-dir")
+    run.add_argument("--tumor-dna-bam")
+    run.add_argument("--normal-dna-bam")
+    run.add_argument("--tumor-rna-bam")
+    run.add_argument("--tumor-dna-fastq", action="append")
+    run.add_argument("--normal-dna-fastq", action="append")
+    run.add_argument("--tumor-rna-fastq", action="append")
+    run.add_argument("--tumor-sample-id")
+    run.add_argument("--normal-sample-id")
+    run.add_argument("--assay-type", choices=["WGS", "WES", "PANEL", "CAPTURE", "RNA"])
     run.add_argument("--somatic-vcf")
     run.add_argument("--fusion-tsv")
     run.add_argument("--splice-junction-tsv")
@@ -86,6 +104,10 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--expression-tsv")
     run.add_argument("--transcript-expression-tsv")
     run.add_argument("--rna-evidence-tsv")
+    run.add_argument("--rna-quant-method", choices=["auto", "salmon", "rsem"], default="auto")
+    run.add_argument("--salmon-index")
+    run.add_argument("--tx2gene")
+    run.add_argument("--rsem-reference")
     run.add_argument("--purity-tsv")
     run.add_argument("--cnv-tsv")
     run.add_argument("--hla-loh-tsv")
@@ -104,6 +126,9 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--provenance")
     run.add_argument("--force", action="store_true")
     run.add_argument("--timeout", type=int, default=7200)
+    run.add_argument("--tool-result", action="append", type=_tool_result, default=[], metavar="DOMAIN:TOOL=PATH")
+    run.add_argument("--gateway-url", help="Required for execute/resume when not already invoked by NeoAg Gateway")
+    run.add_argument("--gateway-wait", action="store_true", help="Poll Gateway until the submitted job finishes")
 
     review = sub.add_parser("review", help="Review event-level consensus, design experiments, and generate reports")
     _add_common_output(review)
@@ -121,6 +146,11 @@ def main(argv: list[str] | None = None) -> int:
         args["release_audit"] = not args.pop("no_release_audit", False)
         result = run_install_check(args)
     elif command == "run":
+        tool_results: dict[str, dict[str, str]] = {}
+        for domain, tool, path in args.pop("tool_result", []):
+            tool_results.setdefault(domain, {})[tool] = path
+        if tool_results:
+            args["tool_results"] = tool_results
         result = run_open_neo(args)
     else:
         result = run_review(args)

@@ -8,6 +8,8 @@ from neoag.open_neo.install_check import run_install_check
 from neoag.open_neo.review import run_review
 from neoag.open_neo.routing import inspect_manifest
 from neoag.open_neo.run import run_open_neo
+from neoag.open_neo.rna_preprocessing import prepare_rna_evidence
+from neoag.open_neo.tool_consensus import build_tool_consensus
 from neoag.skill_taxonomy.registry import SKILLS_BY_NAME
 from neoag.skill_taxonomy.runner import run_skill
 
@@ -91,6 +93,9 @@ def test_open_neo_run_plan_writes_route_and_config(tmp_path: Path):
     config = Path(result["outputs"]["generated_run_config"])
     assert config.is_file()
     assert 'entry_mode = "e2e"' in config.read_text(encoding="utf-8")
+    assert Path(result["outputs"]["pipeline_plan"]).is_file()
+    assert Path(result["outputs"]["consensus_tool_run_status"]).is_file()
+    assert Path(result["outputs"]["consensus_tool_consensus_summary"]).is_file()
 
 
 def test_open_neo_run_missing_hla_is_blocked(tmp_path: Path):
@@ -103,6 +108,90 @@ def test_open_neo_run_missing_hla_is_blocked(tmp_path: Path):
     })
     assert result["status"] == "BLOCKED"
     assert "HLA_MISSING" in result["blocking_issues"]
+
+
+def test_input_directory_header_detection_and_bam_index_qc(tmp_path: Path):
+    data_dir = tmp_path / "inputs"
+    data_dir.mkdir()
+    fusion = data_dir / "caller.tsv"
+    fusion.write_text("gene1\tgene2\tjunction_reads\nA\tB\t5\n", encoding="utf-8")
+    hla = data_dir / "typing.txt"
+    hla.write_text("HLA-A*02:01 HLA-B*07:02\n", encoding="utf-8")
+    manifest = tmp_path / "sample.yaml"
+    manifest.write_text(f"case_id: AUTO\nsample_id: AUTO\ninputs:\n  input_dir: {data_dir}\n", encoding="utf-8")
+    result = inspect_manifest(manifest, input_dir=data_dir, output_dir=tmp_path / "out")
+    assert result.status == "PASS"
+    assert result.inputs["fusion_tsv"] == str(fusion)
+    assert result.inputs["hla_file"] == str(hla)
+
+
+def test_bam_without_index_blocks_production_route(tmp_path: Path):
+    bam = tmp_path / "tumor.bam"
+    bam.write_bytes(b"BAM")
+    manifest = tmp_path / "sample.yaml"
+    manifest.write_text(f"case_id: BAM\nsample_id: BAM\ninputs:\n  tumor_dna_bam: {bam}\n", encoding="utf-8")
+    result = inspect_manifest(manifest, output_dir=tmp_path / "out")
+    assert result.status == "BLOCKED"
+    assert any(item["field"] == "tumor_dna_bam_index" for item in result.missing)
+
+
+def test_tool_consensus_emits_domain_outputs(tmp_path: Path):
+    optitype = tmp_path / "sample_optitype_result.txt"
+    spechla = tmp_path / "sample_spechla_result.txt"
+    optitype.write_text("HLA-A*02:01 HLA-B*07:02 HLA-C*07:02\n", encoding="utf-8")
+    spechla.write_text("HLA-A*02:01 HLA-B*07:02 HLA-C*07:02\n", encoding="utf-8")
+    outputs = build_tool_consensus({
+        "sample_id": "S1",
+        "tool_results": {"hla_typing": {"optitype": str(optitype), "spechla": str(spechla)}},
+    }, tmp_path / "consensus")
+    assert Path(outputs["hla_typing_consensus.tsv"]).is_file()
+    text = Path(outputs["tool_consensus_summary.tsv"]).read_text(encoding="utf-8")
+    assert "hla_typing\tCONSISTENT" in text
+    assert Path(outputs["tool_evidence.long.tsv"]).is_file()
+
+
+def test_rna_preprocessing_plans_gene_transcript_tpm_and_alt_vaf(tmp_path: Path):
+    fastq1 = tmp_path / "tumor_R1.fastq.gz"
+    fastq2 = tmp_path / "tumor_R2.fastq.gz"
+    bam = tmp_path / "tumor.rna.bam"
+    vcf = tmp_path / "somatic.vcf"
+    tx2gene = tmp_path / "tx2gene.tsv"
+    salmon_index = tmp_path / "salmon_index"
+    salmon_index.mkdir()
+    for path in (fastq1, fastq2, bam):
+        path.write_bytes(b"fixture")
+    tx2gene.write_text("transcript_id\tgene_id\nTX1\tG1\n", encoding="utf-8")
+    vcf.write_text("##fileformat=VCFv4.2\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n1\t1\t.\tA\tT\t.\tPASS\t.\n", encoding="utf-8")
+    result = prepare_rna_evidence(
+        {
+            "sample_id": "RNA1",
+            "tumor_rna_fastq": [str(fastq1), str(fastq2)],
+            "tumor_rna_bam": str(bam),
+            "somatic_vcf": str(vcf),
+            "salmon_index": str(salmon_index),
+            "tx2gene": str(tx2gene),
+        },
+        project_root=Path.cwd(),
+        outdir=tmp_path / "rna",
+        execute=False,
+    )
+    stages = {row["stage"]: row for row in result["stages"]}
+    assert stages["rna_quantification"]["status"] == "PLANNED"
+    assert "run_salmon_fastq_to_tpm.sh" in stages["rna_quantification"]["command_preview"]
+    assert stages["rna_alt_vaf"]["status"] == "PLANNED"
+    assert "rna_allele_counts_pysam.py" in stages["rna_alt_vaf"]["command_preview"]
+    assert Path(tmp_path / "rna/rna_preprocessing_status.tsv").is_file()
+
+
+def test_direct_execute_requires_gateway(tmp_path: Path):
+    comprehensive, weighted = _write_minimal_evidence(tmp_path)
+    result = run_open_neo({
+        "mode": "execute", "approved": True, "doctor": False,
+        "comprehensive_evidence": str(comprehensive), "weighted_baseline": str(weighted),
+        "outdir": str(tmp_path / "execute"),
+    })
+    assert result["status"] == "BLOCKED"
+    assert "GATEWAY_REQUIRED" in result["blocking_issues"]
 
 
 def _write_minimal_evidence(tmp_path: Path) -> tuple[Path, Path]:
@@ -145,6 +234,10 @@ def test_open_neo_run_ranking_only_keeps_baseline_and_emits_consensus(tmp_path: 
         "all_tool_results.tsv",
     ):
         assert (outdir / name).is_file()
+    all_tool_header = (outdir / "all_tool_results.tsv").read_text(encoding="utf-8").splitlines()[0].split("\t")
+    assert "legacy_weighted_rank" in all_tool_header
+    assert "evidence_rank" in all_tool_header
+    assert (outdir / "pipeline/tool_consensus/presentation_consensus.tsv").is_file()
 
 
 def _write_review_fixture(root: Path) -> None:

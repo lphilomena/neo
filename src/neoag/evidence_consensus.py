@@ -835,6 +835,12 @@ def _comparison_rows(rows: list[dict[str, str]]) -> list[dict[str, str]]:
             "event_id": str(row.get("event_id", "")),
             "gene": str(row.get("gene", "")),
             "evidence_track": row["evidence_track"],
+            "event_type": str(row.get("event_type", "")),
+            "hla_allele": _row_text(row, "hla_allele", "hla", "allele", "restricting_hla"),
+            "rna_support_state": str(row.get("rna_support_state", "RNA_UNASSESSED")),
+            "safety_state": str(row.get("safety_state", row.get("safety_status", "SAFETY_PARTIAL"))),
+            "hard_failure": str(row.get("hard_failure", "no")),
+            "manual_review_required": str(row.get("manual_review_required", "no")),
             "legacy_weighted_rank": str(legacy),
             "legacy_efficacy_score": str(row.get("efficacy_score", "")),
             "legacy_final_priority": str(row.get("final_priority", "")),
@@ -899,11 +905,13 @@ def _materialize_alias(source: str | Path, target: str | Path) -> str:
 def _write_canonical_all_tool_results(
     comprehensive_tsv: str | Path,
     output_tsv: str | Path,
+    *,
+    ranked_rows: list[dict[str, str]] | None = None,
 ) -> tuple[str, str]:
     """Materialize the stable user-facing evidence table and its audit manifest."""
     source = Path(comprehensive_tsv)
     target = Path(output_tsv)
-    rows = read_tsv(source)
+    rows = ranked_rows if ranked_rows is not None else read_tsv(source)
     canonical_rows: list[dict[str, str]] = []
     for row in rows:
         identity = "|".join(
@@ -1016,6 +1024,22 @@ def _write_comparison_markdown(
     track_counts: Mapping[str, int],
 ) -> None:
     direction_counts = Counter(row["rank_shift_direction"] for row in comparison_rows)
+    n_rows = len(comparison_rows)
+    spearman = "NA"
+    if n_rows > 1:
+        distance = sum((int(row["legacy_weighted_rank"]) - int(row["evidence_rank"])) ** 2 for row in comparison_rows)
+        spearman = f"{1.0 - (6.0 * distance) / (n_rows * (n_rows * n_rows - 1)):.6f}"
+    overlaps = []
+    for top_n in (10, 20, 50, 100):
+        left = {row["peptide_id"] for row in comparison_rows if int(row["legacy_weighted_rank"]) <= top_n}
+        right = {row["peptide_id"] for row in comparison_rows if int(row["evidence_rank"]) <= top_n}
+        overlaps.append((top_n, len(left & right), len(left), len(right)))
+    hla_count = len({row.get("hla_allele", "") for row in comparison_rows if row.get("hla_allele")})
+    event_types = Counter(row.get("event_type", "UNASSESSED") or "UNASSESSED" for row in comparison_rows)
+    rna_supported = sum("CONFIRMED" in row.get("rna_support_state", "") or "SUPPORTED" in row.get("rna_support_state", "") for row in comparison_rows)
+    safety_complete = sum(row.get("safety_state") == "SAFETY_PASS" for row in comparison_rows)
+    hard_fail_top = sum(row.get("hard_failure") == "yes" and int(row["evidence_rank"]) <= 50 for row in comparison_rows)
+    manual_review = sum(row.get("manual_review_required") == "yes" for row in comparison_rows)
     largest = sorted(
         comparison_rows,
         key=lambda row: (-abs(int(row["rank_shift_weighted_minus_consensus"])), row["peptide_id"]),
@@ -1030,9 +1054,17 @@ def _write_comparison_markdown(
         "| Metric | Value |",
         "| --- | ---: |",
         f"| Candidate peptide-HLA rows | {len(comparison_rows)} |",
+        f"| Spearman weighted vs consensus rank | {spearman} |",
+        f"| Distinct restricting HLA alleles | {hla_count} |",
+        f"| RNA-supported candidates | {rna_supported} |",
+        f"| Safety-complete candidates | {safety_complete} |",
+        f"| Hard-fail candidates in consensus Top50 | {hard_fail_top} |",
+        f"| Manual-review candidates | {manual_review} |",
+        *[f"| Top{top_n} overlap | {overlap} (weighted={left_n}, consensus={right_n}) |" for top_n, overlap, left_n, right_n in overlaps],
         *[f"| Rank shift: {key} | {value} |" for key, value in sorted(direction_counts.items())],
         *[f"| Evidence grade {key} | {value} |" for key, value in sorted(grade_counts.items())],
         *[f"| Track {key} | {value} |" for key, value in sorted(track_counts.items())],
+        *[f"| Event type {key} | {value} |" for key, value in sorted(event_types.items())],
         "",
         "## Largest absolute rank shifts",
         "",
@@ -1140,7 +1172,7 @@ def rank_evidence_consensus(
     _write_consensus_summary(summary_path, rows, event_rows, conflicts)
     _write_comparison_markdown(comparison_md_path, comparison_rows, grade_counts, track_counts)
     all_tool_results, all_tool_results_manifest = _write_canonical_all_tool_results(
-        comprehensive_tsv, all_tool_results_path,
+        comprehensive_tsv, all_tool_results_path, ranked_rows=rows,
     )
     result = {
         "rows": len(rows),

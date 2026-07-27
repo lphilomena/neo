@@ -269,7 +269,7 @@ def run_pipeline_full(
                 break
         elif step.mode == "requires_execution":
             step.status = "DRY_RUN" if dry_run else "SKIPPED"
-            step.failure_reason = "requires external tool/workflow execution; use Gateway/HPC runner after Doctor is READY"
+            step.failure_reason = "requires external tool/workflow execution; use the approved Gateway production runner after Doctor is READY"
         elif step.mode in {"optional_unassessed", "requires_input", "unassessed_existing_results"}:
             step.status = "UNASSESSED"
         else:
@@ -334,7 +334,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--project-root", default=".")
     ap.add_argument("--outdir", required=True)
     ap.add_argument("--profile", default="local")
-    ap.add_argument("--execute", action="store_true", help="Allow safe local execution. Heavy external steps are still planned unless implemented by Gateway/HPC runner.")
+    ap.add_argument("--execute", action="store_true", help="Allow safe local execution. Heavy external steps are still planned unless implemented by the Gateway production runner.")
     ap.add_argument("--strict", action="store_true", help="Stop when Doctor is BLOCKED/UNSAFE instead of continuing partial mode")
     ap.add_argument("--run-demo-fixture", action="store_true")
     args = ap.parse_args(argv)

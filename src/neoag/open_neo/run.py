@@ -8,16 +8,23 @@ from typing import Any
 
 from neoag.controlled_execution.doctor import run_doctor
 from neoag.controlled_execution.io_utils import sha256_file, write_json, write_tsv
+from neoag.controlled_execution.pipeline_runner import run_pipeline_full
 from neoag.production_runner import run_production
+from neoag.schemas import EVENT_FIELDS, PEPTIDE_FIELDS
+from neoag.skill_taxonomy.entry_skills import run_sv_wes, run_sv_wgs
+from neoag.utils import read_tsv as read_rows
 
 from .contracts import MacroResult, MacroStep
 from .execution_adapters import (
     discover_result_artifacts,
     ensure_parallel_ranking,
     run_cli,
-    write_output_manifest,
+    submit_gateway_run,
+    write_named_output_manifest,
     write_run_config,
 )
+from .tool_consensus import build_tool_consensus, enrich_all_tool_results
+from .rna_preprocessing import prepare_rna_evidence
 from .routing import (
     RoutingResult,
     build_inventory,
@@ -31,8 +38,6 @@ from .state import RunLayout, audit, new_run_id, safe_identifier, update_case_st
 
 def _result_from_args(args: dict[str, Any], layout: RunLayout) -> RoutingResult:
     sample_manifest = args.get("sample_manifest")
-    if sample_manifest:
-        return inspect_manifest(sample_manifest)
     data: dict[str, Any] = {
         "case_id": args.get("case_id") or args.get("sample_id") or "CASE001",
         "sample_id": args.get("sample_id") or args.get("case_id") or "SAMPLE001",
@@ -41,23 +46,29 @@ def _result_from_args(args: dict[str, Any], layout: RunLayout) -> RoutingResult:
         "inputs": {},
     }
     keys = [
+        "tumor_dna_bam", "normal_dna_bam", "tumor_rna_bam", "tumor_dna_fastq", "normal_dna_fastq", "tumor_rna_fastq",
         "somatic_vcf", "fusion_tsv", "splice_junction_tsv", "sv_vcf", "capture_bed",
         "peptide_csv", "raw_events", "raw_peptides", "sv_raw_events", "sv_raw_peptides",
         "hla_file", "hla_alleles", "expression_tsv", "transcript_expression_tsv",
         "rna_evidence_tsv", "purity_tsv", "cnv_tsv", "hla_loh_tsv", "normal_expression",
         "normal_hla_ligands", "reference_proteome", "normal_junctions", "reference_fasta",
         "gencode_gtf", "vep_cache", "production_manifest", "result_dir",
+        "salmon_index", "tx2gene", "rsem_reference",
         "comprehensive_evidence", "weighted_baseline",
+        "input_dir",
     ]
     project_root = Path(args.get("project_root") or ".").resolve()
     path_like = {
+        "tumor_dna_bam", "normal_dna_bam", "tumor_rna_bam", "tumor_dna_fastq", "normal_dna_fastq", "tumor_rna_fastq",
         "somatic_vcf", "fusion_tsv", "splice_junction_tsv", "sv_vcf", "capture_bed",
         "peptide_csv", "raw_events", "raw_peptides", "sv_raw_events", "sv_raw_peptides",
         "hla_file", "expression_tsv", "transcript_expression_tsv", "rna_evidence_tsv",
         "purity_tsv", "cnv_tsv", "hla_loh_tsv", "normal_expression",
         "normal_hla_ligands", "reference_proteome", "normal_junctions", "reference_fasta",
         "gencode_gtf", "vep_cache", "production_manifest", "result_dir",
+        "salmon_index", "tx2gene", "rsem_reference",
         "comprehensive_evidence", "weighted_baseline",
+        "input_dir",
     }
     for key in keys:
         value = args.get(key)
@@ -71,6 +82,11 @@ def _result_from_args(args: dict[str, Any], layout: RunLayout) -> RoutingResult:
                 resolved.append(str(path if path.is_absolute() else (project_root / path).resolve()))
             value = resolved if isinstance(value, list) else resolved[0]
         data["inputs"][key] = value
+    for key in ("tumor_sample_id", "normal_sample_id", "assay_type"):
+        if args.get(key):
+            data[key] = args[key]
+    if args.get("tool_results"):
+        data["tool_results"] = args["tool_results"]
     data["execution"] = {
         "profile": args.get("profile") or "default",
         "backend": args.get("backend") or "production-run",
@@ -78,7 +94,27 @@ def _result_from_args(args: dict[str, Any], layout: RunLayout) -> RoutingResult:
     }
     manifest_path = layout.manifests / "sample_manifest.generated.json"
     write_json(manifest_path, data)
-    return inspect_manifest(manifest_path)
+    if sample_manifest:
+        overrides = normalize_manifest(data, base_dir=project_root)
+        inspected = inspect_manifest(sample_manifest, overrides=overrides, input_dir=args.get("input_dir"), output_dir=layout.root)
+    else:
+        inspected = inspect_manifest(manifest_path, input_dir=args.get("input_dir"), output_dir=layout.root)
+    effective_path = layout.manifests / "sample_manifest.effective.json"
+    write_json(effective_path, {
+        "schema_version": "open-neo-sample-v1",
+        "case_id": inspected.case_id,
+        "sample_id": inspected.sample_id,
+        "genome_build": inspected.genome_build,
+        "tumor_type": inspected.inputs.get("tumor_type", ""),
+        "inputs": {key: value for key, value in inspected.inputs.items() if key not in {"case_id", "sample_id", "genome_build", "profile", "backend", "reuse_existing", "execution_mode", "tumor_type", "tumor_sample_id", "normal_sample_id", "assay_type", "tool_results"}},
+        "tumor_sample_id": inspected.inputs.get("tumor_sample_id", ""),
+        "normal_sample_id": inspected.inputs.get("normal_sample_id", ""),
+        "assay_type": inspected.inputs.get("assay_type", ""),
+        "tool_results": inspected.inputs.get("tool_results", {}),
+        "execution": {"mode": args.get("mode") or inspected.inputs.get("execution_mode") or "plan", "profile": inspected.inputs.get("profile", "default"), "backend": inspected.inputs.get("backend", "production-run"), "reuse_existing": inspected.inputs.get("reuse_existing", True)},
+    })
+    inspected.manifest_path = str(effective_path)
+    return inspected
 
 
 def _doctor_preflight(args: dict[str, Any], layout: RunLayout, *, execute: bool) -> dict[str, Any]:
@@ -140,9 +176,31 @@ def _run_sv_only(args: dict[str, Any], routing: RoutingResult, layout: RunLayout
 
 
 def _run_standard(args: dict[str, Any], routing: RoutingResult, layout: RunLayout) -> dict[str, Any]:
+    effective_inputs = dict(routing.inputs)
+    sv_routes = [route for route in routing.routes if route.route in {"sv_wgs", "sv_wes"}]
+    if sv_routes:
+        handler = run_sv_wes if sv_routes[0].route == "sv_wes" else run_sv_wgs
+        sv_values = effective_inputs.get("sv_vcf") if isinstance(effective_inputs.get("sv_vcf"), list) else [effective_inputs.get("sv_vcf")]
+        merged_events: list[dict[str, str]] = []
+        merged_peptides: list[dict[str, str]] = []
+        for index, sv_vcf in enumerate(sv_values, 1):
+            sv_dir = layout.pipeline / "entry_adapters" / sv_routes[0].route / f"input_{index:03d}"
+            sv_result = handler({"outdir": str(sv_dir), "sv_vcf": sv_vcf, "capture_bed": effective_inputs.get("capture_bed"), "sample_id": routing.sample_id})
+            if sv_result.get("status") != "PASS":
+                return {"ok": False, "returncode": 2, "stderr": str(sv_result), "stdout": "", "log": ""}
+            merged_events.extend(read_rows(sv_result["outputs"]["raw_events"]))
+            merged_peptides.extend(read_rows(sv_result["outputs"]["raw_peptides"]))
+        merged_sv = layout.pipeline / "entry_adapters" / sv_routes[0].route / "merged"
+        merged_sv.mkdir(parents=True, exist_ok=True)
+        event_fields = list(dict.fromkeys([*EVENT_FIELDS, *(key for row in merged_events for key in row)]))
+        peptide_fields = list(dict.fromkeys([*PEPTIDE_FIELDS, *(key for row in merged_peptides for key in row)]))
+        write_tsv(merged_sv / "raw_events.tsv", merged_events, event_fields)
+        write_tsv(merged_sv / "raw_peptides.tsv", merged_peptides, peptide_fields)
+        effective_inputs["sv_raw_events"] = str(merged_sv / "raw_events.tsv")
+        effective_inputs["sv_raw_peptides"] = str(merged_sv / "raw_peptides.tsv")
     config = write_run_config(
         layout.manifests / "run.open_neo.generated.toml",
-        {**routing.inputs, "enabled_tools": args.get("enabled_tools") or ["netmhcpan", "mhcflurry"], "immunogenicity_stub": args.get("immunogenicity_stub", args.get("stub", False))},
+        {**effective_inputs, "enabled_tools": args.get("enabled_tools") or ["netmhcpan", "mhcflurry"], "immunogenicity_stub": args.get("immunogenicity_stub", args.get("stub", False))},
         [asdict(r) for r in routing.routes],
         outdir=layout.pipeline / "result",
         stub=bool(args.get("stub", False)),
@@ -162,14 +220,14 @@ def _result_root(layout: RunLayout, production_result: Any | None = None) -> Pat
 
 
 def run_open_neo(args: dict[str, Any]) -> dict[str, Any]:
-    mode = str(args.get("mode") or ("ranking-only" if args.get("comprehensive_evidence") else "plan")).lower()
-    if mode not in {"plan", "dry-run", "execute", "resume", "ranking-only"}:
-        mode = "plan"
-    approved = bool(args.get("approved", False))
     provisional_out = Path(args.get("outdir") or "work/open-neo-run")
     provisional_out.mkdir(parents=True, exist_ok=True)
     temp_layout = RunLayout.create(provisional_out)
     routing = _result_from_args(args, temp_layout)
+    mode = str(args.get("mode") or routing.inputs.get("execution_mode") or ("ranking-only" if args.get("comprehensive_evidence") else "plan")).lower()
+    if mode not in {"plan", "dry-run", "execute", "resume", "ranking-only"}:
+        mode = "plan"
+    approved = bool(args.get("approved", False))
     case_id = safe_identifier(routing.case_id)
     layout = temp_layout
     result = MacroResult("open-neo-run", case_id, new_run_id(case_id, "run"), mode, approval_required=mode in {"execute", "resume"}, approved=approved)
@@ -195,6 +253,25 @@ def run_open_neo(args: dict[str, Any]) -> dict[str, Any]:
         result.finish("APPROVAL_REQUIRED").write(layout.skill_result)
         return result.to_dict()
 
+    if mode in {"execute", "resume"} and not bool(args.get("_gateway_dispatched", False)):
+        gateway_url = str(args.get("gateway_url") or "")
+        if not gateway_url:
+            result.steps.append(MacroStep("02", "gateway-execution-boundary", "BLOCKED", "Direct heavy execution is disabled; submit through NeoAg Gateway with --gateway-url", failure_code="GATEWAY_REQUIRED"))
+            result.blocking_issues.append("GATEWAY_REQUIRED")
+            result.finish("BLOCKED").write(layout.skill_result)
+            return result.to_dict()
+        gateway_payload = {key: value for key, value in args.items() if not key.startswith("_gateway") and key not in {"gateway_url", "gateway_wait"} and value is not None and value != ""}
+        gateway_payload["mode"] = mode
+        gateway_payload["approved"] = True
+        submitted = submit_gateway_run(gateway_url, gateway_payload, wait=bool(args.get("gateway_wait", False)), timeout=int(args.get("timeout", 7200)))
+        result.steps.append(MacroStep("02", "gateway-submit", str(submitted.get("status") or "FAILED"), outputs={"job_id": str(submitted.get("job_id") or "")}, detail=str(submitted.get("message") or "")))
+        result.outputs["gateway_job_id"] = str(submitted.get("job_id") or "")
+        result.outputs["gateway_response"] = str(layout.root / "gateway_response.json")
+        write_json(layout.root / "gateway_response.json", submitted)
+        final = "QUEUED" if submitted.get("status") in {"QUEUED", "RUNNING"} else str(submitted.get("status") or "FAILED")
+        result.finish(final).write(layout.skill_result)
+        return result.to_dict()
+
     execute = mode in {"execute", "resume"}
     if mode == "resume" and not (routing.inputs.get("production_manifest") or routing.inputs.get("result_dir")):
         result.steps.append(MacroStep("02", "resume-input-check", "BLOCKED", "Resume requires a production manifest or an existing result directory", failure_code="RESUME_REQUIRES_PRODUCTION_MANIFEST_OR_RESULT_DIR"))
@@ -209,6 +286,29 @@ def run_open_neo(args: dict[str, Any]) -> dict[str, Any]:
         result.finish(preflight["status"]).write(layout.skill_result)
         return result.to_dict()
 
+    rna_preprocessing = prepare_rna_evidence(
+        routing.inputs,
+        project_root=args.get("project_root") or ".",
+        outdir=layout.pipeline / "rna_preprocessing",
+        execute=execute,
+        method=str(args.get("rna_quant_method") or "auto"),
+        timeout=int(args.get("timeout", 7200)),
+    )
+    rna_outputs = rna_preprocessing.get("outputs") or {}
+    if rna_outputs.get("gene_tpm"):
+        routing.inputs["expression_tsv"] = rna_outputs["gene_tpm"]
+    if rna_outputs.get("transcript_tpm"):
+        routing.inputs["transcript_expression_tsv"] = rna_outputs["transcript_tpm"]
+    if rna_outputs.get("rna_alt_vaf"):
+        routing.inputs["rna_evidence_tsv"] = rna_outputs["rna_alt_vaf"]
+    rna_files = {
+        "rna_preprocessing_status": str(layout.pipeline / "rna_preprocessing" / "rna_preprocessing_status.tsv"),
+        "rna_preprocessing_summary": str(layout.pipeline / "rna_preprocessing" / "rna_preprocessing_summary.json"),
+        **{f"rna_{key}": value for key, value in rna_outputs.items()},
+    }
+    result.outputs.update(rna_files)
+    result.steps.append(MacroStep("02b", "rna-expression-and-allele-evidence", str(rna_preprocessing.get("status") or "UNASSESSED"), outputs=rna_files))
+
     # Plan/dry-run always produces a concrete generated run configuration where possible.
     route_dicts = [asdict(r) for r in routing.routes]
     plan_config = None
@@ -216,6 +316,27 @@ def run_open_neo(args: dict[str, Any]) -> dict[str, Any]:
         plan_config = write_run_config(layout.manifests / "run.open_neo.generated.toml", routing.inputs, route_dicts, outdir=layout.pipeline / "result", stub=bool(args.get("stub", False)))
         result.outputs["generated_run_config"] = str(plan_config)
     result.steps.append(MacroStep("03", "pipeline-plan", "PASS", inputs={"routes": route_dicts}, outputs={"generated_run_config": str(plan_config or "")}))
+
+    pipeline_plan = run_pipeline_full(
+        sample_manifest=routing.manifest_path,
+        tools_manifest=args.get("tools_manifest"),
+        reference_manifest=args.get("reference_manifest"),
+        project_root=args.get("project_root") or ".",
+        outdir=layout.pipeline / "pipeline_full_plan",
+        profile=str(args.get("execution_profile") or "local"),
+        dry_run=True,
+        allow_partial=True,
+        run_doctor_first=False,
+    )
+    plan_outputs = {
+        "pipeline_plan": str(Path(pipeline_plan.output_dir) / "pipeline_plan.md"),
+        "pipeline_status": str(Path(pipeline_plan.output_dir) / "pipeline_status.tsv"),
+        "pipeline_run_manifest": str(Path(pipeline_plan.output_dir) / "run_manifest.json"),
+    }
+    result.outputs.update(plan_outputs)
+    result.steps.append(MacroStep("03b", "pipeline-full-dry-run", pipeline_plan.status, outputs=plan_outputs))
+    initial_consensus = build_tool_consensus(routing.inputs, layout.pipeline / "tool_consensus")
+    result.outputs.update({f"consensus_{key.removesuffix('.tsv')}": value for key, value in initial_consensus.items()})
 
     if mode in {"plan", "dry-run"}:
         status = "DRY_RUN" if mode == "dry-run" else "PASS"
@@ -248,16 +369,22 @@ def run_open_neo(args: dict[str, Any]) -> dict[str, Any]:
             success = True
             result.steps[-1].status = "REUSED"
             result.steps[-1].detail = "Existing result/evidence inputs reused"
+        elif all(r.route == "production_inputs" for r in routing.routes):
+            success = False
+            result.steps[-1].status = "BLOCKED"
+            result.steps[-1].failure_code = "PRODUCTION_MANIFEST_REQUIRED"
+            result.steps[-1].detail = "BAM/FASTQ execution requires an explicit production_manifest with approved stage commands"
         elif len(routing.routes) == 1 and routing.routes[0].route in {"sv_wgs", "sv_wes"}:
             command_result = _run_sv_only(args, routing, layout)
             success = bool(command_result["ok"])
             result.steps[-1].status = "PASS" if success else "FAILED"
             result.steps[-1].outputs = {"log": command_result.get("log", "")}
         elif any(r.route in {"sv_wgs", "sv_wes"} for r in routing.routes):
-            success = False
-            result.steps[-1].status = "BLOCKED"
-            result.steps[-1].failure_code = "SV_REQUIRES_PRODUCTION_MANIFEST_OR_PREBUILT_RAW"
-            result.steps[-1].detail = "Mixed SV plus other entries require a production manifest or prebuilt sv_raw_events/sv_raw_peptides"
+            command_result = _run_standard(args, routing, layout)
+            success = bool(command_result["ok"])
+            result.steps[-1].status = "PASS" if success else "FAILED"
+            result.steps[-1].detail = "Raw SV was normalized through the SV entry adapter and merged with the other entry routes"
+            result.steps[-1].outputs = {"log": command_result.get("log", "")}
         else:
             command_result = _run_standard(args, routing, layout)
             success = bool(command_result["ok"])
@@ -308,7 +435,12 @@ def run_open_neo(args: dict[str, Any]) -> dict[str, Any]:
     result.steps[-1].status = "PASS" if ranking["status"] == "PASS" else "REUSED"
     result.steps[-1].outputs = artifacts
     result.outputs.update(artifacts)
-    output_manifest = write_output_manifest(result_root, layout.root / "output_manifest.json")
+    evidence_for_consensus = artifacts.get("consensus_peptides") or artifacts.get("comprehensive_evidence")
+    consensus_outputs = build_tool_consensus(routing.inputs, layout.pipeline / "tool_consensus", evidence_path=evidence_for_consensus)
+    result.outputs.update({f"consensus_{key.removesuffix('.tsv')}": value for key, value in consensus_outputs.items()})
+    if artifacts.get("all_tool_results"):
+        enrich_all_tool_results(artifacts["all_tool_results"], consensus_outputs["tool_consensus_summary.tsv"])
+    output_manifest = write_named_output_manifest(result.outputs, layout.root / "output_manifest.json")
     result.outputs["output_manifest"] = str(output_manifest)
 
     macro_run_manifest = {

@@ -1181,7 +1181,7 @@ Skills are SOP wrappers. They do not make clinical decisions, do not include pat
 Three public macro entrypoints compose the existing A/B/C/D Skills without duplicating their algorithms:
 
 - `open-neo install-check`: portable deployment planning, approved installation/repair, Doctor, references, and smoke checks.
-- `open-neo run`: deterministic input routing, production execution or resume, comprehensive evidence, weighted baseline, and evidence-consensus ranking.
+- `open-neo run`: manifest/CLI/directory input QC, Gateway-controlled production execution or resume, domain-level tool consensus, comprehensive evidence, weighted baseline, and evidence-consensus ranking.
 - `open-neo review`: event-level review, an R1/R2 first-batch set, an R3 evidence-completion queue, and patient/technical reports.
 
 `plan`, `verify`, and review operations are non-destructive. Installation, repair, execution, and resume require explicit approval. See [docs/OPEN_NEO_MACRO_SKILLS.md](docs/OPEN_NEO_MACRO_SKILLS.md).
