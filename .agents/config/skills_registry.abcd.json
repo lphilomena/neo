@@ -947,6 +947,50 @@
       ]
     },
     {
+      "approval_required": false,
+      "boundaries": [
+        "只生成计划，不执行外部工具、Nextflow、容器或 HPC 任务。",
+        "缺失证据标记为 UNASSESSED/PARTIAL/BLOCKED，不生成假阴性或假成功输出。",
+        "默认隐藏完整输入路径；仅私有本地计划可使用 --show-paths。",
+        "Skill 不承担临床决策；不得判断患者是否适合治疗或推荐临床用药。"
+      ],
+      "category": "D",
+      "category_label": "工程治理/执行控制型 Skills：输入质控、环境健康检查、全流程编排、发布审计和受控执行",
+      "description": "Select a manifest-driven NeoAg workflow and QC evidence plan without executing tools.",
+      "do_not_use_when": [
+        "用户已经明确要求并批准直接执行某个已验证的低风险结果审阅任务"
+      ],
+      "downstream_skills": [
+        "neoag-input-qc",
+        "neoag-doctor",
+        "neoag-hla-typing-run-and-compare",
+        "neoag-purity-cnv-run-and-review",
+        "neoag-hla-loh-appm-review",
+        "neoag-fusion-rna-run",
+        "neoag-pipeline-full"
+      ],
+      "external_tools": [],
+      "handler": "workflow_select",
+      "name": "neoag-workflow-select",
+      "optional_inputs": [
+        "tools_manifest",
+        "reference_manifest"
+      ],
+      "outputs": [
+        "workflow_selection.json",
+        "workflow_selection.md"
+      ],
+      "purpose": "基于 manifest 的只读工作流选择与 QC 编排",
+      "required_inputs": [
+        "sample_manifest"
+      ],
+      "risk_level": "LOW",
+      "use_when": [
+        "需要根据 BAM、VCF、中间表或已有结果选择工作流",
+        "需要在执行 FACETS/PURPLE/LOHHLA/SpecHLA 前生成可审计计划"
+      ]
+    },
+    {
       "approval_required": true,
       "boundaries": [
         "Skill 不承担临床决策；不得判断患者是否适合治疗或推荐临床用药。",

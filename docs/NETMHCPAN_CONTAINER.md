@@ -9,23 +9,23 @@ The current server runs Ubuntu 20.04 with glibc 2.31. The official NetMHCpan 4.2
 
 ## Required host files
 
-The official NetMHCpan directory must already exist and be configured with the correct `NMHOME` in the official launcher:
+The official NetMHCpan directory must already exist and be configured with the correct `NMHOME` in the official launcher. Keep it in a site-local licensed-tools directory, for example:
 
 ```bash
-/home/na/project/neoantigen/neoag_event_pipeline/tools/netMHCpan
+<licensed-tools-root>/netMHCpan-4.2c
 ```
 
 The runtime uses:
 
 ```bash
-export NETMHCPAN_HOME=/home/na/project/neoantigen/neoag_event_pipeline/tools/netMHCpan
+export NETMHCPAN_HOME=<licensed-tools-root>/netMHCpan-4.2c
 export NETMHCpan=$NETMHCPAN_HOME
 ```
 
 ## Build Docker image
 
 ```bash
-cd /home/na/project/neoantigen/neoag_event_pipeline
+cd /path/to/neoag
 ./scripts/build_netmhcpan_container.sh docker
 ```
 
@@ -44,16 +44,15 @@ NEOAG_NETMHCPAN_IMAGE=my-netmhcpan:4.2c ./scripts/build_netmhcpan_container.sh d
 ## Run NetMHCpan through Docker
 
 ```bash
-cd /home/na/project/neoantigen/neoag_event_pipeline
+cd /path/to/neoag
 ./scripts/run_netmhcpan_container.sh -p peptides.txt -a HLA-A02:06
 ```
 
 The wrapper mounts:
 
 - the official NetMHCpan directory as read-only;
-- the project directory;
+- the project directory as read-only;
 - the current working directory;
-- `/mnt` when present;
 - a writable temporary directory at `work/netmhcpan_tmp`.
 
 If input or output files are outside these paths, add mounts with:
@@ -66,7 +65,7 @@ NEOAG_NETMHCPAN_EXTRA_MOUNTS=/data:/data,/scratch:/scratch \
 ## Verify runtime
 
 ```bash
-cd /home/na/project/neoantigen/neoag_event_pipeline
+cd /path/to/neoag
 ./scripts/verify_netmhcpan_container.sh
 ```
 
@@ -93,7 +92,7 @@ containers/netmhcpan/netmhcpan-4.2c-ubuntu22.04.sif
 
 ## Important boundary
 
-Do not commit or bake the official NetMHCpan package into this repository or image. It is licensed software and should remain under `tools/netMHCpan` or another site-local path mounted at runtime.
+Do not commit or bake the official NetMHCpan package into this repository or image. Do not publish a prebuilt image, exported image tar, or SIF containing the package. Each user or institution must obtain the official package under the applicable DTU license and mount that site-local installation read-only at runtime. Academic licenses are limited to internal research at the licensed site; clinical, commercial, cloud, or cross-site use requires confirmation from DTU.
 
 ## HLA allele format
 

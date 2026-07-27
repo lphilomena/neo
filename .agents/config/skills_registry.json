@@ -182,5 +182,19 @@
       "rna_tpm_run_suggestions.tsv",
       "rna_expression_recommendation.json"
     ]
+  },
+  "neoag-workflow-select": {
+    "intents": [
+      "workflow_run_request",
+      "input_check",
+      "purity_cnv_review",
+      "hla_typing_compare"
+    ],
+    "type": "documented_workflow",
+    "path": ".agents/skills/neoag-workflow-select/SKILL.md",
+    "outputs": [
+      "workflow_selection.json",
+      "workflow_selection.md"
+    ]
   }
 }

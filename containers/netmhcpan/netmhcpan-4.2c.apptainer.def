@@ -11,5 +11,10 @@ From: ubuntu:22.04
     export LANG=C.UTF-8
     export LC_ALL=C.UTF-8
 
+%labels
+    org.opencontainers.image.title NeoAg NetMHCpan runtime
+    org.opencontainers.image.description Runtime dependencies only; licensed NetMHCpan files are mounted read-only
+    org.opencontainers.image.licenses LicenseRef-NeoAg-Runtime-Only
+
 %runscript
-    exec /bin/bash -lc ""
+    exec /bin/bash "$@"

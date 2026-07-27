@@ -16,20 +16,28 @@ for i in "${!NETMHCPAN_ARGS[@]}"; do
     NETMHCPAN_ARGS[$i]=${NETMHCPAN_ARGS[$i]//\*/}
   fi
 done
-CONTAINER_CMD="export TMPDIR=/tmp/netmhcpan; exec /bin/tcsh -f \"\$NETMHCPAN_HOME/netMHCpan\" \"\$@\""
+CONTAINER_CMD="export TMPDIR=/tmp/netmhcpan NEOAG_NETMHCPAN_TMPDIR=/tmp/netmhcpan; exec \"\$NETMHCPAN_HOME/netMHCpan\" \"\$@\""
 run_docker() {
   docker image inspect "$IMAGE" >/dev/null 2>&1 || { echo "ERROR: build image first: $REPO_ROOT/scripts/build_netmhcpan_container.sh docker" >&2; return 127; }
-  mounts=(-v "$NETMHCPAN_HOME:$NETMHCPAN_HOME:ro" -v "$TMPDIR_HOST:/tmp/netmhcpan:rw" -v "$PWD:$PWD:rw" -v "$REPO_ROOT:$REPO_ROOT:rw")
-  [[ -d /mnt ]] && mounts+=( -v /mnt:/mnt:rw )
+  mounts=(-v "$NETMHCPAN_HOME:$NETMHCPAN_HOME:ro" -v "$TMPDIR_HOST:/tmp/netmhcpan:rw")
+  if [[ "$PWD" == "$REPO_ROOT" ]]; then
+    mounts+=( -v "$REPO_ROOT:$REPO_ROOT:rw" )
+  else
+    mounts+=( -v "$REPO_ROOT:$REPO_ROOT:ro" -v "$PWD:$PWD:rw" )
+  fi
   [[ -n ${NEOAG_NETMHCPAN_EXTRA_MOUNTS:-} ]] && IFS=, read -r -a extra <<< "$NEOAG_NETMHCPAN_EXTRA_MOUNTS" && for m in "${extra[@]}"; do mounts+=( -v "$m" ); done
-  docker run --rm --user "$(id -u):$(id -g)" --workdir "$PWD" -e TMPDIR=/tmp/netmhcpan -e NETMHCPAN_HOME="$NETMHCPAN_HOME" -e NETMHCpan="$NETMHCPAN_HOME" "${mounts[@]}" "$IMAGE" "$CONTAINER_CMD" -- "$@"
+  docker run --rm --user "$(id -u):$(id -g)" --workdir "$PWD" -e TMPDIR=/tmp/netmhcpan -e NEOAG_NETMHCPAN_TMPDIR=/tmp/netmhcpan -e NETMHCPAN_HOME="$NETMHCPAN_HOME" -e NETMHCpan="$NETMHCPAN_HOME" "${mounts[@]}" "$IMAGE" "$CONTAINER_CMD" -- "$@"
 }
 run_apptainer() {
   runtime=$1; shift
   [[ -f "$SIF" ]] || { echo "ERROR: build sif first: $REPO_ROOT/scripts/build_netmhcpan_container.sh apptainer" >&2; return 127; }
-  binds=(-B "$NETMHCPAN_HOME:$NETMHCPAN_HOME:ro" -B "$TMPDIR_HOST:/tmp/netmhcpan:rw" -B "$PWD:$PWD:rw" -B "$REPO_ROOT:$REPO_ROOT:rw")
-  [[ -d /mnt ]] && binds+=( -B /mnt:/mnt:rw )
-  "$runtime" exec --cleanenv "${binds[@]}" --env TMPDIR=/tmp/netmhcpan,NETMHCPAN_HOME="$NETMHCPAN_HOME",NETMHCpan="$NETMHCPAN_HOME" --pwd "$PWD" "$SIF" /bin/bash -lc "$CONTAINER_CMD" -- "$@"
+  binds=(-B "$NETMHCPAN_HOME:$NETMHCPAN_HOME:ro" -B "$TMPDIR_HOST:/tmp/netmhcpan:rw")
+  if [[ "$PWD" == "$REPO_ROOT" ]]; then
+    binds+=( -B "$REPO_ROOT:$REPO_ROOT:rw" )
+  else
+    binds+=( -B "$REPO_ROOT:$REPO_ROOT:ro" -B "$PWD:$PWD:rw" )
+  fi
+  "$runtime" exec --cleanenv "${binds[@]}" --env TMPDIR=/tmp/netmhcpan,NEOAG_NETMHCPAN_TMPDIR=/tmp/netmhcpan,NETMHCPAN_HOME="$NETMHCPAN_HOME",NETMHCpan="$NETMHCPAN_HOME" --pwd "$PWD" "$SIF" /bin/bash -lc "$CONTAINER_CMD" -- "$@"
 }
 case "$ENGINE" in
   docker) run_docker "${NETMHCPAN_ARGS[@]}" ;;

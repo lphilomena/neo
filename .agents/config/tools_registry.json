@@ -1264,6 +1264,32 @@
     "required_inputs": [],
     "risk": "medium"
   },
+  "neoag-workflow-select": {
+    "description": "Read-only manifest-driven selector for result, intermediates, VCF, paired-BAM, purity/CNV, HLA LOH, RNA, fusion, splice, and ranking workflows.",
+    "env": [],
+    "intents": [
+      "workflow_run_request",
+      "input_check",
+      "purity_cnv_review",
+      "hla_typing_compare"
+    ],
+    "kind": "skill",
+    "optional_inputs": [
+      "tools_manifest",
+      "reference_manifest"
+    ],
+    "outputs": [
+      "workflow_selection.json",
+      "workflow_selection.md"
+    ],
+    "required_inputs": [
+      "sample_manifest"
+    ],
+    "risk": "low",
+    "verify": [
+      ".agents/skills/neoag-workflow-select/scripts/dry_run.sh"
+    ]
+  },
   "vep": {
     "description": "Ensembl VEP annotation and plugin support for variant peptide extraction.",
     "env": [

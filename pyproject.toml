@@ -26,6 +26,7 @@ neoag-release-audit = "neoag.controlled_execution.release_audit:main"
 neoag-skill = "neoag.skill_taxonomy.cli:main"
 neoag-ranking-compare = "neoag.agent_skills.ranking_compare:main"
 neoag-production-run = "neoag.production_runner:main"
+neoag-workflow-select = "neoag.workflow_selection:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

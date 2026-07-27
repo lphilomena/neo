@@ -14,7 +14,7 @@ The containers hold the operating-system runtime only. Licensed tools, Java jars
 ## Build Docker images
 
 ```bash
-cd /home/na/project/neoantigen/neoag_event_pipeline
+cd /path/to/neoag
 ./scripts/build_priority_tool_containers.sh all
 ```
 
@@ -30,7 +30,7 @@ Docker images built by default:
 | Tool | Image |
 | --- | --- |
 | shared bioinfo base | `neoag-base-bioinfo:ubuntu22.04` |
-| NetMHCpan | `neoag-netmhcpan:4.2c-ubuntu22.04` |
+| NetMHCpan | `neoag-netmhcpan:4.2c-ubuntu22.04` (runtime dependencies only; official package is mounted read-only) |
 | NetMHCstabpan | `neoag-netmhcstabpan:1.0-ubuntu22.04` |
 | HLA-LA | `neoag-hla-la:ubuntu22.04` |
 | SpecHLA | `neoag-spechla:ubuntu22.04` |
@@ -98,4 +98,4 @@ The SIF directory is ignored by git.
 
 ## Licensing and data boundary
 
-Do not commit licensed software or large reference data into git. In particular, keep NetMHCpan/NetMHCstabpan official packages, HLA-LA graphs, SpecHLA databases, PURPLE references, EasyFuse references, BAM/FASTQ/VCF files, and Nextflow/Conda caches outside the repository or under ignored runtime directories.
+Do not commit licensed software or large reference data into git. In particular, keep NetMHCpan/NetMHCstabpan official packages, HLA-LA graphs, SpecHLA databases, PURPLE references, EasyFuse references, BAM/FASTQ/VCF files, and Nextflow/Conda caches outside the repository or under ignored runtime directories. NetMHCpan images in this project contain runtime dependencies only. Never publish a prebuilt image, exported image tar, or SIF that contains the official package; each licensed site must provide its own read-only installation at runtime.
