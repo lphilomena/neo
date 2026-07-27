@@ -9,6 +9,10 @@ belong in the step `detail` field. Code definitions are owned by
 - `CHECKSUM_REQUIRED`: a supplied release archive has no expected SHA256.
 - `CHECKSUM_FAILED`: archive missing or observed SHA256 differs.
 - `CORE_INSTALL_FAILED`: portable installer could not complete.
+- `INSTALL_TIMEOUT`: portable installer exceeded the configured timeout.
+- `RELEASE_STAGING_FAILED`: archive is unsafe, unsupported, or has no unique project root.
+- `ASSET_SOURCE_UNCONFIGURED`: required assets cannot be reached from the declared local root or remote host.
+- `PROJECT_ROOT_INVALID`: selected source/staged directory is not an Open-Neo project root.
 - `TOOL_MISSING` / `TOOL_SMOKE_FAILED`: tool entrypoint or mini-smoke failed.
 - `REFERENCE_MISSING` / `REFERENCE_HASH_MISMATCH`: required reference absent or changed.
 - `LICENSE_BLOCKED`: licensed software/assets cannot be installed or redistributed automatically.
