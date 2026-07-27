@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 OUTDIR="work/remote_deploy"
-LICENSED_ROOT="/root/neo/licensed_tools"
+DEPLOY_ROOT="${NEOAG_DEPLOY_ROOT:-/opt/neoag}"
+LICENSED_ROOT="${NEOAG_LICENSED_ROOT:-$DEPLOY_ROOT/licensed_tools}"
 NETMHCPAN_TAR=""
 NETMHCPAN_DIR=""
 NETMHCPAN_URL=""
@@ -24,7 +25,7 @@ URLs visible to the target machine. The installer copies/extracts assets into
 paths.
 
 Options:
-  --licensed-root DIR          Target licensed-tool root (default: /root/neo/licensed_tools)
+  --licensed-root DIR          Target licensed-tool root (default: NEOAG_LICENSED_ROOT or /opt/neoag/licensed_tools)
   --netmhcpan-tar FILE         Local NetMHCpan .tar.gz/.tgz/.tar archive
   --netmhcpan-dir DIR          Existing NetMHCpan install directory to copy
   --netmhcpan-url URL          Approved NetMHCpan archive URL to download
@@ -41,9 +42,9 @@ Options:
 
 Examples:
   bash 12_install_local_licensed_tools.sh \
-    --netmhcpan-tar /mnt/.../netMHCpan-4.2c.Linux.tar.gz \
-    --mixmhcpred-dir /mnt/.../tools/mixMHCpred_install \
-    --licensed-root /root/neo/licensed_tools \
+    --netmhcpan-tar <authorized-assets>/netMHCpan-4.2c.Linux.tar.gz \
+    --mixmhcpred-dir <authorized-assets>/mixMHCpred_install \
+    --licensed-root /opt/neoag/licensed_tools \
     --execute
 
   bash 12_install_local_licensed_tools.sh \

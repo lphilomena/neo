@@ -10,7 +10,7 @@ restricted companion tools.
 Recommended target layout:
 
 ```text
-/root/neo/
+/opt/neoag/
   neoag_migration_bundle/ or src/na0707_upload_release/
   env_tool/
   neodata4git/ or refs/
@@ -42,19 +42,19 @@ Novoalign / LOHHLA companion resources, when applicable
 
 ## Required Sequence
 
-1. Run `08_plan_asset_migration.sh`; do not copy anything yet.
+1. Run `08b_plan_asset_migration.sh`; do not copy anything yet.
 2. Review the generated plan with the user, especially licensed-tool and large
    reference entries.
 3. Run `09_sync_production_assets.sh --execute` only after approval when
    assets must be copied from an old machine.
 4. If README-listed open/conda tools must be rebuilt locally, run
    `13_install_readme_tools.sh --execute` with the needed tool-group flags. The
-   default conda base is `/root/neo/env_tool/miniforge3` or
+   default conda base is `/opt/neoag/env_tool/miniforge3` or
    `<tools-root>/miniforge3`; add `--allow-download` when Miniforge, conda
    packages, git clones, VEP cache, or approved URLs are needed.
 5. If licensed tools are already available on the target machine as archives or
    install directories, run `12_install_local_licensed_tools.sh --execute` to
-   install them into `/root/neo/licensed_tools` without target symlinks.
+   install them into `/opt/neoag/licensed_tools` without target symlinks.
 6. Run `10_rewrite_production_activation.sh --write` on the target machine.
 7. Run `11_validate_production_runtime.sh --mini-prime`.
 8. Run Doctor with mini smoke.
@@ -67,16 +67,16 @@ instead of linking/copying an old `env_tool` tree:
 
 ```bash
 bash .agents/skills/neoag-remote-deploy/scripts/13_install_readme_tools.sh \
-  --project-root /root/neo/src/na0707_upload_release \
-  --tools-root /root/neo/env_tool \
-  --licensed-root /root/neo/licensed_tools \
-  --reference-root /root/neo/neodata4git \
+  --project-root <project-root> \
+  --tools-root /opt/neoag/env_tool \
+  --licensed-root /opt/neoag/licensed_tools \
+  --reference-root /opt/neoag/refs \
   --core-env --vep --gatk --immunogenicity --optitype \
   --allow-download \
   --execute
 ```
 
-The installer defaults to Miniforge3 at `/root/neo/env_tool/miniforge3` and can
+The installer defaults to Miniforge3 at `/opt/neoag/env_tool/miniforge3` and can
 create it automatically when `--allow-download --execute` is used. Add
 `--no-install-miniforge` only when a site-managed conda installation must be
 used. Heavy or workflow-specific groups such as `--vep-cache`, `--fusion`,
@@ -95,7 +95,7 @@ After approval, download and install with:
 
 ```bash
 bash .agents/skills/neoag-remote-deploy/scripts/12_install_local_licensed_tools.sh \
-  --licensed-root /root/neo/licensed_tools \
+  --licensed-root /opt/neoag/licensed_tools \
   --netmhcpan-url <official_or_user_approved_archive_url> \
   --mixmhcpred-url <official_or_user_approved_archive_url> \
   --allow-download \
@@ -103,7 +103,7 @@ bash .agents/skills/neoag-remote-deploy/scripts/12_install_local_licensed_tools.
 ```
 
 The script stores downloads under `<outdir>/downloads`, extracts/copies into
-`/root/neo/licensed_tools`, and intentionally avoids target symlinks to `/mnt`,
+`/opt/neoag/licensed_tools`, and intentionally avoids target symlinks to site mounts,
 `/home`, or old-machine paths.
 
 ## Path Rewrite Rules
@@ -128,12 +128,12 @@ the target machine. They must not be committed to source.
 Production readiness requires more than `which`:
 
 ```bash
-source /root/neo/env_tool/activate_neoag_production_refs.sh
+source /opt/neoag/env_tool/activate_neoag_production_refs.sh
 neoag-doctor --help
 vep --help
 netMHCpan -h
-/root/neo/env_tool/wrappers/mixMHCpred_install/MixMHCpred -h
-/root/neo/env_tool/tools/prime/PRIME -h
+/opt/neoag/env_tool/wrappers/mixMHCpred_install/MixMHCpred -h
+/opt/neoag/env_tool/tools/prime/PRIME -h
 python -c 'import torch,numpy,pandas,scipy,sklearn,psutil'
 ```
 
@@ -173,7 +173,7 @@ sync them during installation:
 bash .agents/skills/neoag-remote-deploy/scripts/13_install_readme_tools.sh \
   --asset-manifest configs/assets/production_assets.tsv \
   --sync-assets \
-  --asset-source-host na@10.200.50.134 \
+  --asset-source-host <user@source-host> \
   --execute
 ```
 
@@ -192,7 +192,7 @@ activation rewrite, production runtime validation, and optional real VCF smoke.
 ```bash
 bash .agents/skills/neoag-remote-deploy/scripts/16_install_new_machine.sh \
   --asset-manifest configs/assets/production_assets.tsv \
-  --asset-source-host na@10.200.50.134 \
+  --asset-source-host <user@source-host> \
   --allow-download \
   --execute
 ```

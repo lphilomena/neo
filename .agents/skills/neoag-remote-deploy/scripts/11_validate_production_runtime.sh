@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 PROJECT_ROOT="$(pwd)"
-TOOLS_ROOT="/root/neo/env_tool"
+DEPLOY_ROOT="${NEOAG_DEPLOY_ROOT:-/opt/neoag}"
+TOOLS_ROOT="${NEOAG_TOOLS_ROOT:-$DEPLOY_ROOT/env_tool}"
 OUTDIR="work/remote_deploy/production_runtime"
 MINI_PRIME=0
 while [[ $# -gt 0 ]]; do

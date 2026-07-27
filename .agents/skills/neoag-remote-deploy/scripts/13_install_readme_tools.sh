@@ -2,9 +2,10 @@
 set -euo pipefail
 
 PROJECT_ROOT="$(pwd)"
-TOOLS_ROOT="/root/neo/env_tool"
-LICENSED_ROOT="/root/neo/licensed_tools"
-REFERENCE_ROOT="/root/neo/neodata4git"
+DEPLOY_ROOT="${NEOAG_DEPLOY_ROOT:-/opt/neoag}"
+TOOLS_ROOT="${NEOAG_TOOLS_ROOT:-$DEPLOY_ROOT/env_tool}"
+LICENSED_ROOT="${NEOAG_LICENSED_ROOT:-$DEPLOY_ROOT/licensed_tools}"
+REFERENCE_ROOT="${NEOAG_REFERENCE_ROOT:-$DEPLOY_ROOT/refs}"
 CONDA_BASE=""
 OUTDIR="work/remote_deploy"
 EXECUTE=0
@@ -84,9 +85,9 @@ explicit approved URL plus --allow-download.
 
 Common options:
   --project-root DIR          Project checkout (default: current directory)
-  --tools-root DIR            Tool/env root (default: /root/neo/env_tool)
-  --licensed-root DIR         Licensed tool root (default: /root/neo/licensed_tools)
-  --reference-root DIR        Reference root (default: /root/neo/neodata4git)
+  --tools-root DIR            Tool/env root (default: NEOAG_TOOLS_ROOT or /opt/neoag/env_tool)
+  --licensed-root DIR         Licensed tool root (default: NEOAG_LICENSED_ROOT or /opt/neoag/licensed_tools)
+  --reference-root DIR        Reference root (default: NEOAG_REFERENCE_ROOT or /opt/neoag/refs)
   --conda-base DIR            Miniforge/conda base (default: tools-root/miniforge3)
   --install-miniforge         Install Miniforge3 if conda is missing (default enabled)
   --no-install-miniforge      Do not install Miniforge automatically if conda is missing
@@ -137,7 +138,7 @@ Tool groups:
   --real-vcf-hla-alleles L  Comma-separated HLA alleles for real VCF smoke
   --real-vcf-hla-file FILE  HLA file for real VCF smoke
   --bigmhc-models-dir DIR   Copy BigMHC models from local/source directory into tools-root
-  --bigmhc-models-host HOST Optional source host for --bigmhc-models-dir, e.g. na@10.200.50.134
+  --bigmhc-models-host HOST Optional source host for --bigmhc-models-dir, e.g. user@source-host
   --asset-manifest FILE    TSV manifest for large assets (default: configs/assets/production_assets.tsv)
   --reference-manifest FILE
                           YAML reference manifest verified after asset sync
@@ -165,9 +166,9 @@ Licensed/restricted source options:
 
 Examples:
   bash .agents/skills/neoag-remote-deploy/scripts/13_install_readme_tools.sh \
-    --project-root /root/neo/src/na0707_upload_release \
-    --tools-root /root/neo/env_tool \
-    --conda-base /root/neo/env_tool/miniforge3 \
+    --project-root <project-root> \
+    --tools-root /opt/neoag/env_tool \
+    --conda-base /opt/neoag/env_tool/miniforge3 \
     --core-env --vep --gatk --optitype --allow-download --execute
 
   bash .agents/skills/neoag-remote-deploy/scripts/13_install_readme_tools.sh \
@@ -292,6 +293,10 @@ run() {
 
 need_download_ok() {
   local what="$1"
+  if [[ "$EXECUTE" != "1" ]]; then
+    log "[DRY_RUN] download approval required during execution: $what"
+    return 0
+  fi
   if [[ "$ALLOW_DOWNLOAD" != "1" ]]; then
     echo "DOWNLOAD_NOT_APPROVED: $what requires network download; add --allow-download after approval" >&2
     exit 23

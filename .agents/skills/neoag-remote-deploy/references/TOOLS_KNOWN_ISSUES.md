@@ -92,7 +92,7 @@ Fix:
 - create a target-machine wrapper under `env_tool/bin/netMHCpan`;
 - set `NEOAG_NETMHCPAN_HOME` to the licensed local install;
 - rewrite copied licensed frontend defaults so `CONDA_BASE` points to the target
-  machine, usually `/root/neo/env_tool/miniforge3`;
+  machine, usually `/opt/neoag/env_tool/miniforge3`;
 - set temp dir to a writable location, usually `/tmp`;
 - validate with `netMHCpan -h` and a small prediction smoke test.
 
@@ -114,7 +114,7 @@ legacy `tf-keras` shim with `TF_USE_LEGACY_KERAS=1`.
 Fix:
 
 ```bash
-source /root/neo/env_tool/miniforge3/etc/profile.d/conda.sh
+source /opt/neoag/env_tool/miniforge3/etc/profile.d/conda.sh
 conda activate neoag-tools
 TF_KERAS_SPEC="$(python - <<'PY'
 import tensorflow as tf
@@ -180,7 +180,7 @@ Fix:
 
 ### Asset Symlinks Resolve On Source But Not Target
 
-Observed with VEP plugins and SpecHLA DB: `/mnt/.../neodata4git` entries were
+Observed with VEP plugins and SpecHLA DB: site-mounted asset entries were
 absolute symlinks to a source-machine home directory. They resolved on the source host but not on
 the new machine.
 

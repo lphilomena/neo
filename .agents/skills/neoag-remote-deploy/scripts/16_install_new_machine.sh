@@ -2,14 +2,15 @@
 set -euo pipefail
 
 PROJECT_ROOT="$(pwd)"
-TOOLS_ROOT="/root/neo/env_tool"
-REFERENCE_ROOT="/root/neo/neodata4git"
-LICENSED_ROOT="/root/neo/licensed_tools"
+DEPLOY_ROOT="${NEOAG_DEPLOY_ROOT:-/opt/neoag}"
+TOOLS_ROOT="${NEOAG_TOOLS_ROOT:-$DEPLOY_ROOT/env_tool}"
+REFERENCE_ROOT="${NEOAG_REFERENCE_ROOT:-$DEPLOY_ROOT/refs}"
+LICENSED_ROOT="${NEOAG_LICENSED_ROOT:-$DEPLOY_ROOT/licensed_tools}"
 CONDA_BASE=""
 OUTDIR="work/agent_deploy/new_machine_install"
 ASSET_MANIFEST="configs/assets/production_assets.tsv"
 REFERENCE_MANIFEST="configs/references/reference_manifest.yaml"
-ASSET_SOURCE_HOST="na@10.200.50.134"
+ASSET_SOURCE_HOST="${NEOAG_ASSET_SOURCE_HOST:-}"
 VEP_VERSION="105"
 EXECUTE=0
 ALLOW_DOWNLOAD=0
@@ -23,6 +24,10 @@ MINI_PRIME=1
 RUN_REAL_VCF_SMOKE=0
 REAL_VCF_SMOKE_TOP_N=1
 SKIP_REAL_VCF_MHCFLURRY=0
+REAL_VCF_RAW=""
+REAL_VCF_ANNOTATED=""
+REAL_VCF_HLA_ALLELES=""
+REAL_VCF_HLA_FILE=""
 
 EXTRA_INSTALL_ARGS=()
 
@@ -41,14 +46,14 @@ Default mode is dry-run. Add --execute to make changes.
 
 Common options:
   --project-root DIR          Project checkout (default: current directory)
-  --tools-root DIR            Tool/env root (default: /root/neo/env_tool)
-  --reference-root DIR        Reference root (default: /root/neo/neodata4git)
-  --licensed-root DIR         Licensed tool root (default: /root/neo/licensed_tools)
+  --tools-root DIR            Tool/env root (default: NEOAG_TOOLS_ROOT or /opt/neoag/env_tool)
+  --reference-root DIR        Reference root (default: NEOAG_REFERENCE_ROOT or /opt/neoag/refs)
+  --licensed-root DIR         Licensed tool root (default: NEOAG_LICENSED_ROOT or /opt/neoag/licensed_tools)
   --conda-base DIR            Miniforge/conda base (default: tools-root/miniforge3)
   --outdir DIR                Work/report directory
   --asset-manifest FILE       Large asset manifest (default: configs/assets/production_assets.tsv)
   --reference-manifest FILE   YAML reference manifest verified after asset sync
-  --asset-source-host HOST    Source host for asset paths (default: na@10.200.50.134)
+  --asset-source-host HOST    Optional source host for remote asset paths (no default)
   --allow-download            Permit official/user-approved network downloads
   --vep-version VERSION       Ensembl VEP/cache release to install/use (default: 105)
   --execute                   Actually run installation/sync/rewrite
@@ -68,7 +73,11 @@ Asset / validation toggles:
   --no-mini-prime             Skip PRIME mini smoke inside runtime validation
 
 Real VCF smoke:
-  --run-real-vcf-smoke        Run default real VCF smoke after install
+  --run-real-vcf-smoke        Run an explicitly configured real VCF smoke after install
+  --real-vcf FILE             Raw somatic VCF used as the smoke-test anchor
+  --real-annotated-vcf FILE   VEP-annotated VCF used for peptide extraction
+  --real-vcf-hla-alleles L    Comma-separated HLA alleles
+  --real-vcf-hla-file FILE    File containing HLA alleles
   --real-vcf-smoke-top-n N    Unique peptides for smoke test (default: 1)
   --skip-real-vcf-mhcflurry   Temporary fallback if MHCflurry is broken
 
@@ -77,13 +86,16 @@ Pass-through:
 
 Examples:
   bash .agents/skills/neoag-remote-deploy/scripts/16_install_new_machine.sh \
-    --asset-source-host na@10.200.50.134 \
+    --asset-source-host <user@source-host> \
     --allow-download \
     --execute
 
   bash .agents/skills/neoag-remote-deploy/scripts/16_install_new_machine.sh \
     --standard \
     --run-real-vcf-smoke \
+    --real-vcf <sample.somatic.vcf.gz> \
+    --real-annotated-vcf <sample.vep.vcf> \
+    --real-vcf-hla-file <sample.hla.txt> \
     --real-vcf-smoke-top-n 1 \
     --allow-download \
     --execute
@@ -115,6 +127,10 @@ while [[ $# -gt 0 ]]; do
     --no-runtime-validate) RUN_RUNTIME_VALIDATE=0; shift ;;
     --no-mini-prime) MINI_PRIME=0; shift ;;
     --run-real-vcf-smoke) RUN_REAL_VCF_SMOKE=1; shift ;;
+    --real-vcf) REAL_VCF_RAW="$2"; shift 2 ;;
+    --real-annotated-vcf) REAL_VCF_ANNOTATED="$2"; shift 2 ;;
+    --real-vcf-hla-alleles) REAL_VCF_HLA_ALLELES="$2"; shift 2 ;;
+    --real-vcf-hla-file) REAL_VCF_HLA_FILE="$2"; shift 2 ;;
     --real-vcf-smoke-top-n) REAL_VCF_SMOKE_TOP_N="$2"; shift 2 ;;
     --skip-real-vcf-mhcflurry) SKIP_REAL_VCF_MHCFLURRY=1; shift ;;
     --) shift; EXTRA_INSTALL_ARGS+=("$@"); break ;;
@@ -165,7 +181,16 @@ if [[ "$RUN_VERIFY" == "1" ]]; then
   if [[ "$STRICT_VERIFY" == "1" ]]; then install_args+=(--strict-verify); else install_args+=(--verify); fi
 fi
 if [[ "$RUN_REAL_VCF_SMOKE" == "1" ]]; then
+  [[ -n "$REAL_VCF_RAW" ]] || { echo "REAL_VCF_REQUIRED: use --real-vcf" >&2; exit 46; }
+  [[ -n "$REAL_VCF_ANNOTATED" ]] || { echo "REAL_ANNOTATED_VCF_REQUIRED: use --real-annotated-vcf" >&2; exit 46; }
+  [[ -n "$REAL_VCF_HLA_ALLELES" || -n "$REAL_VCF_HLA_FILE" ]] || {
+    echo "REAL_VCF_HLA_REQUIRED: use --real-vcf-hla-alleles or --real-vcf-hla-file" >&2
+    exit 46
+  }
   install_args+=(--run-real-vcf-smoke --real-vcf-smoke-top-n "$REAL_VCF_SMOKE_TOP_N")
+  install_args+=(--real-vcf "$REAL_VCF_RAW" --real-annotated-vcf "$REAL_VCF_ANNOTATED")
+  [[ -n "$REAL_VCF_HLA_ALLELES" ]] && install_args+=(--real-vcf-hla-alleles "$REAL_VCF_HLA_ALLELES")
+  [[ -n "$REAL_VCF_HLA_FILE" ]] && install_args+=(--real-vcf-hla-file "$REAL_VCF_HLA_FILE")
   [[ "$SKIP_REAL_VCF_MHCFLURRY" == "1" ]] && install_args+=(--skip-real-vcf-mhcflurry)
 fi
 install_args+=("${EXTRA_INSTALL_ARGS[@]}")
@@ -184,7 +209,13 @@ run_step "rewrite activation and wrappers" bash .agents/skills/neoag-remote-depl
 if [[ "$RUN_RUNTIME_VALIDATE" == "1" ]]; then
   validate_args=(--project-root "$PROJECT_ROOT" --tools-root "$TOOLS_ROOT" --outdir "$OUTDIR/production_runtime")
   [[ "$MINI_PRIME" == "1" ]] && validate_args+=(--mini-prime)
-  run_step "validate production runtime" bash .agents/skills/neoag-remote-deploy/scripts/11_validate_production_runtime.sh "${validate_args[@]}"
+  if [[ "$EXECUTE" == "1" ]]; then
+    run_step "validate production runtime" bash .agents/skills/neoag-remote-deploy/scripts/11_validate_production_runtime.sh "${validate_args[@]}"
+  else
+    log ""
+    log "==> [DRY_RUN] validate production runtime after installation"
+    log "+ bash .agents/skills/neoag-remote-deploy/scripts/11_validate_production_runtime.sh ${validate_args[*]}"
+  fi
 fi
 
 {

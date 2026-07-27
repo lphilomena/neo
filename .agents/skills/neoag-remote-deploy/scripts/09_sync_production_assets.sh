@@ -5,9 +5,10 @@ OLD_HOST=""
 OLD_ENV_TOOL=""
 OLD_REFERENCE_ROOT=""
 OLD_LICENSED_ROOT=""
-TOOLS_ROOT="/root/neo/env_tool"
-REFERENCE_ROOT="/root/neo/neodata4git"
-LICENSED_ROOT="/root/neo/licensed_tools"
+DEPLOY_ROOT="${NEOAG_DEPLOY_ROOT:-/opt/neoag}"
+TOOLS_ROOT="${NEOAG_TOOLS_ROOT:-$DEPLOY_ROOT/env_tool}"
+REFERENCE_ROOT="${NEOAG_REFERENCE_ROOT:-$DEPLOY_ROOT/refs}"
+LICENSED_ROOT="${NEOAG_LICENSED_ROOT:-$DEPLOY_ROOT/licensed_tools}"
 EXECUTE=0
 RSYNC_OPTS=(-aH --info=progress2)
 while [[ $# -gt 0 ]]; do

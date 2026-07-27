@@ -75,7 +75,7 @@ For Tier 3 or real VCF/BAM/FASTQ execution, continue with the production asset
 extension before running real data:
 
 9. Plan migration/rebuild of machine assets without copying anything:
-   `scripts/08_plan_asset_migration.sh --project-root <root> --outdir <outdir> --tools-root <target-env_tool> --reference-root <target-reference-root> --licensed-root <target-licensed-root>`.
+   `scripts/08b_plan_asset_migration.sh --project-root <root> --outdir <outdir> --tools-root <target-env_tool> --reference-root <target-reference-root> --licensed-root <target-licensed-root>`.
 10. After approval, sync approved assets from the old machine or staged local
     paths. Default is dry-run; use `--execute` only with approval:
     `scripts/09_sync_production_assets.sh --old-host <user@host> --old-env-tool <path> --old-reference-root <path> --old-licensed-root <path> --tools-root <target-env_tool> --reference-root <target-reference-root> --licensed-root <target-licensed-root> --outdir <outdir> --execute`.
@@ -118,14 +118,14 @@ runtime validation, and optional real VCF smoke:
 
 ```bash
 bash .agents/skills/neoag-remote-deploy/scripts/16_install_new_machine.sh \
-  --asset-source-host na@10.200.50.134 \
+  --asset-source-host <user@source-host> \
   --allow-download \
   --execute
 ```
 
 For README-listed open/conda tools, prefer `13_install_readme_tools.sh` over
 running many installer scripts manually. It defaults to Miniforge3 under
-`/root/neo/env_tool/miniforge3` or `<tools-root>/miniforge3`; use
+`/opt/neoag/env_tool/miniforge3` or `<tools-root>/miniforge3`; use
 `--no-install-miniforge` only when a site-managed conda must be used instead.
 Use `--allow-download` for Miniforge, conda packages, git clones, VEP cache, or
 approved tool URLs.
@@ -187,11 +187,11 @@ asset locations so a new machine can prepare itself reproducibly:
 Production asset fast path after explicit approval:
 
 ```bash
-bash .agents/skills/neoag-remote-deploy/scripts/08_plan_asset_migration.sh \
+bash .agents/skills/neoag-remote-deploy/scripts/08b_plan_asset_migration.sh \
   --project-root . \
-  --tools-root /root/neo/env_tool \
-  --reference-root /root/neo/neodata4git \
-  --licensed-root /root/neo/licensed_tools \
+  --tools-root /opt/neoag/env_tool \
+  --reference-root /opt/neoag/refs \
+  --licensed-root /opt/neoag/licensed_tools \
   --outdir work/agent_deploy
 
 # Review work/agent_deploy/asset_migration_report.md first, then run approved sync/rewrite.
