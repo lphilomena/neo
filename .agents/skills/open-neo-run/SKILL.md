@@ -17,6 +17,13 @@ Preferred: `sample_manifest.yaml`.
 
 Supported direct entries include tumor/normal DNA BAM or FASTQ, tumor RNA BAM or FASTQ, somatic VCF, fusion caller table, splice junction table, WGS/WES SV VCF, peptide-HLA table, standard raw intermediates, a production manifest, an input directory, or an existing result directory.
 
+When exactly one paired tumor RNA FASTQ input is supplied without DNA inputs
+or an explicit production manifest, Skill2 automatically generates the
+`rna_fusion_splice_v1` production profile. The profile includes FASTQ QC, STAR
+alignment, Salmon gene/transcript TPM, EasyFuse, STAR-Fusion, Arriba, RegTools,
+optional SNAF/SpliceMutr, cross-tool splice normalization, fusion/splice peptide
+generation, presentation, evidence integration, and dual ranking.
+
 ## Modes
 
 - `plan`: inspect and write a route/run plan.
@@ -32,6 +39,10 @@ Supported direct entries include tumor/normal DNA BAM or FASTQ, tumor RNA BAM or
 3. Run Doctor/preflight.
 4. Use `pipeline-full` for the dry-run DAG and submit approved execute/resume requests through NeoAg Gateway to the production runner.
 5. Reuse existing gene/transcript TPM and RNA alt/VAF tables, or plan/run Salmon/RSEM gene plus transcript quantification from tumor RNA FASTQ and RNA ref/alt counting from tumor RNA BAM plus somatic VCF. Retain fusion/splice junction read evidence.
+   For the automatic RNA profile, require HLA, FASTA/GTF, STAR index,
+   EasyFuse reference, CTAT library, Salmon index, and tx2gene before execute.
+   SNAF and SpliceMutr remain optional cohort/workflow stages; when their
+   reviewed workflow files are absent they are `UNASSESSED`, not negative.
 6. Cross-check HLA typing, HLA LOH, fusion, splice, presentation and purity/CNV/CCF evidence by domain; missing evidence remains `UNASSESSED`.
 7. Build `all_tool_results.tsv`, long-form tool evidence and explicit consensus/conflict outputs.
 8. Preserve the weighted baseline.
@@ -53,7 +64,14 @@ Supported direct entries include tumor/normal DNA BAM or FASTQ, tumor RNA BAM or
 - `ranked_events.evidence_consensus.tsv`
 - `ranking_compare_weighted_vs_consensus.md`
 - `run_manifest.json`, `audit_log.jsonl`
+- `manifests/rna_fusion_splice.production.toml` and
+  `manifests/rna_fusion_splice.requirements.tsv` for automatic RNA FASTQ runs
 
 ## Safety boundary
 
-`execute` and `resume` require approval and Gateway dispatch. The Skill must not silently convert missing evidence to a negative result or overwrite the weighted baseline. Raw candidate generation from BAM/FASTQ requires an explicit production manifest with reviewed stage commands; the declared RNA quantification and RNA allele-count stages are separately controlled by Gateway.
+`execute` and `resume` require approval and Gateway dispatch. The Skill must not silently convert missing evidence to a negative result or overwrite the weighted baseline. Raw candidate generation from BAM/FASTQ requires either an explicit production manifest with reviewed stage commands or the repository-owned automatic RNA FASTQ profile; the declared RNA quantification and RNA allele-count stages are separately controlled by Gateway.
+
+The automatic RNA FASTQ profile is itself the reviewed repository-owned
+production manifest generator. Execution still requires Gateway approval and
+passes only when all required sample/reference assets exist. User-supplied
+SNAF/SpliceMutr workflows are never invented or downloaded at run time.

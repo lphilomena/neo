@@ -292,6 +292,8 @@ def _write_final_config(
         "cnv",
         "normal_expression",
         "normal_hla_ligands",
+        "reference_proteome",
+        "normal_junctions",
         "netmhcpan",
         "mhcflurry",
     }

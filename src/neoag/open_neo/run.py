@@ -25,6 +25,10 @@ from .execution_adapters import (
 )
 from .tool_consensus import build_tool_consensus, enrich_all_tool_results
 from .rna_preprocessing import prepare_rna_evidence
+from .rna_fusion_splice_profile import (
+    generate_rna_fusion_splice_manifest,
+    is_rna_fastq_profile_candidate,
+)
 from .routing import (
     RoutingResult,
     build_inventory,
@@ -53,7 +57,9 @@ def _result_from_args(args: dict[str, Any], layout: RunLayout) -> RoutingResult:
         "rna_evidence_tsv", "purity_tsv", "cnv_tsv", "hla_loh_tsv", "normal_expression",
         "normal_hla_ligands", "reference_proteome", "normal_junctions", "reference_fasta",
         "gencode_gtf", "vep_cache", "production_manifest", "result_dir",
-        "salmon_index", "tx2gene", "rsem_reference",
+        "salmon_index", "tx2gene", "rsem_reference", "star_index", "ctat_genome_lib",
+        "easyfuse_ref", "normal_readthrough", "snaf_workflow", "splicemutr_workflow",
+        "rna_threads",
         "comprehensive_evidence", "weighted_baseline",
         "input_dir",
     ]
@@ -66,7 +72,8 @@ def _result_from_args(args: dict[str, Any], layout: RunLayout) -> RoutingResult:
         "purity_tsv", "cnv_tsv", "hla_loh_tsv", "normal_expression",
         "normal_hla_ligands", "reference_proteome", "normal_junctions", "reference_fasta",
         "gencode_gtf", "vep_cache", "production_manifest", "result_dir",
-        "salmon_index", "tx2gene", "rsem_reference",
+        "salmon_index", "tx2gene", "rsem_reference", "star_index", "ctat_genome_lib",
+        "easyfuse_ref", "normal_readthrough", "snaf_workflow", "splicemutr_workflow",
         "comprehensive_evidence", "weighted_baseline",
         "input_dir",
     }
@@ -273,11 +280,48 @@ def run_open_neo(args: dict[str, Any]) -> dict[str, Any]:
         return result.to_dict()
 
     execute = mode in {"execute", "resume"}
-    if mode == "resume" and not (routing.inputs.get("production_manifest") or routing.inputs.get("result_dir")):
+    if mode == "resume" and not (
+        routing.inputs.get("production_manifest")
+        or routing.inputs.get("result_dir")
+        or is_rna_fastq_profile_candidate(routing.inputs)
+    ):
         result.steps.append(MacroStep("02", "resume-input-check", "BLOCKED", "Resume requires a production manifest or an existing result directory", failure_code="RESUME_REQUIRES_PRODUCTION_MANIFEST_OR_RESULT_DIR"))
         result.blocking_issues.append("RESUME_REQUIRES_PRODUCTION_MANIFEST_OR_RESULT_DIR")
         result.finish("BLOCKED").write(layout.skill_result)
         return result.to_dict()
+
+    auto_rna_profile: dict[str, Any] | None = None
+    if is_rna_fastq_profile_candidate(routing.inputs):
+        profile_manifest = layout.manifests / "rna_fusion_splice.production.toml"
+        requirements_tsv = layout.manifests / "rna_fusion_splice.requirements.tsv"
+        auto_rna_profile = generate_rna_fusion_splice_manifest(
+            routing.inputs,
+            profile_manifest,
+            project_root=args.get("project_root") or ".",
+            outdir=layout.pipeline / "rna_fusion_splice_run",
+        )
+        routing.inputs["production_manifest"] = str(profile_manifest)
+        write_tsv(requirements_tsv, auto_rna_profile["requirements"])
+        result.outputs.update({
+            "generated_production_manifest": str(profile_manifest),
+            "rna_fusion_splice_requirements": str(requirements_tsv),
+        })
+        profile_status = "PASS" if auto_rna_profile["ready_for_execute"] else "PARTIAL"
+        result.steps.append(MacroStep(
+            "02a", "rna-fastq-fusion-splice-profile", profile_status,
+            detail="missing_required=" + ",".join(auto_rna_profile["missing_required"]),
+            outputs={
+                "production_manifest": str(profile_manifest),
+                "requirements": str(requirements_tsv),
+            },
+        ))
+        if execute and not auto_rna_profile["ready_for_execute"]:
+            result.blocking_issues.extend(
+                f"RNA_FUSION_SPLICE_MISSING:{field}" for field in auto_rna_profile["missing_required"]
+            )
+            result.finish("BLOCKED").write(layout.skill_result)
+            return result.to_dict()
+
     preflight = _doctor_preflight(args, layout, execute=execute)
     result.steps.append(MacroStep("02", "doctor-preflight", preflight["status"], outputs=preflight.get("outputs", {})))
     result.outputs.update({f"doctor_{k}": v for k, v in preflight.get("outputs", {}).items()})
@@ -290,7 +334,7 @@ def run_open_neo(args: dict[str, Any]) -> dict[str, Any]:
         routing.inputs,
         project_root=args.get("project_root") or ".",
         outdir=layout.pipeline / "rna_preprocessing",
-        execute=execute,
+        execute=execute and auto_rna_profile is None,
         method=str(args.get("rna_quant_method") or "auto"),
         timeout=int(args.get("timeout", 7200)),
     )

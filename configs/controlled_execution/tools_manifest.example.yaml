@@ -142,6 +142,41 @@ tools:
     env: env.neoag-fusion
     required: false
 
+  fastqc:
+    mode: conda_or_container
+    executable: fastqc
+    env: env.neoag-fusion
+    required: false
+    smoke_command: "fastqc --version"
+
+  salmon:
+    mode: conda_or_container
+    executable: salmon
+    env: env.neoag-rna
+    required: false
+    smoke_command: "salmon --version"
+
+  regtools:
+    mode: conda_or_container
+    executable: regtools-neoag
+    env: env.neoag-splice
+    required: false
+    smoke_command: "regtools-neoag junctions extract -h"
+
+  snaf:
+    mode: conda
+    executable: snaf-neoag
+    env: env.neoag-snaf
+    required: false
+    smoke_command: "snaf-neoag --help"
+
+  splicemutr:
+    mode: conda
+    executable: splicemutr-neoag
+    env: env.neoag-splicemutr
+    required: false
+    smoke_command: "splicemutr-neoag doctor"
+
   pyclone_vi:
     mode: conda
     executable: pyclone-vi

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import csv
 import json
+import subprocess
+import sys
 from pathlib import Path
 
 from neoag.open_neo.install_check import run_install_check
@@ -9,7 +11,12 @@ from neoag.open_neo.review import build_review_rows, run_review, select_first_ba
 from neoag.open_neo.routing import inspect_manifest
 from neoag.open_neo.run import run_open_neo
 from neoag.open_neo.rna_preprocessing import prepare_rna_evidence
+from neoag.open_neo.rna_fusion_splice_profile import (
+    generate_rna_fusion_splice_manifest,
+    is_rna_fastq_profile_candidate,
+)
 from neoag.open_neo.tool_consensus import build_tool_consensus
+from neoag.production_runner import load_production_manifest, run_production
 from neoag.skill_taxonomy.registry import SKILLS_BY_NAME
 from neoag.skill_taxonomy.runner import run_skill
 
@@ -181,6 +188,121 @@ def test_rna_preprocessing_plans_gene_transcript_tpm_and_alt_vaf(tmp_path: Path)
     assert stages["rna_alt_vaf"]["status"] == "PLANNED"
     assert "rna_allele_counts_pysam.py" in stages["rna_alt_vaf"]["command_preview"]
     assert Path(tmp_path / "rna/rna_preprocessing_status.tsv").is_file()
+
+
+def _rna_profile_inputs(tmp_path: Path) -> dict[str, object]:
+    files: dict[str, Path] = {}
+    for name in ("tumor_R1.fastq.gz", "tumor_R2.fastq.gz", "GRCh38.fa", "gencode.gtf", "tx2gene.tsv"):
+        path = tmp_path / name
+        path.write_bytes(b"fixture")
+        files[name] = path
+    for name in ("star_index", "easyfuse_ref", "ctat", "salmon_index"):
+        path = tmp_path / name
+        path.mkdir()
+        files[name] = path
+    return {
+        "sample_id": "RNA_PROFILE",
+        "tumor_rna_fastq": [str(files["tumor_R1.fastq.gz"]), str(files["tumor_R2.fastq.gz"])],
+        "hla_alleles": ["HLA-A*02:01", "HLA-B*07:02"],
+        "reference_fasta": str(files["GRCh38.fa"]),
+        "gencode_gtf": str(files["gencode.gtf"]),
+        "star_index": str(files["star_index"]),
+        "easyfuse_ref": str(files["easyfuse_ref"]),
+        "ctat_genome_lib": str(files["ctat"]),
+        "salmon_index": str(files["salmon_index"]),
+        "tx2gene": str(files["tx2gene.tsv"]),
+        "rna_threads": 8,
+    }
+
+
+def test_rna_fastq_profile_generator_emits_full_dag(tmp_path: Path):
+    inputs = _rna_profile_inputs(tmp_path)
+    assert is_rna_fastq_profile_candidate(inputs)
+    result = generate_rna_fusion_splice_manifest(
+        inputs,
+        tmp_path / "profile.toml",
+        project_root=Path.cwd(),
+        outdir=tmp_path / "run",
+    )
+    assert result["ready_for_execute"] is True
+    text = Path(result["manifest"]).read_text(encoding="utf-8")
+    for stage in (
+        "fastq_qc", "rna_alignment", "rna_expression", "easyfuse_discovery",
+        "star_fusion_discovery", "arriba_discovery", "junction_extraction",
+        "fusion_cross_validation",
+        "snaf_discovery", "splicemutr_discovery", "fusion_peptide_generation",
+        "splice_candidate_normalization",
+    ):
+        assert f"[stages.{stage}]" in text
+    assert "run_star_rna_fastq.sh" in text
+    assert "normalize_rna_fusion_splice.py" in text
+    assert (tmp_path / "rna_fusion_splice.hla.txt").is_file()
+    parsed = load_production_manifest(result["manifest"])
+    assert parsed["run"]["profile"] == "rna_fusion_splice_v1"
+    planned = run_production(
+        result["manifest"], project_root=Path.cwd(), outdir=tmp_path / "production-plan"
+    )
+    assert {stage.name for stage in planned.stages} >= {
+        "rna_alignment", "easyfuse_discovery", "splice_candidate_normalization"
+    }
+
+
+def test_open_neo_run_auto_generates_rna_profile_in_plan_mode(tmp_path: Path):
+    inputs = _rna_profile_inputs(tmp_path)
+    result = run_open_neo({
+        **inputs,
+        "mode": "plan",
+        "doctor": False,
+        "project_root": str(Path.cwd()),
+        "outdir": str(tmp_path / "openneo"),
+    })
+    assert result["status"] == "PASS"
+    manifest = Path(result["outputs"]["generated_production_manifest"])
+    assert manifest.is_file()
+    requirements = Path(result["outputs"]["rna_fusion_splice_requirements"])
+    assert requirements.is_file()
+    assert "rna_fusion_splice_v1" in manifest.read_text(encoding="utf-8")
+
+
+def test_rna_fastq_profile_reports_missing_required_assets(tmp_path: Path):
+    fastq1 = tmp_path / "R1.fastq.gz"
+    fastq2 = tmp_path / "R2.fastq.gz"
+    fastq1.write_bytes(b"fixture")
+    fastq2.write_bytes(b"fixture")
+    result = generate_rna_fusion_splice_manifest(
+        {"sample_id": "RNA_MISSING", "tumor_rna_fastq": [str(fastq1), str(fastq2)]},
+        tmp_path / "profile.toml",
+        project_root=Path.cwd(),
+        outdir=tmp_path / "run",
+    )
+    assert result["ready_for_execute"] is False
+    assert "hla_alleles_or_hla_file" in result["missing_required"]
+    assert "star_index" in result["missing_required"]
+
+
+def test_rna_fusion_cross_validation_marks_normal_background(tmp_path: Path):
+    easyfuse = tmp_path / "fusions.pass.csv"
+    easyfuse.write_text(
+        "Fusion_Gene,junction_reads,frame\nEWSR1::WT1,20,in-frame\n",
+        encoding="utf-8",
+    )
+    arriba = tmp_path / "arriba.tsv"
+    arriba.write_text(
+        "gene1\tgene2\tsplit_reads1\treading_frame\nEWSR1\tWT1\t12\tin-frame\n",
+        encoding="utf-8",
+    )
+    normal = tmp_path / "normal.tsv"
+    normal.write_text("gene1\tgene2\nEWSR1\tWT1\n", encoding="utf-8")
+    outdir = tmp_path / "fusion-review"
+    subprocess.run([
+        sys.executable, str(Path.cwd() / "scripts/review_rna_fusions.py"),
+        "--easyfuse", str(easyfuse), "--arriba", str(arriba),
+        "--normal-readthrough", str(normal), "--outdir", str(outdir),
+    ], check=True)
+    rows = list(csv.DictReader((outdir / "fusion_consensus.tsv").open(), delimiter="\t"))
+    assert rows[0]["n_tools"] == "2"
+    assert rows[0]["normal_readthrough_status"] == "DETECTED"
+    assert rows[0]["status"] == "NORMAL_BACKGROUND_REVIEW"
 
 
 def test_direct_execute_requires_gateway(tmp_path: Path):

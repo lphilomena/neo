@@ -1184,4 +1184,12 @@ Three public macro entrypoints compose the existing A/B/C/D Skills without dupli
 - `open-neo run`: manifest/CLI/directory input QC, Gateway-controlled production execution or resume, domain-level tool consensus, comprehensive evidence, weighted baseline, and evidence-consensus ranking.
 - `open-neo review`: event-level review, an R1/R2 first-batch set, an R3 evidence-completion queue, and patient/technical reports.
 
+For exactly one paired tumor RNA FASTQ input, `open-neo run` now generates the
+standard `rna_fusion_splice_v1` production profile automatically. After Doctor
+checks and Gateway approval, it can run FASTQ QC, STAR, Salmon, EasyFuse,
+STAR-Fusion, Arriba, RegTools, optional reviewed SNAF/SpliceMutr workflows,
+fusion/splice cross-validation, peptide generation and the two rankings.
+Missing optional tools or normal-background references remain `UNASSESSED` or
+`SAFETY_PARTIAL`; they are never reported as negative evidence.
+
 `plan`, `verify`, and review operations are non-destructive. Installation, repair, execution, and resume require explicit approval. See [docs/OPEN_NEO_MACRO_SKILLS.md](docs/OPEN_NEO_MACRO_SKILLS.md).

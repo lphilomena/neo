@@ -40,6 +40,22 @@ open-neo run \
   --outdir results/CASE001
 ```
 
+Paired tumor RNA FASTQ can use the built-in fusion/splice profile:
+
+```bash
+open-neo run \
+  --sample-manifest configs/local/RNA001.sample.yaml \
+  --mode plan \
+  --outdir work/RNA001-plan
+```
+
+With no explicit `production_manifest`, Skill2 generates
+`manifests/rna_fusion_splice.production.toml`. Its DAG covers FASTQ QC, STAR,
+Salmon, EasyFuse, STAR-Fusion, Arriba, RegTools, optional SNAF/SpliceMutr,
+candidate normalization, peptide generation and downstream evidence ranking.
+Execution requires HLA, matching FASTA/GTF/STAR/CTAT/EasyFuse/Salmon assets and
+Gateway approval. Missing optional cohort workflows remain `UNASSESSED`.
+
 Reuse existing evidence:
 
 ```bash

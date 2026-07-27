@@ -11,6 +11,16 @@ inputs:
   tumor_dna_fastq: []
   normal_dna_fastq: []
   tumor_rna_fastq: []
+  # RNA FASTQ -> expression + fusion + splice production profile assets.
+  # With exactly two tumor_rna_fastq files, Skill2 generates this profile
+  # automatically when production_manifest is not supplied.
+  star_index: /ref/GRCh38/star_index
+  ctat_genome_lib: /ref/ctat/current
+  easyfuse_ref: /ref/easyfuse/easyfuse_ref_v4
+  normal_readthrough: /ref/fusion/normal_readthrough.tsv
+  snaf_workflow: ""       # optional; must emit snaf_candidates.tsv
+  splicemutr_workflow: "" # optional; must emit splicemutr_candidates.tsv
+  rna_threads: 16
   somatic_vcf: /path/to/tumor.normal.somatic.vcf.gz
   fusion_tsv: /path/to/fusions.pass.tsv
   splice_junction_tsv: /path/to/regtools.splice.tsv

@@ -44,6 +44,12 @@ PATH_ALIASES: dict[str, tuple[str, ...]] = {
     "salmon_index": ("salmon_index",),
     "tx2gene": ("tx2gene", "transcript_to_gene"),
     "rsem_reference": ("rsem_reference",),
+    "star_index": ("star_index", "star_genome_index"),
+    "ctat_genome_lib": ("ctat_genome_lib", "star_fusion_reference"),
+    "easyfuse_ref": ("easyfuse_ref", "easyfuse_reference"),
+    "normal_readthrough": ("normal_readthrough", "normal_readthrough_db"),
+    "snaf_workflow": ("snaf_workflow",),
+    "splicemutr_workflow": ("splicemutr_workflow",),
     "production_manifest": ("production_manifest",),
     "result_dir": ("result_dir", "results"),
     "comprehensive_evidence": ("comprehensive_evidence", "all_tool_results"),
@@ -159,6 +165,7 @@ def normalize_manifest(data: dict[str, Any], *, base_dir: str | Path = ".") -> d
     out["tumor_sample_id"] = str(data.get("tumor_sample_id") or (data.get("tumor") or {}).get("sample_id") or out["sample_id"])
     out["normal_sample_id"] = str(data.get("normal_sample_id") or (data.get("normal") or {}).get("sample_id") or "")
     out["assay_type"] = str(data.get("assay_type") or source.get("assay_type") or "").upper()
+    out["rna_threads"] = int(source.get("rna_threads") or execution.get("threads") or 16)
     raw_tool_results = data.get("tool_results") if isinstance(data.get("tool_results"), dict) else {}
     out["tool_results"] = {
         str(domain): {
@@ -298,7 +305,7 @@ def scan_input_directory(path: str | Path, *, max_files: int = 1000) -> tuple[di
 def build_inventory(inputs: dict[str, Any], *, output_dir: str | Path | None = None) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for key, value in inputs.items():
-        if key in {"sample_id", "case_id", "genome_build", "profile", "backend", "reuse_existing", "execution_mode", "tumor_type", "tumor_sample_id", "normal_sample_id", "assay_type", "hla_alleles", "tool_results"}:
+        if key in {"sample_id", "case_id", "genome_build", "profile", "backend", "reuse_existing", "execution_mode", "tumor_type", "tumor_sample_id", "normal_sample_id", "assay_type", "rna_threads", "hla_alleles", "tool_results"}:
             continue
         values = value if isinstance(value, list) else [value]
         for index, item in enumerate(values):

@@ -133,6 +133,30 @@ references:
     version: "<version>"
     required: false
 
+  star_index:
+    path: /opt/neoag/refs/GRCh38/star_index
+    source: STAR genomeGenerate from the declared FASTA and GTF
+    version: "<STAR-version>_<GENCODE-version>"
+    required: false
+
+  easyfuse_ref:
+    path: /opt/neoag/refs/fusion/easyfuse/easyfuse_ref_v4
+    source: EasyFuse reference bundle
+    version: v4
+    required: false
+
+  salmon_index:
+    path: /opt/neoag/refs/expression/salmon/gencode_transcripts
+    source: Salmon index from matching GENCODE transcripts
+    version: "<Salmon-version>_<GENCODE-version>"
+    required: false
+
+  tx2gene:
+    path: /opt/neoag/refs/expression/salmon/tx2gene.tsv
+    source: matching GENCODE transcript-to-gene mapping
+    version: "<GENCODE-version>"
+    required: false
+
   normal_readthrough:
     path: /opt/neoag/refs/fusion/normal_readthrough/normal_readthrough.tsv
     source: curated normal fusion/read-through background
