@@ -43,7 +43,7 @@ def write_snv_run_config(
     nlig = (
         f'normal_hla_ligands = "{normal_hla_ligands}"'
         if normal_hla_ligands
-        else 'normal_hla_ligands = "resources/normal_hla_ligands.example.tsv"'
+        else 'normal_hla_ligands = "resources/normal_hla_ligands.tsv"'
     )
     normal_line = f'normal_sample_name = "{normal_sample_name}"' if normal_sample_name else ""
     pass_only_line = "pass_only = false" if not pass_only else ""

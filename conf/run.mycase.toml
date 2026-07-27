@@ -28,4 +28,4 @@ reference_fasta = "/mnt/zjl-bgi-zzb/peixunban/gl/data/reference/Homo_sapiens.GRC
 expression = "data/fixtures/gene_expression.tsv"
 cnv = "data/fixtures/cnv_segments.tsv"
 normal_expression = "resources/normal_expression.example.tsv"
-normal_hla_ligands = "resources/normal_hla_ligands.example.tsv"
+normal_hla_ligands = "resources/normal_hla_ligands.tsv"

@@ -22,7 +22,7 @@ params.hla_alleles = params.hla_alleles ?: ['HLA-A*02:01', 'HLA-B*07:02']
 params.expression_tsv = params.expression_tsv ?: "${projectDir}/../data/fixtures/gene_expression.tsv"
 params.cnv_tsv = params.cnv_tsv ?: "${projectDir}/../assets/empty_cnv.tsv"
 params.normal_expression = params.normal_expression ?: "${projectDir}/../resources/normal_expression.example.tsv"
-params.normal_hla_ligands = params.normal_hla_ligands ?: "${projectDir}/../resources/normal_hla_ligands.example.tsv"
+params.normal_hla_ligands = params.normal_hla_ligands ?: "${projectDir}/../resources/normal_hla_ligands.tsv"
 
 workflow {
     filtered_ch = Channel.value(file(params.somatic_vcf))

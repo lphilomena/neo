@@ -18,7 +18,7 @@ def test_validation_and_report_cli(tmp_path):
         purity=ROOT/"data/fixtures/purity.tsv",
         cnv=ROOT/"data/fixtures/cnv_segments.tsv",
         normal_expression=ROOT/"resources/normal_expression.example.tsv",
-        normal_hla_ligands=ROOT/"resources/normal_hla_ligands.example.tsv",
+        normal_hla_ligands=ROOT/"resources/normal_hla_ligands.tsv",
     )
     val = tmp_path/"validation.tsv"
     main(["validation-plan-v03", "--ranked-peptides", out["ranked_peptides"], "--out", str(val)])

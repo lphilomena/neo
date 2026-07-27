@@ -81,7 +81,7 @@ def test_evidence_layer_and_run_from_intermediates(tmp_path):
         src,
         "leukemia",
         normal_expression=ROOT / "resources/normal_expression.example.tsv",
-        normal_hla_ligands=ROOT / "resources/normal_hla_ligands.example.tsv",
+        normal_hla_ligands=ROOT / "resources/normal_hla_ligands.tsv",
         sample_id="DEMO_V03",
     )
     for key in ("expression_evidence", "rna_junction_evidence", "safety_evidence"):
@@ -102,7 +102,7 @@ def test_evidence_layer_and_run_from_intermediates(tmp_path):
         purity=ROOT / "data/fixtures/purity.tsv",
         cnv=ROOT / "data/fixtures/cnv_segments.tsv",
         normal_expression=ROOT / "resources/normal_expression.example.tsv",
-        normal_hla_ligands=ROOT / "resources/normal_hla_ligands.example.tsv",
+        normal_hla_ligands=ROOT / "resources/normal_hla_ligands.tsv",
         entry_mode="intermediates",
     )
     assert Path(out["expression_evidence"]).exists()

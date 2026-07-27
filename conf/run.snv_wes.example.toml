@@ -25,7 +25,7 @@ extract_appm_from_vcf = true
 expression = "/path/gene_expression.tsv"
 cnv = "/path/cnv_segments.tsv"
 normal_expression = "resources/normal_expression.example.tsv"
-normal_hla_ligands = "resources/normal_hla_ligands.example.tsv"
+normal_hla_ligands = "resources/normal_hla_ligands.tsv"
 
 [snv_wes]
 tumor_bam = "/path/P001.tumor.bam"

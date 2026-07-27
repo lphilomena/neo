@@ -24,15 +24,15 @@ If several normal tissues already express the gene at or above the tumor's
 level, the percentile -- and therefore the specificity score -- is low,
 flagging a higher on-target/off-tumor risk.
 
-The bundled reference matrix (``resources/gtex_median_tpm.tsv``) is a small,
-ILLUSTRATIVE, hand-assembled approximation covering a representative subset
-of GTEx tissues and a limited gene set (see the file header for the
-production-swap instructions: replace it with a pivoted export of GTEx's
-official "gene median TPM" bulk-tissue-expression download, keeping the same
-``gene`` + arbitrary tissue-columns schema). Genes not present in the
-bundled/production matrix fall back to a neutral, profile-configurable
-default rather than a value that implies the gene is confirmed
-tissue-restricted or confirmed ubiquitous.
+The default reference path now points at ``resources/GTEx_gene_median_tpm.gct``,
+a real GTEx official "gene median TPM" bulk-tissue-expression export (the
+``_parse_gtex_gct`` branch below handles that file format directly, no
+manual conversion needed). If that file isn't present, callers should fall
+back to a small ILLUSTRATIVE hand-assembled matrix instead (same ``gene`` +
+arbitrary tissue-columns schema, see ``_parse_simple_tsv`` below) rather than
+leaving this unset. Genes not present in whichever matrix is loaded fall
+back to a neutral, profile-configurable default rather than a value that
+implies the gene is confirmed tissue-restricted or confirmed ubiquitous.
 """
 from __future__ import annotations
 
@@ -41,7 +41,7 @@ from pathlib import Path
 from typing import Mapping
 
 ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_GTEX_PATH = ROOT / "resources" / "gtex_median_tpm.tsv"
+DEFAULT_GTEX_PATH = ROOT / "resources" / "GTEx_gene_median_tpm.gct"
 
 # Returned when the gene isn't present in the GTEx reference matrix at all --
 # i.e. genuinely unknown, not "confirmed broadly expressed" (which would

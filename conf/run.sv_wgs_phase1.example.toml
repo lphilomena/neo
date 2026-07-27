@@ -14,7 +14,7 @@ hla = "HLA-A*02:01,HLA-A*24:02,HLA-B*07:02,HLA-B*40:01,HLA-C*03:04,HLA-C*07:02"
 expression_tsv = "/path/gene_expression.tsv"
 rna_junction_tsv = "/path/sv_rna_junction_reads.tsv"
 normal_expression = "resources/normal_expression.example.tsv"
-normal_hla_ligands = "resources/normal_hla_ligands.example.tsv"
+normal_hla_ligands = "resources/normal_hla_ligands.tsv"
 
 [sv]
 merge_distance_bp = 200

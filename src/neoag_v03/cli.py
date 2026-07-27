@@ -53,7 +53,7 @@ def cmd_run_demo(args):
         netmhcpan=fixture("netmhcpan_example.xls"), mhcflurry=fixture("mhcflurry_predictions.csv"),
         vep_appm=fixture("vep_appm.tsv"), expression=fixture("gene_expression.tsv"),
         hla_loh=fixture("hla_loh.tsv"), purity=fixture("purity.tsv"), cnv=fixture("cnv_segments.tsv"),
-        normal_expression=resource("normal_expression.example.tsv"), normal_hla_ligands=resource("normal_hla_ligands.example.tsv"),
+        normal_expression=resource("normal_expression.example.tsv"), normal_hla_ligands=resource("normal_hla_ligands.tsv"),
         immunogenicity_stub=True,
     )
     print("NeoAg v0.4.3 demo completed. Outputs retain .v03.tsv names for schema compatibility.")
@@ -522,7 +522,7 @@ def cmd_sv_score_v03(args):
         purity=_sv_optional_path(args.purity) or ROOT / "assets" / "empty_purity.tsv",
         cnv=_sv_optional_path(args.cnv) or ROOT / "assets" / "empty_cnv.tsv",
         normal_expression=_sv_optional_path(args.normal_expression) or resource("normal_expression.example.tsv"),
-        normal_hla_ligands=_sv_optional_path(args.normal_hla_ligands) or resource("normal_hla_ligands.example.tsv"),
+        normal_hla_ligands=_sv_optional_path(args.normal_hla_ligands) or resource("normal_hla_ligands.tsv"),
         binding_stub=args.binding_stub,
         immunogenicity_stub=args.immunogenicity_stub,
         run_binding=not args.skip_binding,
@@ -572,7 +572,7 @@ def cmd_sv_run_full(args):
         purity=_sv_optional_path(args.purity) or ROOT / "assets" / "empty_purity.tsv",
         cnv=_sv_optional_path(args.cnv) or ROOT / "assets" / "empty_cnv.tsv",
         normal_expression=_sv_optional_path(args.normal_expression) or resource("normal_expression.example.tsv"),
-        normal_hla_ligands=_sv_optional_path(args.normal_hla_ligands) or resource("normal_hla_ligands.example.tsv"),
+        normal_hla_ligands=_sv_optional_path(args.normal_hla_ligands) or resource("normal_hla_ligands.tsv"),
         binding_stub=args.binding_stub,
         immunogenicity_stub=args.immunogenicity_stub,
         run_binding=not args.skip_binding,
@@ -661,7 +661,7 @@ def cmd_sv_run_full_wes(args):
         purity=_sv_optional_path(args.purity) or ROOT / "assets" / "empty_purity.tsv",
         cnv=_sv_optional_path(args.cnv) or ROOT / "assets" / "empty_cnv.tsv",
         normal_expression=_sv_optional_path(args.normal_expression) or resource("normal_expression.example.tsv"),
-        normal_hla_ligands=_sv_optional_path(args.normal_hla_ligands) or resource("normal_hla_ligands.example.tsv"),
+        normal_hla_ligands=_sv_optional_path(args.normal_hla_ligands) or resource("normal_hla_ligands.tsv"),
         binding_stub=args.binding_stub,
         immunogenicity_stub=args.immunogenicity_stub,
         run_binding=not args.skip_binding,
@@ -717,7 +717,7 @@ def cmd_snv_run_full_wes(args):
         expression=_sv_optional_path(args.expression),
         cnv=_sv_optional_path(args.cnv),
         normal_expression=_sv_optional_path(args.normal_expression) or resource("normal_expression.example.tsv"),
-        normal_hla_ligands=_sv_optional_path(args.normal_hla_ligands) or resource("normal_hla_ligands.example.tsv"),
+        normal_hla_ligands=_sv_optional_path(args.normal_hla_ligands) or resource("normal_hla_ligands.tsv"),
         pass_only=not args.include_filtered,
     )
     print("WES SNV Phase 1 end-to-end completed.")

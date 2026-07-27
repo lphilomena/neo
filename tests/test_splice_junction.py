@@ -211,7 +211,7 @@ def test_e2e_run_v03_splice_junction(tmp_path):
         layer,
         "default",
         normal_expression=ROOT / "resources/normal_expression.example.tsv",
-        normal_hla_ligands=ROOT / "resources/normal_hla_ligands.example.tsv",
+        normal_hla_ligands=ROOT / "resources/normal_hla_ligands.tsv",
         sample_id="SJ6",
     )
     out = run_v03(
@@ -226,7 +226,7 @@ def test_e2e_run_v03_splice_junction(tmp_path):
         vep_appm=ROOT / "data/fixtures/vep_appm.tsv",
         expression=ROOT / "data/fixtures/gene_expression.tsv",
         normal_expression=ROOT / "resources/normal_expression.example.tsv",
-        normal_hla_ligands=ROOT / "resources/normal_hla_ligands.example.tsv",
+        normal_hla_ligands=ROOT / "resources/normal_hla_ligands.tsv",
         entry_mode="splice_junction",
     )
     ranked = read_tsv(out["ranked_peptides"])

@@ -11,7 +11,7 @@ NET = ROOT / "data" / "fixtures" / "netmhcpan_example.xls"
 MHC = ROOT / "data" / "fixtures" / "mhcflurry_predictions.csv"
 STAB = ROOT / "data" / "fixtures" / "netmhcstabpan_example.tsv"
 NORM_EXPR = ROOT / "resources" / "normal_expression.example.tsv"
-NORM_LIG = ROOT / "resources" / "normal_hla_ligands.example.tsv"
+NORM_LIG = ROOT / "resources" / "normal_hla_ligands.tsv"
 PURITY = ROOT / "data" / "fixtures" / "purity.tsv"
 CNV_SEG = ROOT / "data" / "fixtures" / "cnv_segments.tsv"
 

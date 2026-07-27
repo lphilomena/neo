@@ -46,7 +46,7 @@ def test_run_v03(tmp_path):
         purity=ROOT/"data/fixtures/purity.tsv",
         cnv=ROOT/"data/fixtures/cnv_segments.tsv",
         normal_expression=ROOT/"resources/normal_expression.example.tsv",
-        normal_hla_ligands=ROOT/"resources/normal_hla_ligands.example.tsv",
+        normal_hla_ligands=ROOT/"resources/normal_hla_ligands.tsv",
     )
     for v in out.values():
         assert Path(v).exists()

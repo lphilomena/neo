@@ -15,5 +15,5 @@ tumor_sample_name = "TUMOR"
 hla_alleles = ["HLA-A*02:01", "HLA-B*07:02", "HLA-C*07:02"]
 extract_appm_from_vcf = false
 normal_expression = "resources/normal_expression.example.tsv"
-normal_hla_ligands = "resources/normal_hla_ligands.example.tsv"
+normal_hla_ligands = "resources/normal_hla_ligands.tsv"
 

@@ -32,7 +32,7 @@ params.hla_loh = params.hla_loh ?: "${projectDir}/../assets/empty_hla_loh.tsv"
 params.purity = params.purity ?: "${projectDir}/../assets/empty_purity.tsv"
 params.cnv = params.cnv ?: "${projectDir}/../assets/empty_cnv.tsv"
 params.normal_expression = params.normal_expression ?: "${projectDir}/../resources/normal_expression.example.tsv"
-params.normal_hla_ligands = params.normal_hla_ligands ?: "${projectDir}/../resources/normal_hla_ligands.example.tsv"
+params.normal_hla_ligands = params.normal_hla_ligands ?: "${projectDir}/../resources/normal_hla_ligands.tsv"
 
 workflow {
     sample_ch = Channel.value(params.sample_id ?: 'SAMPLE001')

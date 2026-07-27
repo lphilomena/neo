@@ -107,7 +107,7 @@ unknown_gene_relevance = 0.3
 
 [tumor_specificity_gtex]
 # Reference matrix for tumor_specificity lookup (scoring audit fix #3).
-# reference_path left unset -> falls back to resources/gtex_median_tpm.tsv.
+# reference_path left unset -> falls back to resources/GTEx_gene_median_tpm.gct.
 enabled = true
 unknown_gene_specificity = 0.5
 # reference_path = "resources/GTEx_gene_median_tpm.gct"
