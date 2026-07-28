@@ -24,11 +24,33 @@ fi
 if [[ -z "$RSCRIPT_BIN" ]]; then
   RSCRIPT_BIN="$(command -v Rscript || true)"
 fi
-REPO="${LOHHLA_GIT_URL:-https://bitbucket.org/mcferrine/lohhla.git}"
+# The historical Bitbucket clone URL no longer supports anonymous git access.
+# Use the public mirror by default while retaining an override for institutions.
+REPO="${LOHHLA_GIT_URL:-https://github.com/slagtermaarten/LOHHLA.git}"
+REF="${NEOAG_LOHHLA_REF:-b38c4770995b24628a4e038fccb1a9cd57c4f305}"
+GITHUB_PROXY_PREFIX="${NEOAG_GITHUB_PROXY_PREFIX:-https://ghproxy.net/}"
 mkdir -p "$(dirname "${TARGET}")" "${BIN_DIR}"
 
 if [[ ! -f "${TARGET}/LOHHLAscript.R" ]]; then
-  git clone "${REPO}" "${TARGET}"
+  tmp="$(mktemp -d)"
+  archive="$tmp/source.tar.gz"
+  direct="https://github.com/slagtermaarten/LOHHLA/archive/${REF}.tar.gz"
+  if [[ "$REPO" == "https://github.com/slagtermaarten/LOHHLA.git" ]]; then
+    for url in "${GITHUB_PROXY_PREFIX}${direct}" "$direct"; do
+      curl -fL --retry 5 --retry-all-errors --connect-timeout 30 -o "$archive" "$url" && break
+      rm -f "$archive"
+    done
+  fi
+  if [[ -s "$archive" ]]; then
+    mkdir -p "$TARGET"
+    tar -xzf "$archive" -C "$tmp"
+    source_dir="$(find "$tmp" -mindepth 1 -maxdepth 1 -type d | head -1)"
+    cp -a "$source_dir/." "$TARGET/"
+  else
+    rm -rf "$TARGET" 2>/dev/null || true
+    git clone --depth 1 "$REPO" "$TARGET"
+  fi
+  rm -rf "$tmp"
 fi
 
 cat > "${BIN_DIR}/LOHHLA" <<EOF

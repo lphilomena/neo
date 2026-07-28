@@ -62,7 +62,24 @@ if [[ -x "$MAMBA_BIN" ]]; then
   UPDATE_CMD=("$MAMBA_BIN" install -y -n "$ENV_NAME" -c conda-forge -c bioconda optitype glpk coincbc razers3)
 fi
 
-if conda env list | awk "{print \$1}" | grep -qx "$ENV_NAME"; then
+detect_env_prefix() {
+  local registered candidate
+  registered="$(conda env list | awk -v n="$ENV_NAME" '$1==n {print $NF; exit}')"
+  for candidate in \
+    "$registered" \
+    "${NEOAG_TOOLS_ROOT:-}/$ENV_NAME" \
+    "$(dirname "$CONDA_BASE")/$ENV_NAME" \
+    "${CONDA_BASE}/envs/$ENV_NAME"; do
+    [[ -n "$candidate" && -x "$candidate/bin/optitype" ]] && {
+      echo "$candidate"
+      return 0
+    }
+  done
+  return 1
+}
+
+ENV_PREFIX="$(detect_env_prefix || true)"
+if [[ -n "$ENV_PREFIX" ]]; then
   if [[ "$FORCE" == "1" ]]; then
     echo "==> Updating existing env: $ENV_NAME"
     "${UPDATE_CMD[@]}"
@@ -74,7 +91,7 @@ else
   "${CREATE_CMD[@]}"
 fi
 
-ENV_PREFIX="$(conda env list | awk -v n="$ENV_NAME" "\$1==n {print \$NF}")"
+ENV_PREFIX="$(detect_env_prefix || true)"
 [[ -n "$ENV_PREFIX" && -x "$ENV_PREFIX/bin/optitype" ]] || { echo "ERROR: optitype missing after install" >&2; exit 1; }
 # Some wrappers/tools look for this historical capitalization.
 if [[ -x "$ENV_PREFIX/bin/razers3" && ! -e "$ENV_PREFIX/bin/RazerS3" ]]; then

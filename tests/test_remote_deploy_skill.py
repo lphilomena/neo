@@ -100,3 +100,65 @@ def test_production_asset_manifest_keeps_pinned_reference_assets() -> None:
     assert required <= by_name.keys()
     assert sum(row["sha256"] != "-" for row in rows) >= 11
     assert all("/mnt/zjl-bgi-zzb" not in row["source_path"] for row in rows)
+    assert {"netmhcpan_container_image", "netmhcstabpan_container_image"} <= by_name.keys()
+    assert by_name["spechla_db"]["marker"] == "HLA/hla.ref.extend.fa"
+
+
+def test_shared_asset_mode_creates_links_without_replacing_targets(tmp_path: Path) -> None:
+    shared = tmp_path / "shared"
+    source = shared / "data" / "ref" / "tiny.fa"
+    source.parent.mkdir(parents=True)
+    source.write_text(">tiny\nACGT\n", encoding="utf-8")
+    manifest = tmp_path / "assets.tsv"
+    manifest.write_text(
+        "asset_name\tsource_path\ttarget_path\tkind\trequired\tsha256\tmarker\n"
+        "tiny\t/srv/neoag-assets/source/data/ref/tiny.fa\t"
+        "/srv/neoag-assets/install/data/ref/tiny.fa\tfile\t1\t-\t-\n",
+        encoding="utf-8",
+    )
+    refs = tmp_path / "refs"
+    proc = _run(
+        "bash", SCRIPTS / "15_sync_asset_manifest.sh",
+        "--project-root", ROOT,
+        "--asset-manifest", manifest,
+        "--shared-asset-root", shared,
+        "--reference-root", refs,
+        "--tools-root", tmp_path / "tools",
+        "--licensed-root", tmp_path / "licensed",
+        "--outdir", tmp_path / "out",
+        "--execute",
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    target = refs / "data" / "ref" / "tiny.fa"
+    assert target.is_symlink()
+    assert target.resolve() == source
+
+    proc = _run(
+        "bash", SCRIPTS / "15_sync_asset_manifest.sh",
+        "--project-root", ROOT,
+        "--asset-manifest", manifest,
+        "--shared-asset-root", shared,
+        "--reference-root", refs,
+        "--tools-root", tmp_path / "tools",
+        "--licensed-root", tmp_path / "licensed",
+        "--outdir", tmp_path / "out2",
+        "--execute",
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "present" in proc.stdout
+
+
+def test_bioconductor_cache_helper_is_wired_into_sequenza_and_ascat() -> None:
+    helper = SCRIPTS / "with_bioc_data_cache.sh"
+    assert helper.is_file()
+    assert _run("bash", "-n", helper).returncode == 0
+    readme_installer = (SCRIPTS / "13_install_readme_tools.sh").read_text(encoding="utf-8")
+    ascat_installer = (ROOT / "scripts" / "install_ascat_pyclone.sh").read_text(encoding="utf-8")
+    assert "genomeinfodbdata-1.2.9" in readme_installer
+    assert "genomeinfodbdata-1.2.13" in ascat_installer
+
+
+def test_shared_netmhcpan_asset_is_not_repaired_in_place() -> None:
+    installer = (SCRIPTS / "13_install_readme_tools.sh").read_text(encoding="utf-8")
+    assert '[[ -L "$LICENSED_ROOT/netMHCpan" ]]' in installer
+    assert "skipping in-place native repair" in installer

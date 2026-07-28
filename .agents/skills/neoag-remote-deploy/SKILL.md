@@ -118,7 +118,7 @@ runtime validation, and optional real VCF smoke:
 
 ```bash
 bash .agents/skills/neoag-remote-deploy/scripts/16_install_new_machine.sh \
-  --asset-source-host <user@source-host> \
+  --shared-asset-root <mounted-asset-root> \
   --allow-download \
   --execute
 ```
@@ -135,9 +135,15 @@ tooling used by copy-number and HLA workflows: SpecHLA, HLA-LA, Sequenza, and
 HMF PURPLE/AMBER/COBALT. The installer expects their large databases and
 container image tarballs to come from `configs/assets/production_assets.tsv`
 when `--sync-assets` is used. Sequenza is installed as a conda env from
-`conda/env.neoag-sequenza.yml`; splice helpers are installed from `conda/env.neoag-splice.yml`, with SNAF installed by default from its pinned Git revision in a Python 3.8 `neoag-snaf` compatibility environment (`--skip-snaf` opts out), and SpliceMutr installed from a pinned source snapshot in `neoag-splicemutr` (`--skip-splicemutr` opts out); SpecHLA, HLA-LA, and HMF PURPLE are registered
+`conda/env.neoag-sequenza.yml`. Sequenza and ASCAT use
+`with_bioc_data_cache.sh` to prefetch and verify GenomeInfoDbData in an isolated
+Conda package cache; temporary metadata changes are restored automatically.
+Splice helpers are installed from `conda/env.neoag-splice.yml`, with SNAF installed by default from its pinned Git revision in a Python 3.8 `neoag-snaf` compatibility environment (`--skip-snaf` opts out), and SpliceMutr installed from a pinned source snapshot in `neoag-splicemutr` (`--skip-splicemutr` opts out); SpecHLA, HLA-LA, and HMF PURPLE are registered
 by loading staged container images when Docker is available and by writing
 portable wrappers/environment variables into the production activation script.
+The consolidated `--splice` group intentionally excludes ASNEO, NeoSplice, and
+splice2neo. Do not install or pull these optional workflows from this skill;
+the supported splice set is RegTools, pVACsplice, SNAF, and SpliceMutr.
 Because `--all-open` includes BigMHC, it also installs/repairs torch by default. SHERPA-Presentation is not publicly auto-downloadable; install it only with an authorized `--sherpa-source`, `--sherpa-archive`, or `--sherpa-container-image`.
 Use `--skip-torch-install` only for a deliberately lightweight install, and then
 run real VCF smoke with `--skip-real-vcf-bigmhc` until torch is installed.
@@ -150,10 +156,12 @@ TensorFlow/Keras by installing the matching `tf-keras` shim and exporting
 
 NetMHCpan repair must rewrite any copied frontend that still defaults to an old
 conda prefix from another host; after repair, `netMHCpan -h` must
-work with `CONDA_BASE=<target-env_tool>/miniforge3`.
+work with `CONDA_BASE=<target-env_tool>/miniforge3`. When the asset manifest
+provides the NetMHCpan image tarball, the installer loads it and writes the
+portable container wrapper automatically; it does not download licensed payloads.
 
-`13_install_readme_tools.sh --run-real-vcf-smoke` runs the default
-an explicitly supplied VCF smoke test after installation. The smoke test runs
+`13_install_readme_tools.sh --run-real-vcf-smoke` runs an explicitly supplied
+VCF smoke test after installation. The smoke test runs
 MHCflurry by default, skips NetMHCstabpan by default because it is slow,
 and accepts `--real-vcf-smoke-top-n <N>` for a smaller or larger test.
 Use `--skip-real-vcf-mhcflurry` only as a temporary fallback on hosts with
@@ -173,8 +181,13 @@ asset locations so a new machine can prepare itself reproducibly:
   `--asset-manifest configs/assets/production_assets.tsv --sync-assets
   --asset-source-host <user@host>`. The manifest stores paths and markers only,
   not the asset payloads.
+- On a machine with a mounted shared asset tree, use `--shared-asset-root
+  <mounted-root>` instead of `--asset-source-host`. Sources below the manifest's
+  portable `/srv/neoag-assets/source` prefix are resolved below that root and
+  linked into the configured reference, tool, and licensed roots. Existing
+  targets are never replaced. Conda environments and writable runtime data stay local.
 - SpecHLA, HLA-LA, Sequenza, and HMF PURPLE/AMBER/COBALT assets are part of the
-  production asset manifest. SHERPA-Presentation is registered only from authorized local source/archive/container assets. Asset sync dereferences source symlinks (`rsync
+  production asset manifest. SHERPA-Presentation is registered only from authorized local source/archive/container assets. Copy-mode asset sync dereferences source symlinks (`rsync
   -L`), so stable `/mnt` links can point at real source directories while the
   target receives concrete files/directories. When a `/mnt` symlink only
   resolves on the source host, use `--asset-source-host` so rsync resolves it

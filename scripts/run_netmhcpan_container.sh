@@ -7,8 +7,11 @@ IMAGE=${NEOAG_NETMHCPAN_IMAGE:-neoag-netmhcpan:4.2c-ubuntu22.04}
 SIF=${NEOAG_NETMHCPAN_SIF:-$REPO_ROOT/containers/netmhcpan/netmhcpan-4.2c-ubuntu22.04.sif}
 TMPDIR_HOST=${NEOAG_NETMHCPAN_TMPDIR:-$REPO_ROOT/work/netmhcpan_tmp}
 ENGINE=${NEOAG_NETMHCPAN_ENGINE:-auto}
+CONTAINER_BIN=${NEOAG_NETMHCPAN_CONTAINER_BIN:-$NETMHCPAN_HOME/netMHCpan}
+PLATFORM_HOME=${NEOAG_NETMHCPAN_PLATFORM_HOME:-$NETMHCPAN_HOME/Linux_$(uname -m)}
 [[ ${1:-} == -h || ${1:-} == --help ]] && { echo "Usage: $0 [netMHCpan args]"; exit 0; }
 [[ -x "$NETMHCPAN_HOME/netMHCpan" ]] || { echo "ERROR: missing $NETMHCPAN_HOME/netMHCpan" >&2; exit 2; }
+[[ -x "$CONTAINER_BIN" ]] || { echo "ERROR: missing $CONTAINER_BIN" >&2; exit 2; }
 mkdir -p "$TMPDIR_HOST"
 NETMHCPAN_ARGS=("$@")
 for i in "${!NETMHCPAN_ARGS[@]}"; do
@@ -16,7 +19,7 @@ for i in "${!NETMHCPAN_ARGS[@]}"; do
     NETMHCPAN_ARGS[$i]=${NETMHCPAN_ARGS[$i]//\*/}
   fi
 done
-CONTAINER_CMD="export TMPDIR=/tmp/netmhcpan NEOAG_NETMHCPAN_TMPDIR=/tmp/netmhcpan; exec \"\$NETMHCPAN_HOME/netMHCpan\" \"\$@\""
+CONTAINER_CMD="export TMPDIR=/tmp/netmhcpan NEOAG_NETMHCPAN_TMPDIR=/tmp/netmhcpan; exec \"\$NEOAG_NETMHCPAN_CONTAINER_BIN\" \"\$@\""
 run_docker() {
   docker image inspect "$IMAGE" >/dev/null 2>&1 || { echo "ERROR: build image first: $REPO_ROOT/scripts/build_netmhcpan_container.sh docker" >&2; return 127; }
   mounts=(-v "$NETMHCPAN_HOME:$NETMHCPAN_HOME:ro" -v "$TMPDIR_HOST:/tmp/netmhcpan:rw")
@@ -26,7 +29,7 @@ run_docker() {
     mounts+=( -v "$REPO_ROOT:$REPO_ROOT:ro" -v "$PWD:$PWD:rw" )
   fi
   [[ -n ${NEOAG_NETMHCPAN_EXTRA_MOUNTS:-} ]] && IFS=, read -r -a extra <<< "$NEOAG_NETMHCPAN_EXTRA_MOUNTS" && for m in "${extra[@]}"; do mounts+=( -v "$m" ); done
-  docker run --rm --user "$(id -u):$(id -g)" --workdir "$PWD" -e TMPDIR=/tmp/netmhcpan -e NEOAG_NETMHCPAN_TMPDIR=/tmp/netmhcpan -e NETMHCPAN_HOME="$NETMHCPAN_HOME" -e NETMHCpan="$NETMHCPAN_HOME" "${mounts[@]}" "$IMAGE" "$CONTAINER_CMD" -- "$@"
+  docker run --rm --user "$(id -u):$(id -g)" --workdir "$PWD" -e TMPDIR=/tmp/netmhcpan -e NEOAG_NETMHCPAN_TMPDIR=/tmp/netmhcpan -e NMHOME="$NETMHCPAN_HOME" -e NETMHCPAN_HOME="$NETMHCPAN_HOME" -e NETMHCpan="$PLATFORM_HOME" -e NEOAG_NETMHCPAN_CONTAINER_BIN="$CONTAINER_BIN" "${mounts[@]}" "$IMAGE" "$CONTAINER_CMD" -- "$@"
 }
 run_apptainer() {
   runtime=$1; shift
@@ -37,7 +40,7 @@ run_apptainer() {
   else
     binds+=( -B "$REPO_ROOT:$REPO_ROOT:ro" -B "$PWD:$PWD:rw" )
   fi
-  "$runtime" exec --cleanenv "${binds[@]}" --env TMPDIR=/tmp/netmhcpan,NEOAG_NETMHCPAN_TMPDIR=/tmp/netmhcpan,NETMHCPAN_HOME="$NETMHCPAN_HOME",NETMHCpan="$NETMHCPAN_HOME" --pwd "$PWD" "$SIF" /bin/bash -lc "$CONTAINER_CMD" -- "$@"
+  "$runtime" exec --cleanenv "${binds[@]}" --env TMPDIR=/tmp/netmhcpan,NEOAG_NETMHCPAN_TMPDIR=/tmp/netmhcpan,NMHOME="$NETMHCPAN_HOME",NETMHCPAN_HOME="$NETMHCPAN_HOME",NETMHCpan="$PLATFORM_HOME",NEOAG_NETMHCPAN_CONTAINER_BIN="$CONTAINER_BIN" --pwd "$PWD" "$SIF" /bin/bash -lc "$CONTAINER_CMD" -- "$@"
 }
 case "$ENGINE" in
   docker) run_docker "${NETMHCPAN_ARGS[@]}" ;;

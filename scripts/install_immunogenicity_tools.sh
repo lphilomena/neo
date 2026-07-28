@@ -20,8 +20,32 @@ MIX_DIR="${TOOLS}/mixMHCpred_install"
 BIGMHC_DIR="${TOOLS}/bigmhc"
 TOOLS_ENV="${ROOT}/conf/tools.env.sh"
 PYTHON_BIN="${NEOAG_IMMUNO_PYTHON:-python3}"
+GITHUB_PROXY_PREFIX="${NEOAG_GITHUB_PROXY_PREFIX:-https://ghproxy.net/}"
+PRIME_REF="${NEOAG_PRIME_REF:-7b18d4e11042141e7102f7c69be2b0e03d138dab}"
+MIX_REF="${NEOAG_MIXMHCPRED_REF:-c29e4db17abe6266bfee72750efb713459540d18}"
+BIGMHC_REF="${NEOAG_BIGMHC_REF:-c7e37a249317704bf96a1e3881a7ece3c3c977a6}"
 
 mkdir -p "${TOOLS}" "${BIN_DIR}"
+
+install_github_snapshot() {
+  local repo="$1" ref="$2" target="$3"
+  local archive_url="https://github.com/${repo}/archive/${ref}.tar.gz"
+  local tmp archive extracted
+  tmp="$(mktemp -d)"
+  archive="$tmp/source.tar.gz"
+  for url in "${GITHUB_PROXY_PREFIX}${archive_url}" "$archive_url"; do
+    echo "Downloading pinned ${repo}@${ref} from ${url}"
+    curl -fL --retry 5 --retry-all-errors --connect-timeout 30 -o "$archive" "$url" && break
+    rm -f "$archive"
+  done
+  [[ -s "$archive" ]] || { rm -rf "$tmp"; echo "ERROR: failed to download ${repo}@${ref}" >&2; return 1; }
+  tar -xzf "$archive" -C "$tmp"
+  extracted="$(find "$tmp" -mindepth 1 -maxdepth 1 -type d | head -1)"
+  [[ -n "$extracted" ]] || { rm -rf "$tmp"; echo "ERROR: invalid snapshot for ${repo}" >&2; return 1; }
+  mkdir -p "$target"
+  cp -a "$extracted/." "$target/"
+  rm -rf "$tmp"
+}
 
 echo "[0/4] Python dependencies for MixMHCpred/BigMHC"
 "${PYTHON_BIN}" -m pip install numpy pandas psutil || true
@@ -35,7 +59,7 @@ fi
 
 echo "[1/4] PRIME"
 if [[ ! -f "${PRIME_DIR}/lib/run_PRIME.pl" ]]; then
-  git clone --depth 1 https://github.com/GfellerLab/PRIME.git "${PRIME_DIR}"
+  install_github_snapshot GfellerLab/PRIME "$PRIME_REF" "$PRIME_DIR"
 fi
 if [[ ! -x "${PRIME_DIR}/PRIME" ]]; then
   curl -fsSL https://raw.githubusercontent.com/GfellerLab/PRIME/master/PRIME -o "${PRIME_DIR}/PRIME"
@@ -57,16 +81,25 @@ fi
 
 echo "[2/4] MixMHCpred"
 if [[ ! -x "${MIX_DIR}/MixMHCpred" ]]; then
-  rm -rf "${MIX_DIR}" 2>/dev/null || true
-  git clone --depth 1 https://github.com/GfellerLab/MixMHCpred.git "${MIX_DIR}"
+  install_github_snapshot GfellerLab/MixMHCpred "$MIX_REF" "$MIX_DIR"
 fi
 chmod +x "${MIX_DIR}/MixMHCpred" 2>/dev/null || true
 
+# MixMHCpred invokes `python3` internally. Keep it on the same Python runtime
+# where its dependencies were installed, including when PRIME calls it.
+PYTHON_DIR="$(dirname "$(readlink -f "${PYTHON_BIN}")")"
+cat > "${BIN_DIR}/MixMHCpred" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+export PATH="${PYTHON_DIR}:\${PATH}"
+exec "${MIX_DIR}/MixMHCpred" "\$@"
+EOF
+chmod +x "${BIN_DIR}/MixMHCpred"
+
 echo "[3/4] BigMHC"
 if [[ ! -f "${BIGMHC_DIR}/src/predict.py" ]]; then
-  rm -rf "${BIGMHC_DIR}" 2>/dev/null || true
-  git clone --depth 1 --filter=blob:none --sparse --progress https://github.com/KarchinLab/bigmhc.git "${BIGMHC_DIR}"
-  (cd "${BIGMHC_DIR}" && git sparse-checkout set src data/example1.csv data/pseudoseqs.csv README.md requirements.txt)
+  # Merge source into an existing asset directory so pre-staged model weights survive.
+  install_github_snapshot KarchinLab/bigmhc "$BIGMHC_REF" "$BIGMHC_DIR"
 fi
 
 cat > "${BIN_DIR}/bigmhc_predict" <<EOF
@@ -93,7 +126,7 @@ export PRIME_HOME="${PRIME_DIR}"
 export MIXMHCPRED_HOME="${MIX_DIR}"
 export BIGMHC_DIR="${BIGMHC_DIR}"
 export NEOAG_PRIME_BIN="${PRIME_DIR}/PRIME"
-export MIXMHCPRED_BIN="${MIX_DIR}/MixMHCpred"
+export MIXMHCPRED_BIN="${BIN_DIR}/MixMHCpred"
 export PATH="${PRIME_DIR}:${MIX_DIR}:${BIN_DIR}:\${PATH}"
 EOF
 fi
@@ -103,7 +136,7 @@ export PRIME_HOME="${PRIME_DIR}"
 export MIXMHCPRED_HOME="${MIX_DIR}"
 export BIGMHC_DIR="${BIGMHC_DIR}"
 export NEOAG_PRIME_BIN="${PRIME_DIR}/PRIME"
-export MIXMHCPRED_BIN="${MIX_DIR}/MixMHCpred"
+export MIXMHCPRED_BIN="${BIN_DIR}/MixMHCpred"
 export PATH="${PRIME_DIR}:${MIX_DIR}:${BIN_DIR}:${PATH}"
 
 echo "[4/4] Smoke tests"

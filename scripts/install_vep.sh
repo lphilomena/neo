@@ -36,6 +36,14 @@ conda config --add pkgs_dirs "$CONDA_PKGS_DIR" >/dev/null 2>&1 || true
 # shellcheck disable=SC1091
 source "$CONDA_BASE/etc/profile.d/conda.sh"
 
+conda_safe() {
+  set +u
+  "$CONDA_BASE/bin/conda" "$@"
+  local rc=$?
+  set -u
+  return "$rc"
+}
+
 if [[ ! -x "$CONDA_BASE/envs/${ENV_NAME}/bin/vep" ]]; then
   echo "==> Creating ${ENV_NAME} from conda/env.neoag-vep.yml ..."
   conda_safe create -n "${ENV_NAME}" --override-channels -c conda-forge -c bioconda -y "ensembl-vep=${VEP_VERSION}.*"

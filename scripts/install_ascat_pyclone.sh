@@ -18,6 +18,7 @@ PYCLONE_ENV="${NEOAG_PYCLONE_ENV:-neoag-pyclone}"
 ASCAT_YML="${ROOT}/conda/env.neoag-ascat.yml"
 PYCLONE_YML="${ROOT}/conda/env.neoag-pyclone.yml"
 TOOLS_ENV="${ROOT}/conf/tools.env.sh"
+BIOC_CACHE_HELPER="${ROOT}/.agents/skills/neoag-remote-deploy/scripts/with_bioc_data_cache.sh"
 
 if ! command -v conda >/dev/null 2>&1; then
   echo "ERROR: conda not found" >&2
@@ -42,25 +43,49 @@ else
   CONDA_RUNNER=conda
 fi
 
-env_exists() { conda_safe env list | awk '{print $1}' | grep -qx "$1"; }
+detect_env_prefix() {
+  local env_name="$1" prefix
+  for prefix in \
+    "${CONDA_BASE}/envs/${env_name}" \
+    "$(dirname "${CONDA_BASE}")/${env_name}" \
+    "${NEOAG_TOOLS_ROOT:-}/${env_name}"; do
+    [[ -n "${prefix}" && -d "${prefix}" ]] && { printf '%s\n' "${prefix}"; return 0; }
+  done
+  conda_safe env list | awk -v name="${env_name}" '$1 == name {print $NF; exit}'
+}
+
+env_exists() { [[ -n "$(detect_env_prefix "$1")" ]]; }
 
 create_or_update_env() {
   local env_name="$1" yml="$2"
+  local -a runner=("${CONDA_RUNNER}")
   echo "==> Installing/updating ${env_name} using ${CONDA_RUNNER}: ${yml}"
+  if [[ "${env_name}" == "${ASCAT_ENV}" && -x "${BIOC_CACHE_HELPER}" ]]; then
+    runner=("${BIOC_CACHE_HELPER}" --conda-base "${CONDA_BASE}" \
+      --cache-root "${NEOAG_TOOLS_ROOT:-${ROOT}}/install_cache" \
+      --package-key genomeinfodbdata-1.2.13 -- "${CONDA_RUNNER}")
+  fi
   if env_exists "${env_name}"; then
-    "${CONDA_RUNNER}" env update -n "${env_name}" -f "${yml}" --prune
+    "${runner[@]}" env update -n "${env_name}" -f "${yml}" --prune \
+      --override-channels -c conda-forge -c bioconda
   else
-    "${CONDA_RUNNER}" env create -n "${env_name}" -f "${yml}" -y
+    "${runner[@]}" env create -n "${env_name}" -f "${yml}" -y \
+      --override-channels -c conda-forge -c bioconda
   fi
 }
 
 env_has_ascat() {
-  conda_safe run -n "$1" Rscript -e 'quit(status=ifelse(requireNamespace("ASCAT", quietly=TRUE),0,1))' >/dev/null 2>&1
+  local prefix
+  prefix="$(detect_env_prefix "$1")"
+  [[ -x "${prefix}/bin/Rscript" ]] && \
+    "${prefix}/bin/Rscript" -e 'quit(status=ifelse(requireNamespace("ASCAT", quietly=TRUE),0,1))' >/dev/null 2>&1
 }
 
 env_has_pyclone() {
-  [[ -x "${CONDA_BASE}/envs/$1/bin/pyclone-vi" ]] || \
-    conda_safe run -n "$1" pyclone-vi --version >/dev/null 2>&1
+  local prefix
+  prefix="$(detect_env_prefix "$1")"
+  [[ -x "${prefix}/bin/pyclone-vi" ]] && \
+    "${prefix}/bin/pyclone-vi" --version >/dev/null 2>&1
 }
 
 ascat_ready() {
@@ -94,29 +119,31 @@ else
   fi
 fi
 
+ASCAT_PREFIX="$(detect_env_prefix "${ASCAT_ENV}")"
+PYCLONE_PREFIX="$(detect_env_prefix "${PYCLONE_ENV}")"
+[[ -n "${ASCAT_PREFIX}" ]] || { echo "ERROR: ASCAT environment prefix not found" >&2; exit 1; }
+[[ -n "${PYCLONE_PREFIX}" ]] || { echo "ERROR: PyClone environment prefix not found" >&2; exit 1; }
+
 mkdir -p "${ROOT}/bin"
 cat > "${ROOT}/bin/ascat.R" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
 if [[ "\${1:-}" == "--version" || "\${1:-}" == "-v" ]]; then
-  "${CONDA_BASE}/bin/conda" run -n "${ASCAT_ENV}" Rscript -e 'cat(as.character(utils::packageVersion("ASCAT")), "\\n")'
+  "${ASCAT_PREFIX}/bin/Rscript" -e 'cat(as.character(utils::packageVersion("ASCAT")), "\\n")'
   exit 0
 fi
 if [[ "\$#" -eq 0 ]]; then
   echo "ASCAT wrapper. For custom analyses, run: conda activate ${ASCAT_ENV}; Rscript your_ascat_script.R" >&2
   exit 0
 fi
-"${CONDA_BASE}/bin/conda" run -n "${ASCAT_ENV}" Rscript "\$@"
+"${ASCAT_PREFIX}/bin/Rscript" "\$@"
 EOF
 chmod +x "${ROOT}/bin/ascat.R"
 
 cat > "${ROOT}/bin/pyclone" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
-if command -v "${CONDA_BASE}/envs/${PYCLONE_ENV}/bin/pyclone-vi" >/dev/null 2>&1; then
-  exec "${CONDA_BASE}/envs/${PYCLONE_ENV}/bin/pyclone-vi" "\$@"
-fi
-exec "${CONDA_BASE}/bin/conda" run -n "${PYCLONE_ENV}" pyclone-vi "\$@"
+exec "${PYCLONE_PREFIX}/bin/pyclone-vi" "\$@"
 EOF
 chmod +x "${ROOT}/bin/pyclone"
 

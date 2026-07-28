@@ -4,6 +4,10 @@ set -euo pipefail
 PROJECT_ROOT="$(pwd)"
 MANIFEST="configs/assets/production_assets.tsv"
 SOURCE_HOST=""
+SHARED_ASSET_ROOT="${NEOAG_SHARED_ASSET_ROOT:-}"
+TOOLS_ROOT="${NEOAG_TOOLS_ROOT:-/opt/neoag/env_tool}"
+REFERENCE_ROOT="${NEOAG_REFERENCE_ROOT:-/opt/neoag/refs}"
+LICENSED_ROOT="${NEOAG_LICENSED_ROOT:-/opt/neoag/licensed_tools}"
 OUTDIR="work/remote_deploy/assets"
 EXECUTE=0
 
@@ -13,13 +17,17 @@ Usage: 15_sync_asset_manifest.sh [options]
 
 Synchronize large deployment assets listed in a TSV manifest. Default mode is
 dry-run; add --execute to copy. The manifest is intentionally data-only so large
-models/references stay out of Git. Source symlinks are dereferenced so manifests
-can point at stable /mnt links while targets receive real files/directories.
+models/references stay out of Git. With --shared-asset-root, local manifest
+sources are linked into the install tree to avoid duplicating large assets.
 
 Options:
   --project-root DIR       Project checkout (default: current directory)
   --asset-manifest FILE    TSV manifest (default: configs/assets/production_assets.tsv)
   --asset-source-host HOST Default source host for relative/local source paths
+  --shared-asset-root DIR  Link assets from a locally mounted shared root
+  --tools-root DIR         Resolve /srv/neoag-tools targets below this root
+  --reference-root DIR     Resolve reference targets below this root
+  --licensed-root DIR      Resolve licensed-tool targets below this root
   --outdir DIR             Report/log directory (default: work/remote_deploy/assets)
   --execute                Actually copy assets
   -h, --help               Show help
@@ -43,12 +51,21 @@ while [[ $# -gt 0 ]]; do
     --project-root) PROJECT_ROOT="$2"; shift 2 ;;
     --asset-manifest) MANIFEST="$2"; shift 2 ;;
     --asset-source-host) SOURCE_HOST="$2"; shift 2 ;;
+    --shared-asset-root) SHARED_ASSET_ROOT="$2"; shift 2 ;;
+    --tools-root) TOOLS_ROOT="$2"; shift 2 ;;
+    --reference-root) REFERENCE_ROOT="$2"; shift 2 ;;
+    --licensed-root) LICENSED_ROOT="$2"; shift 2 ;;
     --outdir) OUTDIR="$2"; shift 2 ;;
     --execute) EXECUTE=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "ERROR: unknown option: $1" >&2; usage >&2; exit 2 ;;
   esac
 done
+
+if [[ -n "$SHARED_ASSET_ROOT" && -n "$SOURCE_HOST" ]]; then
+  echo "ERROR: --shared-asset-root cannot be combined with --asset-source-host" >&2
+  exit 2
+fi
 
 cd "$PROJECT_ROOT"
 [[ -f "$MANIFEST" ]] || { echo "ASSET_MANIFEST_MISSING: $MANIFEST" >&2; exit 50; }
@@ -81,6 +98,23 @@ source_spec() {
   else
     printf '%s:%s' "$SOURCE_HOST" "$src"
   fi
+}
+resolve_shared_source() {
+  local src="$1"
+  if [[ -n "$SHARED_ASSET_ROOT" && "$src" == /srv/neoag-assets/source/* ]]; then
+    printf '%s/%s' "${SHARED_ASSET_ROOT%/}" "${src#/srv/neoag-assets/source/}"
+  else
+    printf '%s' "$src"
+  fi
+}
+resolve_target() {
+  local dst="$1"
+  case "$dst" in
+    /srv/neoag-assets/install/*) printf '%s/%s' "${REFERENCE_ROOT%/}" "${dst#/srv/neoag-assets/install/}" ;;
+    /srv/neoag-tools/*) printf '%s/%s' "${TOOLS_ROOT%/}" "${dst#/srv/neoag-tools/}" ;;
+    /srv/neoag-licensed/*) printf '%s/%s' "${LICENSED_ROOT%/}" "${dst#/srv/neoag-licensed/}" ;;
+    *) printf '%s' "$dst" ;;
+  esac
 }
 target_has_marker() {
   local kind="$1" dst="$2" marker="$3"
@@ -131,6 +165,8 @@ while IFS= read -r line || [[ -n "$line" ]]; do
   kind="${kind:-dir}"
   required="${required:-1}"
   [[ -n "$name" && -n "$src" && -n "$dst" ]] || continue
+  src="$(resolve_shared_source "$src")"
+  dst="$(resolve_target "$dst")"
 
   if target_has_marker "$kind" "$dst" "$marker"; then
     if verify_sha256 "$kind" "$dst" "$sha" >/dev/null 2>&1; then
@@ -147,7 +183,25 @@ while IFS= read -r line || [[ -n "$line" ]]; do
   fi
 
   spec="$(source_spec "$src")"
-  if [[ "$kind" == "file" ]]; then
+  if [[ -n "$SHARED_ASSET_ROOT" ]]; then
+    if [[ ! -e "$src" ]]; then
+      status="source_missing"
+      detail="shared source does not exist"
+      echo -e "$name\t$kind\t$required\t$src\t$dst\t$status\t$detail" >> "$REPORT"
+      log "$name: $status ($src)"
+      is_truthy "$required" && { echo "ASSET_SOURCE_MISSING: $name: $src" >&2; exit 54; }
+      continue
+    fi
+    if [[ -e "$dst" || -L "$dst" ]]; then
+      status="target_conflict"
+      detail="refusing to replace existing target"
+      echo -e "$name\t$kind\t$required\t$src\t$dst\t$status\t$detail" >> "$REPORT"
+      echo "ASSET_TARGET_CONFLICT: $name: $dst" >&2
+      is_truthy "$required" && exit 56
+      continue
+    fi
+    cmd="mkdir -p '$(dirname "$dst")' && ln -s '$src' '$dst'"
+  elif [[ "$kind" == "file" ]]; then
     cmd="mkdir -p '$(dirname "$dst")' && rsync -aL '$spec' '$dst'"
   else
     cmd="mkdir -p '$dst' && rsync -aL '$spec/' '$dst/'"
@@ -159,7 +213,7 @@ while IFS= read -r line || [[ -n "$line" ]]; do
     if bash -lc "$cmd" 2>&1 | tee -a "$LOG"; then
       if target_has_marker "$kind" "$dst" "$marker" && verify_sha256 "$kind" "$dst" "$sha" >/dev/null 2>&1; then
         status="synced"
-        detail="copy and verification completed"
+        if [[ -n "$SHARED_ASSET_ROOT" ]]; then detail="link and verification completed"; else detail="copy and verification completed"; fi
       else
         status="verify_failed"
         detail="target marker/checksum missing after copy"

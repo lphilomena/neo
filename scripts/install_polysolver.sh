@@ -48,8 +48,17 @@ ERR
 fi
 
 NOVO_LICENSE_SRC="${NOVOALIGN_LICENSE_FILE:-}"
-CONDA_ENV="${NEOAG_CONDA_ENV:-${NEOAG_TOOLS_ENV:-neoag-tools}}"
+CONDA_ENV="${POLYSOLVER_CONDA_ENV:-neoag-polysolver}"
 CONDA_BASE="$(find_conda_base || true)"
+if [[ -x /usr/bin/java ]]; then
+  JAVA_RUNTIME_DIR=/usr/bin
+else
+  JAVA_RUNTIME_DIR="$(dirname "$(command -v java 2>/dev/null || echo "${PSHOME}/binaries/java")")"
+fi
+CONDA_TARGET_ARGS=(-p "${CONDA_BASE}/envs/${CONDA_ENV}")
+if [[ -n "${NEOAG_TOOLS_ROOT:-}" && -d "${NEOAG_TOOLS_ROOT}/${CONDA_ENV}" ]]; then
+  CONDA_TARGET_ARGS=(-p "${NEOAG_TOOLS_ROOT}/${CONDA_ENV}")
+fi
 
 [[ -d "${PSHOME}/scripts" && -d "${PSHOME}/binaries" && -d "${PSHOME}/data" ]] || {
   echo "ERROR: Polysolver tree missing at ${PSHOME}" >&2
@@ -83,7 +92,7 @@ cat > "${PSHOME}/scripts/config.local.bash" <<EOF_CFG
 #!/usr/bin/env bash
 PSHOME="${PSHOME}"
 SAMTOOLS_DIR="\${PSHOME}/binaries"
-JAVA_DIR="\${PSHOME}/binaries"
+JAVA_DIR="${JAVA_RUNTIME_DIR}"
 NOVOALIGN_DIR="\${PSHOME}/binaries"
 GATK_DIR="\${PSHOME}/binaries"
 MUTECT_DIR="\${PSHOME}/binaries"
@@ -95,15 +104,19 @@ EOF_CFG
 chmod +x "${PSHOME}/scripts/config.local.bash"
 
 if [[ -n "${CONDA_BASE}" && -x "${CONDA_BASE}/bin/mamba" ]]; then
+  if [[ ! -x "${CONDA_TARGET_ARGS[1]}/bin/perl" ]]; then
+    echo "==> Creating isolated Polysolver conda env: ${CONDA_TARGET_ARGS[1]}"
+    "${CONDA_BASE}/bin/mamba" create -y "${CONDA_TARGET_ARGS[@]}" --override-channels -c conda-forge -c bioconda perl=5.32
+  fi
   echo "==> Installing Perl deps in conda env: ${CONDA_ENV}"
-  "${CONDA_BASE}/bin/mamba" install -y -n "${CONDA_ENV}" -c bioconda -c conda-forge \
+  "${CONDA_BASE}/bin/mamba" install -y "${CONDA_TARGET_ARGS[@]}" --override-channels -c conda-forge -c bioconda \
     perl-list-moreutils perl-bioperl perl-parallel-forkmanager \
     >/tmp/install_polysolver_mamba.log 2>&1 || {
       echo "WARN: mamba install had issues; see /tmp/install_polysolver_mamba.log" >&2
     }
 elif [[ -n "${CONDA_BASE}" && -x "${CONDA_BASE}/bin/conda" ]]; then
   echo "==> Installing Perl deps in conda env: ${CONDA_ENV}"
-  "${CONDA_BASE}/bin/conda" install -y -n "${CONDA_ENV}" -c bioconda -c conda-forge \
+  "${CONDA_BASE}/bin/conda" install -y "${CONDA_TARGET_ARGS[@]}" --override-channels -c conda-forge -c bioconda \
     perl-list-moreutils perl-bioperl perl-parallel-forkmanager \
     >/tmp/install_polysolver_conda.log 2>&1 || {
       echo "WARN: conda install had issues; see /tmp/install_polysolver_conda.log" >&2
@@ -120,7 +133,7 @@ export PATH="${PSHOME}/binaries:${PSHOME}/scripts:${PATH}"
 echo "==> Verifying binaries"
 "${PSHOME}/binaries/novoalign" 2>&1 | head -1 || true
 "${PSHOME}/binaries/samtools" 2>&1 | head -1 || true
-java -version 2>&1 | head -1 || "${PSHOME}/binaries/java" -version 2>&1 | head -1 || true
+"${JAVA_RUNTIME_DIR}/java" -version 2>&1 | head -1 || true
 
 echo "==> Verifying Perl modules"
 perl -MList::MoreUtils -e 'print "List::MoreUtils OK\n"' || echo "WARN: List::MoreUtils missing" >&2
@@ -136,8 +149,8 @@ source "${ROOT}/conf/tools.env.sh"
 PSHOME="${POLYSOLVER_HOME:?Set POLYSOLVER_HOME in conf/tools.env.local.sh or the shell}"
 # shellcheck source=/dev/null
 source "${PSHOME}/scripts/config.local.bash"
-if [[ -n "${NEOAG_CONDA_BASE:-}" && -d "${NEOAG_CONDA_BASE}/envs/${NEOAG_CONDA_ENV:-neoag-tools}/bin" ]]; then
-  export PATH="${NEOAG_CONDA_BASE}/envs/${NEOAG_CONDA_ENV:-neoag-tools}/bin:${PATH}"
+if [[ -n "${NEOAG_CONDA_BASE:-}" && -d "${NEOAG_CONDA_BASE}/envs/${POLYSOLVER_CONDA_ENV:-neoag-polysolver}/bin" ]]; then
+  export PATH="${NEOAG_CONDA_BASE}/envs/${POLYSOLVER_CONDA_ENV:-neoag-polysolver}/bin:${PATH}"
 fi
 export PATH="${PSHOME}/binaries:${PSHOME}/scripts:${PATH}"
 exec bash "${PSHOME}/scripts/shell_call_hla_type" "$@"
@@ -156,9 +169,13 @@ if ! grep -q 'Polysolver - configured via scripts/install_polysolver.sh' "${TOOL
 
 # Polysolver - configured via scripts/install_polysolver.sh
 export POLYSOLVER_HOME="\${POLYSOLVER_HOME:-${PSHOME}}"
+export POLYSOLVER_CONDA_ENV="\${POLYSOLVER_CONDA_ENV:-${CONDA_ENV}}"
 export NOVOALIGN_LICENSE_FILE="\${NOVOALIGN_LICENSE_FILE:-${NOVO_LICENSE_SRC}}"
 export PATH="${ROOT}/bin:\${POLYSOLVER_HOME}/binaries:\${POLYSOLVER_HOME}/scripts:\${PATH}"
 EOF_ENV
+fi
+if ! grep -q '^export POLYSOLVER_CONDA_ENV=' "${TOOLS_ENV}"; then
+  printf '\nexport POLYSOLVER_CONDA_ENV="${POLYSOLVER_CONDA_ENV:-%s}"\n' "${CONDA_ENV}" >> "${TOOLS_ENV}"
 fi
 
 cat <<EOF_DONE

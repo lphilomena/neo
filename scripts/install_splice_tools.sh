@@ -116,7 +116,8 @@ if [[ "${INSTALL_SNAF}" == "1" ]]; then
   SNAF_HOME="${TOOLS_ROOT}/tools/SNAF"
   if ! env_exists "${SNAF_ENV_NAME}"; then
     echo "==> Creating ${SNAF_ENV_NAME} with Python 3.8 for SNAF's pinned TensorFlow 2.3 dependency"
-    "${CONDA_RUNNER}" create -n "${SNAF_ENV_NAME}" -c conda-forge python=3.8 pip -y
+    "${CONDA_RUNNER}" create -n "${SNAF_ENV_NAME}" --override-channels \
+      -c conda-forge -c bioconda python=3.8 pip -y
   fi
   if [[ -n "${SNAF_SOURCE}" ]]; then
     install_python_source "SNAF" "${SNAF_SOURCE}" "${SNAF_HOME}" "snaf-neoag" "snaf" "${SNAF_ENV_NAME}"

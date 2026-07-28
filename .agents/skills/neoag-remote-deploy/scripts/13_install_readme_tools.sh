@@ -52,6 +52,7 @@ ASSET_MANIFEST="configs/assets/production_assets.tsv"
 REFERENCE_MANIFEST="configs/references/reference_manifest.yaml"
 SYNC_ASSETS=0
 ASSET_SOURCE_HOST=""
+SHARED_ASSET_ROOT="${NEOAG_SHARED_ASSET_ROOT:-}"
 CORE_ENV_LITE=1
 SKIP_TORCH_INSTALL=1
 TORCH_WHEEL_DIR="${TORCH_WHEEL_DIR:-}"
@@ -144,6 +145,7 @@ Tool groups:
                           YAML reference manifest verified after asset sync
   --sync-assets            Sync large assets from manifest (dry-run unless --execute)
   --asset-source-host HOST Default source host for manifest source_path values
+  --shared-asset-root DIR Link assets from a locally mounted shared root
 
 Licensed/restricted source options:
   --netmhcpan-tar FILE       Local NetMHCpan archive
@@ -252,6 +254,7 @@ while [[ $# -gt 0 ]]; do
     --reference-manifest) REFERENCE_MANIFEST="$2"; shift 2 ;;
     --sync-assets) SYNC_ASSETS=1; shift ;;
     --asset-source-host) ASSET_SOURCE_HOST="$2"; shift 2 ;;
+    --shared-asset-root) SHARED_ASSET_ROOT="$2"; shift 2 ;;
     --netmhcpan-tar) NETMHCPAN_TAR="$2"; shift 2 ;;
     --netmhcpan-dir) NETMHCPAN_DIR="$2"; shift 2 ;;
     --netmhcpan-url) NETMHCPAN_URL="$2"; shift 2 ;;
@@ -329,12 +332,31 @@ ensure_reference_indexes_after_asset_sync() {
 register_synced_tool_assets() {
   [[ "$EXECUTE" == "1" ]] || return 0
 
+  local netmhcpan_image="neoag-netmhcpan:4.2c-ubuntu22.04"
+  local netmhcpan_tar="$TOOLS_ROOT/container_images/neoag-netmhcpan_4.2c-ubuntu22.04.tar"
+  local netmhcpan_wrapper="$TOOLS_ROOT/bin/netMHCpan"
+
   if [[ -f "$TOOLS_ROOT/tools/DeepImmuno/deepimmuno-cnn.py" ]]; then
     run "register synced DeepImmuno asset" bash scripts/install_deepimmuno.sh "$TOOLS_ROOT/tools/DeepImmuno"
   fi
 
   if [[ -x "$LICENSED_ROOT/netMHCpan/netMHCpan" ]]; then
-    if [[ -x "${CONDA_BASE:-$TOOLS_ROOT/miniforge3}/envs/neoag-tools/bin/patchelf" || -x "$LICENSED_ROOT/netMHCpan/Linux_x86_64/bin/netMHCpan-4.2" ]]; then
+    if [[ -s "$netmhcpan_tar" ]]; then
+      mkdir -p "$TOOLS_ROOT/bin"
+      load_container_image_if_present "NetMHCpan" "$netmhcpan_image" "$netmhcpan_tar"
+      cat > "$netmhcpan_wrapper" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+export NETMHCPAN_HOME="\${NETMHCPAN_HOME:-$LICENSED_ROOT/netMHCpan}"
+export NEOAG_NETMHCPAN_IMAGE="\${NEOAG_NETMHCPAN_IMAGE:-$netmhcpan_image}"
+exec "$PROJECT_ROOT/scripts/run_netmhcpan_container.sh" "\$@"
+EOF
+      chmod +x "$netmhcpan_wrapper"
+      log "NetMHCpan container wrapper registered: $netmhcpan_wrapper"
+    fi
+    if [[ -L "$LICENSED_ROOT/netMHCpan" ]]; then
+      log "NetMHCpan licensed asset is a shared symlink; skipping in-place native repair"
+    elif [[ -x "${CONDA_BASE:-$TOOLS_ROOT/miniforge3}/envs/neoag-tools/bin/patchelf" || -x "$LICENSED_ROOT/netMHCpan/Linux_x86_64/bin/netMHCpan-4.2" ]]; then
       if ! run "repair/register synced NetMHCpan asset" env NETMHCPAN_HOME="$LICENSED_ROOT/netMHCpan" NEOAG_CONDA_BASE="${CONDA_BASE:-$TOOLS_ROOT/miniforge3}" bash scripts/install_netmhcpan.sh --repair; then
         log "WARN: NetMHCpan asset is present but repair/smoke failed; license asset was left in place for manual validation."
       fi
@@ -356,8 +378,10 @@ register_synced_tool_assets() {
 
 sync_assets_if_requested() {
   [[ "$SYNC_ASSETS" == "1" ]] || return 0
-  args=(--project-root "$PROJECT_ROOT" --asset-manifest "$ASSET_MANIFEST" --outdir "$OUTDIR/assets")
+  args=(--project-root "$PROJECT_ROOT" --asset-manifest "$ASSET_MANIFEST" --outdir "$OUTDIR/assets"
+    --tools-root "$TOOLS_ROOT" --reference-root "$REFERENCE_ROOT" --licensed-root "$LICENSED_ROOT")
   [[ -n "$ASSET_SOURCE_HOST" ]] && args+=(--asset-source-host "$ASSET_SOURCE_HOST")
+  [[ -n "$SHARED_ASSET_ROOT" ]] && args+=(--shared-asset-root "$SHARED_ASSET_ROOT")
   [[ "$EXECUTE" == "1" ]] && args+=(--execute)
   run "sync large assets from manifest" bash .agents/skills/neoag-remote-deploy/scripts/15_sync_asset_manifest.sh "${args[@]}"
   register_synced_tool_assets
@@ -396,18 +420,55 @@ load_container_image_if_present() {
   run "load $label container image" docker load -i "$tarball"
 }
 
+register_netmhcstabpan_if_requested() {
+  [[ "$INSTALL_NETMHCSTABPAN" == "1" ]] || return 0
+  local home="$LICENSED_ROOT/netMHCstabpan"
+  local image="neoag-netmhcstabpan:1.0-ubuntu22.04"
+  local image_tar="$TOOLS_ROOT/container_images/neoag-netmhcstabpan_1.0-ubuntu22.04.tar"
+  local wrapper="$TOOLS_ROOT/bin/netMHCstabpan"
+
+  if [[ -x "$home/netMHCstabpan" && -s "$image_tar" ]]; then
+    if [[ "$EXECUTE" != "1" ]]; then
+      log ""
+      log "==> [DRY_RUN] register licensed NetMHCstabpan container wrapper"
+      log "+ load $image_tar and create $wrapper"
+      return 0
+    fi
+    mkdir -p "$TOOLS_ROOT/bin"
+    load_container_image_if_present "NetMHCstabpan" "$image" "$image_tar"
+    cat > "$wrapper" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+export NETMHCSTABPAN_HOME="\${NETMHCSTABPAN_HOME:-$home}"
+export NEOAG_NETMHCSTABPAN_IMAGE="\${NEOAG_NETMHCSTABPAN_IMAGE:-$image}"
+exec "$PROJECT_ROOT/scripts/run_netmhcstabpan_container.sh" "\$@"
+EOF
+    chmod +x "$wrapper"
+    log "NetMHCstabpan licensed asset and container wrapper registered: $wrapper"
+    return 0
+  fi
+
+  if [[ -n "$NETMHCSTABPAN_ARCHIVE" && -f "$NETMHCSTABPAN_ARCHIVE" ]]; then
+    run "install NetMHCstabpan from archive" bash scripts/install_netmhcstabpan.sh "$NETMHCSTABPAN_ARCHIVE"
+  else
+    run "install NetMHCstabpan IEDB shim" bash scripts/install_netmhcstabpan.sh --iedb
+  fi
+}
+
 register_spechla_if_requested() {
   [[ "$INSTALL_SPECHLA" == "1" ]] || return 0
   local home="$TOOLS_ROOT/tools/SpecHLA"
   local image_tar="$TOOLS_ROOT/container_images/neoag-spechla_ubuntu22.04.tar"
+  local db="$REFERENCE_ROOT/data/hla/spechla/db"
+  [[ -d "$db" ]] || db="$REFERENCE_ROOT/data/hla/spechla_db"
   if [[ "$EXECUTE" != "1" ]]; then
     log ""
     log "==> [DRY_RUN] register SpecHLA container wrappers and DB link"
-    log "+ create $home, link $home/db to $REFERENCE_ROOT/data/hla/spechla_db, load $image_tar if present"
+    log "+ create $home, link $home/db to $db, load $image_tar if present"
     return 0
   fi
   mkdir -p "$home" "$TOOLS_ROOT/bin"
-  [[ -d "$REFERENCE_ROOT/data/hla/spechla_db" && ! -e "$home/db" && ! -L "$home/db" ]] && ln -s "$REFERENCE_ROOT/data/hla/spechla_db" "$home/db"
+  [[ -d "$db" && ! -e "$home/db" && ! -L "$home/db" ]] && ln -s "$db" "$home/db"
   mkdir -p "$home/script/whole"
   if [[ ! -x "$home/script/whole/SpecHLA.sh" ]]; then
     cat > "$home/script/whole/SpecHLA.sh" <<EOF
@@ -455,11 +516,20 @@ EOF
 install_sequenza_if_requested() {
   [[ "$INSTALL_SEQUENZA" == "1" ]] || return 0
   local env_path="$CONDA_BASE/envs/neoag-sequenza"
+  local helper="$PROJECT_ROOT/.agents/skills/neoag-remote-deploy/scripts/with_bioc_data_cache.sh"
+  local -a conda_cmd=("$helper" --conda-base "$CONDA_BASE" \
+    --cache-root "$TOOLS_ROOT/install_cache" --package-key genomeinfodbdata-1.2.9 -- \
+    "$CONDA_BASE/bin/conda")
   if [[ ! -x "$env_path/bin/sequenza-utils" ]]; then
+    [[ -x "$helper" ]] || { echo "BIOC_CACHE_HELPER_MISSING: $helper" >&2; exit 47; }
     if [[ -d "$env_path" ]]; then
-      run "repair Sequenza conda env" bash -lc "source '$CONDA_BASE/etc/profile.d/conda.sh' && conda env update -n neoag-sequenza -f '$PROJECT_ROOT/conda/env.neoag-sequenza.yml' --prune"
+      run "repair Sequenza conda env" "${conda_cmd[@]}" env update -n neoag-sequenza \
+        -f "$PROJECT_ROOT/conda/env.neoag-sequenza.yml" --prune \
+        --override-channels -c conda-forge -c bioconda
     else
-      run "install Sequenza conda env" bash -lc "source '$CONDA_BASE/etc/profile.d/conda.sh' && conda env create -f '$PROJECT_ROOT/conda/env.neoag-sequenza.yml'"
+      run "install Sequenza conda env" "${conda_cmd[@]}" env create -n neoag-sequenza \
+        -f "$PROJECT_ROOT/conda/env.neoag-sequenza.yml" -y \
+        --override-channels -c conda-forge -c bioconda
     fi
   else
     log "Sequenza env already present: $env_path"
@@ -502,6 +572,10 @@ PY
 repair_netmhcpan_frontend() {
   [[ "$EXECUTE" == "1" ]] || return 0
   local nm="$LICENSED_ROOT/netMHCpan/netMHCpan"
+  if [[ -L "$LICENSED_ROOT/netMHCpan" ]]; then
+    log "NetMHCpan uses an external symlink; leaving the licensed asset unchanged"
+    return 0
+  fi
   [[ -f "$nm" ]] || return 0
   if grep -qE '/(home|root)/[^/]+/(mini(conda|forge)|mambaforge)' "$nm" || grep -q 'CONDA_BASE=.*mini.*forge' "$nm"; then
     run "repair NetMHCpan frontend conda sysroot path" bash -lc "cp '$nm' '$nm.bak_\$(date +%Y%m%d_%H%M%S)' && perl -0pi -e 's#CONDA_BASE=\"\\\$\\{CONDA_BASE:-[^}]+\\}\"#CONDA_BASE=\"\\\${CONDA_BASE:-$CONDA_BASE}\"#' '$nm'"
@@ -675,13 +749,7 @@ IMMUNO_PYTHON="${CONDA_BASE}/envs/neoag-tools/bin/python"
 [[ -x "$IMMUNO_PYTHON" ]] || IMMUNO_PYTHON="$(command -v python3)"
 [[ "$INSTALL_IMMUNOGENICITY" == "1" ]] && run "install PRIME/MixMHCpred/BigMHC" env NEOAG_SKIP_TORCH_INSTALL="$SKIP_TORCH_INSTALL" NEOAG_IMMUNO_PYTHON="$IMMUNO_PYTHON" bash scripts/install_immunogenicity_tools.sh
 ensure_bigmhc_torch_runtime
-if [[ "$INSTALL_NETMHCSTABPAN" == "1" ]]; then
-  if [[ -n "$NETMHCSTABPAN_ARCHIVE" && -f "$NETMHCSTABPAN_ARCHIVE" ]]; then
-    run "install NetMHCstabpan from archive" bash scripts/install_netmhcstabpan.sh "$NETMHCSTABPAN_ARCHIVE"
-  else
-    run "install NetMHCstabpan IEDB shim" bash scripts/install_netmhcstabpan.sh --iedb
-  fi
-fi
+register_netmhcstabpan_if_requested
 install_sherpa_if_requested
 if [[ "$INSTALL_DEEPIMMUNO" == "1" ]]; then
   if [[ -z "$DEEPIMMUNO_SOURCE" && -f "$TOOLS_ROOT/tools/DeepImmuno/deepimmuno-cnn.py" ]]; then

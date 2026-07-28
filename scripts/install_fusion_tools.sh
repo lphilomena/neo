@@ -10,6 +10,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CONDA_BASE="${NEOAG_CONDA_BASE:-$(command conda info --base)}"
 ENV_NAME="${NEOAG_FUSION_ENV:-neoag-fusion}"
+ENV_PREFIX="${CONDA_BASE}/envs/${ENV_NAME}"
 FUSION_YML="${ROOT}/conda/env.neoag-fusion.yml"
 TOOLS_ROOT="${NEOAG_TOOLS_ROOT:-${ROOT}}"
 STAR_HOME="${NEOAG_STAR_FUSION_HOME:-${TOOLS_ROOT}/tools/STAR-Fusion}"
@@ -40,41 +41,76 @@ fi
 
 env_exists() { conda_safe env list | awk '{print $1}' | grep -qx "$1"; }
 
+create_env() {
+  if [[ "${CONDA_RUNNER}" == "mamba" ]]; then
+    mamba env create -p "${ENV_PREFIX}" -f "${FUSION_YML}" -y \
+      --override-channels -c conda-forge -c bioconda
+  else
+    conda env create -p "${ENV_PREFIX}" -f "${FUSION_YML}" -y
+  fi
+}
+
+update_env() {
+  if [[ "${CONDA_RUNNER}" == "mamba" ]]; then
+    mamba env update -p "${ENV_PREFIX}" -f "${FUSION_YML}" --prune
+  else
+    conda env update -p "${ENV_PREFIX}" -f "${FUSION_YML}" --prune
+  fi
+}
+
 fusion_env_has_arriba() {
   env_exists "${ENV_NAME}" && conda_safe run -n "${ENV_NAME}" arriba -h >/dev/null 2>&1
+}
+
+install_github_snapshot() {
+  local label="$1" url="$2" target="$3"
+  local work archive
+  work="$(mktemp -d)"
+  archive="${work}/source.tar.gz"
+  echo "==> Downloading ${label} source snapshot"
+  if command -v aria2c >/dev/null 2>&1; then
+    aria2c -x 8 -s 8 -k 1M --allow-overwrite=true --file-allocation=none \
+      -d "${work}" -o source.tar.gz "${url}"
+  else
+    curl -fL --retry 3 -o "${archive}" "${url}"
+  fi
+  mkdir -p "${work}/source" "${target}"
+  tar -xzf "${archive}" -C "${work}/source" --strip-components=1
+  rsync -a --delete "${work}/source/" "${target}/"
+  rm -rf "${work}"
 }
 
 if [[ "${NEOAG_FORCE_ENV_UPDATE:-0}" == "1" ]]; then
   if env_exists "${ENV_NAME}"; then
     echo "==> Updating ${ENV_NAME} (NEOAG_FORCE_ENV_UPDATE=1)"
-    "${CONDA_RUNNER}" env update -n "${ENV_NAME}" -f "${FUSION_YML}" --prune
+    update_env
   else
     echo "==> Creating ${ENV_NAME} (NEOAG_FORCE_ENV_UPDATE=1)"
-    "${CONDA_RUNNER}" env create -n "${ENV_NAME}" -f "${FUSION_YML}" -y
+    create_env
   fi
 elif fusion_env_has_arriba; then
   echo "==> ${ENV_NAME} already has arriba; skipping env update (set NEOAG_FORCE_ENV_UPDATE=1 to refresh)"
 elif env_exists "${ENV_NAME}"; then
   echo "==> Updating ${ENV_NAME}"
-  "${CONDA_RUNNER}" env update -n "${ENV_NAME}" -f "${FUSION_YML}" --prune
+  update_env
 else
   echo "==> Creating ${ENV_NAME}"
-  "${CONDA_RUNNER}" env create -n "${ENV_NAME}" -f "${FUSION_YML}" -y
+  create_env
 fi
 
 if [[ "${NEOAG_SKIP_STAR_FUSION_CLONE:-0}" != "1" && ! -x "${STAR_HOME}/STAR-Fusion" ]]; then
   mkdir -p "$(dirname "${STAR_HOME}")"
-  if [[ ! -d "${STAR_HOME}/.git" ]]; then
-    git clone --depth 1 https://github.com/STAR-Fusion/STAR-Fusion.git "${STAR_HOME}"
-  fi
+  install_github_snapshot "STAR-Fusion" \
+    "${NEOAG_STAR_FUSION_SNAPSHOT_URL:-https://gh-proxy.com/https://github.com/STAR-Fusion/STAR-Fusion/archive/refs/heads/master.tar.gz}" \
+    "${STAR_HOME}"
   chmod +x "${STAR_HOME}/STAR-Fusion" 2>/dev/null || true
 fi
 
 if [[ "${NEOAG_SKIP_FUSIONCATCHER_CLONE:-0}" != "1" && ! -d "${FC_HOME}/bin" ]]; then
   mkdir -p "$(dirname "${FC_HOME}")"
-  if [[ ! -d "${FC_HOME}/.git" ]]; then
-    git clone --depth 1 https://github.com/ndaniel/fusioncatcher.git "${FC_HOME}"
-  fi
+  install_github_snapshot "FusionCatcher" \
+    "${NEOAG_FUSIONCATCHER_SNAPSHOT_URL:-https://gh-proxy.com/https://github.com/ndaniel/fusioncatcher/archive/refs/heads/master.tar.gz}" \
+    "${FC_HOME}"
 fi
 
 echo "==> Smoke tests"

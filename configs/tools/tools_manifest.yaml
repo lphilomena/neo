@@ -202,7 +202,7 @@ tools:
 
   netmhcpan:
     category: presentation
-    executable: /root/neo/licensed_tools/netMHCpan/netMHCpan
+    executable: netMHCpan
     env: env.neoag-mhc
     container: neoag-netmhcpan:4.2c-ubuntu22.04
     asset: netmhcpan_install
