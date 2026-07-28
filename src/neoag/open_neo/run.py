@@ -69,7 +69,7 @@ def _result_from_args(args: dict[str, Any], layout: RunLayout) -> RoutingResult:
         "normal_hla_ligands", "reference_proteome", "normal_junctions", "reference_fasta",
         "gencode_gtf", "vep_cache", "production_manifest", "result_dir",
         "salmon_index", "tx2gene", "rsem_reference", "star_index", "ctat_genome_lib",
-        "easyfuse_ref", "normal_readthrough", "snaf_workflow", "splicemutr_workflow",
+        "easyfuse_ref", "normal_readthrough", "snaf_workflow", "snaf_db", "snaf_python", "altanalyze_image", "splicemutr_workflow",
         "rna_threads",
         "comprehensive_evidence", "weighted_baseline",
         "input_dir",
@@ -84,7 +84,7 @@ def _result_from_args(args: dict[str, Any], layout: RunLayout) -> RoutingResult:
         "normal_hla_ligands", "reference_proteome", "normal_junctions", "reference_fasta",
         "gencode_gtf", "vep_cache", "production_manifest", "result_dir",
         "salmon_index", "tx2gene", "rsem_reference", "star_index", "ctat_genome_lib",
-        "easyfuse_ref", "normal_readthrough", "snaf_workflow", "splicemutr_workflow",
+        "easyfuse_ref", "normal_readthrough", "snaf_workflow", "snaf_db", "snaf_python", "splicemutr_workflow",
         "comprehensive_evidence", "weighted_baseline",
         "input_dir",
     }

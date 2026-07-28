@@ -89,3 +89,4 @@ configs/local/
 # Generated local launchers created by licensed NetMHCpan setup.
 /bin/netMHCpan
 /bin/netmhcpan
+/bin/splicemutr-neoag

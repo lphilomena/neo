@@ -37,6 +37,8 @@ REFERENCE_ENV_PATHS = {
     "purple_reference": ("PURPLE_REFERENCE",),
     "bam_matcher_loci": ("BAM_MATCHER_LOCI",),
     "snaf_workflow": ("SNAF_WORKFLOW",),
+    "snaf_db": ("NEOAG_SNAF_DB", "SNAF_DB"),
+    "snaf_python": ("SNAF_PYTHON",),
     "splicemutr_workflow": ("SPLICEMUTR_WORKFLOW",),
     "ascat_loci": ("ASCAT_LOCI",),
     "ascat_alleles": ("ASCAT_ALLELES",),
@@ -52,6 +54,7 @@ REFERENCE_CANDIDATES = {
     "sequenza_gc_wiggle": ("data/sequenza/reference/Homo_sapiens.GRCh38.dna.primary_assembly.chr.gc50.wig.gz",),
     "purple_reference": ("data/hmf/purple_reference", "cnv/purple"),
     "bam_matcher_loci": ("data/sample_identity/bam_matcher.common_snps.hg38.vcf", "GRCh38/sample_identity/bam_matcher.common_snps.vcf"),
+    "snaf_db": ("data/snaf/reference/data", "splice/snaf/reference/data"),
     "ascat_loci": ("data/ascat/G1000_loci_hg38.txt", "cnv/ascat/loci/G1000_loci_hg38.txt"),
     "ascat_alleles": ("data/ascat/G1000_alleles_hg38.txt", "cnv/ascat/loci/G1000_alleles_hg38.txt"),
 }
@@ -61,7 +64,7 @@ SPECIAL_REQUIREMENTS = {
     "spechla": ("spechla_db",),
     "purple": ("purple_reference",),
     "ascat": ("ascat_loci", "ascat_alleles"),
-    "snaf": ("snaf_workflow",),
+    "snaf": ("snaf_db",),
     "splicemutr": ("splicemutr_workflow",),
     "bam_matcher": ("bam_matcher_loci", "reference_fasta"),
 }

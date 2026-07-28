@@ -254,6 +254,12 @@ export NEOAG_STRICT_MODE=1
 
 Strict mode forbids stub tool outputs. Use demo/stub mode only for smoke testing and software validation.
 
+## SNAF and SpliceMutr
+
+For splice-derived candidate discovery, reference installation, container
+setup, Skill2 routing, and cohort requirements are documented in
+[`SNAF_SPLICEMUTR_WORKFLOW.md`](SNAF_SPLICEMUTR_WORKFLOW.md).
+
 ## 7. Common failure table
 
 | Failure | Fix |

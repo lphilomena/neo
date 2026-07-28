@@ -75,7 +75,8 @@ def profile_requirements(inputs: dict[str, Any]) -> list[ProfileRequirement]:
     add("normal_expression", inputs.get("normal_expression"), required=False, detail="normal tissue/HSPC expression background")
     add("normal_hla_ligands", inputs.get("normal_hla_ligands"), required=False, detail="normal HLA ligandome background")
     add("reference_proteome", inputs.get("reference_proteome"), required=False, detail="reference proteome exact-match safety check")
-    add("snaf_workflow", inputs.get("snaf_workflow"), required=False, detail="site-reviewed SNAF workflow that emits a standardized candidate table")
+    add("snaf_db", inputs.get("snaf_db"), required=False, detail="official SNAF reference root containing Alt91_db and controls")
+    add("snaf_workflow", inputs.get("snaf_workflow"), required=False, detail="optional site override; built-in workflow is used when snaf_db is configured")
     add("splicemutr_workflow", inputs.get("splicemutr_workflow"), required=False, detail="site-reviewed SpliceMutr workflow")
     return rows
 
@@ -248,6 +249,7 @@ def generate_rna_fusion_splice_manifest(
            depends_on=["rna_alignment"])
 
     snaf_workflow = str(inputs.get("snaf_workflow") or "")
+    snaf_db = str(inputs.get("snaf_db") or "")
     snaf_command = ""
     if snaf_workflow:
         snaf_command = (
@@ -255,6 +257,15 @@ def generate_rna_fusion_splice_manifest(
             f"--bam-dir {{outdir}}/rna/star --hla-file {_q(hla_file)} --sample-id {_q(sample_id)} "
             f"--outdir {{outdir}}/branches/splice/snaf && "
             f"test -s {{outdir}}/branches/splice/snaf/snaf_candidates.tsv"
+        )
+    elif snaf_db:
+        snaf_command = (
+            f"SNAF_PYTHON={_q(inputs.get('snaf_python') or 'python')} "
+            f"NEOAG_ALTANALYZE_IMAGE={_q(inputs.get('altanalyze_image') or 'neoag-altanalyze:snaf')} "
+            f"bash {script('run_snaf_pipeline.sh')} "
+            f"--bam {{outdir}}/rna/star/Aligned.sortedByCoord.out.bam "
+            f"--hla-file {_q(hla_file)} --sample-id {_q(sample_id)} --db-dir {_q(snaf_db)} "
+            f"--threads {threads} --outdir {{outdir}}/branches/splice/snaf"
         )
     _stage(lines, "snaf_discovery", required=False, command=snaf_command,
            outputs={"candidate_table": "{outdir}/branches/splice/snaf/snaf_candidates.tsv"},

@@ -548,6 +548,30 @@ def test_rna_fastq_profile_accepts_rsem_expression_reference(tmp_path: Path):
     assert "run_salmon_fastq_to_tpm.sh" not in text
 
 
+def test_rna_fastq_profile_uses_builtin_snaf_when_reference_is_configured(tmp_path: Path):
+    inputs = _rna_profile_inputs(tmp_path)
+    snaf_db = tmp_path / "snaf_db"
+    (snaf_db / "controls").mkdir(parents=True)
+    (snaf_db / "Alt91_db").mkdir()
+    for relative in (
+        "controls/GTEx_junction_counts.h5ad",
+        "Alt91_db/Hs_Ensembl_exon_add_col.txt",
+        "Alt91_db/mRNA-ExonIDs.txt",
+        "Alt91_db/Hs_gene-seq-2000_flank.fa",
+    ):
+        (snaf_db / relative).write_bytes(b"fixture")
+    inputs["snaf_db"] = str(snaf_db)
+    inputs["snaf_python"] = "/opt/snaf/bin/python"
+    inputs["altanalyze_image"] = "neoag-altanalyze:snaf"
+    result = generate_rna_fusion_splice_manifest(
+        inputs, tmp_path / "snaf-profile.toml", project_root=Path.cwd(), outdir=tmp_path / "run",
+    )
+    text = Path(result["manifest"]).read_text(encoding="utf-8")
+    assert "run_snaf_pipeline.sh" in text
+    assert str(snaf_db) in text
+    assert "neoag-altanalyze:snaf" in text
+
+
 def test_open_neo_run_auto_generates_rna_profile_in_plan_mode(tmp_path: Path):
     inputs = _rna_profile_inputs(tmp_path)
     result = run_open_neo({
