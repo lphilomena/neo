@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from hashlib import sha256
 from pathlib import Path
 
 from neoag.controlled_execution.doctor import run_doctor
@@ -83,6 +84,26 @@ def test_doctor_mini_smoke_and_specific_checks(tmp_path):
     assert ("reference_specific", "reference_fasta.fai") in names
     assert ("reference_specific", "vep_cache_layout") in names
     assert ("entrypoint", "neoag-doctor") in names
+
+
+def test_doctor_treats_top_level_reference_sha256_as_metadata(tmp_path):
+    gtf = tmp_path / "gencode.gtf.gz"
+    gtf.write_bytes(b"reference")
+    ref = tmp_path / "reference.json"
+    ref.write_text(json.dumps({
+        "gencode_gtf": {
+            "path": str(gtf),
+            "sha256": sha256(b"reference").hexdigest(),
+        },
+    }), encoding="utf-8")
+    result = run_doctor(
+        project_root=Path.cwd(), outdir=tmp_path / "doctor-hash",
+        reference_manifest=ref, release_audit=False, allow_execute=False,
+    )
+    checks = {(row.category, row.name): row.status for row in result.rows}
+    assert checks[("reference", "gencode_gtf.path")] == "OK"
+    assert checks[("reference_hash", "gencode_gtf.sha256")] == "OK"
+    assert ("reference", "gencode_gtf.sha256") not in checks
 
 
 

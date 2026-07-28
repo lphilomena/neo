@@ -54,8 +54,22 @@ def profile_requirements(inputs: dict[str, Any]) -> list[ProfileRequirement]:
     add("star_index", inputs.get("star_index"), required=True, detail="STAR genome index matching FASTA/GTF")
     add("easyfuse_ref", inputs.get("easyfuse_ref"), required=True, detail="EasyFuse reference bundle")
     add("ctat_genome_lib", inputs.get("ctat_genome_lib"), required=True, detail="CTAT genome library for STAR-Fusion")
-    add("salmon_index", inputs.get("salmon_index"), required=True, detail="Salmon transcriptome index")
-    add("tx2gene", inputs.get("tx2gene"), required=True, detail="transcript-to-gene mapping")
+    salmon_ready = bool(
+        inputs.get("salmon_index") and Path(str(inputs["salmon_index"])).is_dir()
+        and inputs.get("tx2gene") and Path(str(inputs["tx2gene"])).is_file()
+    )
+    rsem_prefix = str(inputs.get("rsem_reference") or "")
+    rsem_ready = bool(
+        rsem_prefix and Path(rsem_prefix).parent.is_dir()
+        and list(Path(rsem_prefix).parent.glob(Path(rsem_prefix).name + ".*"))
+    )
+    rows.append(ProfileRequirement(
+        "expression_reference", "READY" if salmon_ready or rsem_ready else "MISSING", True,
+        "Salmon index plus tx2gene, or a matching RSEM reference prefix",
+    ))
+    add("salmon_index", inputs.get("salmon_index"), required=False, detail="Salmon transcriptome index; paired with tx2gene")
+    add("tx2gene", inputs.get("tx2gene"), required=False, detail="transcript-to-gene mapping; paired with Salmon index")
+    rows.append(ProfileRequirement("rsem_reference", "READY" if rsem_ready else "UNASSESSED", False, "RSEM reference prefix matching FASTA/GTF"))
     add("normal_junctions", inputs.get("normal_junctions"), required=False, detail="normal-junction background; missing keeps splice safety partial")
     add("normal_readthrough", inputs.get("normal_readthrough"), required=False, detail="normal/read-through fusion background")
     add("normal_expression", inputs.get("normal_expression"), required=False, detail="normal tissue/HSPC expression background")
@@ -157,11 +171,18 @@ def generate_rna_fusion_splice_manifest(
            }, depends_on=["fastq_qc"])
 
     expression_command = ""
-    if inputs.get("salmon_index") and inputs.get("tx2gene"):
+    quant_method = str(inputs.get("rna_quant_method") or "auto")
+    if quant_method in {"auto", "salmon"} and inputs.get("salmon_index") and inputs.get("tx2gene"):
         expression_command = (
             f"bash {script('run_salmon_fastq_to_tpm.sh')} --fastq1 {_q(pair[0])} --fastq2 {_q(pair[1])} "
             f"--sample-id {_q(sample_id)} --threads {threads} --salmon-index {_q(inputs['salmon_index'])} "
             f"--tx2gene {_q(inputs['tx2gene'])} --outdir {{outdir}}/rna/expression"
+        )
+    elif quant_method in {"auto", "rsem"} and inputs.get("rsem_reference"):
+        expression_command = (
+            f"bash {script('run_rsem_fastq_to_tpm.sh')} --fastq1 {_q(pair[0])} --fastq2 {_q(pair[1])} "
+            f"--sample-id {_q(sample_id)} --threads {threads} --rsem-reference {_q(inputs['rsem_reference'])} "
+            "--outdir {outdir}/rna/expression"
         )
     _stage(lines, "rna_expression", required=True, command=expression_command,
            outputs={

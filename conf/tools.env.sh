@@ -161,13 +161,13 @@ fi
 
 # RNA fusion callers + EasyFuse — install: bash scripts/install_fusion_tools.sh
 # Shared refs (CTAT + EasyFuse tarballs): bash scripts/setup_fusion_refs_from_shared.sh
-export NEOAG_FUSION_ENV="neoag-fusion"
-export NEOAG_STAR_FUSION_HOME="${NEOAG_TOOLS_ROOT}/tools/STAR-Fusion"
-export NEOAG_CTAT_LIB_DIR="${NEOAG_TOOLS_ROOT}/data/ref/ctat"
-export NEOAG_FUSIONCATCHER_HOME="${NEOAG_TOOLS_ROOT}/tools/fusioncatcher"
-export NEOAG_STAR_FUSION_BIN="${NEOAG_TOOLS_ROOT}/bin/star-fusion-neoag"
-export NEOAG_FUSIONCATCHER_BIN="${NEOAG_TOOLS_ROOT}/bin/fusioncatcher-neoag"
-export NEOAG_EASYFUSE_HOME="${NEOAG_TOOLS_ROOT}/tools/EasyFuse"
+export NEOAG_FUSION_ENV="${NEOAG_FUSION_ENV:-neoag-fusion}"
+export NEOAG_STAR_FUSION_HOME="${NEOAG_STAR_FUSION_HOME:-${NEOAG_TOOLS_ROOT}/tools/STAR-Fusion}"
+export NEOAG_CTAT_LIB_DIR="${NEOAG_CTAT_LIB_DIR:-${NEOAG_TOOLS_ROOT}/data/ref/ctat}"
+export NEOAG_FUSIONCATCHER_HOME="${NEOAG_FUSIONCATCHER_HOME:-${NEOAG_TOOLS_ROOT}/tools/fusioncatcher}"
+export NEOAG_STAR_FUSION_BIN="${NEOAG_STAR_FUSION_BIN:-${NEOAG_TOOLS_ROOT}/bin/star-fusion-neoag}"
+export NEOAG_FUSIONCATCHER_BIN="${NEOAG_FUSIONCATCHER_BIN:-${NEOAG_TOOLS_ROOT}/bin/fusioncatcher-neoag}"
+export NEOAG_EASYFUSE_HOME="${NEOAG_EASYFUSE_HOME:-${NEOAG_TOOLS_ROOT}/tools/EasyFuse}"
 export NEOAG_SHARED_REF_DIR="${NEOAG_SHARED_REF_DIR:-}"
 export NEOAG_CTAT_ARCHIVE="${NEOAG_CTAT_ARCHIVE:-${NEOAG_SHARED_REF_DIR:+${NEOAG_SHARED_REF_DIR}/GRCh38_gencode_v37_CTAT_lib_Mar012021.plug-n-play.tar.gz}}"
 export NEOAG_EASYFUSE_ARCHIVE="${NEOAG_EASYFUSE_ARCHIVE:-${NEOAG_SHARED_REF_DIR:+${NEOAG_SHARED_REF_DIR}/easyfuse_ref_v4.tar.gz}}"

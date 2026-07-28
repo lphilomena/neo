@@ -530,6 +530,24 @@ def test_rna_fastq_profile_generator_emits_full_dag(tmp_path: Path):
     }
 
 
+def test_rna_fastq_profile_accepts_rsem_expression_reference(tmp_path: Path):
+    inputs = _rna_profile_inputs(tmp_path)
+    inputs.pop("salmon_index")
+    inputs.pop("tx2gene")
+    prefix = tmp_path / "rsem/reference"
+    prefix.parent.mkdir()
+    Path(str(prefix) + ".grp").write_text("fixture\n", encoding="utf-8")
+    inputs["rsem_reference"] = str(prefix)
+    inputs["rna_quant_method"] = "rsem"
+    result = generate_rna_fusion_splice_manifest(
+        inputs, tmp_path / "rsem-profile.toml", project_root=Path.cwd(), outdir=tmp_path / "run",
+    )
+    assert result["ready_for_execute"] is True
+    text = Path(result["manifest"]).read_text(encoding="utf-8")
+    assert "run_rsem_fastq_to_tpm.sh" in text
+    assert "run_salmon_fastq_to_tpm.sh" not in text
+
+
 def test_open_neo_run_auto_generates_rna_profile_in_plan_mode(tmp_path: Path):
     inputs = _rna_profile_inputs(tmp_path)
     result = run_open_neo({
@@ -582,6 +600,8 @@ def test_capability_planner_builds_dna_hla_purity_loh_and_ranking_dag(tmp_path: 
     text = Path(plan.manifest).read_text(encoding="utf-8")
     for stage in ("snv_indel_candidates", "purity_facets", "purity_sequenza", "purity_consensus", "hla_loh_lohhla"):
         assert f"[stages.{stage}]" in text
+    assert "convert-lohhla" in text
+    assert 'hla_loh = "{outdir}/evidence/hla_loh.tsv"' in text
     assert set(["facets", "sequenza", "lohhla", "netmhcpan", "mhcflurry"]) <= set(plan.selected_tools)
     rows = list(csv.DictReader(Path(plan.outputs["capability_decisions"]).open(), delimiter="\t"))
     assert any(row["domain"] == "purity_cnv" and row["status"] == "SELECTED" for row in rows)
@@ -658,6 +678,10 @@ def test_capability_planner_combines_dna_and_rna_fastq_routes(tmp_path: Path):
     assert "[stages.snv_indel_candidates]" in text
     assert "[stages.rna_expression]" in text
     assert "[stages.easyfuse_discovery]" in text
+    assert "[stages.rna_alt_vaf]" in text
+    parsed = load_production_manifest(plan.manifest)
+    assert parsed["stages"]["rna_alt_vaf"]["depends_on"] == ["rna_alignment"]
+    assert parsed["evidence"]["rna_vaf"] == "{outdir}/rna/rna_alt_vaf.tsv"
     assert {"snv_indel", "rna_expression", "fusion", "splice"} <= set(plan.routes)
 
 

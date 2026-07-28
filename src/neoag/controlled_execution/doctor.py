@@ -168,7 +168,7 @@ def _check_expected_sidecar(path_value: str | None, suffix: str, name: str, *, b
 
 def _check_declared_hashes(data: dict[str, Any], category: str) -> list[CheckRow]:
     rows: list[CheckRow] = []
-    refs = data.get("references") if isinstance(data.get("references"), dict) else {}
+    refs = data.get("references") if isinstance(data.get("references"), dict) else data
     for name, spec in refs.items():
         if not isinstance(spec, dict):
             continue

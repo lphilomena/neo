@@ -41,6 +41,9 @@ def manifest_paths(data: dict[str, Any]) -> list[tuple[str, str]]:
         else:
             if obj is not None and isinstance(obj, str):
                 key_l = prefix.lower()
+                leaf = key_l.rsplit(".", 1)[-1]
+                if leaf in {"sha256", "md5", "version", "build", "description"}:
+                    return
                 if any(token in key_l for token in ["path", "file", "fasta", "gtf", "vcf", "bam", "tsv", "cache", "dir", "image", "bed", "proteome", "ligandome"]):
                     rows.append((prefix, obj))
     walk("", data)

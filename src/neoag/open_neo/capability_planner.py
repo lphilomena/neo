@@ -495,8 +495,25 @@ def build_automatic_production_plan(
             decide("hla_loh", "lohhla", "POLICY_SKIPPED", f"excluded by {policy} policy", executable=loh_exe)
         elif loh_available and hla_file:
             deps = paired_analysis_deps + hla_dependency
-            command = f"PATIENT_ID={sample_id} TUMOR_BAM={tumor_bam} NORMAL_BAM={normal_bam} HLA_FILE={hla_file} OUTDIR={{outdir}}/hla_loh/lohhla bash {root / 'scripts/run_lohhla_sample.sh'}"
-            add_stage("hla_loh_lohhla", command=command, outputs={"result_dir": "{outdir}/hla_loh/lohhla"}, depends=deps)
+            command = (
+                f"PATIENT_ID={sample_id} TUMOR_BAM={tumor_bam} NORMAL_BAM={normal_bam} "
+                f"HLA_FILE={hla_file} OUTDIR={{outdir}}/hla_loh/lohhla "
+                f"bash {root / 'scripts/run_lohhla_sample.sh'} && "
+                "PRED=$(find {outdir}/hla_loh/lohhla -type f -name '*HLAlossPrediction_CI*' -print -quit) && "
+                "test -n \"$PRED\" && "
+                f"PYTHONPATH={root / 'src'} python -m neoag.cli convert-lohhla "
+                "-i \"$PRED\" -o {outdir}/evidence/hla_loh.tsv"
+            )
+            add_stage(
+                "hla_loh_lohhla",
+                command=command,
+                outputs={
+                    "result_dir": "{outdir}/hla_loh/lohhla",
+                    "hla_loh": "{outdir}/evidence/hla_loh.tsv",
+                },
+                depends=deps,
+            )
+            evidence["hla_loh"] = "{outdir}/evidence/hla_loh.tsv"
             decide("hla_loh", "lohhla", "SELECTED", "tumor-normal BAM and HLA are available", stage="hla_loh_lohhla", executable=loh_exe, references=["lohhla_reference"])
         else:
             decide("hla_loh", "lohhla", "UNAVAILABLE", "LOHHLA, BAM pair or HLA is missing")
@@ -524,6 +541,19 @@ def build_automatic_production_plan(
                 continue
             status = "SELECTED" if spec.get("command") else "UNASSESSED"
             decide("rna" if name == "rna_expression" else "fusion_splice", tool, status, "RNA FASTQ profile selected" if status == "SELECTED" else "runner/reference/workflow not configured", stage=name if status == "SELECTED" else "")
+        if somatic_vcf and "rna_alignment" in stages:
+            add_stage(
+                "rna_alt_vaf",
+                command=(
+                    f"PYTHONPATH={root / 'src'} python {root / 'scripts/rna_allele_counts_pysam.py'} "
+                    f"--somatic-vcf {somatic_vcf} --rna-bam {{outdir}}/rna/star/Aligned.sortedByCoord.out.bam "
+                    "--output-tsv {outdir}/rna/rna_alt_vaf.tsv"
+                ),
+                outputs={"rna_vaf": "{outdir}/rna/rna_alt_vaf.tsv"},
+                depends=["rna_alignment"],
+            )
+            evidence["rna_vaf"] = "{outdir}/rna/rna_alt_vaf.tsv"
+            decide("rna", "rna_alt_vaf", "SELECTED", "STAR RNA BAM and supplied somatic VCF are available", stage="rna_alt_vaf")
     elif tumor_rna_bam:
         routes.append("rna_evidence")
         if somatic_vcf:
