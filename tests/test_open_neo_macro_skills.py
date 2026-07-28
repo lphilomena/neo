@@ -9,6 +9,7 @@ import tarfile
 from pathlib import Path
 
 from neoag.open_neo.contracts import MacroResult, MacroStep, RunInput, validate_json_schema
+from neoag.open_neo.capability_planner import build_automatic_production_plan
 from neoag.open_neo.errors import FailureCode, exit_code_for_result
 from neoag.controlled_execution.doctor import CheckRow
 from neoag.open_neo.install_check import (
@@ -471,6 +472,83 @@ def test_open_neo_run_auto_generates_rna_profile_in_plan_mode(tmp_path: Path):
     requirements = Path(result["outputs"]["rna_fusion_splice_requirements"])
     assert requirements.is_file()
     assert "rna_fusion_splice_v1" in manifest.read_text(encoding="utf-8")
+
+
+def _automatic_plan_inputs(tmp_path: Path) -> tuple[dict[str, object], Path, Path]:
+    tumor = tmp_path / "tumor.bam"; tumor.write_bytes(b"bam")
+    normal = tmp_path / "normal.bam"; normal.write_bytes(b"bam")
+    vcf = tmp_path / "somatic.vcf"
+    vcf.write_text("##fileformat=VCFv4.2\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\nchr1\t1\t.\tA\tT\t.\tPASS\t.\n", encoding="utf-8")
+    hla = tmp_path / "hla.txt"; hla.write_text("HLA-A*02:01\nHLA-B*07:02\n", encoding="utf-8")
+    fasta = tmp_path / "GRCh38.fa"; fasta.write_text(">chr1\nA\n", encoding="utf-8")
+    facets = tmp_path / "common.vcf.gz"; facets.write_bytes(b"fixture")
+    tools = tmp_path / "tools.json"
+    tools.write_text(json.dumps({"tools": {
+        "samtools": {"executable": "/bin/true"},
+        "facets": {"executable": "/bin/true"}, "sequenza": {"executable": "/bin/true"},
+        "lohhla": {"executable": "/bin/true"}, "netmhcpan": {"executable": "/bin/true"},
+        "mhcflurry": {"executable": "/bin/true"},
+    }}), encoding="utf-8")
+    refs = tmp_path / "refs.json"
+    refs.write_text(json.dumps({"references": {
+        "reference_fasta": {"path": str(fasta)}, "facets_snp_vcf": {"path": str(facets)},
+    }}), encoding="utf-8")
+    return {
+        "sample_id": "AUTO1", "tumor_dna_bam": str(tumor), "normal_dna_bam": str(normal),
+        "somatic_vcf": str(vcf), "hla_file": str(hla),
+    }, tools, refs
+
+
+def test_capability_planner_builds_dna_hla_purity_loh_and_ranking_dag(tmp_path: Path):
+    inputs, tools, refs = _automatic_plan_inputs(tmp_path)
+    plan = build_automatic_production_plan(
+        inputs, tmp_path / "manifests/automatic.toml", project_root=Path.cwd(),
+        outdir=tmp_path / "run", tools_manifest=tools, reference_manifest=refs,
+    )
+    assert plan.status in {"READY", "PARTIAL"}
+    text = Path(plan.manifest).read_text(encoding="utf-8")
+    for stage in ("snv_indel_candidates", "purity_facets", "purity_sequenza", "purity_consensus", "hla_loh_lohhla"):
+        assert f"[stages.{stage}]" in text
+    assert set(["facets", "sequenza", "lohhla", "netmhcpan", "mhcflurry"]) <= set(plan.selected_tools)
+    rows = list(csv.DictReader(Path(plan.outputs["capability_decisions"]).open(), delimiter="\t"))
+    assert any(row["domain"] == "purity_cnv" and row["status"] == "SELECTED" for row in rows)
+
+
+def test_open_neo_run_raw_bam_plan_uses_capability_aware_manifest(tmp_path: Path):
+    inputs, tools, refs = _automatic_plan_inputs(tmp_path)
+    result = run_open_neo({
+        **inputs, "tools_manifest": str(tools), "reference_manifest": str(refs),
+        "project_root": str(Path.cwd()), "doctor": False, "mode": "plan",
+        "outdir": str(tmp_path / "openneo"),
+    })
+    assert result["status"] == "PASS"
+    manifest = Path(result["outputs"]["automatic_production_manifest"])
+    assert manifest.is_file()
+    assert "[stages.purity_consensus]" in manifest.read_text(encoding="utf-8")
+    assert Path(result["outputs"]["capability_plan"]).is_file()
+
+
+def test_capability_planner_combines_dna_and_rna_fastq_routes(tmp_path: Path):
+    inputs, tools, refs = _automatic_plan_inputs(tmp_path)
+    r1 = tmp_path / "rna_R1.fastq.gz"; r1.write_bytes(b"fixture")
+    r2 = tmp_path / "rna_R2.fastq.gz"; r2.write_bytes(b"fixture")
+    extra_refs = {
+        "star_index": tmp_path / "star", "ctat_genome_lib": tmp_path / "ctat",
+        "easyfuse_ref": tmp_path / "easyfuse", "salmon_index": tmp_path / "salmon",
+    }
+    for path in extra_refs.values(): path.mkdir()
+    tx2gene = tmp_path / "tx2gene.tsv"; tx2gene.write_text("tx\tgene\n", encoding="utf-8")
+    ref_data = json.loads(refs.read_text(encoding="utf-8"))
+    for key, path in extra_refs.items(): ref_data["references"][key] = {"path": str(path)}
+    ref_data["references"]["tx2gene"] = {"path": str(tx2gene)}
+    refs.write_text(json.dumps(ref_data), encoding="utf-8")
+    inputs["tumor_rna_fastq"] = [str(r1), str(r2)]
+    plan = build_automatic_production_plan(inputs, tmp_path / "auto.toml", project_root=Path.cwd(), outdir=tmp_path / "run", tools_manifest=tools, reference_manifest=refs)
+    text = Path(plan.manifest).read_text(encoding="utf-8")
+    assert "[stages.snv_indel_candidates]" in text
+    assert "[stages.rna_expression]" in text
+    assert "[stages.easyfuse_discovery]" in text
+    assert {"snv_indel", "rna_expression", "fusion", "splice"} <= set(plan.routes)
 
 
 def test_rna_fastq_profile_reports_missing_required_assets(tmp_path: Path):

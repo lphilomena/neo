@@ -1,6 +1,6 @@
 ---
 name: open-neo-run
-description: Public macro Skill2 that detects Open-Neo inputs, routes VCF/fusion/splice/SV/peptide/result modes, plans or executes the pipeline, builds the all-tool evidence matrix, and emits weighted plus evidence-consensus rankings.
+description: Public macro Skill2 that detects raw DNA/RNA and processed inputs, probes callable tools/references, generates an auditable production DAG, executes approved primary and cross-validation tools, and emits weighted plus evidence-consensus rankings.
 ---
 
 # Open-Neo Run
@@ -21,12 +21,15 @@ Preferred: `sample_manifest.yaml`.
 
 Supported direct entries include tumor/normal DNA BAM or FASTQ, tumor RNA BAM or FASTQ, somatic VCF, fusion caller table, splice junction table, WGS/WES SV VCF, peptide-HLA table, standard raw intermediates, a production manifest, an input directory, or an existing result directory.
 
-When exactly one paired tumor RNA FASTQ input is supplied without DNA inputs
-or an explicit production manifest, Skill2 automatically generates the
-`rna_fusion_splice_v1` production profile. The profile includes FASTQ QC, STAR
+When raw DNA/RNA BAM or paired FASTQ inputs are supplied without an explicit
+production manifest, Skill2 generates a capability-aware production profile.
+For RNA it includes FASTQ QC, STAR
 alignment, Salmon gene/transcript TPM, EasyFuse, STAR-Fusion, Arriba, RegTools,
 optional SNAF/SpliceMutr, cross-tool splice normalization, fusion/splice peptide
-generation, presentation, evidence integration, and dual ranking.
+generation, presentation, evidence integration, and dual ranking. For DNA it
+can include BWA/samtools alignment, Mutect2, OptiType or command-template HLA
+callers, FACETS/Sequenza plus configured PURPLE/ASCAT, LOHHLA, VEP peptide
+generation and unified ranking.
 
 ## Modes
 
@@ -39,23 +42,23 @@ generation, presentation, evidence integration, and dual ranking.
 ## Procedure
 
 1. Detect inputs in deterministic order: manifest declarations, explicit CLI fill-ins, directory scanning, then extension/header inference. Validate non-empty files, HLA syntax, VCF samples/build, BAM indexes, capture BED and output writability.
-2. Route to the existing fine-grained internal Skills.
-3. Run Doctor/preflight.
-4. Use `pipeline-full` for the dry-run DAG and submit approved execute/resume requests through NeoAg Gateway to the production runner.
-5. Reuse existing gene/transcript TPM and RNA alt/VAF tables, or plan/run Salmon/RSEM gene plus transcript quantification from tumor RNA FASTQ and RNA ref/alt counting from tumor RNA BAM plus somatic VCF. Retain fusion/splice junction read evidence.
+2. Probe tool entrypoints, validated command templates, references, licenses and input compatibility. Write `capability_decisions.tsv`; PATH presence alone is not treated as a safe sample-level runner.
+3. Route to the existing fine-grained internal Skills and generate `capability_aware.production.toml` for raw inputs.
+4. Run Doctor/preflight.
+5. Use `pipeline-full` for the dry-run DAG and submit approved execute/resume requests through NeoAg Gateway to the production runner.
+6. Reuse existing gene/transcript TPM and RNA alt/VAF tables, or plan/run Salmon/RSEM gene plus transcript quantification from tumor RNA FASTQ and RNA ref/alt counting from tumor RNA BAM plus somatic VCF. Retain fusion/splice junction read evidence.
    For the automatic RNA profile, require HLA, FASTA/GTF, STAR index,
    EasyFuse reference, CTAT library, Salmon index, and tx2gene before execute.
    SNAF and SpliceMutr remain optional cohort/workflow stages; when their
    reviewed workflow files are absent they are `UNASSESSED`, not negative.
-6. Cross-check HLA typing, HLA LOH, fusion, splice, presentation and purity/CNV/CCF evidence by domain; missing evidence remains `UNASSESSED`.
-7. Build `all_tool_results.tsv`, long-form tool evidence and explicit consensus/conflict outputs.
-8. Preserve the weighted baseline.
-9. Generate independent peptide- and event-level Evidence consensus rankings.
-10. Compare both rankings and write run/audit manifests.
+7. Cross-check HLA typing, HLA LOH, fusion, splice, presentation and purity/CNV/CCF evidence by domain; missing evidence remains `UNASSESSED`.
+8. Build `all_tool_results.tsv`, long-form tool evidence and explicit consensus/conflict outputs.
+9. Preserve the weighted baseline, generate independent Evidence consensus rankings, compare both rankings, and write run/audit manifests.
 
 ## Required outputs
 
 - `input_status.json`, `route_plan.json`
+- `capability_plan.json`, `capability_decisions.tsv`, `capability_aware.production.toml`
 - `rna_preprocessing_status.tsv`, `rna_preprocessing_summary.json`
 - `gene_tpm.tsv`, `transcript_tpm.tsv`, `rna_alt_vaf.tsv` when generated
 - `all_tool_results.tsv`
@@ -73,7 +76,7 @@ generation, presentation, evidence integration, and dual ranking.
 
 ## Safety boundary
 
-`execute` and `resume` require approval and Gateway dispatch. The Skill must not silently convert missing evidence to a negative result or overwrite the weighted baseline. Raw candidate generation from BAM/FASTQ requires either an explicit production manifest with reviewed stage commands or the repository-owned automatic RNA FASTQ profile; the declared RNA quantification and RNA allele-count stages are separately controlled by Gateway.
+`execute` and `resume` require approval and Gateway dispatch. The Skill must not silently convert missing evidence to a negative result or overwrite the weighted baseline. Generated commands are restricted to repository-owned runners or administrator-reviewed `command_template` entries in the tools manifest.
 
 The automatic RNA FASTQ profile is itself the reviewed repository-owned
 production manifest generator. Execution still requires Gateway approval and

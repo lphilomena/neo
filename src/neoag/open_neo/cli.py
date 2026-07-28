@@ -92,6 +92,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--tools-manifest")
     run.add_argument("--reference-manifest")
     run.add_argument("--execution-profile", default="local")
+    run.add_argument("--automatic-tool-policy", choices=["all-available", "balanced", "minimal"], default="all-available")
     run.add_argument("--mini-smoke", action="store_true")
     run.add_argument("--release-audit", action="store_true")
     run.add_argument("--stub", action="store_true")

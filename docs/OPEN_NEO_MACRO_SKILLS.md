@@ -66,11 +66,16 @@ open-neo run \
 ```
 
 With no explicit `production_manifest`, Skill2 generates
-`manifests/rna_fusion_splice.production.toml`. Its DAG covers FASTQ QC, STAR,
-Salmon, EasyFuse, STAR-Fusion, Arriba, RegTools, optional SNAF/SpliceMutr,
-candidate normalization, peptide generation and downstream evidence ranking.
-Execution requires HLA, matching FASTA/GTF/STAR/CTAT/EasyFuse/Salmon assets and
-Gateway approval. Missing optional cohort workflows remain `UNASSESSED`.
+`manifests/capability_aware.production.toml`, `capability_decisions.tsv` and
+`capability_plan.json`. The planner supports combined DNA/RNA inputs and selects
+every compatible tool that has either a repository-owned sample runner or an
+administrator-reviewed `command_template`. PATH presence alone is insufficient.
+Execution requires Gateway approval; absent optional tools and references remain
+`UNASSESSED/PARTIAL` rather than negative.
+
+Use `--automatic-tool-policy all-available` (default) to select every validated
+compatible runner. `balanced` and `minimal` are reserved for site policies that
+prefer fewer cross-validation tools.
 
 Reuse existing evidence:
 

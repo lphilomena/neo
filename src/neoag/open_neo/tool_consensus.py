@@ -62,9 +62,9 @@ def _tool_status(declared: dict[str, dict[str, str]]) -> list[dict[str, str]]:
             rows.append({
                 "evidence_domain": domain,
                 "tool": tool,
-                "status": "AVAILABLE" if path and Path(path).is_file() else ("MISSING" if path else "NOT_DECLARED"),
+                "status": "AVAILABLE" if path and Path(path).exists() else ("MISSING" if path else "NOT_DECLARED"),
                 "version": "UNASSESSED",
-                "input_comparable": "yes" if path and Path(path).is_file() else "unassessed",
+                "input_comparable": "yes" if path and Path(path).exists() else "unassessed",
                 "source_file": path,
                 "reason": "declared result exists" if path and Path(path).is_file() else ("declared path missing" if path else "no result declared"),
             })
@@ -73,8 +73,8 @@ def _tool_status(declared: dict[str, dict[str, str]]) -> list[dict[str, str]]:
                 continue
             rows.append({
                 "evidence_domain": domain, "tool": tool,
-                "status": "AVAILABLE" if Path(path).is_file() else "MISSING",
-                "version": "UNASSESSED", "input_comparable": "yes" if Path(path).is_file() else "no",
+                "status": "AVAILABLE" if Path(path).exists() else "MISSING",
+                "version": "UNASSESSED", "input_comparable": "yes" if Path(path).exists() else "no",
                 "source_file": path, "reason": "additional declared result",
             })
     return rows

@@ -7,14 +7,15 @@
     "outdir": {"type": "string"},
     "sample_manifest": {"type": "string"},
     "mode": {"enum": ["plan", "dry-run", "execute", "resume", "ranking-only"]},
+    "automatic_tool_policy": {"enum": ["all-available", "balanced", "minimal"]},
     "approved": {"type": "boolean"},
     "input_dir": {"type": "string"},
     "tumor_dna_bam": {"type": "string"},
     "normal_dna_bam": {"type": "string"},
     "tumor_rna_bam": {"type": "string"},
-    "tumor_dna_fastq": {"type": "array", "items": {"type": "string"}},
-    "normal_dna_fastq": {"type": "array", "items": {"type": "string"}},
-    "tumor_rna_fastq": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+    "tumor_dna_fastq": {"type": "array", "minItems": 2, "items": {"type": "string"}},
+    "normal_dna_fastq": {"type": "array", "minItems": 2, "items": {"type": "string"}},
+    "tumor_rna_fastq": {"type": "array", "minItems": 2, "items": {"type": "string"}},
     "rna_quant_method": {"enum": ["auto", "salmon", "rsem"]},
     "salmon_index": {"type": "string"},
     "tx2gene": {"type": "string"},
@@ -26,6 +27,17 @@
     "snaf_workflow": {"type": "string"},
     "splicemutr_workflow": {"type": "string"},
     "rna_threads": {"type": "integer", "minimum": 1},
+    "tools_manifest": {"type": "string"},
+    "reference_manifest": {"type": "string"},
+    "hla_file": {"type": "string"},
+    "hla_alleles": {"type": "array", "items": {"type": "string"}},
+    "reference_fasta": {"type": "string"},
+    "gencode_gtf": {"type": "string"},
+    "vep_cache": {"type": "string"},
+    "normal_expression": {"type": "string"},
+    "normal_hla_ligands": {"type": "string"},
+    "reference_proteome": {"type": "string"},
+    "normal_junctions": {"type": "string"},
     "somatic_vcf": {"type": "string"},
     "fusion_tsv": {"type": "string"},
     "splice_junction_tsv": {"type": "string"},
@@ -54,6 +66,7 @@
     {"required": ["production_manifest"]}
     ,{"required": ["input_dir"]}
     ,{"required": ["tumor_dna_bam"]}
+    ,{"required": ["tumor_dna_fastq"]}
     ,{"required": ["tumor_rna_bam"]}
     ,{"required": ["tumor_rna_fastq"]}
   ]
