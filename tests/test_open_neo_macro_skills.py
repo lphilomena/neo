@@ -21,6 +21,7 @@ from neoag.open_neo.install_check import (
     _write_local_manifest_templates,
     run_install_check,
 )
+from neoag.open_neo.auto_config import configure_machine
 from neoag.open_neo.cli import build_parser
 from neoag.open_neo.review import build_review_rows, run_review, select_first_batch
 from neoag.open_neo.routing import inspect_manifest
@@ -226,12 +227,83 @@ def test_install_check_writes_comprehensive_local_manifests(tmp_path: Path):
     outputs = _write_local_manifest_templates(layout, Path.cwd(), {"deploy_root": tmp_path / "neoag"})
     tools = Path(outputs["tools_manifest_template"]).read_text(encoding="utf-8")
     refs = Path(outputs["reference_manifest_template"]).read_text(encoding="utf-8")
-    assert all(name in tools for name in ["netmhcpan", "spechla", "purple", "easyfuse", "splicemutr"])
-    assert all(name in refs for name in ["normal_ligandome", "normal_junctions", "ctat_genome_lib", "sequenza_gc_wiggle"])
+    assert all(name in tools for name in ["netmhcpan", "spechla", "purple", "easyfuse", "splicemutr", "bam_matcher"])
+    assert all(name in refs for name in ["normal_ligandome", "normal_junctions", "ctat_genome_lib", "sequenza_gc_wiggle", "bam_matcher_loci"])
     assert str(tmp_path / "neoag/refs/data/ref/hg38") in refs
     asset_manifest = Path(outputs["asset_manifest_local"])
     target_paths = [line.split("\t")[2] for line in asset_manifest.read_text(encoding="utf-8").splitlines() if "\t" in line and not line.startswith("#")]
     assert all(not path.startswith("/srv/") for path in target_paths[1:])
+
+
+def test_auto_config_discovers_tools_references_and_templates(tmp_path: Path):
+    project = tmp_path / "project"
+    tools_root = tmp_path / "tools"
+    refs_root = tmp_path / "refs"
+    (project / "scripts").mkdir(parents=True)
+    (project / "scripts/run_bam_matcher_pair.sh").write_text("#!/bin/sh\n", encoding="utf-8")
+    (tools_root / "bin").mkdir(parents=True)
+    for executable in ("HLA-LA.pl", "bam-matcher"):
+        path = tools_root / "bin" / executable
+        path.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        path.chmod(0o755)
+    graph = refs_root / "data/hla/PRG_MHC_GRCh38_withIMGT"
+    graph.mkdir(parents=True)
+    fasta = refs_root / "data/ref/hg38/Homo_sapiens_assembly38.fasta"
+    fasta.parent.mkdir(parents=True)
+    fasta.write_text(">chr1\nA\n", encoding="utf-8")
+    loci = refs_root / "data/sample_identity/bam_matcher.common_snps.hg38.vcf"
+    loci.parent.mkdir(parents=True)
+    loci.write_text("##reference=GRCh38\n#CHROM\tPOS\tID\tREF\tALT\n", encoding="utf-8")
+    tools_manifest = tmp_path / "tools.json"
+    tools_manifest.write_text(json.dumps({"tools": {
+        "hla_la": {"executable": "HLA-LA.pl"},
+        "bam_matcher": {"executable": "bam-matcher"},
+        "snaf": {"executable": "snaf"},
+    }}), encoding="utf-8")
+    refs_manifest = tmp_path / "references.json"
+    refs_manifest.write_text(json.dumps({"genome_build": "GRCh38", "references": {
+        "reference_fasta": {"path": "missing.fa"},
+        "hla_la_graph": {"path": "missing-graph"},
+        "bam_matcher_loci": {"path": "missing.vcf"},
+        "snaf_workflow": {"path": "missing.yaml"},
+    }}), encoding="utf-8")
+    result = configure_machine(
+        project_root=project, tools_manifest=tools_manifest, reference_manifest=refs_manifest,
+        outdir=tmp_path / "configured", tools_root=tools_root, reference_root=refs_root,
+        licensed_root=tmp_path / "licensed", publish_local=True,
+    )
+    rows = {(row["component_type"], row["component"]): row for row in result.rows}
+    assert rows[("tool", "hla_la")]["status"] == "CONFIGURED"
+    assert rows[("tool", "bam_matcher")]["status"] == "CONFIGURED"
+    assert rows[("tool", "snaf")]["status"] == "UNAVAILABLE"
+    templates = Path(result.outputs["command_templates"]).read_text(encoding="utf-8")
+    assert "hla_la" in templates and "bam_matcher" in templates
+    assert (project / "configs/local/tools_manifest.generated.yaml").is_file()
+    assert Path(result.outputs["configuration_status"]).is_file()
+
+
+def test_auto_config_rejects_wrong_build_bam_matcher_panel(tmp_path: Path):
+    project = tmp_path / "project"; project.mkdir()
+    tools_root = tmp_path / "tools"; (tools_root / "bin").mkdir(parents=True)
+    executable = tools_root / "bin/bam-matcher"
+    executable.write_text("#!/bin/sh\n", encoding="utf-8"); executable.chmod(0o755)
+    fasta = tmp_path / "GRCh38.fa"; fasta.write_text(">chr1\nA\n", encoding="utf-8")
+    loci = tmp_path / "bam_matcher.hg19.vcf"
+    loci.write_text("##reference=GRCh37\n#CHROM\tPOS\tID\tREF\tALT\n", encoding="utf-8")
+    tools_manifest = tmp_path / "tools.json"
+    tools_manifest.write_text(json.dumps({"tools": {"bam_matcher": {"executable": "bam-matcher"}}}), encoding="utf-8")
+    refs_manifest = tmp_path / "refs.json"
+    refs_manifest.write_text(json.dumps({"genome_build": "GRCh38", "references": {
+        "reference_fasta": {"path": str(fasta)}, "bam_matcher_loci": {"path": str(loci)},
+    }}), encoding="utf-8")
+    result = configure_machine(
+        project_root=project, tools_manifest=tools_manifest, reference_manifest=refs_manifest,
+        outdir=tmp_path / "configured", tools_root=tools_root, reference_root=tmp_path,
+        licensed_root=tmp_path / "licensed",
+    )
+    rows = {(row["component_type"], row["component"]): row for row in result.rows}
+    assert rows[("reference", "bam_matcher_loci")]["status"] == "BUILD_MISMATCH"
+    assert rows[("tool", "bam_matcher")]["status"] == "PARTIAL"
 
 
 def test_local_asset_manifest_rewrites_source_and_target_roots(tmp_path: Path):

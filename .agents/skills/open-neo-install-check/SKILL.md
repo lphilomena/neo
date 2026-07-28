@@ -32,11 +32,13 @@ description: Public macro Skill1 for Open-Neo installation, new-machine migratio
 1. Require and verify the checksum for a release archive, reject traversal/link/device members, safely stage it under the output directory, and identify one project root.
 2. Record Python, Java, Docker/Apptainer, Nextflow, disk, and platform information.
 3. Generate comprehensive machine-local `tools_manifest`, `reference_manifest`, `paths.env`, and `production_assets.local.tsv`. Generic `/srv` targets are rewritten to the selected machine roots.
-4. For approved `repair`/`install`, delegate to the portable `neoag-remote-deploy` new-machine installer; downloads remain opt-in and licensed assets remain external.
-5. For mutating modes, run a read-only Doctor before installation and a full Doctor after installation.
-6. Evaluate required tools, alternative capability groups, critical references and sidecars against the requested tier. Missing required references can never produce READY.
-7. Write timeout-protected deployment checkpoints and an installation status delta for safe resume/review.
-8. Write `deployment_report.md`, machine-readable status files, and an audit log.
+4. Automatically discover existing executables and references from the input manifests, documented environment variables, PATH, conda-style roots, and the standard portable data layout. Verify build-sensitive references conservatively; for example, a GRCh37 BAM-matcher SNP panel is rejected for GRCh38.
+5. Generate configured manifests and validated command templates. A tool is `PARTIAL` when its executable exists but a required reference or confirmed sample-level invocation is missing; the Skill never invents cohort-specific SNAF/SpliceMutr workflows.
+6. For approved `repair`/`install`, delegate to the portable `neoag-remote-deploy` new-machine installer; downloads remain opt-in and licensed assets remain external.
+7. Re-run discovery after installation, execute minimal smoke checks, and publish generated machine-local manifests under `configs/local/`. Licensed tools are configured only when the user has supplied a legal local installation.
+8. Run Doctor and evaluate required tools, alternative capability groups, critical references and sidecars against the requested tier. Missing required references can never produce READY.
+9. Write timeout-protected deployment checkpoints, configuration fixes, and an installation status delta for safe resume/review.
+10. Write `deployment_report.md`, machine-readable status files, and an audit log.
 
 For asset synchronization, set `--asset-source-root /mounted/assets` for a
 local/mounted asset tree or `--asset-source-host user@host` for remote source
@@ -53,6 +55,13 @@ not reachable.
 - `deployment_report.md`
 - `manifests/tools_manifest.local.yaml`
 - `manifests/reference_manifest.local.yaml`
+- `auto_configuration*/manifests/tools_manifest.configured.yaml`
+- `auto_configuration*/manifests/reference_manifest.configured.yaml`
+- `auto_configuration*/manifests/command_templates.yaml`
+- `auto_configuration*/configuration_status.tsv`
+- `auto_configuration*/smoke_tests.tsv`
+- `auto_configuration*/recommended_fixes.md`
+- `configs/local/*.generated.yaml` after an approved successful installation
 - `skill_result.json`
 - `run_state.json`
 

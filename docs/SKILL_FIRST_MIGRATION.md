@@ -10,10 +10,10 @@ tool locations or reference locations from old local runs.
 Use this order on every new machine:
 
 1. Read the skill registry and selected `SKILL.md` files.
-2. Create local manifests from templates.
+2. Run `open-neo install-check --mode plan` to discover existing tools and references and generate machine-local manifests.
 3. Install the Python package entry points.
-4. Run skill validation.
-5. Run read-only Doctor.
+4. Run `open-neo install-check --mode verify` for read-only smoke tests and Doctor checks.
+5. Review unresolved or build-incompatible resources in `configuration_status.tsv` and `recommended_fixes.md`.
 6. Run `pipeline-full` dry-run.
 7. Execute only after the user approves high-risk or heavy tasks.
 
@@ -57,6 +57,29 @@ bash scripts/bootstrap_agent_deploy.sh
 The script is intentionally conservative. It performs local setup and checks,
 but does not download references, install licensed tools, submit HPC jobs,
 delete files or run heavy production workflows.
+
+For the public macro interface, run Skill1 directly:
+
+```bash
+open-neo install-check \
+  --project-root . \
+  --deployment-tier prediction \
+  --mode plan \
+  --outdir work/install-check
+
+open-neo install-check \
+  --project-root . \
+  --deployment-tier prediction \
+  --mode verify \
+  --outdir work/install-check-verify
+```
+
+Skill1 searches declared manifest paths, documented environment variables,
+`PATH`, portable tool roots and the standard reference layout. It writes
+configured manifests, command templates, component status, smoke results and
+recommended fixes. It does not silently accept a known genome-build mismatch,
+and it does not fabricate sample-level workflows for SNAF, SpliceMutr, PURPLE
+or other tools whose invocation requires validated site/sample configuration.
 
 Useful options:
 
@@ -141,6 +164,10 @@ conf/reference_manifest.yaml
 conf/sample_manifest.yaml
 conf/tools.env.local.sh
 ```
+
+After an approved successful `repair` or `install`, Skill1 publishes generated
+machine-local files under `configs/local/`. These files are deployment outputs;
+review them before promoting them to a site-managed configuration repository.
 
 Do not hard-code paths such as:
 

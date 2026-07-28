@@ -24,6 +24,7 @@ from neoag.controlled_execution.io_utils import (
 )
 
 from .contracts import MacroResult, MacroStep
+from .auto_config import configure_machine
 from .errors import FailureCode
 from .state import RunLayout, audit, new_run_id, safe_identifier, update_case_state
 
@@ -50,6 +51,7 @@ TIER_TOOL_GROUPS = {
         "fusion": ["easyfuse", "arriba", "star_fusion", "fusioncatcher"],
         "splice": ["snaf", "splicemutr"],
         "ccf": ["pyclone_vi", "facets", "purple"],
+        "sample_identity": ["bam_matcher"],
     },
 }
 
@@ -73,6 +75,7 @@ TIER_REFERENCE_GROUPS = {
         "hla_typing_reference": ["hla_reference", "spechla_db", "hla_la_graph"],
         "hla_loh_reference": ["lohhla_reference", "spechla_db"],
         "purity_reference": ["facets_snp_vcf", "sequenza_gc_wiggle", "purple_reference"],
+        "sample_identity_reference": ["bam_matcher_loci"],
     },
 }
 
@@ -94,6 +97,11 @@ REFERENCE_ALIASES = {
     "facets_snp_vcf": ["facets_snp_vcf", "facets.vcf", "common_snp"],
     "sequenza_gc_wiggle": ["sequenza_gc_wiggle", "gc_wiggle"],
     "purple_reference": ["purple_reference"],
+    "bam_matcher_loci": ["bam_matcher_loci", "sample_identity_vcf"],
+    "ascat_loci": ["ascat_loci"],
+    "ascat_alleles": ["ascat_alleles"],
+    "snaf_workflow": ["snaf_workflow"],
+    "splicemutr_workflow": ["splicemutr_workflow"],
 }
 
 OK_STATUSES = {"OK", "INFO"}
@@ -273,6 +281,10 @@ tools:
   gatk:
     executable: gatk
     mode: conda_or_container
+  bam_matcher:
+    executable: bam-matcher
+    mode: conda
+    recommended: true
   vep:
     executable: vep
     mode: conda_or_container
@@ -386,6 +398,16 @@ references:
     path: '${OPEN_NEO_REFERENCE_ROOT}/data/sequenza/reference/Homo_sapiens.GRCh38.dna.primary_assembly.chr.gc50.wig.gz'
   purple_reference:
     path: '${OPEN_NEO_REFERENCE_ROOT}/data/hmf/purple_reference'
+  bam_matcher_loci:
+    path: '${OPEN_NEO_REFERENCE_ROOT}/data/sample_identity/bam_matcher.common_snps.hg38.vcf'
+  ascat_loci:
+    path: '${OPEN_NEO_REFERENCE_ROOT}/data/ascat/G1000_loci_hg38.txt'
+  ascat_alleles:
+    path: '${OPEN_NEO_REFERENCE_ROOT}/data/ascat/G1000_alleles_hg38.txt'
+  snaf_workflow:
+    path: '${OPEN_NEO_REFERENCE_ROOT}/workflows/snaf.workflow.yaml'
+  splicemutr_workflow:
+    path: '${OPEN_NEO_REFERENCE_ROOT}/workflows/splicemutr.workflow.yaml'
 """
     refs_text = refs_text.replace("${OPEN_NEO_REFERENCE_ROOT}", str(reference_root))
     refs_text = refs_text.replace("${OPEN_NEO_TOOLS_ROOT}", str(tools_root))
@@ -673,6 +695,23 @@ def run_install_check(args: dict[str, Any]) -> dict[str, Any]:
     if templates.get("asset_manifest_local"):
         args["asset_manifest"] = templates["asset_manifest_local"]
 
+    deploy_root = Path(str(args.get("deploy_root") or "/opt/neoag"))
+    auto_before = configure_machine(
+        project_root=project_root,
+        tools_manifest=args["tools_manifest"],
+        reference_manifest=args["reference_manifest"],
+        outdir=layout.root / "auto_configuration_before",
+        tools_root=args.get("tools_root") or deploy_root / "env_tool",
+        reference_root=args.get("reference_root") or deploy_root / "refs",
+        licensed_root=args.get("licensed_root") or deploy_root / "licensed_tools",
+        run_smoke=mode == "verify",
+        publish_local=False,
+    )
+    args["tools_manifest"] = auto_before.tools_manifest
+    args["reference_manifest"] = auto_before.reference_manifest
+    result.outputs.update({f"auto_before_{key}": value for key, value in auto_before.outputs.items()})
+    result.steps.append(MacroStep("03b", "automatic-machine-configuration", auto_before.status, outputs=auto_before.outputs))
+
     if mode in EXECUTION_MODES and not result.approved:
         result.blocking_issues.append(FailureCode.APPROVAL_REQUIRED.value)
         result.steps.append(MacroStep("04", "approval-gate", "APPROVAL_REQUIRED", "Installation, repair or resume requires explicit approval", failure_code=FailureCode.APPROVAL_REQUIRED.value))
@@ -720,6 +759,26 @@ def run_install_check(args: dict[str, Any]) -> dict[str, Any]:
             result.outputs.update({"deployment_log": deploy_log, "deployment_checkpoint": str(layout.root / "deployment_checkpoint.json")})
     else:
         result.steps.append(MacroStep("05", "portable-deployment", "PLANNED", "No installation command executed", outputs={"command": str(layout.root / "deployment_command.json")}))
+
+    if mode in EXECUTION_MODES and not deployment_failure:
+        auto_final = configure_machine(
+            project_root=project_root,
+            tools_manifest=args["tools_manifest"],
+            reference_manifest=args["reference_manifest"],
+            outdir=layout.root / "auto_configuration",
+            tools_root=args.get("tools_root") or deploy_root / "env_tool",
+            reference_root=args.get("reference_root") or deploy_root / "refs",
+            licensed_root=args.get("licensed_root") or deploy_root / "licensed_tools",
+            run_smoke=True,
+            publish_local=True,
+        )
+        args["tools_manifest"] = auto_final.tools_manifest
+        args["reference_manifest"] = auto_final.reference_manifest
+        result.outputs.update(auto_final.outputs)
+        result.steps.append(MacroStep("05b", "automatic-machine-configuration-after-install", auto_final.status, outputs=auto_final.outputs))
+    else:
+        auto_final = auto_before
+        result.outputs.update(auto_final.outputs)
 
     doctor = _run_doctor(args, project_root, layout.root / "doctor", tier, allow_execute=mode != "plan", smoke=True)
     result.steps.append(MacroStep("06", "doctor-after-install", doctor.status, outputs=doctor.outputs))
