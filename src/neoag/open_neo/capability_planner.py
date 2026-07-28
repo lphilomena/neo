@@ -18,6 +18,7 @@ TOOL_EXECUTABLES = {
     "bwa": "bwa",
     "samtools": "samtools",
     "gatk": "gatk",
+    "bam_matcher": "bam-matcher",
     "optitype": "optitype",
     "hla_la": "HLA-LA.pl",
     "spechla": "spechla",
@@ -47,6 +48,7 @@ REFERENCE_ALIASES = {
     "gencode_gtf": ("gencode_gtf", "reference.gtf", "gencode.gtf", "gtf"),
     "vep_cache": ("vep_cache", "vep.cache"),
     "facets_snp_vcf": ("facets_snp_vcf", "common_snp", "facets.vcf"),
+    "bam_matcher_loci": ("bam_matcher_loci", "bam-matcher.loci", "sample_identity_vcf"),
     "sequenza_gc_wiggle": ("sequenza_gc_wiggle", "gc_wiggle"),
     "hla_la_graph": ("hla_la_graph", "prg_mhc", "hla-la.graph"),
     "spechla_db": ("spechla_db", "spechla.db"),
@@ -229,7 +231,7 @@ def build_automatic_production_plan(
     sample_id = str(inputs.get("sample_id") or inputs.get("case_id") or "SAMPLE001")
     threads = int(inputs.get("threads") or inputs.get("rna_threads") or 16)
 
-    minimal_tools = {"bwa", "samtools", "gatk", "optitype", "facets", "netmhcpan", "mhcflurry", "star", "salmon", "easyfuse", "regtools"}
+    minimal_tools = {"bwa", "samtools", "gatk", "bam_matcher", "optitype", "facets", "netmhcpan", "mhcflurry", "star", "salmon", "easyfuse", "regtools"}
     balanced_exclusions = {"ascat", "deepimmuno", "netmhcstabpan"}
 
     def permitted(tool: str) -> bool:
@@ -313,6 +315,50 @@ def build_automatic_production_plan(
             missing_required.append(f"{label}_bam_index")
             decide("dna_alignment", "samtools", "BLOCKED", f"{label} BAM index is missing and samtools is unavailable", required=True)
     bam_pair = bool(tumor_bam and normal_bam)
+    paired_analysis_deps = list(alignment_deps)
+    if bam_pair:
+        matcher_available, matcher_exe, matcher_template = _tool_info("bam_matcher", tools)
+        matcher_loci = refs.get("bam_matcher_loci")
+        values = {
+            "tumor_bam": tumor_bam, "normal_bam": normal_bam,
+            "reference_fasta": refs.get("reference_fasta", ""),
+            "bam_matcher_loci": matcher_loci or "",
+            "outdir": "{outdir}/sample_identity/bam_matcher",
+            "sample_id": sample_id,
+        }
+        matcher_command = _template_command(matcher_template, values)
+        if matcher_available and refs.get("reference_fasta") and matcher_loci:
+            matcher_command = matcher_command or (
+                f"bash {root / 'scripts/run_bam_matcher_pair.sh'} --bam1 {normal_bam} --bam2 {tumor_bam} "
+                f"--reference {refs['reference_fasta']} --loci {matcher_loci} --outdir {{outdir}}/sample_identity/bam_matcher"
+            )
+            add_stage(
+                "sample_identity_bam_matcher", required=True, command=matcher_command,
+                outputs={
+                    "sample_identity": "{outdir}/sample_identity/bam_matcher/sample_identity.tsv",
+                    "raw_report": "{outdir}/sample_identity/bam_matcher/bam_matcher.short.tsv",
+                },
+                depends=alignment_deps,
+            )
+            paired_analysis_deps.append("sample_identity_bam_matcher")
+            decide(
+                "sample_identity", "bam_matcher", "SELECTED",
+                "tumor-normal BAM pair, GRCh38 FASTA and identity SNP panel are available",
+                stage="sample_identity_bam_matcher", required=True, executable=matcher_exe,
+                references=["reference_fasta", "bam_matcher_loci"],
+            )
+        elif matcher_available and not matcher_loci:
+            decide(
+                "sample_identity", "bam_matcher", "UNASSESSED",
+                "BAM-matcher is installed but bam_matcher_loci is not declared; bundled hg19 loci are forbidden for GRCh38",
+                executable=matcher_exe, references=["bam_matcher_loci"],
+            )
+        else:
+            decide(
+                "sample_identity", "bam_matcher", "UNAVAILABLE",
+                "BAM-matcher is optional; install it and declare a build-matched identity SNP panel to enable genotype identity QC",
+                executable=matcher_exe, references=["reference_fasta", "bam_matcher_loci"],
+            )
     typing_input_bam = normal_bam or tumor_bam
 
     if hla_alleles and not hla_file:
@@ -369,7 +415,7 @@ def build_automatic_production_plan(
         if available and refs.get("reference_fasta"):
             command = command or f"bash {root / 'scripts/run_mutect2_tumor_normal.sh'} --tumor-bam {tumor_bam} --normal-bam {normal_bam} --reference {refs['reference_fasta']} --sample-id {sample_id} --outdir {{outdir}}/dna/mutect2"
             somatic_vcf = "{outdir}/dna/mutect2/somatic.pass.vcf.gz"
-            add_stage("somatic_variant_calling", required=True, command=command, outputs={"somatic_vcf": somatic_vcf, "somatic_vcf_index": somatic_vcf + ".tbi"}, depends=alignment_deps)
+            add_stage("somatic_variant_calling", required=True, command=command, outputs={"somatic_vcf": somatic_vcf, "somatic_vcf_index": somatic_vcf + ".tbi"}, depends=paired_analysis_deps)
             decide("somatic_variant", "gatk_mutect2", "SELECTED", "tumor-normal BAM pair and reference are available", stage="somatic_variant_calling", required=True, executable=executable, references=["reference_fasta"])
         else:
             missing_required.append("somatic_vcf")
@@ -379,7 +425,10 @@ def build_automatic_production_plan(
 
     hla_dependency = ["hla_consensus"] if "hla_consensus" in stages else []
     if somatic_vcf and hla_file:
-        deps = (["somatic_variant_calling"] if "somatic_variant_calling" in stages else []) + hla_dependency
+        deps = list(dict.fromkeys(
+            (["somatic_variant_calling"] if "somatic_variant_calling" in stages else [])
+            + paired_analysis_deps + hla_dependency
+        ))
         command = (
             f"PYTHONPATH={root / 'src'} python {root / 'scripts/run_candidate_upstream.py'} --mode snv --input {somatic_vcf} "
             f"--hla-file {hla_file} --sample-id {sample_id} --outdir {{outdir}}/branches/snv/upstream "
@@ -397,7 +446,7 @@ def build_automatic_production_plan(
         facets_ref = refs.get("facets_snp_vcf")
         if facets_available and facets_ref:
             command = f"FACETS_MODE=common_snp FACETS_SNP_VCF={facets_ref} PATIENT_ID={sample_id} TUMOR_BAM={tumor_bam} NORMAL_BAM={normal_bam} OUTDIR={{outdir}}/purity/facets bash {root / 'scripts/run_facets_sample.sh'}"
-            add_stage("purity_facets", command=command, outputs={"purity": "{outdir}/purity/facets/purity.tsv"}, depends=alignment_deps)
+            add_stage("purity_facets", command=command, outputs={"purity": "{outdir}/purity/facets/purity.tsv"}, depends=paired_analysis_deps)
             purity_dirs.append("{outdir}/purity/facets")
             decide("purity_cnv", "facets", "SELECTED", "BAM pair and common SNP reference are available", stage="purity_facets", executable=facets_exe, references=["facets_snp_vcf"])
         else:
@@ -410,7 +459,7 @@ def build_automatic_production_plan(
             gc = refs.get("sequenza_gc_wiggle") or "{outdir}/purity/sequenza/reference.gc50.wig.gz"
             command = f"SAMPLE_ID={sample_id} TUMOR_BAM={tumor_bam} NORMAL_BAM={normal_bam} REF_FASTA={refs['reference_fasta']} GC_WIGGLE={gc} OUTDIR={{outdir}}/purity/sequenza bash {root / 'scripts/run_sequenza_sample_by_chrom.sh'}"
             summary = f"{{outdir}}/purity/sequenza/sequenza_fit/{sample_id}.sequenza_summary.tsv"
-            add_stage("purity_sequenza", command=command, outputs={"purity": summary}, depends=alignment_deps)
+            add_stage("purity_sequenza", command=command, outputs={"purity": summary}, depends=paired_analysis_deps)
             purity_dirs.append("{outdir}/purity/sequenza")
             decide("purity_cnv", "sequenza", "SELECTED", "BAM pair and reference FASTA are available", stage="purity_sequenza", executable=seq_exe, references=["reference_fasta", "sequenza_gc_wiggle"])
         else:
@@ -424,7 +473,7 @@ def build_automatic_production_plan(
             command = _template_command(template, {"tumor_bam": tumor_bam, "normal_bam": normal_bam, "sample_id": sample_id, "outdir": f"{{outdir}}/purity/{tool}", **refs})
             if available and command:
                 stage = f"purity_{tool}"
-                add_stage(stage, command=command, outputs={"result_dir": f"{{outdir}}/purity/{tool}"}, depends=alignment_deps)
+                add_stage(stage, command=command, outputs={"result_dir": f"{{outdir}}/purity/{tool}"}, depends=paired_analysis_deps)
                 purity_dirs.append(f"{{outdir}}/purity/{tool}")
                 decide("purity_cnv", tool, "SELECTED", "validated command_template is available", stage=stage, executable=executable)
             elif available:
@@ -445,7 +494,7 @@ def build_automatic_production_plan(
         if not permitted("lohhla"):
             decide("hla_loh", "lohhla", "POLICY_SKIPPED", f"excluded by {policy} policy", executable=loh_exe)
         elif loh_available and hla_file:
-            deps = alignment_deps + hla_dependency
+            deps = paired_analysis_deps + hla_dependency
             command = f"PATIENT_ID={sample_id} TUMOR_BAM={tumor_bam} NORMAL_BAM={normal_bam} HLA_FILE={hla_file} OUTDIR={{outdir}}/hla_loh/lohhla bash {root / 'scripts/run_lohhla_sample.sh'}"
             add_stage("hla_loh_lohhla", command=command, outputs={"result_dir": "{outdir}/hla_loh/lohhla"}, depends=deps)
             decide("hla_loh", "lohhla", "SELECTED", "tumor-normal BAM and HLA are available", stage="hla_loh_lohhla", executable=loh_exe, references=["lohhla_reference"])

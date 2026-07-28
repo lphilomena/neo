@@ -19,6 +19,7 @@ profiles:
       - rsem
       - vep
       - gatk
+      - bam_matcher
       - prime
       - mixmhcpred
       - bigmhc_im
@@ -150,6 +151,21 @@ tools:
     license_required: false
     distributable: true
     smoke_command: "gatk --version"
+
+  bam_matcher:
+    category: sample_identity
+    executable: bam-matcher
+    env: neoag-bam-matcher
+    install_root: tools/bam-matcher
+    required: false
+    recommended: true
+    license_required: false
+    distributable: true
+    smoke_command: "bam-matcher --help"
+    source: https://bitbucket.org/sacgf/bam-matcher
+    revision: e0c50af498d35a487cbb0dcff6a3a4506dba695a
+    reference: bam_matcher_loci
+    source_policy: "Use the official pinned source and a GRCh38-compatible SNP panel; never use bundled hg19 loci with GRCh38 BAMs."
 
   mhcflurry:
     category: presentation

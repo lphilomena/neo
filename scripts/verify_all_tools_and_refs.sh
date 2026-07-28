@@ -25,7 +25,7 @@ Environment:
 
 This script checks the core deployment tools plus VEP, GATK, NetMHCpan,
 NetMHCstabpan, PRIME/MixMHCpred/BigMHC, EasyFuse, splice-neoantigen tools,
-SpecHLA, HLA-LA, PURPLE/AMBER/COBALT, and Sequenza.
+SpecHLA, HLA-LA, PURPLE/AMBER/COBALT, Sequenza, and BAM-matcher.
 USAGE
 }
 
@@ -152,6 +152,21 @@ if [[ -n "$gatk_bin" ]]; then
   gatk --version >/dev/null 2>&1 || warn "gatk --version returned non-zero"
 else
   soft_fail "gatk missing from PATH; install with scripts/install_gatk.sh or source the GATK env"
+fi
+
+echo
+echo "==> BAM-matcher sample identity"
+bam_matcher_bin="$(command -v bam-matcher 2>/dev/null || true)"
+if [[ -n "$bam_matcher_bin" && -x "$bam_matcher_bin" ]]; then
+  pass "BAM-matcher executable: $bam_matcher_bin"
+  "$bam_matcher_bin" --help >/dev/null 2>&1 || soft_fail "BAM-matcher --help returned non-zero"
+else
+  warn "BAM-matcher missing; tumor-normal genotype identity will remain UNASSESSED"
+fi
+if [[ -n "${BAM_MATCHER_LOCI:-}" ]]; then
+  check_file "$BAM_MATCHER_LOCI" "BAM-matcher build-matched SNP panel"
+else
+  warn "BAM_MATCHER_LOCI unset; declare references.bam_matcher_loci in the reference manifest"
 fi
 if [[ -n "${NEOAG_REFERENCE_FASTA:-}" ]]; then
   check_file "$NEOAG_REFERENCE_FASTA" "GRCh38 FASTA"

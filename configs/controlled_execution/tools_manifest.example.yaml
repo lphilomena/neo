@@ -9,6 +9,17 @@ tools:
     env: env.neoag-core
     required: false
 
+  bam_matcher:
+    mode: conda
+    executable: bam-matcher
+    env: neoag-bam-matcher
+    required: false
+    recommended: true
+    smoke_command: "bam-matcher --help"
+    source: https://bitbucket.org/sacgf/bam-matcher
+    revision: e0c50af498d35a487cbb0dcff6a3a4506dba695a
+    notes: "Python 2.7 legacy tool; keep isolated. Requires a build-matched SNP panel."
+
   star:
     mode: container
     image: biocontainers/star:latest

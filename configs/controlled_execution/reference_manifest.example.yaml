@@ -109,6 +109,14 @@ references:
     sha256: "<sha256>"
     required: false
 
+  bam_matcher_loci:
+    path: /opt/neoag/refs/GRCh38/sample_identity/bam_matcher.common_snps.vcf
+    source: curated common high-MAF biallelic SNP identity panel
+    version: GRCh38
+    sha256: "<sha256>"
+    required: false
+    notes: "Must match reference_fasta contig naming and genome build; bundled BAM-matcher hg19 panels are not compatible."
+
   ascat_loci:
     path: /opt/neoag/refs/cnv/ascat/loci/G1000_loci_hg38.txt
     source: ASCAT hg38 reference

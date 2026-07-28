@@ -55,6 +55,13 @@ references:
     marker: .tbi
     required: true
 
+  bam_matcher_loci:
+    path: /root/neo/neodata4git/data/sample_identity/bam_matcher.common_snps.hg38.vcf
+    source: curated common high-MAF biallelic SNP identity panel
+    version: GRCh38
+    sha256: "-"
+    required: false
+
   normal_proteome:
     path: /root/neo/neodata4git/data/normal/proteome/Homo_sapiens.GRCh38.pep.all.fa
     source: Ensembl peptide reference

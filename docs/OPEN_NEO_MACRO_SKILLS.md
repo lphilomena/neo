@@ -77,6 +77,14 @@ Use `--automatic-tool-policy all-available` (default) to select every validated
 compatible runner. `balanced` and `minimal` are reserved for site policies that
 prefer fewer cross-validation tools.
 
+For tumor-normal BAM pairs, Skill2 also selects BAM-matcher when its isolated
+Python 2.7 environment and an explicit GRCh38 identity SNP panel are available.
+The generated DAG makes Mutect2, FACETS, Sequenza, PURPLE/ASCAT and LOHHLA wait
+for sample identity. A genotype `MISMATCH` blocks paired analysis;
+`INSUFFICIENT_DATA` remains reviewable and does not become a false mismatch.
+The hg19 VCF files bundled with upstream BAM-matcher must not be used for this
+project's GRCh38 samples.
+
 Reuse existing evidence:
 
 ```bash

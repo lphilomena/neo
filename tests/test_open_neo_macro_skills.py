@@ -33,6 +33,7 @@ from neoag.open_neo.rna_fusion_splice_profile import (
 )
 from neoag.open_neo.tool_consensus import build_tool_consensus
 from neoag.production_runner import load_production_manifest, run_production
+from neoag.sample_identity.bam_matcher import parse_bam_matcher_short
 from neoag.skill_taxonomy.registry import SKILLS_BY_NAME
 from neoag.skill_taxonomy.runner import run_skill
 
@@ -512,6 +513,43 @@ def test_capability_planner_builds_dna_hla_purity_loh_and_ranking_dag(tmp_path: 
     assert set(["facets", "sequenza", "lohhla", "netmhcpan", "mhcflurry"]) <= set(plan.selected_tools)
     rows = list(csv.DictReader(Path(plan.outputs["capability_decisions"]).open(), delimiter="\t"))
     assert any(row["domain"] == "purity_cnv" and row["status"] == "SELECTED" for row in rows)
+
+
+def test_bam_matcher_parser_normalizes_match_mismatch_and_inconclusive(tmp_path: Path):
+    header = "# BAM1\t BAM2\t DP_thresh\t FracCommon\t Same\t Same_hom\t Same_het\t Different\t 1het-2het\t 1het-2hom\t 1het-2sub\t 1hom-2het\t 1hom-2hom\t 1sub-2het\t Conclusion\n"
+    cases = [("SAME", "MATCH", 0.99, 240, 2), ("DIFFERENT", "MISMATCH", 0.42, 100, 140), ("INCONCLUSIVE", "INSUFFICIENT_DATA", 0.0, 5, 4)]
+    for index, (conclusion, expected, fraction, same, different) in enumerate(cases):
+        path = tmp_path / f"identity{index}.tsv"
+        path.write_text(header + f"normal.bam\ttumor.bam\t15\t{fraction}\t{same}\t1\t1\t{different}\t0\t0\t0\t0\t0\t0\t{conclusion}\n", encoding="utf-8")
+        parsed = parse_bam_matcher_short(path)
+        assert parsed["sample_identity_status"] == expected
+        assert parsed["sites_compared"] == same + different
+
+
+def test_capability_planner_gates_paired_analyses_on_bam_matcher(tmp_path: Path):
+    inputs, tools, refs = _automatic_plan_inputs(tmp_path)
+    tools_data = json.loads(tools.read_text(encoding="utf-8"))
+    tools_data["tools"]["bam_matcher"] = {"executable": "/bin/true"}
+    tools.write_text(json.dumps(tools_data), encoding="utf-8")
+    loci = tmp_path / "identity.hg38.vcf"
+    loci.write_text("##fileformat=VCFv4.2\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\nchr1\t1\t.\tA\tT\t.\tPASS\t.\n", encoding="utf-8")
+    refs_data = json.loads(refs.read_text(encoding="utf-8"))
+    refs_data["references"]["bam_matcher_loci"] = {"path": str(loci)}
+    refs.write_text(json.dumps(refs_data), encoding="utf-8")
+    plan = build_automatic_production_plan(inputs, tmp_path / "auto.toml", project_root=Path.cwd(), outdir=tmp_path / "run", tools_manifest=tools, reference_manifest=refs)
+    config = load_production_manifest(plan.manifest)
+    assert "sample_identity_bam_matcher" in config["stages"]
+    for stage in ("purity_facets", "purity_sequenza", "hla_loh_lohhla"):
+        assert "sample_identity_bam_matcher" in config["stages"][stage]["depends_on"]
+    assert any(row.domain == "sample_identity" and row.status == "SELECTED" for row in plan.decisions)
+
+
+def test_tool_consensus_emits_sample_identity_status(tmp_path: Path):
+    identity = tmp_path / "sample_identity.tsv"
+    identity.write_text("sample_identity_status\tofficial_conclusion\tconfidence\tfraction_common\tsites_compared\nMATCH\tSAME\thigh\t0.99\t200\n", encoding="utf-8")
+    outputs = build_tool_consensus({"tool_results": {"sample_identity": {"bam-matcher": str(identity)}}}, tmp_path / "consensus")
+    rows = list(csv.DictReader(Path(outputs["sample_identity_consensus.tsv"]).open(), delimiter="\t"))
+    assert rows[0]["sample_identity_status"] == "MATCH"
 
 
 def test_open_neo_run_raw_bam_plan_uses_capability_aware_manifest(tmp_path: Path):

@@ -38,6 +38,7 @@ Environment switches:
   SKIP_ARRIBA=1                          Skip Arriba / fusion env
   SKIP_PRIME=1                           Skip PRIME / MixMHCpred / BigMHC
   SKIP_OPTITYPE=1                        Skip OptiType
+  SKIP_BAM_MATCHER=1                     Skip BAM-matcher sample identity QC
 USAGE
 }
 
@@ -165,6 +166,7 @@ preflight() {
     scripts/install_fusion_tools.sh
     scripts/install_immunogenicity_tools.sh
     scripts/install_optitype.sh
+    scripts/install_bam_matcher.sh
     scripts/verify_external_tools.sh
     scripts/verify_reference_bundle.sh
     scripts/verify_all_tools_and_refs.sh
@@ -224,6 +226,10 @@ prime_installed() {
 
 optitype_installed() {
   command -v optitype >/dev/null 2>&1 && optitype check-deps >/dev/null 2>&1
+}
+
+bam_matcher_installed() {
+  command -v bam-matcher >/dev/null 2>&1 && bam-matcher --help >/dev/null 2>&1
 }
 
 should_install() {
@@ -290,6 +296,14 @@ else
   skip_step "OptiType"
 fi
 
+if should_install "${SKIP_BAM_MATCHER:-0}" bam_matcher_installed; then
+  run_step "Install BAM-matcher" bash "${ROOT}/scripts/install_bam_matcher.sh"
+elif [[ "${SKIP_BAM_MATCHER:-0}" == "1" ]]; then
+  info "Skip BAM-matcher (SKIP_BAM_MATCHER=1)"
+else
+  skip_step "BAM-matcher"
+fi
+
 source_tools_env_optional
 
 if [[ -n "${NEOAG_REF_BUNDLE:-}" && -d "${NEOAG_REF_BUNDLE}" ]]; then
@@ -318,6 +332,7 @@ Next steps by tool:
   Arriba : RNA BAM + references, then PATIENT_ID=S1 INPUT_BAM=... bash scripts/run_arriba_sample.sh
   PRIME  : neoag peptide-predict -i peptides.tsv -o results/sample --profile default
   OptiType: optitype run -i tumor_R1.fastq.gz -i tumor_R2.fastq.gz --dna -o results/optitype_sample --solver cbc --threads 8
+  BAM-matcher: declare a GRCh38 bam_matcher_loci VCF, then use scripts/run_bam_matcher_pair.sh before paired analyses
 
 Reference bundle:
   NEOAG_REF_BUNDLE=/path/to/neodata4git bash scripts/verify_reference_bundle.sh /path/to/neodata4git

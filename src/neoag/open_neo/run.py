@@ -242,6 +242,7 @@ def _register_production_tool_outputs(inputs: dict[str, Any], production_result:
         return
     tool_results = inputs.setdefault("tool_results", {})
     stage_domains = {
+        "sample_identity_bam_matcher": ("sample_identity", "bam-matcher"),
         "hla_optitype": ("hla_typing", "optitype"),
         "hla_hla_la": ("hla_typing", "hla-la"),
         "hla_spechla": ("hla_typing", "spechla"),

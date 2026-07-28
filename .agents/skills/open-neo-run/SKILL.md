@@ -31,6 +31,12 @@ can include BWA/samtools alignment, Mutect2, OptiType or command-template HLA
 callers, FACETS/Sequenza plus configured PURPLE/ASCAT, LOHHLA, VEP peptide
 generation and unified ranking.
 
+For a tumor-normal BAM pair, run BAM-matcher sample-identity QC before paired
+variant, purity/CNV and HLA-LOH analyses when both the isolated legacy tool and
+a GRCh38-compatible identity SNP panel are declared. `MISMATCH` is a hard
+paired-analysis failure; low comparable-site coverage is `INSUFFICIENT_DATA`
+and requires review rather than being treated as a mismatch.
+
 ## Modes
 
 - `plan`: inspect and write a route/run plan.
@@ -43,17 +49,18 @@ generation and unified ranking.
 
 1. Detect inputs in deterministic order: manifest declarations, explicit CLI fill-ins, directory scanning, then extension/header inference. Validate non-empty files, HLA syntax, VCF samples/build, BAM indexes, capture BED and output writability.
 2. Probe tool entrypoints, validated command templates, references, licenses and input compatibility. Write `capability_decisions.tsv`; PATH presence alone is not treated as a safe sample-level runner.
-3. Route to the existing fine-grained internal Skills and generate `capability_aware.production.toml` for raw inputs.
-4. Run Doctor/preflight.
-5. Use `pipeline-full` for the dry-run DAG and submit approved execute/resume requests through NeoAg Gateway to the production runner.
-6. Reuse existing gene/transcript TPM and RNA alt/VAF tables, or plan/run Salmon/RSEM gene plus transcript quantification from tumor RNA FASTQ and RNA ref/alt counting from tumor RNA BAM plus somatic VCF. Retain fusion/splice junction read evidence.
+3. For tumor-normal BAM input, verify genotype identity with BAM-matcher when configured. Never use the bundled hg19 panel with GRCh38 BAMs.
+4. Route to the existing fine-grained internal Skills and generate `capability_aware.production.toml` for raw inputs.
+5. Run Doctor/preflight.
+6. Use `pipeline-full` for the dry-run DAG and submit approved execute/resume requests through NeoAg Gateway to the production runner.
+7. Reuse existing gene/transcript TPM and RNA alt/VAF tables, or plan/run Salmon/RSEM gene plus transcript quantification from tumor RNA FASTQ and RNA ref/alt counting from tumor RNA BAM plus somatic VCF. Retain fusion/splice junction read evidence.
    For the automatic RNA profile, require HLA, FASTA/GTF, STAR index,
    EasyFuse reference, CTAT library, Salmon index, and tx2gene before execute.
    SNAF and SpliceMutr remain optional cohort/workflow stages; when their
    reviewed workflow files are absent they are `UNASSESSED`, not negative.
-7. Cross-check HLA typing, HLA LOH, fusion, splice, presentation and purity/CNV/CCF evidence by domain; missing evidence remains `UNASSESSED`.
-8. Build `all_tool_results.tsv`, long-form tool evidence and explicit consensus/conflict outputs.
-9. Preserve the weighted baseline, generate independent Evidence consensus rankings, compare both rankings, and write run/audit manifests.
+8. Cross-check HLA typing, HLA LOH, fusion, splice, presentation and purity/CNV/CCF evidence by domain; missing evidence remains `UNASSESSED`.
+9. Build `all_tool_results.tsv`, long-form tool evidence and explicit consensus/conflict outputs.
+10. Preserve the weighted baseline, generate independent Evidence consensus rankings, compare both rankings, and write run/audit manifests.
 
 ## Required outputs
 
@@ -65,6 +72,7 @@ generation and unified ranking.
 - `tool_run_status.tsv`, `tool_consensus_summary.tsv`, `tool_evidence.long.tsv`
 - `hla_typing_consensus.tsv`, `hla_loh_consensus.tsv`, `fusion_consensus.tsv`, `splice_consensus.tsv`
 - `presentation_consensus.tsv`, `purity_cnv_consensus.tsv`, `ccf_consensus.tsv`
+- `sample_identity_consensus.tsv` when tumor-normal genotype identity is assessed
 - `evidence_conflicts.tsv`, `evidence_source_conflicts.tsv`
 - `ranked_peptides.weighted_baseline.tsv`
 - `ranked_peptides.evidence_consensus.tsv`

@@ -16,6 +16,7 @@ from neoag.utils import read_tsv, write_tsv
 
 
 EXPECTED_TOOLS = {
+    "sample_identity": ("bam-matcher",),
     "hla_typing": ("optitype", "spechla", "hla-la", "hla-hd"),
     "hla_loh": ("lohhla", "spechla", "facets_hla_cnv", "purple_hla_cnv", "hla_expression"),
     "fusion": ("easyfuse", "arriba", "star-fusion", "fusioncatcher"),
@@ -39,6 +40,7 @@ def _declared(inputs: dict[str, Any], domain: str) -> dict[str, str]:
 def _all_declared(inputs: dict[str, Any]) -> dict[str, dict[str, str]]:
     result = {domain: _declared(inputs, domain) for domain in EXPECTED_TOOLS}
     direct = {
+        "sample_identity": inputs.get("sample_identity_tsv"),
         "hla_typing": inputs.get("hla_file"),
         "hla_loh": inputs.get("hla_loh_tsv"),
         "fusion": inputs.get("fusion_tsv"),
@@ -297,6 +299,29 @@ def _presentation_and_ccf_from_evidence(evidence_path: str | Path | None, outdir
     return pstatus, cstatus
 
 
+def _write_sample_identity(declared: dict[str, dict[str, str]], outdir: Path) -> tuple[str, list[dict[str, str]]]:
+    rows: list[dict[str, str]] = []
+    for tool, path in declared["sample_identity"].items():
+        if not Path(path).is_file():
+            continue
+        for record in read_tsv(path):
+            rows.append({
+                "tool": tool,
+                "sample_identity_status": str(record.get("sample_identity_status") or record.get("status") or "UNASSESSED"),
+                "official_conclusion": str(record.get("official_conclusion") or ""),
+                "confidence": str(record.get("confidence") or ""),
+                "fraction_common": str(record.get("fraction_common") or ""),
+                "sites_compared": str(record.get("sites_compared") or ""),
+                "source_file": path,
+            })
+    if not rows:
+        rows = [{"tool": "", "sample_identity_status": "UNASSESSED", "official_conclusion": "", "confidence": "", "fraction_common": "", "sites_compared": "", "source_file": ""}]
+    write_tsv(outdir / "sample_identity_consensus.tsv", rows)
+    states = {row["sample_identity_status"] for row in rows}
+    status = "MISMATCH" if "MISMATCH" in states else ("MATCH" if "MATCH" in states else "INSUFFICIENT_DATA" if "INSUFFICIENT_DATA" in states else "UNASSESSED")
+    return status, rows
+
+
 def build_tool_consensus(inputs: dict[str, Any], outdir: str | Path, *, evidence_path: str | Path | None = None) -> dict[str, str]:
     root = Path(outdir)
     root.mkdir(parents=True, exist_ok=True)
@@ -309,6 +334,7 @@ def build_tool_consensus(inputs: dict[str, Any], outdir: str | Path, *, evidence
     splice_status, _ = _write_splice(declared, root)
     purity_status, _ = _write_purity(inputs, declared, root)
     presentation_status, ccf_status = _presentation_and_ccf_from_evidence(evidence_path, root)
+    sample_identity_status, _ = _write_sample_identity(declared, root)
     if evidence_path:
         ranked_conflicts = Path(evidence_path).parent / "evidence_conflicts.tsv"
         if ranked_conflicts.is_file():
@@ -320,6 +346,7 @@ def build_tool_consensus(inputs: dict[str, Any], outdir: str | Path, *, evidence
                     "details": str(row.get("details") or row.get("values") or ""),
                 })
     summary = [
+        {"evidence_domain": "sample_identity", "consensus_status": sample_identity_status, "adopted_evidence": "genotype concordance across build-matched common SNPs", "reason": "MISMATCH blocks paired tumor-normal analyses; insufficient coverage requires review"},
         {"evidence_domain": "hla_typing", "consensus_status": hla_status, "adopted_evidence": "locus-level consensus", "reason": "allele calls compared by locus"},
         {"evidence_domain": "hla_loh", "consensus_status": loh_status, "adopted_evidence": "allele-level class-aware LOH", "reason": "HLA-I and HLA-II remain separate"},
         {"evidence_domain": "fusion", "consensus_status": fusion_status, "adopted_evidence": "caller and junction evidence", "reason": "caller count is supportive, not sufficient alone"},
@@ -342,6 +369,7 @@ def build_tool_consensus(inputs: dict[str, Any], outdir: str | Path, *, evidence
         "tool_evidence.long.tsv", "hla_typing_consensus.tsv", "hla_loh_consensus.tsv", "fusion_consensus.tsv",
         "splice_consensus.tsv", "presentation_consensus.tsv", "purity_cnv_consensus.tsv", "ccf_consensus.tsv",
         "restricting_hla_peptide_flags.tsv",
+        "sample_identity_consensus.tsv",
     )}
 
 
@@ -353,8 +381,9 @@ def enrich_all_tool_results(path: str | Path, consensus_summary: str | Path) -> 
     summary_rows = read_tsv(consensus_summary)
     statuses = {str(row.get("evidence_domain")): str(row.get("consensus_status")) for row in summary_rows}
     for row in rows:
-        row["tool_consensus_overall"] = "REVIEW_REQUIRED" if any(value in {"DISCORDANT", "STRONG_DISCORDANCE"} for value in statuses.values()) else "ASSESSED"
-        row["tool_consensus_conflicts"] = ",".join(sorted(key for key, value in statuses.items() if value in {"DISCORDANT", "STRONG_DISCORDANCE"}))
+        conflicts = sorted(key for key, value in statuses.items() if value in {"DISCORDANT", "STRONG_DISCORDANCE", "MISMATCH"})
+        row["tool_consensus_overall"] = "BLOCKED" if statuses.get("sample_identity") == "MISMATCH" else ("REVIEW_REQUIRED" if conflicts else "ASSESSED")
+        row["tool_consensus_conflicts"] = ",".join(conflicts)
         for domain, status in statuses.items():
             row[f"{domain}_consensus_status"] = status
     write_tsv(target, rows)

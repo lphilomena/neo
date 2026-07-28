@@ -23,6 +23,7 @@ DEFAULT_TOOL_EXECUTABLES = {
     "bwa": "bwa",
     "star": "STAR",
     "gatk": "gatk",
+    "bam_matcher": "bam-matcher",
     "vep": "vep",
     "netmhcpan": "netMHCpan",
     "netmhcstabpan": "NetMHCstabpan",
