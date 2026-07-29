@@ -50,6 +50,14 @@ Common states:
 - `AMBIGUOUS`
 - `UNRESOLVED`
 
+### `splice_peptide_provenance.tsv` status fields
+
+This table does not use a single generic `resolution_status` field. It records
+the more specific `junction_match_status`, `junction_support_status`, and
+`junction_match_method` fields. Together they state whether the peptide was
+mapped to a unique junction, whether verified RNA support was available, and
+which exact matching rule established the relationship.
+
 ## 4. Matching order
 
 1. canonical junction ID;

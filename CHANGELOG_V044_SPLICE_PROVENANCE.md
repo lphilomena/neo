@@ -68,6 +68,11 @@ For the splice normalizer it additionally emits:
 - `splice_qc.tsv`;
 - `provenance_manifest.json`.
 
+In `splice_peptide_provenance.tsv`, junction resolution is represented by the
+specific fields `junction_match_status`, `junction_support_status`, and
+`junction_match_method`; the table does not expose a generic
+`resolution_status` column.
+
 Scalar output tables remain backward compatible. `source_tools`, `source_records`, and `provenance_record_count` preserve the full source set. Conflicting scalar observations are retained in the conflict table rather than silently overwritten.
 
 ## Exact consensus
