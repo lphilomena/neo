@@ -15,7 +15,10 @@ DATA_URL_42="https://services.healthtech.dtu.dk/services/NetMHCpan-4.2/data.tar.
 DATA_URL_41="https://services.healthtech.dtu.dk/services/NetMHCpan-4.1/data.tar.gz"
 CONDA_BASE="${CONDA_BASE:-${NEOAG_CONDA_BASE:-$(conda info --base 2>/dev/null || echo ${HOME}/miniconda3)}}"
 SYSROOT="${CONDA_BASE}/envs/neoag-tools/x86_64-conda-linux-gnu/sysroot"
-LD_LINUX="${SYSROOT}/lib/ld-linux-x86-64.so.2"
+LD_LINUX="${SYSROOT}/lib64/ld-linux-x86-64.so.2"
+if [[ ! -x "${LD_LINUX}" ]]; then
+  LD_LINUX="${SYSROOT}/lib/ld-linux-x86-64.so.2"
+fi
 PATCHELF="${CONDA_BASE}/envs/neoag-tools/bin/patchelf"
 
 repair_netmhcpan_layout() {
@@ -74,7 +77,8 @@ EOF
   if [[ ! -f "${home}/netMHCpan" ]] \
     || grep -q 'tcsh' "${home}/netMHCpan" 2>/dev/null \
     || grep -q '/home/na/miniforge3' "${home}/netMHCpan" 2>/dev/null \
-    || grep -q 'CONDA_BASE="${CONDA_BASE:-/' "${home}/netMHCpan" 2>/dev/null; then
+    || grep -q 'CONDA_BASE="${CONDA_BASE:-/' "${home}/netMHCpan" 2>/dev/null \
+    || grep -Fq 'export NETMHCpan="${NETMHCpan:-${NETMHCPAN_HOME}}"' "${home}/netMHCpan" 2>/dev/null; then
     cat > "${home}/netMHCpan" <<'LAUNCHER'
 #!/usr/bin/env bash
 # NetMHCpan 4.2 frontend (conda sysroot for bundled binaries).
@@ -82,7 +86,8 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 export NETMHCPAN_HOME="${NETMHCPAN_HOME:-${ROOT}}"
-export NETMHCpan="${NETMHCpan:-${NETMHCPAN_HOME}}"
+PLATFORM_DIR="${NETMHCPAN_HOME}/Linux_$(uname -m)"
+export NETMHCpan="${NETMHCpan:-${PLATFORM_DIR}}"
 export TMPDIR="${NEOAG_NETMHCPAN_TMPDIR:-${NETMHCPAN_HOME}/tmp}"
 mkdir -p "${TMPDIR}"
 
@@ -91,7 +96,6 @@ if [[ -x "${WRAPPER}" ]]; then
   exec "${WRAPPER}" "$@"
 fi
 
-PLATFORM_DIR="${NETMHCPAN_HOME}/Linux_x86_64"
 BIN="${PLATFORM_DIR}/bin/netMHCpan-4.2"
 if [[ ! -x "${BIN}" ]]; then
   echo "netMHCpan binary not found under ${NETMHCPAN_HOME}" >&2
@@ -100,7 +104,10 @@ fi
 
 CONDA_BASE="${NEOAG_CONDA_BASE:-$(conda info --base 2>/dev/null || echo ${HOME}/miniconda3)}"
 SYSROOT="${CONDA_BASE}/envs/neoag-tools/x86_64-conda-linux-gnu/sysroot"
-LD_LINUX="${SYSROOT}/lib/ld-linux-x86-64.so.2"
+LD_LINUX="${SYSROOT}/lib64/ld-linux-x86-64.so.2"
+if [[ ! -x "${LD_LINUX}" ]]; then
+  LD_LINUX="${SYSROOT}/lib/ld-linux-x86-64.so.2"
+fi
 if [[ -x "${LD_LINUX}" ]]; then
   exec "${LD_LINUX}" --library-path "${SYSROOT}/lib64:${SYSROOT}/lib" "${BIN}" "$@"
 else
@@ -136,7 +143,8 @@ if [[ "${MODE}" == "repair" ]]; then
   echo "==> Smoke test ..."
   tmp="$(mktemp -d)"
   printf 'SIINFEKL HLA-A02:01 0\n' > "${tmp}/pep.pmhc"
-  if netMHCpan -pmhc -BA -f "${tmp}/pep.pmhc" -t -99.9 2>&1 | grep -q PEPLIST; then
+  if netMHCpan -pmhc -BA -f "${tmp}/pep.pmhc" -t -99.9 > "${tmp}/smoke.log" 2>&1 \
+    && grep -q PEPLIST "${tmp}/smoke.log"; then
     echo "==> NetMHCpan repair OK at ${NETMHCPAN_HOME}"
   else
     echo "WARN: netMHCpan repair smoke test failed" >&2

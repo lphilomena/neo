@@ -81,6 +81,9 @@ Fix:
 ### NetMHCpan Exists But Is Not Runnable
 
 Cause: copied wrappers may hard-code an old conda sysroot or old host paths.
+The loader may be under `sysroot/lib64` instead of `sysroot/lib`, and complete
+model thresholds may live under `Linux_$(uname -m)/data` rather than the
+top-level `data` directory.
 Observed error:
 
 ```text
@@ -91,10 +94,17 @@ Fix:
 
 - create a target-machine wrapper under `env_tool/bin/netMHCpan`;
 - set `NEOAG_NETMHCPAN_HOME` to the licensed local install;
+- probe both `sysroot/lib64/ld-linux-x86-64.so.2` and the `sysroot/lib`
+  fallback;
+- set `NETMHCpan` to the platform directory, for example
+  `${NETMHCPAN_HOME}/Linux_x86_64`, so complete threshold data are used;
+- preserve the colon in command-line alleles (`HLA-A02:06`, not
+  `HLA-A0206`);
 - rewrite copied licensed frontend defaults so `CONDA_BASE` points to the target
   machine, usually `/opt/neoag/env_tool/miniforge3`;
 - set temp dir to a writable location, usually `/tmp`;
-- validate with `netMHCpan -h` and a small prediction smoke test.
+- validate with a small `-pmhc` prediction and one prediction for every sample
+  HLA allele; `-h` alone does not prove that model thresholds are complete.
 
 `scripts/install_netmhcpan.sh --repair` must rewrite tcsh launchers and any
 frontend containing a stale source-machine conda
