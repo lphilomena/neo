@@ -1,10 +1,14 @@
-# NeoAg Event Pipeline v0.4.3 Online Release
+# NeoAg Event Pipeline v0.4.4 剪接证据追溯版本
 
 NeoAg Event Pipeline 是研究型肿瘤新抗原候选优先级分析流程。它将 SNV/InDel、fusion、splice、结构变异以及 peptide-only 候选统一转换为标准事件表和 peptide-HLA 表，并叠加 HLA 呈递、APPM、CCF、safety、immune escape、validation plan 和 report 证据层。
 
 本包是轻量级 online release，包含源代码、CLI 入口、Nextflow workflow、测试、fixture、profile、安装脚本和文档。不包含大型参考库、授权工具、conda 环境、缓存 work 目录、真实患者数据或生产结果。
 
 重要边界：本流程输出的是 computational triage 和实验验证规划结果，不构成临床诊断、临床耐药判定或已验证治疗建议。
+
+## v0.4.4 精确 Junction 与 Provenance 修复
+
+v0.4.4 建立 canonical splice-junction ID，删除同基因和邻近位点 reads 回填，将上游声明值与精确验证值分离；生产合并不再丢弃后续来源记录，splice 跨域确认必须落在同一 canonical junction。详见 `CHANGELOG_V044_SPLICE_PROVENANCE.md` 与 `docs/V044_SPLICE_PROVENANCE.md`。
 
 ## 功能概览
 
@@ -21,7 +25,7 @@ NeoAg Event Pipeline 是研究型肿瘤新抗原候选优先级分析流程。�
 - 生成患者沟通版和科研技术版 HTML 报告。
 - 通过 CLI 或内置 Nextflow wrapper 运行 fixture workflow。
 
-`.tsv` 后缀是 schema 兼容标签，不代表软件版本。当前 release 版本是 v0.4.3，但仍写出 schema-compatible 表格，便于旧下游脚本继续读取相同文件名。
+`.tsv` 后缀是 schema 兼容标签，不代表软件版本。当前 release 版本是 v0.4.4，但仍写出 schema-compatible 表格，便于旧下游脚本继续读取相同文件名。
 
 ## Agent Skills 和 Coordinator
 

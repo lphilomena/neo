@@ -3,10 +3,16 @@ EVENT_FIELDS = [
     "event_id","sample_id","disease_profile","event_type","mutation_source","peptide_consequence",
     "evidence_scope","priority_cap","wes_confidence_tier",
     "gene","event_name",
+    "genome_build","canonical_junction_id","source_junction_id",
+    "junction_chrom","junction_start","junction_end","junction_strand","junction_donor","junction_acceptor",
+    "junction_coordinate_system","junction_resolution_status","junction_resolution_reason",
+    "junction_match_status","junction_match_method","junction_support_status","junction_support_conflict","junction_support_reason",
+    "provided_rna_junction_reads",
     "cancer_gene_list_status","cancer_gene_symbols","cancer_gene_types",
     "cancer_driver_context","oncokb_annotated","cosmic_cgc_flag",
     "cancer_gene_source_count","cancer_gene_sources","cancer_gene_match_basis","cancer_gene_context",
     "chrom","pos","ref","alt","transcript_id","consequence",
+    "normal_junction_status",
     "rna_junction_reads","rna_junction_source","rna_frame_status",
     "event_confidence","event_expression","gene_expression_tpm","transcript_expression_tpm",
     "expression_evidence_status","rna_support_status","rna_evidence_completeness","rna_evidence_score",
@@ -31,6 +37,8 @@ EVENT_FIELDS = [
     "normal_ligandome_status","anchor_assessment_status","safety_evidence_completeness",
     "safety_missing_layers",
     "safety_status","safety_reason","appm_mhc_i_integrity","appm_mhc_ii_integrity",
+    "source_file","source_row_number","source_record_id","source_tools","source_records",
+    "provenance_record_count","evidence_conflict_status",
     "event_score","source"
 ]
 
@@ -38,14 +46,22 @@ PEPTIDE_FIELDS = [
     "peptide_id","event_id","sample_id","event_type","mutation_source","peptide_consequence",
     "evidence_scope","priority_cap","wes_confidence_tier",
     "gene","peptide","wildtype_peptide",
+    "genome_build","canonical_junction_id","source_junction_id",
+    "junction_chrom","junction_start","junction_end","junction_strand","junction_donor","junction_acceptor",
+    "junction_coordinate_system","junction_resolution_status","junction_resolution_reason",
+    "junction_match_status","junction_match_method","junction_support_status","junction_support_conflict","junction_support_reason",
+    "provided_rna_junction_reads",
     "cancer_gene_list_status","cancer_gene_symbols","cancer_gene_types",
     "cancer_driver_context","oncokb_annotated","cosmic_cgc_flag",
     "cancer_gene_source_count","cancer_gene_sources","cancer_gene_match_basis","cancer_gene_context",
-    "crosses_junction","contains_novel_aa","rna_junction_reads","rna_junction_source","rna_frame_status",
+    "crosses_junction","contains_novel_aa",
+    "rna_junction_reads","rna_junction_source","rna_frame_status",
     "gene_expression_tpm","transcript_expression_tpm","expression_evidence_status",
     "rna_support_status","rna_evidence_completeness","rna_evidence_score",
     "rna_vaf","rna_alt_reads","rna_depth","rna_vaf_source",
     "hla_allele","mhc_class","source_tool",
+    "source_file","source_row_number","source_record_id","source_tools","source_records",
+    "provenance_record_count","evidence_conflict_status","generation_status",
     "binding_rank","el_rank","presentation_score","immunogenicity_score",
     "wildtype_binding_rank","self_similarity_score","normal_hla_ligand_overlap",
     "netmhcpan_mt_ic50","netmhcpan_mt_rank_ba","netmhcpan_mt_rank_el",
@@ -155,6 +171,10 @@ INPUT_MODES = {
 STANDARD_INTERMEDIATE_PATHS = {
     "raw_events": "parsed/raw_events.tsv",
     "raw_peptides": "parsed/raw_peptides.tsv",
+    "splice_junctions": "parsed/splice_junctions.tsv",
+    "splice_tool_evidence": "parsed/splice_tool_evidence.long.tsv",
+    "splice_peptide_provenance": "parsed/splice_peptide_provenance.long.tsv",
+    "splice_conflicts": "parsed/splice_conflicts.tsv",
     "presentation_evidence": "presentation/presentation_evidence.tsv",
     "expression_evidence": "parsed/expression_evidence.tsv",
     "rna_junction_evidence": "parsed/rna_junction_evidence.tsv",
@@ -163,6 +183,15 @@ STANDARD_INTERMEDIATE_PATHS = {
     "ccf_lite": "clonality/ccf_lite.tsv",
     "safety_evidence": "safety/safety_evidence.tsv",
 }
+
+# v0.4.4 strict splice-junction registry/provenance schemas.
+from .splice.registry import (
+    JUNCTION_ENTITY_FIELDS as SPLICE_JUNCTION_FIELDS,
+    SPLICE_CONFLICT_FIELDS,
+    SPLICE_PEPTIDE_PROVENANCE_FIELDS,
+    SPLICE_TOOL_EVIDENCE_FIELDS,
+)
+
 
 
 PEPTIDE_SAFETY_FIELDS = [

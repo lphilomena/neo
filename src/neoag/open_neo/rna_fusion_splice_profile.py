@@ -145,7 +145,7 @@ def generate_rna_fusion_splice_manifest(
         f"hla_alleles = {_toml(hla_alleles)}",
         "tools_stub = false",
         "immunogenicity_stub = false",
-        'expected_peptide_sources = ["EasyFuse", "SNAF", "SpliceMutr"]',
+        f"expected_peptide_sources = {_toml(['EasyFuse'] + (['SNAF'] if inputs.get('snaf_workflow') else []) + (['SpliceMutr'] if inputs.get('splicemutr_workflow') else []))}",
         'presentation_predictors = ["netmhcpan", "mhcflurry"]',
         'required_presentation_predictors = ["netmhcpan"]',
     ]
@@ -299,6 +299,7 @@ def generate_rna_fusion_splice_manifest(
     splice_norm = (
         f"PYTHONPATH={_q(root / 'src')} {_q(Path(sys.executable))} "
         f"{script('normalize_rna_fusion_splice.py')} --sample-id {_q(sample_id)} "
+        f"--profile {_q(PROFILE_NAME)} --genome-build {_q(inputs.get('genome_build') or 'GRCh38')} "
         f"--junctions {{outdir}}/branches/splice/regtools_junctions.tsv "
         f"--snaf {{outdir}}/branches/splice/snaf/snaf_candidates.tsv "
         f"--splicemutr {{outdir}}/branches/splice/splicemutr/splicemutr_candidates.tsv "
@@ -310,7 +311,15 @@ def generate_rna_fusion_splice_manifest(
                "raw_events": "{outdir}/branches/splice/intermediates/raw_events.tsv",
                "raw_peptides": "{outdir}/branches/splice/intermediates/raw_peptides.tsv",
                "rna_junction_tsv": "{outdir}/branches/splice/intermediates/rna_junction_evidence.tsv",
+               "splice_junctions": "{outdir}/branches/splice/intermediates/splice_junctions.tsv",
+               "splice_tool_evidence": "{outdir}/branches/splice/intermediates/splice_tool_evidence.long.tsv",
+               "splice_peptide_provenance": "{outdir}/branches/splice/intermediates/splice_peptide_provenance.tsv",
+               "splice_event_merge_provenance": "{outdir}/branches/splice/intermediates/splice_event_merge_provenance.tsv",
+               "splice_peptide_merge_provenance": "{outdir}/branches/splice/intermediates/splice_peptide_merge_provenance.tsv",
+               "splice_merge_conflicts": "{outdir}/branches/splice/intermediates/splice_merge_conflicts.tsv",
                "splice_consensus": "{outdir}/branches/splice/intermediates/splice_consensus.tsv",
+               "splice_qc": "{outdir}/branches/splice/intermediates/splice_qc.tsv",
+               "provenance_manifest": "{outdir}/branches/splice/intermediates/provenance_manifest.json",
            }, depends_on=["junction_extraction", "snaf_discovery", "splicemutr_discovery"])
 
     lines += [

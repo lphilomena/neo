@@ -75,7 +75,7 @@ def cmd_run_demo(args):
         normal_expression=resource("normal_expression.example.tsv"), normal_hla_ligands=resource("normal_hla_ligands.example.tsv"),
         immunogenicity_stub=True,
     )
-    print("NeoAg v0.4.3 demo completed. Outputs retain .tsv names for schema compatibility.")
+    print("NeoAg v0.4.4 demo completed. Outputs retain .tsv names for schema compatibility.")
     for k,v in out.items(): print(f"  {k}: {v}")
 
 def cmd_run(args):

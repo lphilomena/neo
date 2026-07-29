@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "neoag-event-pipeline"
-version = "0.4.3"
+version = "0.4.4"
 description = "Neoantigen event prioritization pipeline with APPM 2.0, CCF 2.1, safety, immune-escape, and DNA SV-derived neoantigen P0 evidence layers"
 readme = "README.md"
 requires-python = ">=3.11"

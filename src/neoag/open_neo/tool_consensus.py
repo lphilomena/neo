@@ -12,6 +12,8 @@ from neoag.agent_skills.hla_typing_compare import locus_of, lowres, norm_allele
 from neoag.agent_skills.purity_cnv_review import collect_tool_results as collect_purity
 from neoag.agent_skills.purity_cnv_review import consensus as purity_consensus
 from neoag.hla_loh_crosscheck import crosscheck_hla_loh
+from neoag.splice.coordinates import iter_junction_records, peptide_metadata
+from neoag.splice.registry import JunctionRegistry, unresolved_event_id
 from neoag.utils import read_tsv, write_tsv
 
 
@@ -197,38 +199,190 @@ def _write_fusion(inputs: dict[str, Any], declared: dict[str, dict[str, str]], o
     return overall, rows
 
 
-def _event_key(row: dict[str, str]) -> str:
-    for key in ("event_id", "junction_id", "junction", "name", "id"):
-        if row.get(key):
-            return str(row[key])
-    chrom = row.get("chrom") or row.get("chr") or row.get("chromosome") or ""
-    start = row.get("start") or row.get("intron_start") or ""
-    end = row.get("end") or row.get("intron_end") or ""
-    return f"{chrom}:{start}-{end}" if chrom and start and end else ""
+def _write_splice(
+    declared: dict[str, dict[str, str]],
+    outdir: Path,
+) -> tuple[str, list[dict[str, str]]]:
+    """Create exact splice consensus without gene/locus string matching.
 
+    RNA evidence is registered first. DNA-prediction and neoantigen rows may
+    join it only through a canonical junction, exact unique source alias, or an
+    explicit unique variant-to-junction relation implemented by
+    :class:`JunctionRegistry`. Unresolved rows receive source-scoped IDs and can
+    never produce ``CROSS_DOMAIN_CONFIRMED``.
+    """
 
-def _write_splice(declared: dict[str, dict[str, str]], outdir: Path) -> tuple[str, list[dict[str, str]]]:
+    registry = JunctionRegistry()
     evidence: dict[str, dict[str, set[str]]] = defaultdict(lambda: defaultdict(set))
-    for domain in ("splice_dna", "splice_rna", "splice_neoantigen"):
-        for tool, path in declared[domain].items():
-            if not Path(path).is_file():
+    provenance: list[dict[str, str]] = []
+
+    def add_record(domain: str, tool: str, path: str, row_number: int, record, resolution) -> None:
+        canonical_id = resolution.junction_id
+        event_id = canonical_id or unresolved_event_id(record)
+        evidence[event_id][domain].add(tool)
+        evidence[event_id]["source_records"].add(record.source_record_id)
+        provenance.append(
+            {
+                "event_id": event_id,
+                "canonical_junction_id": canonical_id,
+                "evidence_domain": domain,
+                "tool": tool,
+                "source_file": path,
+                "source_row_number": str(row_number),
+                "source_record_id": record.source_record_id,
+                "source_junction_id": record.source_junction_id,
+                "resolution_status": resolution.status,
+                "resolution_method": resolution.method,
+                "coordinate_warning": resolution.warning or record.coordinate_warning,
+                "peptide_present": "yes" if peptide_metadata(record)["peptide"] else "no",
+            }
+        )
+
+    # RNA evidence establishes the primary exact registry.
+    for tool, path in sorted(declared["splice_rna"].items()):
+        source = Path(path)
+        if not source.is_file():
+            continue
+        for row_number, record in enumerate(
+            iter_junction_records(
+                source,
+                sample_id="",
+                source_tool=tool,
+                genome_build="GRCh38",
+                coordinate_system="auto",
+                strict=False,
+            ),
+            1,
+        ):
+            resolution = registry.add(record)
+            add_record("splice_rna", tool, str(source), row_number, record, resolution)
+
+    # Secondary domains are resolved against the RNA registry. Exact
+    # coordinate-only secondary entities are retained, but do not become RNA
+    # support merely because they were normalized.
+    for domain in ("splice_dna", "splice_neoantigen"):
+        for tool, path in sorted(declared[domain].items()):
+            source = Path(path)
+            if not source.is_file():
                 continue
-            for row in read_tsv(path):
-                key = _event_key(row)
-                if key:
-                    evidence[key][domain].add(tool)
+            for row_number, record in enumerate(
+                iter_junction_records(
+                    source,
+                    sample_id="",
+                    source_tool=tool,
+                    genome_build="GRCh38",
+                    coordinate_system="auto",
+                    strict=False,
+                ),
+                1,
+            ):
+                resolution = registry.resolve(record)
+                if resolution.junction is not None:
+                    registry.add(record, junction=resolution.junction)
+                add_record(domain, tool, str(source), row_number, record, resolution)
+
     rows: list[dict[str, str]] = []
     for event_id, domains in sorted(evidence.items()):
-        dna = ",".join(sorted(domains.get("splice_dna", set())))
-        rna = ",".join(sorted(domains.get("splice_rna", set())))
-        neo = ",".join(sorted(domains.get("splice_neoantigen", set())))
-        status = "CROSS_DOMAIN_CONFIRMED" if rna and neo else ("RNA_JUNCTION_SUPPORTED" if rna else ("PREDICTION_ONLY" if dna else "NEOANTIGEN_TOOL_ONLY"))
-        rows.append({"event_id": event_id, "dna_prediction_tools": dna, "rna_junction_tools": rna, "neoantigen_tools": neo, "status": status})
+        canonical_id = event_id if event_id.startswith("SJ|") else ""
+        dna = ";".join(sorted(domains.get("splice_dna", set())))
+        rna = ";".join(sorted(domains.get("splice_rna", set())))
+        neo = ";".join(sorted(domains.get("splice_neoantigen", set())))
+        if canonical_id and rna and neo:
+            status = "CROSS_DOMAIN_CONFIRMED_EXACT_JUNCTION"
+        elif canonical_id and rna and dna:
+            status = "DNA_RNA_EXACT_JUNCTION_SUPPORTED"
+        elif canonical_id and rna:
+            status = "RNA_JUNCTION_SUPPORTED"
+        elif canonical_id and neo and dna:
+            status = "DNA_NEO_EXACT_COORDINATE_NO_RNA_SUPPORT"
+        elif canonical_id and neo:
+            status = "NEOANTIGEN_TOOL_ONLY_EXACT_COORDINATE"
+        elif dna and not rna and not neo:
+            status = "PREDICTION_ONLY_UNRESOLVED"
+        elif neo and not rna:
+            status = "NEOANTIGEN_TOOL_ONLY_UNRESOLVED"
+        else:
+            status = "UNRESOLVED_SOURCE_RECORD"
+        rows.append(
+            {
+                "event_id": event_id,
+                "canonical_junction_id": canonical_id,
+                "junction_resolution_status": "RESOLVED" if canonical_id else "UNRESOLVED",
+                "dna_prediction_tools": dna,
+                "rna_junction_tools": rna,
+                "neoantigen_tools": neo,
+                "source_records": ";".join(sorted(domains.get("source_records", set()))),
+                "status": status,
+            }
+        )
+
     if not rows:
-        rows = [{"event_id": "", "dna_prediction_tools": "", "rna_junction_tools": "", "neoantigen_tools": "", "status": "UNASSESSED"}]
-    write_tsv(outdir / "splice_consensus.tsv", rows)
+        rows = [
+            {
+                "event_id": "",
+                "canonical_junction_id": "",
+                "junction_resolution_status": "UNASSESSED",
+                "dna_prediction_tools": "",
+                "rna_junction_tools": "",
+                "neoantigen_tools": "",
+                "source_records": "",
+                "status": "UNASSESSED",
+            }
+        ]
+
+    write_tsv(
+        outdir / "splice_consensus.tsv",
+        rows,
+        [
+            "event_id",
+            "canonical_junction_id",
+            "junction_resolution_status",
+            "dna_prediction_tools",
+            "rna_junction_tools",
+            "neoantigen_tools",
+            "source_records",
+            "status",
+        ],
+    )
+    write_tsv(
+        outdir / "splice_consensus_provenance.tsv",
+        provenance,
+        [
+            "event_id",
+            "canonical_junction_id",
+            "evidence_domain",
+            "tool",
+            "source_file",
+            "source_row_number",
+            "source_record_id",
+            "source_junction_id",
+            "resolution_status",
+            "resolution_method",
+            "coordinate_warning",
+            "peptide_present",
+        ],
+    )
+    write_tsv(
+        outdir / "splice_consensus_conflicts.tsv",
+        registry.conflicts
+        or [
+            {
+                "evidence_domain": "splice_junction",
+                "record_id": "",
+                "conflict_type": "NONE",
+                "details": "",
+                "source_tool": "",
+                "source_file": "",
+                "source_row_number": "",
+            }
+        ],
+    )
     states = {row["status"] for row in rows}
-    overall = "CROSS_DOMAIN_CONFIRMED" if "CROSS_DOMAIN_CONFIRMED" in states else ("PARTIAL" if states != {"UNASSESSED"} else "UNASSESSED")
+    overall = (
+        "CROSS_DOMAIN_CONFIRMED"
+        if "CROSS_DOMAIN_CONFIRMED_EXACT_JUNCTION" in states
+        else ("PARTIAL" if states != {"UNASSESSED"} else "UNASSESSED")
+    )
     return overall, rows
 
 

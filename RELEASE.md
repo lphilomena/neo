@@ -1,3 +1,26 @@
+# NeoAg Event Pipeline v0.4.4 — Exact Junction & Provenance Repair
+
+- Version: `v0.4.4`
+- Release date: 2026-07-28
+- Scope: exact splice-junction normalization, evidence non-leakage, and provenance-preserving production merges.
+
+## v0.4.4 Critical Fixes
+
+- Canonical junction identity is `SJ|build|chrom|intron_start|intron_end|strand`, with 1-based closed intron coordinates.
+- RegTools annotated tables and BED12 extraction output are normalized through explicit coordinate adapters.
+- Removed gene-level, nearest-locus, and maximum-read fallback transfer. Unresolved caller counts remain only in `provided_rna_junction_reads`.
+- Ambiguous source-junction aliases transfer zero verified reads and emit a conflict record.
+- SNAF/SpliceMutr cross-domain confirmation now requires an exact canonical junction.
+- Production-runner duplicate handling now materializes one provenance row per input record instead of discarding later rows.
+- Added event/peptide provenance, merge-conflict, canonical-junction, consensus, QC, and manifest outputs.
+- Added non-skipped regression tests for same-gene evidence leakage, coordinate conversion, ambiguous aliases, multi-tool provenance, and exact consensus.
+
+## Compatibility
+
+`raw_events.tsv` and `raw_peptides.tsv` remain schema-compatible outputs. New v0.4.4 fields are additive. Legacy `rna_junction_reads` now means verified exact-junction support; caller-provided but unverified values are isolated in `provided_rna_junction_reads`.
+
+---
+
 # NeoAg Event Pipeline v0.4.3 Online Release
 
 - Release name: `v043_online_20260629`

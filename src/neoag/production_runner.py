@@ -12,6 +12,11 @@ from pathlib import Path
 from typing import Any
 
 from .adapters.pvactools_parser import parse_pvactools_outputs
+from .provenance import (
+    CONFLICT_FIELDS,
+    PROVENANCE_FIELDS,
+    merge_rows_preserving_provenance,
+)
 from .schemas import EVENT_FIELDS, PEPTIDE_FIELDS
 from .utils import read_tsv, write_tsv
 
@@ -40,6 +45,7 @@ class ProductionResult:
     missing_sources: list[str] = field(default_factory=list)
     generated_config: str = ""
     final_outdir: str = ""
+    provenance_outputs: dict[str, str] = field(default_factory=dict)
 
 
 def load_production_manifest(path: str | Path) -> dict[str, Any]:
@@ -175,16 +181,53 @@ def _run_stage(
     return StageResult(name, "PASS", required, source, command, str(log_path), outputs)
 
 
-def _deduplicate(rows: list[dict[str, str]], fields: list[str], key_fields: tuple[str, ...]) -> list[dict[str, str]]:
-    seen: set[tuple[str, ...]] = set()
-    result: list[dict[str, str]] = []
-    for row in rows:
-        key = tuple(str(row.get(field) or "") for field in key_fields)
-        if key in seen:
-            continue
-        seen.add(key)
-        result.append({field: str(row.get(field) or "") for field in fields})
-    return result
+def _deduplicate(
+    rows: list[dict[str, str]],
+    fields: list[str],
+    key_fields: tuple[str, ...],
+) -> list[dict[str, str]]:
+    """Compatibility wrapper around the provenance-preserving v0.4.4 merge."""
+
+    merged, _, _ = merge_rows_preserving_provenance(
+        rows,
+        fields,
+        key_fields,
+        entity_type="production_entity",
+    )
+    return merged
+
+
+def _annotate_stage_provenance(
+    rows: list[dict[str, str]],
+    *,
+    stage: StageResult,
+    source_file: str,
+    entity_id_field: str,
+) -> list[dict[str, str]]:
+    annotated: list[dict[str, str]] = []
+    for row_number, raw in enumerate(rows, 1):
+        row = dict(raw)
+        row["_provenance_stage_name"] = stage.name
+        row["_provenance_stage_source"] = stage.source
+        row["_provenance_source_file"] = source_file
+        if not row.get("source_tools") and stage.source:
+            row["source_tools"] = stage.source
+        if not row.get("source_tool") and entity_id_field == "peptide_id" and stage.source:
+            row["source_tool"] = stage.source
+        if not row.get("source_file"):
+            row["source_file"] = source_file
+        if not row.get("source_row_number"):
+            row["source_row_number"] = str(row_number)
+        if not row.get("source_record_id"):
+            row["source_record_id"] = str(row.get(entity_id_field) or f"{stage.name}:{row_number}")
+        if not row.get("source_records"):
+            row["source_records"] = row["source_record_id"]
+        if not row.get("provenance_record_count"):
+            row["provenance_record_count"] = "1"
+        if not row.get("evidence_conflict_status"):
+            row["evidence_conflict_status"] = "NONE"
+        annotated.append(row)
+    return annotated
 
 
 def _candidate_rows(
@@ -198,7 +241,19 @@ def _candidate_rows(
     raw_events = outputs.get("raw_events")
     raw_peptides = outputs.get("raw_peptides")
     if raw_events and raw_peptides and Path(raw_events).is_file() and Path(raw_peptides).is_file():
-        return read_tsv(raw_events), read_tsv(raw_peptides)
+        events = _annotate_stage_provenance(
+            read_tsv(raw_events),
+            stage=stage,
+            source_file=str(raw_events),
+            entity_id_field="event_id",
+        )
+        peptides = _annotate_stage_provenance(
+            read_tsv(raw_peptides),
+            stage=stage,
+            source_file=str(raw_peptides),
+            entity_id_field="peptide_id",
+        )
+        return events, peptides
 
     pvac = outputs.get("pvac_files") or outputs.get("pvac_file") or outputs.get("pvac")
     if not pvac:
@@ -217,7 +272,20 @@ def _candidate_rows(
         events_path,
         peptides_path,
     )
-    return events, peptides
+    return (
+        _annotate_stage_provenance(
+            events,
+            stage=stage,
+            source_file=";".join(paths),
+            entity_id_field="event_id",
+        ),
+        _annotate_stage_provenance(
+            peptides,
+            stage=stage,
+            source_file=";".join(paths),
+            entity_id_field="peptide_id",
+        ),
+    )
 
 
 def _read_hla_alleles(run_cfg: dict[str, Any], stage_results: list[StageResult]) -> list[str]:
@@ -402,12 +470,33 @@ def run_production(
     merged_dir = run_outdir / "merged"
     merged_events = merged_dir / "raw_events.tsv"
     merged_peptides = merged_dir / "raw_peptides.tsv"
-    write_tsv(merged_events, _deduplicate(all_events, EVENT_FIELDS, ("event_id",)), EVENT_FIELDS)
-    write_tsv(
-        merged_peptides,
-        _deduplicate(all_peptides, PEPTIDE_FIELDS, ("peptide_id", "event_id", "peptide", "hla_allele")),
-        PEPTIDE_FIELDS,
+    merged_event_rows, event_provenance, event_conflicts = merge_rows_preserving_provenance(
+        all_events,
+        EVENT_FIELDS,
+        ("event_id",),
+        entity_type="production_event",
     )
+    # Biological peptide identity is event + sequence + restricting HLA. Caller-
+    # specific peptide IDs are provenance, not a reason to duplicate the entity.
+    merged_peptide_rows, peptide_provenance, peptide_conflicts = merge_rows_preserving_provenance(
+        all_peptides,
+        PEPTIDE_FIELDS,
+        ("event_id", "peptide", "hla_allele"),
+        entity_type="production_peptide",
+    )
+    write_tsv(merged_events, merged_event_rows, EVENT_FIELDS)
+    write_tsv(merged_peptides, merged_peptide_rows, PEPTIDE_FIELDS)
+    event_provenance_path = merged_dir / "event_provenance.tsv"
+    peptide_provenance_path = merged_dir / "peptide_provenance.tsv"
+    conflicts_path = merged_dir / "evidence_conflicts.tsv"
+    write_tsv(event_provenance_path, event_provenance, PROVENANCE_FIELDS)
+    write_tsv(peptide_provenance_path, peptide_provenance, PROVENANCE_FIELDS)
+    write_tsv(conflicts_path, event_conflicts + peptide_conflicts, CONFLICT_FIELDS)
+    provenance_outputs = {
+        "event_provenance": str(event_provenance_path),
+        "peptide_provenance": str(peptide_provenance_path),
+        "evidence_conflicts": str(conflicts_path),
+    }
 
     expected_sources = [str(source) for source in (expanded_run.get("expected_peptide_sources") or [])]
     detected_folded = {source.casefold() for source in detected_sources}
@@ -436,6 +525,7 @@ def run_production(
             source_status,
             detected_sources,
             missing_sources,
+            provenance_outputs=provenance_outputs,
         )
         result.stages.append(StageResult("unified_ranking", "FAILED", True, message="no HLA alleles available"))
         _write_result(result, run_outdir)
@@ -492,16 +582,17 @@ def run_production(
         "LOW_CONFIDENCE" if final_status == "PASS" else final_status
     )
     result = ProductionResult(
-        sample_id,
-        status,
-        str(run_outdir),
-        False,
-        stage_results,
-        source_status,
-        detected_sources,
-        missing_sources,
-        str(config_path),
-        str(final_outdir),
+        sample_id=sample_id,
+        status=status,
+        outdir=str(run_outdir),
+        dry_run=False,
+        stages=stage_results,
+        source_status=source_status,
+        detected_sources=detected_sources,
+        missing_sources=missing_sources,
+        generated_config=str(config_path),
+        final_outdir=str(final_outdir),
+        provenance_outputs=provenance_outputs,
     )
     _write_result(result, run_outdir)
     return result
