@@ -8,6 +8,10 @@ approval_required: false
 
 # neoag-splice
 
+扩展工具可通过 `bash scripts/install_extended_splice_tools.sh --all` 安装。
+SplAdder 与 ImmunoPepper 使用独立环境，IRFinder-S 使用官方容器，pVACbind
+使用隔离的 pVACtools 7 overlay，不覆盖旧版生产环境。
+
 ## 目标
 
 Splice/junction 输入标准化

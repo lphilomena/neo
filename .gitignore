@@ -90,3 +90,10 @@ configs/local/
 /bin/netMHCpan
 /bin/netmhcpan
 /bin/splicemutr-neoag
+/bin/spladder-neoag
+/bin/immunopepper-neoag
+/bin/irfinder-s-neoag
+/bin/pvacbind-neoag7
+/bin/pvacseq-neoag7
+/bin/pvacfuse-neoag7
+/bin/pvacsplice-neoag7

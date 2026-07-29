@@ -260,6 +260,35 @@ For splice-derived candidate discovery, reference installation, container
 setup, Skill2 routing, and cohort requirements are documented in
 [`SNAF_SPLICEMUTR_WORKFLOW.md`](SNAF_SPLICEMUTR_WORKFLOW.md).
 
+## Extended splice and peptide tools
+
+Install current official versions in isolated environments:
+
+```bash
+export NEOAG_CONDA_BASE=/path/to/miniforge3
+export NEOAG_ENV_ROOT=/large/path/to/envs
+export NEOAG_SPLICE_TOOLS_ROOT=/large/path/to/tool_sources
+bash scripts/install_extended_splice_tools.sh --all
+bash scripts/verify_extended_splice_tools.sh
+```
+
+`NEOAG_SPLADDER_ENV` and `NEOAG_IMMUNOPEPPER_ENV` can override the two
+environment locations independently when local SSD storage is preferable to a
+shared filesystem.
+
+Pinned versions are SplAdder 3.1.1, IRFinder-S 2.0.1, ImmunoPepper 2.0.0
+from the recorded official source commit, and pVACtools/pVACbind 7.1.1. The
+pVACtools 7 is installed as an isolated package overlay on the tested legacy
+6.1.1 dependency environment. The base environment remains unchanged, and the
+new wrappers use the `-neoag7` suffix. This avoids pip legacy-dependency
+backtracking while preserving the rollback path. Override the dependency base
+with `NEOAG_PVACTOOLS_BASE_ENV` when needed.
+
+ImmunoPepper consumes a SplAdder splice graph and therefore has its own
+compatibility environment. IRFinder-S uses the official Docker image. Set
+`NEOAG_IRFINDER_WORKDIR` to the directory containing its reference and sample
+inputs and use `/work/...` paths in IRFinder arguments.
+
 ## 7. Common failure table
 
 | Failure | Fix |

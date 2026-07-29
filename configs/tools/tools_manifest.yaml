@@ -47,6 +47,10 @@ profiles:
       - asneo
       - neosplice
       - splice2neo
+      - spladder
+      - irfinder_s
+      - immunopepper
+      - pvacbind
 
 tools:
   pvacseq:
@@ -78,6 +82,17 @@ tools:
     license_required: false
     distributable: true
     smoke_command: "pvacsplice --help"
+
+  pvacbind:
+    category: neoantigen
+    executable: pvacbind-neoag7
+    env: env.neoag-tools
+    overlay: tools/splice/pvactools-7.1.1-overlay
+    container: griffithlab/pvactools:7.1.1
+    required: false
+    license_required: false
+    distributable: true
+    smoke_command: "pvacbind-neoag7 --help"
 
   regtools:
     category: splice
@@ -127,6 +142,35 @@ tools:
     license_required: false
     distributable: true
     smoke_command: "splice2neo-neoag --help"
+
+  spladder:
+    category: splice
+    executable: spladder-neoag
+    env: env.neoag-spladder
+    required: false
+    license_required: false
+    distributable: true
+    smoke_command: "spladder-neoag --help"
+
+  irfinder_s:
+    category: splice
+    executable: irfinder-s-neoag
+    container: cloxd/irfinder:2.0.1
+    required: false
+    license_required: false
+    distributable: true
+    smoke_command: "irfinder-s-neoag --help"
+
+  immunopepper:
+    category: splice_neoantigen
+    executable: immunopepper-neoag
+    env: env.neoag-immunopepper
+    source: https://github.com/ratschlab/immunopepper
+    source_ref: aedd6ed6af1a0baf7d30f21111e628e84e167cdd
+    required: false
+    license_required: false
+    distributable: true
+    smoke_command: "immunopepper-neoag --help"
 
   vep:
     category: annotation
