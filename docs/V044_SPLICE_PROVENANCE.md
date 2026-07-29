@@ -96,6 +96,12 @@ PYTHONPATH=src python scripts/normalize_rna_fusion_splice.py \
 
 `--snaf`, `--splicemutr`, and `--normal-junctions` are optional. The primary `--junctions` table is required.
 
+The normalizer and the Skill2 production manifest track the complete audit set,
+including `junction_aliases.tsv`, `evidence_conflicts.tsv`,
+`splice_consensus_provenance.tsv`, and `splice_consensus_conflicts.tsv`.
+This keeps canonical entities, source-level evidence, alias ambiguity, and
+consensus conflicts discoverable from the same stage manifest.
+
 ## 7. Safety invariants
 
 - An unresolved source count never increases a candidate's RNA support score.

@@ -318,6 +318,10 @@ def generate_rna_fusion_splice_manifest(
                "splice_peptide_merge_provenance": "{outdir}/branches/splice/intermediates/splice_peptide_merge_provenance.tsv",
                "splice_merge_conflicts": "{outdir}/branches/splice/intermediates/splice_merge_conflicts.tsv",
                "splice_consensus": "{outdir}/branches/splice/intermediates/splice_consensus.tsv",
+               "splice_consensus_provenance": "{outdir}/branches/splice/intermediates/splice_consensus_provenance.tsv",
+               "splice_consensus_conflicts": "{outdir}/branches/splice/intermediates/splice_consensus_conflicts.tsv",
+               "junction_aliases": "{outdir}/branches/splice/intermediates/junction_aliases.tsv",
+               "splice_evidence_conflicts": "{outdir}/branches/splice/intermediates/evidence_conflicts.tsv",
                "splice_qc": "{outdir}/branches/splice/intermediates/splice_qc.tsv",
                "provenance_manifest": "{outdir}/branches/splice/intermediates/provenance_manifest.json",
            }, depends_on=["junction_extraction", "snaf_discovery", "splicemutr_discovery"])

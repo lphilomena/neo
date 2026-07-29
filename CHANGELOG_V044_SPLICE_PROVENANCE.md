@@ -62,6 +62,9 @@ For the splice normalizer it additionally emits:
 - `splice_merge_conflicts.tsv`;
 - `junction_aliases.tsv`;
 - `splice_consensus.tsv`;
+- `splice_consensus_provenance.tsv`;
+- `splice_consensus_conflicts.tsv`;
+- `evidence_conflicts.tsv`;
 - `splice_qc.tsv`;
 - `provenance_manifest.json`.
 

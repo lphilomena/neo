@@ -27,13 +27,13 @@ PASS
 
 ### Complete default test inventory
 
-All 503 collected default tests were executed in one default test run on the target server:
+All 507 collected default tests were executed in one default test run on the target server:
 
 ```text
-399 passed
+403 passed
 104 skipped
 0 failed
-503 total
+507 total
 ```
 
 The skipped cases are tests intentionally guarded by optional integration, external-tool, licensed-resource, or environment conditions. No collected default test failed.
@@ -64,7 +64,7 @@ The dedicated tests cover:
 - production deduplication with full source provenance.
 
 ```text
-8 passed
+9 passed
 0 failed
 ```
 

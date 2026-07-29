@@ -64,6 +64,21 @@ class NormalizedRecord:
 
 PRIMARY_JUNCTION_TOOLS = {"RegTools"}
 
+CONSENSUS_PROVENANCE_FIELDS = [
+    "event_id",
+    "canonical_junction_id",
+    "evidence_domain",
+    "tool",
+    "source_file",
+    "source_row_number",
+    "source_record_id",
+    "source_junction_id",
+    "resolution_status",
+    "resolution_method",
+    "coordinate_warning",
+    "peptide_present",
+]
+
 
 def _tokens(value: Any) -> list[str]:
     result: list[str] = []
@@ -668,6 +683,29 @@ def normalize_splice_sources(
         for alias, event_ids in sorted(registry.alias_to_ids.items())
     ]
 
+    domain_by_role = {
+        "rna_junction": "splice_rna",
+        "neoantigen": "splice_neoantigen",
+        "normal_background": "normal_background",
+    }
+    consensus_provenance_rows = [
+        {
+            "event_id": item.event_id,
+            "canonical_junction_id": item.resolution.junction_id,
+            "evidence_domain": domain_by_role.get(item.role, item.role),
+            "tool": item.record.source_tool,
+            "source_file": item.record.source_file,
+            "source_row_number": str(item.record.source_row_number),
+            "source_record_id": item.record.source_record_id,
+            "source_junction_id": item.record.source_junction_id,
+            "resolution_status": item.resolution.status,
+            "resolution_method": item.resolution.method,
+            "coordinate_warning": item.resolution.warning or item.record.coordinate_warning,
+            "peptide_present": "yes" if peptide_metadata(item.record)["peptide"] else "no",
+        }
+        for item in normalized
+    ]
+
     rna_evidence_rows: list[dict[str, str]] = []
     for event in events:
         event_id = event.get("event_id", "")
@@ -725,6 +763,8 @@ def normalize_splice_sources(
         "splice_merge_conflicts": out / "splice_merge_conflicts.tsv",
         "rna_junction_evidence": out / "rna_junction_evidence.tsv",
         "splice_consensus": out / "splice_consensus.tsv",
+        "splice_consensus_provenance": out / "splice_consensus_provenance.tsv",
+        "splice_consensus_conflicts": out / "splice_consensus_conflicts.tsv",
         "junction_aliases": out / "junction_aliases.tsv",
         "evidence_conflicts": out / "evidence_conflicts.tsv",
         "splice_qc": out / "splice_qc.tsv",
@@ -762,6 +802,16 @@ def normalize_splice_sources(
             "coordinate_resolution",
             "status",
         ],
+    )
+    write_tsv(
+        paths["splice_consensus_provenance"],
+        consensus_provenance_rows,
+        CONSENSUS_PROVENANCE_FIELDS,
+    )
+    write_tsv(
+        paths["splice_consensus_conflicts"],
+        public_conflicts,
+        SPLICE_CONFLICT_FIELDS,
     )
     write_tsv(
         paths["junction_aliases"],

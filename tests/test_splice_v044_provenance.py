@@ -10,6 +10,7 @@ from neoag.adapters.splice_junction_adapter import (
     merge_splice_into_catalog,
 )
 from neoag.open_neo.tool_consensus import _write_splice
+from neoag.open_neo.rna_fusion_splice_profile import generate_rna_fusion_splice_manifest
 from neoag.production_runner import run_production
 from neoag.splice.coordinates import iter_junction_records, read_source_rows
 from neoag.splice.normalization import normalize_splice_sources
@@ -168,6 +169,15 @@ def test_normalizer_keeps_exact_schema_and_multitool_provenance(tmp_path: Path):
         "metric": "gene_or_nearest_locus_fallbacks_used",
         "value": "0",
     }
+    assert Path(outputs["junction_aliases"]).is_file()
+    consensus_provenance = read_tsv(outputs["splice_consensus_provenance"])
+    assert {row["tool"] for row in consensus_provenance} == {
+        "RegTools",
+        "SNAF",
+        "SpliceMutr",
+    }
+    assert Path(outputs["splice_consensus_conflicts"]).is_file()
+    assert Path(outputs["evidence_conflicts"]).is_file()
 
 
 def test_tool_consensus_does_not_confirm_same_gene_different_junction(tmp_path: Path):
@@ -265,3 +275,27 @@ raw_peptides = "{peptide_b}"
     assert len(provenance) == 2
     assert {row["stage_source"] for row in provenance} == {"ToolA", "ToolB"}
     assert result.provenance_outputs["peptide_provenance"].endswith("peptide_provenance.tsv")
+
+
+def test_skill2_manifest_tracks_all_splice_audit_outputs(tmp_path: Path):
+    fastq1 = _write(tmp_path / "tumor_R1.fastq.gz", "fixture\n")
+    fastq2 = _write(tmp_path / "tumor_R2.fastq.gz", "fixture\n")
+    manifest = tmp_path / "rna_fusion_splice.production.toml"
+    generate_rna_fusion_splice_manifest(
+        {
+            "sample_id": "S1",
+            "tumor_rna_fastq": [str(fastq1), str(fastq2)],
+            "hla_alleles": ["HLA-A*02:01"],
+        },
+        manifest,
+        project_root=ROOT,
+        outdir=tmp_path / "run",
+    )
+    text = manifest.read_text(encoding="utf-8")
+    for filename in (
+        "junction_aliases.tsv",
+        "evidence_conflicts.tsv",
+        "splice_consensus_provenance.tsv",
+        "splice_consensus_conflicts.tsv",
+    ):
+        assert filename in text
