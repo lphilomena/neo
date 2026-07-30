@@ -7,8 +7,10 @@ import pytest
 from neoag.splice.adapters.immunopepper import parse_immunopepper_meta
 from neoag.splice.adapters.irfinder import parse_irfinder
 from neoag.splice.adapters.pvacbind import parse_pvacbind
-from neoag.splice.adapters.spladder import parse_spladder_gff3, parse_spladder_txt
-from neoag.splice.identifiers import splice_event_id
+from neoag.splice.adapters.regtools import parse_junction_source
+from neoag.splice.adapters.spladder import infer_event_type, parse_spladder_gff3, parse_spladder_txt
+from neoag.splice.coordinates import JunctionNormalizationError
+from neoag.splice.identifiers import sequence_sha256, splice_event_id
 from neoag.splice.pipeline import build_splice_provenance_layer
 from neoag.utils import read_tsv, write_tsv
 
@@ -93,10 +95,12 @@ def test_immunopepper_registers_partial_transcript_orf_and_origin(tmp_path: Path
 
 
 def test_pvacbind_requires_exact_fasta_index(tmp_path: Path):
+    protein = "MARNDCEQGHILK"
     mapping = tmp_path / "map.tsv"
     write_tsv(mapping, [{
         "index": "SPORF_1", "orf_id": "ORF|1", "transcript_hypothesis_id": "STH|1",
         "splice_event_id": "SEV|1", "sample_id": "S1", "gene": "G",
+        "sequence_sha256": sequence_sha256(protein),
     }])
     pvac = _write(
         tmp_path / "all_epitopes.tsv",
@@ -105,8 +109,9 @@ def test_pvacbind_requires_exact_fasta_index(tmp_path: Path):
         "UNKNOWN\tHLA-A*02:01\tRNDCEQGHI\t3\t40\t0.5\n",
     )
     entity_bundle = {
-        "orfs": [{"orf_id": "ORF|1", "transcript_hypothesis_id": "STH|1", "splice_event_id": "SEV|1", "gene": "G", "protein_sequence": "MARNDCEQGHJK"}],
-        "transcripts": [{"transcript_hypothesis_id": "STH|1", "junction_chain": "SJ|GRCh38|chr1|1|2|+"}],
+        "events": [{"splice_event_id": "SEV|1"}],
+        "orfs": [{"orf_id": "ORF|1", "transcript_hypothesis_id": "STH|1", "splice_event_id": "SEV|1", "gene": "G", "protein_sequence": protein, "protein_sequence_sha256": sequence_sha256(protein)}],
+        "transcripts": [{"transcript_hypothesis_id": "STH|1", "splice_event_id": "SEV|1", "junction_chain": "SJ|GRCh38|chr1|1|2|+"}],
         "peptide_origins": [],
     }
     bundle = parse_pvacbind(pvac, sample_id="S1", fasta_map=mapping, entity_bundle=entity_bundle)
@@ -121,7 +126,9 @@ def test_full_layer_has_five_level_referential_integrity_and_no_gene_read_leakag
     outputs1 = build_splice_provenance_layer(
         sample_id="S1", outdir=out1, junctions=inputs["reg"],
         spladder_gff3=[inputs["gff"]], immunopepper_meta=[inputs["meta"]],
-        normal_coverage=[inputs["normal_cov"]], strict=True,
+        normal_coverage=[inputs["normal_cov"]],
+        tool_versions={"RegTools": "fixture", "SplAdder": "fixture", "ImmunoPepper": "fixture"},
+        strict=True,
     )
     fasta_map = read_tsv(outputs1["pvacbind_fasta_map"])
     assert len(fasta_map) == 1
@@ -134,7 +141,9 @@ def test_full_layer_has_five_level_referential_integrity_and_no_gene_read_leakag
     outputs = build_splice_provenance_layer(
         sample_id="S1", outdir=out2, junctions=inputs["reg"],
         spladder_gff3=[inputs["gff"]], immunopepper_meta=[inputs["meta"]],
-        pvacbind=[pvac], normal_coverage=[inputs["normal_cov"]], strict=True,
+        pvacbind=[pvac], normal_coverage=[inputs["normal_cov"]],
+        tool_versions={"RegTools": "fixture", "SplAdder": "fixture", "ImmunoPepper": "fixture", "pVACbind": "fixture"},
+        strict=True,
     )
     junctions = {row["junction_id"]: row for row in read_tsv(outputs["junctions"])}
     assert junctions["SJ|GRCh38|chr1|151|200|+"]["total_split_reads"] == "17"
@@ -192,10 +201,12 @@ def test_immunopepper_official_semicolon_coordinates_and_isolated_semantics(tmp_
 
 
 def test_pvacbind_rejects_epitope_that_is_not_in_exact_mapped_orf(tmp_path: Path):
+    protein = "MARNDCEQGHILKFPSTWYV"
     mapping = tmp_path / "map.tsv"
     write_tsv(mapping, [{
         "index": "SPORF_1", "orf_id": "ORF|1", "transcript_hypothesis_id": "STH|1",
         "splice_event_id": "SEV|1", "sample_id": "S1", "gene": "G",
+        "sequence_sha256": sequence_sha256(protein),
     }])
     pvac = _write(
         tmp_path / "all_epitopes.tsv",
@@ -203,10 +214,125 @@ def test_pvacbind_rejects_epitope_that_is_not_in_exact_mapped_orf(tmp_path: Path
         "SPORF_1\tHLA-A*02:01\tYYYYYYYYY\t2\t25\n",
     )
     entity_bundle = {
-        "orfs": [{"orf_id": "ORF|1", "transcript_hypothesis_id": "STH|1", "splice_event_id": "SEV|1", "gene": "G", "protein_sequence": "MARNDCEQGHILKFPSTWYV"}],
-        "transcripts": [{"transcript_hypothesis_id": "STH|1", "junction_chain": "SJ|GRCh38|chr1|1|2|+"}],
+        "events": [{"splice_event_id": "SEV|1"}],
+        "orfs": [{"orf_id": "ORF|1", "transcript_hypothesis_id": "STH|1", "splice_event_id": "SEV|1", "gene": "G", "protein_sequence": protein, "protein_sequence_sha256": sequence_sha256(protein)}],
+        "transcripts": [{"transcript_hypothesis_id": "STH|1", "splice_event_id": "SEV|1", "junction_chain": "SJ|GRCh38|chr1|1|2|+"}],
         "peptide_origins": [],
     }
     bundle = parse_pvacbind(pvac, sample_id="S1", fasta_map=mapping, entity_bundle=entity_bundle)
     assert not bundle["presentation"]
     assert any(row["conflict_type"] == "PVACBIND_EPITOPE_ORF_MISMATCH" for row in bundle["conflicts"])
+
+
+def test_unstranded_junction_is_not_exact_and_strict_mode_rejects_it(tmp_path: Path):
+    junctions = _write(
+        tmp_path / "unstranded.tsv",
+        "chrom\tstart\tend\tname\tscore\nchr1\t150\t200\tJ1\t17\n",
+    )
+    bundle = parse_junction_source(
+        junctions, sample_id="S1", coordinate_system="regtools_annotated", strict=False,
+    )
+    assert bundle["junctions"][0]["junction_resolution_status"] == "RESOLVED_UNSTRANDED"
+    assert bundle["tool_evidence"][0]["verified_value"] == ""
+    assert bundle["tool_evidence"][0]["evidence_type"] == "UNSTRANDED_SPLIT_READ_SUPPORT_UNVERIFIED"
+    assert any(row["conflict_type"] == "JUNCTION_STRAND_UNRESOLVED" for row in bundle["conflicts"])
+    with pytest.raises(JunctionNormalizationError, match="strand is required"):
+        parse_junction_source(
+            junctions, sample_id="S1", coordinate_system="regtools_annotated", strict=True,
+        )
+
+
+def test_pvacbind_rejects_missing_orf_and_sequence_hash_mismatch(tmp_path: Path):
+    protein = "MARNDCEQGHILK"
+    mapping = tmp_path / "map.tsv"
+    write_tsv(mapping, [{
+        "index": "SPORF_1", "orf_id": "ORF|missing", "transcript_hypothesis_id": "STH|1",
+        "splice_event_id": "SEV|1", "sample_id": "S1", "gene": "G",
+        "sequence_sha256": "0" * 64,
+    }])
+    pvac = _write(
+        tmp_path / "all_epitopes.tsv",
+        "Index\tHLA Allele\tEpitope Seq\tSub-peptide Position\n"
+        "SPORF_1\tHLA-A*02:01\tARNDCEQGH\t2\n",
+    )
+    entity_bundle = {
+        "events": [{"splice_event_id": "SEV|1"}],
+        "transcripts": [{"transcript_hypothesis_id": "STH|1", "splice_event_id": "SEV|1"}],
+        "orfs": [], "peptide_origins": [],
+    }
+    bundle = parse_pvacbind(pvac, sample_id="S1", fasta_map=mapping, entity_bundle=entity_bundle)
+    assert not bundle["presentation"]
+    assert any(row["conflict_type"] == "PVACBIND_PROVENANCE_CHAIN_INVALID" for row in bundle["conflicts"])
+
+    entity_bundle["orfs"] = [{
+        "orf_id": "ORF|missing", "transcript_hypothesis_id": "STH|1", "splice_event_id": "SEV|1",
+        "protein_sequence": protein, "protein_sequence_sha256": sequence_sha256(protein),
+    }]
+    bundle = parse_pvacbind(pvac, sample_id="S1", fasta_map=mapping, entity_bundle=entity_bundle)
+    assert not bundle["presentation"]
+    assert "does not match ORF sequence" in bundle["conflicts"][0]["resolution_reason"]
+
+
+def test_pvacbind_rejects_epitope_with_multiple_unresolved_positions(tmp_path: Path):
+    protein = "AAAAAAAAAAA"
+    mapping = tmp_path / "map.tsv"
+    write_tsv(mapping, [{
+        "index": "SPORF_1", "orf_id": "ORF|1", "transcript_hypothesis_id": "STH|1",
+        "splice_event_id": "SEV|1", "sample_id": "S1", "gene": "G",
+        "sequence_sha256": sequence_sha256(protein),
+    }])
+    pvac = _write(
+        tmp_path / "all_epitopes.tsv",
+        "Index\tHLA Allele\tEpitope Seq\tSub-peptide Position\n"
+        "SPORF_1\tHLA-A*02:01\tAAAAAAAAA\t\n",
+    )
+    entity_bundle = {
+        "events": [{"splice_event_id": "SEV|1"}],
+        "transcripts": [{"transcript_hypothesis_id": "STH|1", "splice_event_id": "SEV|1"}],
+        "orfs": [{
+            "orf_id": "ORF|1", "transcript_hypothesis_id": "STH|1", "splice_event_id": "SEV|1",
+            "protein_sequence": protein, "protein_sequence_sha256": sequence_sha256(protein),
+        }],
+        "peptide_origins": [],
+    }
+    bundle = parse_pvacbind(pvac, sample_id="S1", fasta_map=mapping, entity_bundle=entity_bundle)
+    assert not bundle["presentation"]
+    assert any(row["conflict_type"] == "PVACBIND_EPITOPE_POSITION_UNRESOLVED" for row in bundle["conflicts"])
+
+
+@pytest.mark.parametrize(
+    ("label", "expected"),
+    [("cryptic exon", "CRYPTIC_EXON"), ("exitron", "EXITRON"), ("novel splice junction", "NOVEL_JUNCTION")],
+)
+def test_extended_splice_event_type_aliases(label: str, expected: str):
+    assert infer_event_type("events.tsv", explicit=label) == expected
+
+
+def test_immunopepper_marks_cryptic_exon_and_exitron(tmp_path: Path):
+    meta = _write(
+        tmp_path / "events.tsv",
+        "peptide\tid\tgeneName\tgeneChr\tgeneStrand\tmutationMode\tmodifiedExonsCoord\n"
+        "MARNDCEQGHILK\tTX1\tG1\tchr1\t+\tcryptic_exon\tchr1:100-150;chr1:201-250\n"
+        "MARNDCEQGHILK\tTX2\tG2\tchr2\t+\texitron\tchr2:100-150;chr2:201-250\n",
+    )
+    events = parse_immunopepper_meta(meta, sample_id="S1")["events"]
+    assert [row["event_type"] for row in events] == ["CRYPTIC_EXON", "EXITRON"]
+    assert events[0]["cryptic_exon_status"] == "PRESENT"
+
+
+def test_strict_layer_requires_versions_for_executed_tools(tmp_path: Path):
+    junctions = _write(
+        tmp_path / "junctions.tsv",
+        "chrom\tstart\tend\tname\tscore\tstrand\nchr1\t150\t200\tJ1\t17\t+\n",
+    )
+    with pytest.raises(ValueError, match="RegTools"):
+        build_splice_provenance_layer(
+            sample_id="S1", outdir=tmp_path / "blocked", junctions=junctions,
+            junction_coordinate_system="regtools_annotated", strict=True,
+        )
+    outputs = build_splice_provenance_layer(
+        sample_id="S1", outdir=tmp_path / "ready", junctions=junctions,
+        junction_coordinate_system="regtools_annotated",
+        tool_versions={"RegTools": "1.0-fixture"}, strict=True,
+    )
+    assert outputs["junctions"].is_file()

@@ -1,6 +1,6 @@
 # NeoAg v0.5.0 — Formal Splice Provenance Layer
 
-Release date: 2026-07-29
+Release date: 2026-07-30
 
 ## Added
 
@@ -20,10 +20,14 @@ Release date: 2026-07-29
 
 - No gene or nearest-locus fallback is used anywhere in the formal layer.
 - Caller-provided read counts do not transfer without exact canonical junction identity.
+- Unstranded junctions are retained only as unresolved review evidence; strict mode rejects them and they cannot contribute verified exact-junction support.
+- pVACbind presentation requires an intact event→transcript→ORF chain and matching FASTA-map, stored-ORF, and computed sequence SHA-256 values.
 - pVACbind positions inconsistent with the mapped ORF are corrected only through a unique exact sequence match; otherwise the row is rejected to the conflict table.
 - Normal non-detection without explicit adequate coverage remains incomplete.
 - Unknown peptide novelty receives a cap rather than being asserted as true or hard-failed as false.
 - ImmunoPepper `isJunctionList` is not used as a crossing flag.
+- Cryptic-exon, exitron, novel-junction, and complex-splice event labels are normalized explicitly.
+- Strict production builds require a locked version for every external tool whose input is consumed.
 
 ## Compatibility
 

@@ -25,14 +25,18 @@ _EVENT_ALIASES = {
     "intron_retention": "RI", "retained_intron": "RI", "ri": "RI",
     "mutex_exons": "MXE", "mutually_exclusive": "MXE", "mxe": "MXE",
     "mult_exon_skip": "MULTI_SE", "multi_exon_skip": "MULTI_SE",
+    "cryptic_exon": "CRYPTIC_EXON", "cryptic": "CRYPTIC_EXON",
+    "exitron": "EXITRON", "exonic_intron": "EXITRON",
+    "novel_junction": "NOVEL_JUNCTION", "novel_splice_junction": "NOVEL_JUNCTION",
+    "complex_splice": "COMPLEX_SPLICE", "complex": "COMPLEX_SPLICE",
 }
 
 
 def infer_event_type(path: str | Path, explicit: str = "") -> str:
     if clean(explicit):
-        key = clean(explicit).casefold().replace("-", "_")
+        key = re.sub(r"[^a-z0-9]+", "_", clean(explicit).casefold()).strip("_")
         return _EVENT_ALIASES.get(key, clean(explicit).upper())
-    name = Path(path).name.casefold().replace("-", "_")
+    name = re.sub(r"[^a-z0-9]+", "_", Path(path).name.casefold()).strip("_")
     for token, mapped in sorted(_EVENT_ALIASES.items(), key=lambda kv: -len(kv[0])):
         if token in name:
             return mapped
@@ -57,6 +61,7 @@ def _path_junctions(genome_build: str, chrom: str, strand: str, exons: list[tupl
 
 
 def _junction_row(j: CanonicalJunction, *, sample_id: str, path: Path, record_id: str, tool_version: str) -> dict[str, str]:
+    stranded = j.strand in {"+", "-"}
     return {
         "junction_id": j.junction_id, "sample_id": sample_id, "genome_build": j.genome_build,
         "chrom": j.chrom, "intron_start_1based": str(j.intron_start_1based),
@@ -66,8 +71,9 @@ def _junction_row(j: CanonicalJunction, *, sample_id: str, path: Path, record_id
         "unique_split_reads": "0", "multi_split_reads": "0", "total_split_reads": "0", "max_overhang": "",
         "source_coordinate_systems": "gff3_exon_1based_closed", "source_tools": "SplAdder",
         "source_tool_versions": tool_version, "source_files": str(path), "source_record_ids": record_id,
-        "provenance_record_count": "1", "junction_resolution_status": "RESOLVED_FROM_EXON_CHAIN",
-        "evidence_conflict_status": "NONE",
+        "provenance_record_count": "1",
+        "junction_resolution_status": "RESOLVED_FROM_EXON_CHAIN" if stranded else "RESOLVED_UNSTRANDED",
+        "evidence_conflict_status": "NONE" if stranded else "JUNCTION_STRAND_UNRESOLVED",
     }
 
 
@@ -106,6 +112,7 @@ def _build_event_bundle(
         gene=gene or gene_id,
         affected_exons=affected_exons,
     ) if all_junctions else link_id("SEV0", source_event_id, event_type, gene, affected_exons)
+    stranded = strand in {"+", "-"}
 
     junction_rows = [_junction_row(j, sample_id=sample_id, path=source_path, record_id=source_record, tool_version=tool_version) for j in all_junctions.values()]
     event_row = {
@@ -119,8 +126,8 @@ def _build_event_bundle(
         "cohort_analysis_status": "NOT_APPLICABLE", "source_tools": "SplAdder",
         "source_tool_versions": tool_version, "source_files": str(source_path),
         "source_record_ids": source_record, "provenance_record_count": "1",
-        "event_resolution_status": "RESOLVED" if all_junctions else "NO_JUNCTION_EDGE",
-        "evidence_conflict_status": "NONE",
+        "event_resolution_status": ("RESOLVED" if stranded else "RESOLVED_UNSTRANDED") if all_junctions else "NO_JUNCTION_EDGE",
+        "evidence_conflict_status": "NONE" if stranded else "JUNCTION_STRAND_UNRESOLVED",
     }
     links: list[dict[str, str]] = []
     transcripts: list[dict[str, str]] = []
@@ -175,13 +182,21 @@ def _build_event_bundle(
         "evidence_group": "SPLICE_GRAPH", "evidence_type": "SPLADDER_GRAPH_EDGE",
         "source_tool": "SplAdder", "source_tool_version": tool_version, "source_file": str(source_path),
         "source_row_number": "", "source_record_id": source_record, "provided_value": source_event_id,
-        "verified_value": jid, "resolution_status": "RESOLVED_EXACT",
-        "resolution_reason": "Junction is an exact edge in a SplAdder event path.",
+        "verified_value": jid if stranded else "",
+        "resolution_status": "RESOLVED_EXACT" if stranded else "RESOLVED_UNSTRANDED",
+        "resolution_reason": "Junction is an exact stranded edge in a SplAdder event path." if stranded else "SplAdder edge has no resolved strand; exact support was withheld.",
         "raw_payload_sha256": row_hash({"junction_id": jid, "source_event_id": source_event_id}),
     } for jid in all_junctions)
+    conflicts = [] if stranded else [{
+        "entity_type": "SPLICE_EVENT", "entity_id": event_id, "sample_id": sample_id,
+        "conflict_type": "JUNCTION_STRAND_UNRESOLVED", "field_name": "strand",
+        "observed_values": strand, "source_tools": "SplAdder", "source_record_ids": source_record,
+        "severity": "WARNING", "resolution_status": "UNRESOLVED",
+        "resolution_reason": "The event graph is retained for review but cannot contribute exact stranded junction support.",
+    }]
     return {
         "junctions": junction_rows, "events": [event_row], "event_junction_links": links,
-        "transcripts": transcripts, "tool_evidence": evidence, "conflicts": [],
+        "transcripts": transcripts, "tool_evidence": evidence, "conflicts": conflicts,
     }
 
 

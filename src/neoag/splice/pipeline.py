@@ -227,6 +227,9 @@ class SpliceLayer:
         transcripts = {x.get("transcript_hypothesis_id", "") for x in self.tables.get("transcripts", [])}
         orfs = {x.get("orf_id", "") for x in self.tables.get("orfs", [])}
         origins = {x.get("origin_peptide_id", "") for x in self.tables.get("peptide_origins", [])}
+        unstranded_junctions = sum(
+            1 for row in self.tables.get("junctions", []) if row.get("strand") not in {"+", "-"}
+        )
         checks = {
             "event_junction_links_missing_event": sum(1 for r in self.tables.get("event_junction_links", []) if r.get("splice_event_id") not in events),
             "event_junction_links_missing_junction": sum(1 for r in self.tables.get("event_junction_links", []) if r.get("junction_id") not in junctions),
@@ -239,6 +242,11 @@ class SpliceLayer:
         }
         rows = [{"metric": key, "value": str(value), "status": "PASS" if value == 0 else "FAIL", "detail": "Exact-ID referential integrity check."} for key, value in checks.items()]
         rows.extend([
+            {
+                "metric": "unstranded_canonical_junctions", "value": str(unstranded_junctions),
+                "status": "PASS" if unstranded_junctions == 0 else "FAIL",
+                "detail": "Canonical junctions require an explicit + or - strand for production use.",
+            },
             {"metric": "junction_count", "value": str(len(junctions)), "status": "INFO", "detail": "Canonical junction entities."},
             {"metric": "splice_event_count", "value": str(len(events)), "status": "INFO", "detail": "Biological splice event entities."},
             {"metric": "transcript_hypothesis_count", "value": str(len(transcripts)), "status": "INFO", "detail": "Transcript hypotheses."},
@@ -304,6 +312,14 @@ def _as_paths(values: Iterable[str | Path] | None) -> list[Path]:
     return [Path(x) for x in (values or [])]
 
 
+def _missing_locked_versions(versions: dict[str, str], required_tools: Iterable[str]) -> list[str]:
+    missing_values = {"", "UNASSESSED", "UNKNOWN", "NA", "N/A", "NONE"}
+    return sorted({
+        tool for tool in required_tools
+        if str(versions.get(tool, "")).strip().upper() in missing_values
+    })
+
+
 def build_splice_provenance_layer(
     *,
     sample_id: str,
@@ -328,6 +344,26 @@ def build_splice_provenance_layer(
     strict: bool = False,
 ) -> dict[str, Path]:
     versions = tool_versions or {}
+    required_tools: list[str] = []
+    if junctions:
+        required_tools.append("RegTools")
+    if star_junctions:
+        required_tools.append("STAR")
+    if spladder_gff3 or spladder_txt:
+        required_tools.append("SplAdder")
+    if irfinder:
+        required_tools.append("IRFinder-S")
+    if immunopepper_meta or immunopepper_kmers:
+        required_tools.append("ImmunoPepper")
+    if pvacbind:
+        required_tools.append("pVACbind")
+    if strict:
+        missing_versions = _missing_locked_versions(versions, required_tools)
+        if missing_versions:
+            raise ValueError(
+                "strict mode requires explicit TOOL=VERSION locks for all executed tools: "
+                + ", ".join(missing_versions)
+            )
     layer = SpliceLayer(sample_id=sample_id, genome_build=genome_build, disease_profile=disease_profile)
     if junctions:
         layer.register_input(junctions, role="primary_rna_junctions", tool="RegTools", version=versions.get("RegTools", "UNASSESSED"))

@@ -7,13 +7,19 @@
   "source_file_count": 867,
   "validation": {
     "full_default_tests": {
-      "passed": 416,
+      "passed": 424,
       "skipped": 104,
       "failed": 0
     },
     "splice_regression_tests": {
-      "passed": 19,
+      "passed": 27,
       "failed": 0
+    },
+    "p0_p1_provenance_hardening": {
+      "unstranded_junction_rejection": "PASS",
+      "pvacbind_foreign_key_and_sequence_hash_validation": "PASS",
+      "cryptic_exon_and_exitron_normalization": "PASS",
+      "strict_tool_version_locking": "PASS"
     },
     "synthetic_pvacbind_two_pass_smoke": "PASS",
     "wheel_isolated_import_and_cli": "PASS"

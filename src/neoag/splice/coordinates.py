@@ -537,6 +537,10 @@ def junction_record_from_row(
         raise JunctionNormalizationError(
             f"unable to normalize {source_tool} row {source_row_number} from {source_file}: {warning or 'coordinates missing'}"
         )
+    if strict and junction is not None and junction.strand == ".":
+        raise JunctionNormalizationError(
+            f"unable to normalize {source_tool} row {source_row_number} from {source_file}: strand is required in strict mode"
+        )
 
     unique_reads = int(
         to_float(

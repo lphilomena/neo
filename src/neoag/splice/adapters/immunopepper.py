@@ -97,6 +97,19 @@ def _valid_aa(sequence: str) -> str:
     return seq if seq and all(ch in "ACDEFGHIKLMNPQRSTVWY" for ch in seq) else ""
 
 
+def _event_type_from_mutation_mode(value: str) -> str:
+    key = re.sub(r"[^a-z0-9]+", "_", clean(value).casefold()).strip("_")
+    if "exitron" in key or "exonic_intron" in key:
+        return "EXITRON"
+    if "cryptic" in key and "exon" in key:
+        return "CRYPTIC_EXON"
+    if "novel" in key and "junction" in key:
+        return "NOVEL_JUNCTION"
+    if "intron" in key and ("ret" in key or "retain" in key):
+        return "RI"
+    return "COMPLEX_SPLICE"
+
+
 def parse_immunopepper_meta(
     path: str | Path,
     *,
@@ -122,7 +135,7 @@ def parse_immunopepper_meta(
         junction_ids = [j.junction_id for j in junctions]
         source_id = get(row, "id", "transcript_id", "index", default=f"row_{row_no}")
         mutation_mode = get(row, "mutationMode", "mutation_mode", "kmerType", default="SPLICE")
-        event_type = "RI" if "intron" in mutation_mode.casefold() and "ret" in mutation_mode.casefold() else "COMPLEX_SPLICE"
+        event_type = _event_type_from_mutation_mode(mutation_mode)
         event_id = (
             splice_event_id(
                 genome_build=build, event_type=event_type, strand=strand,
@@ -132,6 +145,7 @@ def parse_immunopepper_meta(
             if junction_ids
             else unresolved_splice_event_id(source_tool="ImmunoPepper", source_record_id=record_id, event_type=event_type)
         )
+        stranded = strand in {"+", "-"}
         for junction in junctions:
             result["junctions"].append({
                 "junction_id": junction.junction_id, "sample_id": sample_id, "genome_build": build,
@@ -142,8 +156,9 @@ def parse_immunopepper_meta(
                 "unique_split_reads": "0", "multi_split_reads": "0", "total_split_reads": "0", "max_overhang": "",
                 "source_coordinate_systems": "modified_exons_1based_closed", "source_tools": "ImmunoPepper",
                 "source_tool_versions": source_tool_version, "source_files": str(p), "source_record_ids": record_id,
-                "provenance_record_count": "1", "junction_resolution_status": "RESOLVED_FROM_EXON_CHAIN",
-                "evidence_conflict_status": "NONE",
+                "provenance_record_count": "1",
+                "junction_resolution_status": "RESOLVED_FROM_EXON_CHAIN" if stranded else "RESOLVED_UNSTRANDED",
+                "evidence_conflict_status": "NONE" if stranded else "JUNCTION_STRAND_UNRESOLVED",
             })
         result["events"].append({
             "splice_event_id": event_id, "sample_id": sample_id, "genome_build": build,
@@ -151,16 +166,25 @@ def parse_immunopepper_meta(
             "junction_ids": join_tokens(junction_ids), "reference_junction_ids": "",
             "alternative_junction_ids": join_tokens(junction_ids),
             "affected_exons": join_tokens(f"{c}:{a}-{b}:{strand}" for c, a, b in exons),
-            "annotation_status": "IMMUNOPEPPER_TRANSLATED", "cryptic_exon_status": "UNASSESSED",
+            "annotation_status": "IMMUNOPEPPER_TRANSLATED",
+            "cryptic_exon_status": "PRESENT" if event_type == "CRYPTIC_EXON" else "NOT_APPLICABLE",
             "psi": "", "delta_psi": "", "qvalue": "", "outlier_score": "",
             "event_expression": get(row, "variantSegExpr", "expression"),
             "event_confidence": "TRANSLATED_PATH", "reference_path_status": "UNRESOLVED",
             "cohort_analysis_status": "NOT_APPLICABLE", "source_tools": "ImmunoPepper",
             "source_tool_versions": source_tool_version, "source_files": str(p),
             "source_record_ids": record_id, "provenance_record_count": "1",
-            "event_resolution_status": "RESOLVED" if junction_ids else "JUNCTION_UNRESOLVED",
-            "evidence_conflict_status": "NONE" if junction_ids else "JUNCTION_UNRESOLVED",
+            "event_resolution_status": ("RESOLVED" if stranded else "RESOLVED_UNSTRANDED") if junction_ids else "JUNCTION_UNRESOLVED",
+            "evidence_conflict_status": ("NONE" if stranded else "JUNCTION_STRAND_UNRESOLVED") if junction_ids else "JUNCTION_UNRESOLVED",
         })
+        if junction_ids and not stranded:
+            result["conflicts"].append({
+                "entity_type": "SPLICE_EVENT", "entity_id": event_id, "sample_id": sample_id,
+                "conflict_type": "JUNCTION_STRAND_UNRESOLVED", "field_name": "geneStrand",
+                "observed_values": strand, "source_tools": "ImmunoPepper", "source_record_ids": record_id,
+                "severity": "WARNING", "resolution_status": "UNRESOLVED",
+                "resolution_reason": "The translated path is retained for review but cannot contribute exact stranded junction support.",
+            })
         exon_chain = [f"{c}:{a}-{b}:{strand}" for c, a, b in (reversed(exons) if strand == "-" else exons)]
         jchain = list(reversed(junction_ids)) if strand == "-" else junction_ids
         frame_raw = get(row, "readFrame", "reading_frame", "frame")

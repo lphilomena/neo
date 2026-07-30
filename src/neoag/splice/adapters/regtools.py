@@ -61,6 +61,17 @@ def parse_junction_source(
             })
             continue
         j = record.junction
+        exact_resolution = record.resolution_status == "RESOLVED"
+        resolution_status = "RESOLVED_EXACT" if exact_resolution else record.resolution_status
+        if not exact_resolution:
+            conflicts.append({
+                "entity_type": "JUNCTION", "entity_id": j.junction_id, "sample_id": sample_id,
+                "conflict_type": "JUNCTION_STRAND_UNRESOLVED", "field_name": "strand",
+                "observed_values": j.strand, "source_tools": source_tool,
+                "source_record_ids": record.source_record_id, "severity": "WARNING",
+                "resolution_status": "UNRESOLVED",
+                "resolution_reason": "Unstranded coordinates are retained for review but cannot contribute exact junction support.",
+            })
         junctions.append({
             "junction_id": j.junction_id,
             "sample_id": sample_id,
@@ -83,17 +94,19 @@ def parse_junction_source(
             "source_files": str(Path(path)),
             "source_record_ids": record.source_record_id,
             "provenance_record_count": "1",
-            "junction_resolution_status": "RESOLVED_EXACT",
-            "evidence_conflict_status": "NONE",
+            "junction_resolution_status": resolution_status,
+            "evidence_conflict_status": "NONE" if exact_resolution else "JUNCTION_STRAND_UNRESOLVED",
         })
         evidence.append({
             "entity_type": "JUNCTION", "entity_id": j.junction_id, "sample_id": sample_id,
-            "evidence_group": "RNA_JUNCTION", "evidence_type": "EXACT_SPLIT_READ_SUPPORT",
+            "evidence_group": "RNA_JUNCTION",
+            "evidence_type": "EXACT_SPLIT_READ_SUPPORT" if exact_resolution else "UNSTRANDED_SPLIT_READ_SUPPORT_UNVERIFIED",
             "source_tool": source_tool, "source_tool_version": source_tool_version,
             "source_file": str(Path(path)), "source_row_number": str(record.source_row_number),
             "source_record_id": record.source_record_id, "provided_value": str(record.total_split_reads),
-            "verified_value": str(record.total_split_reads), "resolution_status": "RESOLVED_EXACT",
-            "resolution_reason": record.resolution_method,
+            "verified_value": str(record.total_split_reads) if exact_resolution else "",
+            "resolution_status": resolution_status,
+            "resolution_reason": record.resolution_method if exact_resolution else "strand unavailable; exact support withheld",
             "raw_payload_sha256": raw_hash,
         })
     return {"junctions": junctions, "tool_evidence": evidence, "conflicts": conflicts}

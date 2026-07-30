@@ -35,6 +35,8 @@ def parse_irfinder(
         try:
             start1, end1 = convert_interval(start, end, coordinate_system)
             junction = CanonicalJunction(build, chrom, start1, end1, strand)
+            if strict and strand not in {"+", "-"}:
+                raise JunctionNormalizationError("strand is required in strict mode")
         except (ValueError, JunctionNormalizationError) as exc:
             result["conflicts"].append({
                 "entity_type": "SPLICE_EVENT", "entity_id": record_id, "sample_id": sample_id,
@@ -46,6 +48,7 @@ def parse_irfinder(
             if strict:
                 raise
             continue
+        stranded = strand in {"+", "-"}
         event_id = splice_event_id(
             genome_build=build, event_type="RI", strand=strand,
             junction_ids=[junction.junction_id], gene=gene or gene_id,
@@ -68,7 +71,8 @@ def parse_irfinder(
             "max_overhang": "", "source_coordinate_systems": coordinate_system,
             "source_tools": "IRFinder-S", "source_tool_versions": source_tool_version,
             "source_files": str(p), "source_record_ids": record_id, "provenance_record_count": "1",
-            "junction_resolution_status": "RESOLVED_EXACT", "evidence_conflict_status": "NONE",
+            "junction_resolution_status": "RESOLVED_EXACT" if stranded else "RESOLVED_UNSTRANDED",
+            "evidence_conflict_status": "NONE" if stranded else "JUNCTION_STRAND_UNRESOLVED",
         })
         result["events"].append({
             "splice_event_id": event_id, "sample_id": sample_id, "genome_build": build,
@@ -81,7 +85,8 @@ def parse_irfinder(
             "reference_path_status": "SPLICED_PATH_ANNOTATED", "cohort_analysis_status": "NOT_APPLICABLE",
             "source_tools": "IRFinder-S", "source_tool_versions": source_tool_version,
             "source_files": str(p), "source_record_ids": record_id, "provenance_record_count": "1",
-            "event_resolution_status": "RESOLVED", "evidence_conflict_status": "NONE" if not warnings else "IRFINDER_WARNING",
+            "event_resolution_status": "RESOLVED" if stranded else "RESOLVED_UNSTRANDED",
+            "evidence_conflict_status": ("NONE" if not warnings else "IRFINDER_WARNING") if stranded else "JUNCTION_STRAND_UNRESOLVED",
         })
         paths = [("SPLICED", [junction.junction_id]), ("RETAINED", [])]
         for idx, (role, chain) in enumerate(paths, start=1):
@@ -115,8 +120,17 @@ def parse_irfinder(
             "evidence_group": "INTRON_RETENTION", "evidence_type": "IRFINDER_IR_RATIO",
             "source_tool": "IRFinder-S", "source_tool_version": source_tool_version,
             "source_file": str(p), "source_row_number": str(row_no), "source_record_id": record_id,
-            "provided_value": ir_ratio, "verified_value": ir_ratio, "resolution_status": "RESOLVED_EXACT",
-            "resolution_reason": f"IRratio={ir_ratio}; depth={depth}; splice_left={splice_left}; splice_right={splice_right}; splice_exact={splice_exact}; warnings={warnings or 'NONE'}; validation={cnn or 'UNASSESSED'}",
+            "provided_value": ir_ratio, "verified_value": ir_ratio if stranded else "",
+            "resolution_status": "RESOLVED_EXACT" if stranded else "RESOLVED_UNSTRANDED",
+            "resolution_reason": f"IRratio={ir_ratio}; depth={depth}; splice_left={splice_left}; splice_right={splice_right}; splice_exact={splice_exact}; warnings={warnings or 'NONE'}; validation={cnn or 'UNASSESSED'}; strand={'resolved' if stranded else 'unresolved'}",
             "raw_payload_sha256": row_hash(row),
         })
+        if not stranded:
+            result["conflicts"].append({
+                "entity_type": "SPLICE_EVENT", "entity_id": event_id, "sample_id": sample_id,
+                "conflict_type": "JUNCTION_STRAND_UNRESOLVED", "field_name": "Strand",
+                "observed_values": strand, "source_tools": "IRFinder-S", "source_record_ids": record_id,
+                "severity": "WARNING", "resolution_status": "UNRESOLVED",
+                "resolution_reason": "The intron-retention record is retained for review but cannot contribute exact stranded support.",
+            })
     return result

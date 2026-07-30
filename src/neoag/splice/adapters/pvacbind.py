@@ -5,7 +5,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
-from neoag.splice.identifiers import link_id, peptide_id, peptide_origin_id, stable_id
+from neoag.splice.identifiers import link_id, peptide_id, peptide_origin_id, sequence_sha256, stable_id
 
 from .base import as_float_text, as_int, clean, get, infer_mhc_class, read_delimited, row_hash, source_record_id
 
@@ -82,6 +82,7 @@ def parse_pvacbind(
         "tool_evidence": [], "conflicts": [],
     }
     map_index = _read_map(fasta_map, entity_bundle)
+    events = {row["splice_event_id"]: row for row in (entity_bundle or {}).get("events", [])}
     orfs = {row["orf_id"]: row for row in (entity_bundle or {}).get("orfs", [])}
     transcripts = {row["transcript_hypothesis_id"]: row for row in (entity_bundle or {}).get("transcripts", [])}
     existing_origins: dict[tuple[str, str], list[dict[str, str]]] = defaultdict(list)
@@ -97,6 +98,16 @@ def parse_pvacbind(
         epitope = get(row, "Epitope Seq", "epitope_seq", "MT Epitope Seq", "peptide", "sequence").upper()
         hla = get(row, "HLA Allele", "hla_allele", "Allele")
         mhc_class = infer_mhc_class(hla)
+        if not epitope or not hla:
+            result["conflicts"].append({
+                "entity_type": "PRESENTATION", "entity_id": record_id, "sample_id": sample_id,
+                "conflict_type": "PVACBIND_REQUIRED_FIELD_MISSING", "field_name": "HLA Allele/Epitope Seq",
+                "observed_values": f"HLA={hla or 'MISSING'};epitope={epitope or 'MISSING'}",
+                "source_tools": "pVACbind", "source_record_ids": record_id, "severity": "ERROR",
+                "resolution_status": "UNRESOLVED",
+                "resolution_reason": "A presentation record requires both an HLA allele and a non-empty epitope sequence.",
+            })
+            continue
         if len(mappings) != 1:
             result["conflicts"].append({
                 "entity_type": "PRESENTATION", "entity_id": record_id, "sample_id": sample_id,
@@ -121,7 +132,56 @@ def parse_pvacbind(
         event_id = get(mapping, "splice_event_id")
         gene = get(mapping, "gene")
         orf = orfs.get(oid, {})
+        transcript = transcripts.get(sth, {})
+        event = events.get(event_id, {})
         protein = orf.get("protein_sequence", "")
+        map_sequence_hash = get(mapping, "sequence_sha256")
+        computed_sequence_hash = sequence_sha256(protein)
+        provenance_errors: list[str] = []
+        mapped_sample = get(mapping, "sample_id")
+        if mapped_sample and mapped_sample != sample_id:
+            provenance_errors.append(f"FASTA map sample mismatch: {mapped_sample} != {sample_id}")
+        if not oid or not orf:
+            provenance_errors.append(f"ORF missing: {oid or 'EMPTY'}")
+        if not sth or not transcript:
+            provenance_errors.append(f"transcript hypothesis missing: {sth or 'EMPTY'}")
+        if not event_id or not event:
+            provenance_errors.append(f"splice event missing: {event_id or 'EMPTY'}")
+        if orf and orf.get("transcript_hypothesis_id", "") != sth:
+            provenance_errors.append("ORF-to-transcript foreign key mismatch")
+        if orf and orf.get("splice_event_id", "") != event_id:
+            provenance_errors.append("ORF-to-event foreign key mismatch")
+        if transcript and transcript.get("splice_event_id", "") != event_id:
+            provenance_errors.append("transcript-to-event foreign key mismatch")
+        if not protein:
+            provenance_errors.append("ORF protein sequence missing")
+        if not map_sequence_hash:
+            provenance_errors.append("FASTA map sequence_sha256 missing")
+        elif computed_sequence_hash and map_sequence_hash != computed_sequence_hash:
+            provenance_errors.append("FASTA map sequence_sha256 does not match ORF sequence")
+        orf_sequence_hash = orf.get("protein_sequence_sha256", "")
+        if orf and not orf_sequence_hash:
+            provenance_errors.append("stored ORF protein_sequence_sha256 missing")
+        elif orf_sequence_hash and computed_sequence_hash and orf_sequence_hash != computed_sequence_hash:
+            provenance_errors.append("stored ORF protein_sequence_sha256 does not match ORF sequence")
+        if provenance_errors:
+            result["conflicts"].append({
+                "entity_type": "PRESENTATION", "entity_id": record_id, "sample_id": sample_id,
+                "conflict_type": "PVACBIND_PROVENANCE_CHAIN_INVALID", "field_name": "Index/ORF/transcript/event/sequence_sha256",
+                "observed_values": f"Index={index_value};orf={oid};transcript={sth};event={event_id};map_sha256={map_sequence_hash}",
+                "source_tools": "pVACbind", "source_record_ids": record_id, "severity": "ERROR",
+                "resolution_status": "UNRESOLVED", "resolution_reason": "; ".join(provenance_errors),
+            })
+            result["tool_evidence"].append({
+                "entity_type": "PRESENTATION", "entity_id": record_id, "sample_id": sample_id,
+                "evidence_group": "PRESENTATION", "evidence_type": "PVACBIND_PROVENANCE_REJECTED",
+                "source_tool": "pVACbind", "source_tool_version": source_tool_version,
+                "source_file": str(p), "source_row_number": str(row_no), "source_record_id": record_id,
+                "provided_value": f"{index_value}|{hla}|{epitope}", "verified_value": "",
+                "resolution_status": "UNRESOLVED", "resolution_reason": "; ".join(provenance_errors),
+                "raw_payload_sha256": row_hash(row),
+            })
+            continue
         position = as_int(get(row, "Sub-peptide Position", "sub_peptide_position", "position"), 0)
         occurrences = [i for i in range(len(protein)) if epitope and protein.startswith(epitope, i)] if protein else []
         stated_matches = bool(position and protein and protein[position - 1: position - 1 + len(epitope)] == epitope)
@@ -165,13 +225,22 @@ def parse_pvacbind(
             origin = origin_matches[0]
             por = origin["origin_peptide_id"]
             pid = origin["peptide_id"]
+        elif len(origin_matches) > 1:
+            result["conflicts"].append({
+                "entity_type": "PRESENTATION", "entity_id": record_id, "sample_id": sample_id,
+                "conflict_type": "PVACBIND_PEPTIDE_ORIGIN_AMBIGUOUS", "field_name": "origin_peptide_id",
+                "observed_values": ";".join(sorted(origin.get("origin_peptide_id", "") for origin in origin_matches)),
+                "source_tools": "pVACbind", "source_record_ids": record_id, "severity": "ERROR",
+                "resolution_status": "UNRESOLVED",
+                "resolution_reason": "Multiple existing peptide origins share this ORF and epitope; presentation evidence was withheld.",
+            })
+            continue
         else:
             pid = peptide_id(epitope)
             por = peptide_origin_id(
                 orf_id_value=oid, splice_event_id_value=event_id, peptide_sequence=epitope,
                 protein_start=position or "", protein_end=(position + len(epitope) - 1) if position else "",
             )
-            transcript = transcripts.get(sth, {})
             parent_origins = origins_by_orf.get(oid, [])
             crossing_states = {
                 _boundary_crossing(parent.get("junction_offset_in_peptide", ""), position, position + len(epitope) - 1)

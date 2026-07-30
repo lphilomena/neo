@@ -19,10 +19,10 @@ This is a research pipeline. A computationally generated ORF or peptide is not a
 
 ## 2. Core invariants
 
-1. Junction identity is exact: `genome build + chromosome + 1-based closed intron start + intron end + strand`.
+1. Junction identity is exact: `genome build + chromosome + 1-based closed intron start + intron end + strand`. Production `--strict` mode requires strand `+` or `-`; unstranded records are retained only as unresolved review evidence and cannot contribute exact support.
 2. No gene-name, nearest-coordinate, or largest-read fallback is permitted.
 3. Every foreign-key relation uses a stable formal identifier.
-4. pVACbind results map only through the exact generated FASTA `Index` and an exact epitope occurrence in that ORF.
+4. pVACbind results map only through the exact generated FASTA `Index`, an intact event→transcript→ORF foreign-key chain, a matching ORF sequence SHA-256, and an exact epitope occurrence in that ORF.
 5. Normal non-detection becomes supportive only when locus coverage is explicitly adequate.
 6. A partial ImmunoPepper translation is labelled as a partial translated segment, not a confirmed full-length ORF.
 7. Conflicts are materialized in `splice_conflicts.tsv`; they are never silently overwritten.
@@ -57,6 +57,8 @@ IDs are deterministic from biological identity fields. Caller-local names remain
 - SplAdder headered test-mode TSV/TXT.
 
 SplAdder HDF5 is deliberately not parsed in v0.5.0. Export GFF3 or TXT first.
+
+Normalized biological event types include `SE`, `A3SS`, `A5SS`, `MXE`, `MULTI_SE`, `RI`, `CRYPTIC_EXON`, `EXITRON`, `NOVEL_JUNCTION`, and `COMPLEX_SPLICE`. Cryptic-exon and exitron labels are accepted from explicit SplAdder exports and ImmunoPepper mutation modes; they remain transcript hypotheses until independently validated.
 
 ### Intron retention
 
@@ -157,8 +159,14 @@ neoag-splice-layer build \
   --immunopepper-meta ref_sample_peptides_meta.tsv \
   --pvacbind-fasta-map pre_pvacbind/splice_pvacbind_fasta_map.tsv \
   --pvacbind pvacbind/MHC_Class_I/PATIENT_001.MHC_I.all_epitopes.tsv \
+  --tool-version RegTools=1.0.0 \
+  --tool-version SplAdder=3.1.1 \
+  --tool-version ImmunoPepper=<locked-commit> \
+  --tool-version pVACbind=7.1.1 \
   --strict
 ```
+
+`--strict` requires an explicit `TOOL=VERSION` value for every external tool whose input is used in that invocation. Missing, `UNKNOWN`, or `UNASSESSED` versions block the run.
 
 ## 7. Evidence grades
 
@@ -190,9 +198,11 @@ Final `R1–R4` tiers are constrained by caps and hard failures. Unknown peptide
 A presentation row is accepted only when:
 
 1. `Index` maps to exactly one generated FASTA record;
-2. that FASTA record maps to exactly one ORF/event chain;
-3. the epitope occurs exactly in the mapped ORF;
-4. the reported position matches, or a unique exact sequence occurrence allows a recorded correction.
+2. that FASTA record maps to existing event, transcript-hypothesis, and ORF entities with consistent foreign keys;
+3. the FASTA-map sequence SHA-256, stored ORF SHA-256, and computed ORF sequence SHA-256 agree;
+4. the epitope occurs exactly in the mapped ORF;
+5. the reported position matches, or a unique exact sequence occurrence allows a recorded correction;
+6. HLA allele and epitope fields are present and a pre-existing peptide origin is either unique or a new exact origin can be created.
 
 Unmapped, ambiguous, or sequence-inconsistent results are written to the conflict table and contribute no presentation evidence.
 
