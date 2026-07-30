@@ -98,14 +98,23 @@ def _expand(value: Any) -> str:
 
 def _existing(value: Any) -> str:
     path = Path(_expand(value)) if value else None
-    return str(path.resolve()) if path and path.exists() else ""
+    if not path:
+        return ""
+    try:
+        return str(path.resolve()) if path.exists() else ""
+    except OSError:
+        # A manifest may contain an otherwise valid path owned by another
+        # account or copied from another machine. Treat it as unavailable and
+        # continue portable-root discovery instead of aborting installation.
+        return ""
 
 
 def _resolve_executable(name: str, spec: dict[str, Any], roots: list[Path]) -> str:
     declared = str(spec.get("executable") or spec.get("path") or "")
     if declared:
-        if Path(_expand(declared)).is_file():
-            return str(Path(_expand(declared)).resolve())
+        declared_path = _existing(declared)
+        if declared_path and Path(declared_path).is_file():
+            return declared_path
         found = shutil.which(declared)
         if found:
             return found
@@ -118,8 +127,9 @@ def _resolve_executable(name: str, spec: dict[str, Any], roots: list[Path]) -> s
             if not candidate:
                 continue
             for path in (root / "bin" / candidate, root / "tools" / name / candidate):
-                if path.is_file() and os.access(path, os.X_OK):
-                    return str(path.resolve())
+                resolved = _existing(path)
+                if resolved and Path(resolved).is_file() and os.access(resolved, os.X_OK):
+                    return resolved
         envs = root / "envs"
         if envs.is_dir():
             for candidate in candidates:
@@ -140,8 +150,9 @@ def _resolve_reference(name: str, spec: dict[str, Any], roots: list[Path]) -> st
     for root in roots:
         for relative in REFERENCE_CANDIDATES.get(name, ()):
             candidate = root / relative
-            if candidate.exists():
-                return str(candidate.resolve())
+            resolved = _existing(candidate)
+            if resolved:
+                return resolved
     return ""
 
 

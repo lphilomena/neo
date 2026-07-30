@@ -235,6 +235,26 @@ def test_install_check_writes_comprehensive_local_manifests(tmp_path: Path):
     assert all(not path.startswith("/srv/") for path in target_paths[1:])
 
 
+def test_install_tier_assessment_marks_inaccessible_reference_missing(tmp_path: Path, monkeypatch):
+    inaccessible = "/root/other-machine/data/ref/hg38/Homo_sapiens_assembly38.fasta"
+    manifest = tmp_path / "references.json"
+    manifest.write_text(json.dumps({"references": {
+        "reference_fasta": {"path": inaccessible},
+    }}), encoding="utf-8")
+    original_exists = Path.exists
+
+    def guarded_exists(path: Path) -> bool:
+        if str(path) == inaccessible:
+            raise PermissionError(inaccessible)
+        return original_exists(path)
+
+    monkeypatch.setattr(Path, "exists", guarded_exists)
+    status, rows = _assess_tier("prediction", [], manifest)
+    by_name = {row["requirement"]: row for row in rows}
+    assert status == "BLOCKED"
+    assert by_name["reference_fasta"]["status"] == "MISSING"
+
+
 def test_auto_config_discovers_tools_references_and_templates(tmp_path: Path):
     project = tmp_path / "project"
     tools_root = tmp_path / "tools"
@@ -280,6 +300,39 @@ def test_auto_config_discovers_tools_references_and_templates(tmp_path: Path):
     assert "hla_la" in templates and "bam_matcher" in templates
     assert (project / "configs/local/tools_manifest.generated.yaml").is_file()
     assert Path(result.outputs["configuration_status"]).is_file()
+
+
+def test_auto_config_skips_inaccessible_paths_from_another_machine(tmp_path: Path, monkeypatch):
+    project = tmp_path / "project"; project.mkdir()
+    tools_root = tmp_path / "tools"; tools_root.mkdir()
+    refs_root = tmp_path / "refs"
+    portable_fasta = refs_root / "data/ref/hg38/Homo_sapiens_assembly38.fasta"
+    portable_fasta.parent.mkdir(parents=True)
+    portable_fasta.write_text(">chr1\nA\n", encoding="utf-8")
+    tools_manifest = tmp_path / "tools.json"
+    tools_manifest.write_text(json.dumps({"tools": {}}), encoding="utf-8")
+    refs_manifest = tmp_path / "references.json"
+    inaccessible = "/root/other-machine/data/ref/hg38/Homo_sapiens_assembly38.fasta"
+    refs_manifest.write_text(json.dumps({"genome_build": "GRCh38", "references": {
+        "reference_fasta": {"path": inaccessible},
+    }}), encoding="utf-8")
+
+    original_exists = Path.exists
+
+    def guarded_exists(path: Path) -> bool:
+        if str(path) == inaccessible:
+            raise PermissionError(inaccessible)
+        return original_exists(path)
+
+    monkeypatch.setattr(Path, "exists", guarded_exists)
+    result = configure_machine(
+        project_root=project, tools_manifest=tools_manifest, reference_manifest=refs_manifest,
+        outdir=tmp_path / "configured", tools_root=tools_root, reference_root=refs_root,
+        licensed_root=tmp_path / "licensed",
+    )
+    row = next(row for row in result.rows if row["component"] == "reference_fasta")
+    assert row["status"] == "CONFIGURED"
+    assert row["resolved_path"] == str(portable_fasta.resolve())
 
 
 def test_auto_config_rejects_wrong_build_bam_matcher_panel(tmp_path: Path):

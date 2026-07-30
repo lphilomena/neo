@@ -7,7 +7,7 @@
   "source_file_count": 871,
   "validation": {
     "full_default_tests": {
-      "passed": 430,
+      "passed": 433,
       "skipped": 105,
       "failed": 0
     },
@@ -28,6 +28,12 @@
       "exact_high_order_evidence_linking": "PASS",
       "rna_assay_independence_tracking": "PASS",
       "hard_fail_and_cap_conflict_materialization": "PASS"
+    },
+    "portable_install_check_hardening": {
+      "inaccessible_tool_path_handling": "PASS",
+      "inaccessible_reference_path_handling": "PASS",
+      "cross_machine_manifest_tier_assessment": "PASS",
+      "full_tier_plan_and_verify_execution": "PASS_BLOCKED_AS_EXPECTED"
     },
     "synthetic_pvacbind_two_pass_smoke": "PASS",
     "wheel_isolated_import_and_cli": "PASS"

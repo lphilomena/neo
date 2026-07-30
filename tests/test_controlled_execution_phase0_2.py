@@ -106,6 +106,30 @@ def test_doctor_treats_top_level_reference_sha256_as_metadata(tmp_path):
     assert ("reference", "gencode_gtf.sha256") not in checks
 
 
+def test_doctor_reports_inaccessible_cross_machine_paths_without_crashing(tmp_path, monkeypatch):
+    inaccessible_tool = "/root/other-machine/licensed/netMHCpan"
+    inaccessible_ref = "/root/other-machine/ref/GRCh38.fa"
+    tools = tmp_path / "tools.json"
+    tools.write_text(json.dumps({"tools": {"netmhcpan": {"executable": inaccessible_tool}}}), encoding="utf-8")
+    refs = tmp_path / "refs.json"
+    refs.write_text(json.dumps({"references": {"reference_fasta": {"path": inaccessible_ref}}}), encoding="utf-8")
+    original_exists = Path.exists
+
+    def guarded_exists(path: Path) -> bool:
+        if str(path) in {inaccessible_tool, inaccessible_ref}:
+            raise PermissionError(str(path))
+        return original_exists(path)
+
+    monkeypatch.setattr(Path, "exists", guarded_exists)
+    result = run_doctor(
+        project_root=Path.cwd(), outdir=tmp_path / "doctor-inaccessible",
+        tools_manifest=tools, reference_manifest=refs, release_audit=False, allow_execute=False,
+    )
+    checks = {(row.category, row.name): row for row in result.rows}
+    assert checks[("tool", "netmhcpan")].status in {"LICENSE_REQUIRED", "MISSING"}
+    assert checks[("reference", "references.reference_fasta.path")].status == "MISSING"
+
+
 
 def test_gateway_validation_and_risk_policy(tmp_path):
     from neoag.controlled_execution.gateway import _approval_required, _risk, _validate_request

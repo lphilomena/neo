@@ -27,7 +27,7 @@ It preserves the v0.4.4 exact-junction non-leakage rules and adds stable foreign
 | Shell syntax for v0.5.0 production drivers | PASS |
 | CLI help for source installation | PASS |
 | v0.4.4 + v0.5.0 splice regression suite | 33 passed, 0 failed |
-| Full default repository test suite | 430 passed, 105 skipped, 0 failed |
+| Full default repository test suite | 433 passed, 105 skipped, 0 failed |
 | Unstranded-junction downgrade and strict rejection | PASS |
 | pVACbind event/transcript/ORF/hash-chain rejection tests | PASS |
 | Cryptic-exon/exitron event normalization | PASS |
@@ -38,6 +38,9 @@ It preserves the v0.4.4 exact-junction non-leakage rules and adds stable foreign
 | High-order evidence exact-entity linking and E3/O3 fixture | PASS |
 | Same-assay RNA source collapse / independent-assay separation | PASS |
 | Consensus hard-fail and priority-cap conflict materialization | PASS |
+| Install Skill cross-machine inaccessible-path fallback | PASS |
+| Doctor inaccessible tool/reference reporting without crash | PASS |
+| Full-tier install-check plan and verify execution | PASS (`BLOCKED` readiness result as expected) |
 | Headered/headerless SplAdder fixture parsing | PASS |
 | RegTools exact-junction non-leakage fixture | PASS |
 | IRFinder-S retained/spliced hypothesis fixture | PASS |
@@ -67,6 +70,7 @@ The 105 skipped tests remain conditional tests in the existing project configura
 11. STAR and RegTools records sharing one `source_assay_id` remain one RNA source; different assay IDs remain distinct.
 12. High-order evidence with an unknown formal entity ID cannot upgrade E3/O3.
 13. Every consensus hard-fail and cap reason is present as an auditable conflict record.
+14. Tool/reference paths copied from another machine but inaccessible to the current account are reported as missing and do not crash auto-configuration, Doctor, or tier assessment.
 
 ## 4. Synthetic presentation smoke
 

@@ -479,6 +479,20 @@ def _declared_reference(name: str, paths: dict[str, str]) -> str:
     return sorted(candidates, key=lambda item: (len(item[0]), item[0]))[0][1]
 
 
+def _safe_path_exists(path: Path) -> bool:
+    try:
+        return path.exists()
+    except OSError:
+        return False
+
+
+def _safe_path_is_file(path: Path) -> bool:
+    try:
+        return path.is_file()
+    except OSError:
+        return False
+
+
 def _reference_status(name: str, paths: dict[str, str]) -> tuple[str, str]:
     if name in {"reference_fasta_fai", "reference_fasta_dict"}:
         fasta = _declared_reference("reference_fasta", paths)
@@ -489,13 +503,13 @@ def _reference_status(name: str, paths: dict[str, str]) -> tuple[str, str]:
             sidecars = [Path(str(expanded) + ".fai")]
         else:
             sidecars = [expanded.with_suffix(".dict"), Path(str(expanded).rsplit(".fasta", 1)[0].rsplit(".fa", 1)[0] + ".dict")]
-        existing = next((path for path in sidecars if path.is_file()), None)
+        existing = next((path for path in sidecars if _safe_path_is_file(path)), None)
         return ("OK", str(existing)) if existing else ("MISSING", str(sidecars[0]))
     value = _declared_reference(name, paths)
     if not value:
         return "MISSING", "not declared"
     expanded = Path(os.path.expandvars(os.path.expanduser(value)))
-    return ("OK", str(expanded)) if expanded.exists() else ("MISSING", str(expanded))
+    return ("OK", str(expanded)) if _safe_path_exists(expanded) else ("MISSING", str(expanded))
 
 
 def _assess_tier(tier: str, doctor_rows: list[CheckRow], reference_manifest: str | Path | None) -> tuple[str, list[dict[str, str]]]:

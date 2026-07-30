@@ -78,6 +78,34 @@ def _row(category: str, name: str, status: str, message: str = "", path: str = "
     return CheckRow(category, name, status, message, path, "true" if blocking else "false")
 
 
+def _safe_exists(path: Path) -> bool:
+    try:
+        return path.exists()
+    except OSError:
+        return False
+
+
+def _safe_is_file(path: Path) -> bool:
+    try:
+        return path.is_file()
+    except OSError:
+        return False
+
+
+def _safe_is_dir(path: Path) -> bool:
+    try:
+        return path.is_dir()
+    except OSError:
+        return False
+
+
+def _safe_iterdir(path: Path) -> list[Path]:
+    try:
+        return list(path.iterdir())
+    except OSError:
+        return []
+
+
 def _flatten_tools(tools_manifest: dict[str, Any]) -> dict[str, str]:
     out = dict(DEFAULT_TOOL_EXECUTABLES)
     tools = tools_manifest.get("tools") if isinstance(tools_manifest.get("tools"), dict) else tools_manifest
@@ -95,7 +123,7 @@ def _flatten_tools(tools_manifest: dict[str, Any]) -> dict[str, str]:
 def _check_executable(name: str, exe: str) -> CheckRow:
     if os.path.sep in exe or exe.startswith("."):
         p = Path(exe)
-        if p.exists():
+        if _safe_exists(p):
             return _row("tool", name, "OK", "executable path exists", str(p))
         return _row("tool", name, "MISSING", "executable path not found", str(p), blocking=name in {"python"})
     found = shutil.which(exe)
@@ -113,7 +141,7 @@ def _check_manifest_paths(data: dict[str, Any], category: str) -> list[CheckRow]
             rows.append(_row(category, key, "INFO", "non-local reference/image; not checked as a filesystem path", val))
             continue
         p = Path(os.path.expandvars(os.path.expanduser(val)))
-        if p.exists():
+        if _safe_exists(p):
             rows.append(_row(category, key, "OK", "path exists", str(p)))
         else:
             blocking = any(k in key.lower() for k in CRITICAL_REFERENCES)
@@ -150,7 +178,7 @@ def _path_exists(value: str | None) -> tuple[Path | None, bool]:
     if not value or value.startswith(("docker://", "oras://")):
         return None, False
     p = Path(os.path.expandvars(os.path.expanduser(value)))
-    return p, p.exists()
+    return p, _safe_exists(p)
 
 
 def _check_expected_sidecar(path_value: str | None, suffix: str, name: str, *, blocking: bool = False) -> CheckRow:
@@ -158,7 +186,7 @@ def _check_expected_sidecar(path_value: str | None, suffix: str, name: str, *, b
     if not p:
         return _row("reference_specific", name, "INFO", "reference path not declared", "")
     sidecar = Path(str(p) + suffix)
-    if exists and sidecar.exists():
+    if exists and _safe_exists(sidecar):
         return _row("reference_specific", name, "OK", "sidecar exists", str(sidecar))
     if exists:
         return _row("reference_specific", name, "MISSING", "main file exists but sidecar is missing", str(sidecar), blocking=blocking)
@@ -180,7 +208,7 @@ def _check_declared_hashes(data: dict[str, Any], category: str) -> list[CheckRow
         if not p:
             rows.append(_row(category, f"{name}.sha256", "INFO", "reference path not declared", ""))
             continue
-        if not exists or not p.is_file():
+        if not exists or not _safe_is_file(p):
             rows.append(_row(category, f"{name}.sha256", "MISSING", "cannot verify hash because file is missing or not a regular file", str(p), blocking=bool(spec.get("required"))))
             continue
         try:
@@ -201,9 +229,9 @@ def _check_reference_specifics(ref_data: dict[str, Any]) -> list[CheckRow]:
     if fasta:
         p = Path(os.path.expandvars(os.path.expanduser(fasta)))
         dict_candidates = [p.with_suffix(".dict"), Path(str(p).rsplit(".fasta", 1)[0].rsplit(".fa", 1)[0] + ".dict")]
-        if p.exists() and any(x.exists() for x in dict_candidates):
-            rows.append(_row("reference_specific", "reference_fasta.dict", "OK", "sequence dictionary exists", str(next(x for x in dict_candidates if x.exists()))))
-        elif p.exists():
+        if _safe_exists(p) and any(_safe_exists(x) for x in dict_candidates):
+            rows.append(_row("reference_specific", "reference_fasta.dict", "OK", "sequence dictionary exists", str(next(x for x in dict_candidates if _safe_exists(x)))))
+        elif _safe_exists(p):
             rows.append(_row("reference_specific", "reference_fasta.dict", "MISSING", "sequence dictionary is missing", str(dict_candidates[0]), blocking=True))
 
     p, exists = _path_exists(gtf)
@@ -213,7 +241,7 @@ def _check_reference_specifics(ref_data: dict[str, Any]) -> list[CheckRow]:
     p, exists = _path_exists(vep_cache)
     if p:
         if exists:
-            has_species = p.name.lower() == "homo_sapiens" or any(x.name.lower() == "homo_sapiens" for x in p.parents) or (p.is_dir() and any(x.is_dir() and "grch38" in x.name.lower() for x in p.iterdir()))
+            has_species = p.name.lower() == "homo_sapiens" or any(x.name.lower() == "homo_sapiens" for x in p.parents) or (_safe_is_dir(p) and any(_safe_is_dir(x) and "grch38" in x.name.lower() for x in _safe_iterdir(p)))
             rows.append(_row("reference_specific", "vep_cache_layout", "OK" if has_species else "WARN", "VEP cache path exists" if has_species else "VEP cache exists but species/build layout was not recognized", str(p)))
         else:
             rows.append(_row("reference_specific", "vep_cache_layout", "MISSING", "VEP cache path missing", str(p), blocking=True))
@@ -248,7 +276,8 @@ def _check_tool_specifics(tools_data: dict[str, Any]) -> list[CheckRow]:
         value = os.environ.get(env_name)
         if value:
             p = Path(os.path.expandvars(os.path.expanduser(value)))
-            rows.append(_row("tool_specific", label, "OK" if p.exists() else "MISSING", f"{env_name} set" if p.exists() else f"{env_name} set but path missing", str(p)))
+            exists = _safe_exists(p)
+            rows.append(_row("tool_specific", label, "OK" if exists else "MISSING", f"{env_name} set" if exists else f"{env_name} set but path missing or inaccessible", str(p)))
         else:
             rows.append(_row("tool_specific", label, "INFO", f"{env_name} not set; manifest executable/path may still be sufficient", ""))
 
@@ -271,7 +300,7 @@ def _check_workflow_readiness(project_root: Path, profile: str) -> list[CheckRow
     rows: list[CheckRow] = []
     for dirname in ["bin", "work", "results"]:
         p = project_root / dirname
-        if not p.exists():
+        if not _safe_exists(p):
             if dirname in {"work", "results"}:
                 try:
                     p.mkdir(parents=True, exist_ok=True)
@@ -282,7 +311,7 @@ def _check_workflow_readiness(project_root: Path, profile: str) -> list[CheckRow
                 rows.append(_row("workflow", dirname, "MISSING", "directory not found", str(p), blocking=dirname == "bin"))
                 continue
         if dirname == "bin":
-            scripts = [x for x in p.iterdir() if x.is_file()]
+            scripts = [x for x in _safe_iterdir(p) if _safe_is_file(x)]
             non_exec = [x.name for x in scripts if x.suffix in {"", ".sh", ".py"} and not os.access(x, os.X_OK)]
             status = "OK" if not non_exec else "WARN"
             msg = "bin scripts executable" if not non_exec else "non-executable bin files: " + ", ".join(non_exec[:10])
@@ -302,8 +331,8 @@ def _check_workflow_readiness(project_root: Path, profile: str) -> list[CheckRow
             project_root / "profiles" / f"{prof}.config",
             project_root / "nextflow.config",
         ]
-        if any(x.exists() for x in candidates):
-            rows.append(_row("workflow", f"profile_{prof}", "OK", "profile or nextflow.config found", str(next(x for x in candidates if x.exists()))))
+        if any(_safe_exists(x) for x in candidates):
+            rows.append(_row("workflow", f"profile_{prof}", "OK", "profile or nextflow.config found", str(next(x for x in candidates if _safe_exists(x)))))
         else:
             rows.append(_row("workflow", f"profile_{prof}", "INFO", "profile not found; required only for this execution backend", ",".join(str(x) for x in candidates)))
     return rows
@@ -431,7 +460,7 @@ def _run_core_smoke(project_root: Path, outdir: Path, logger: AuditLogger, *, ru
         rows.append(_row("smoke", "run-demo", "OK" if res.get("ok") else ("DRY_RUN" if res.get("dry_run") else "FAIL"), (res.get("stdout") or res.get("stderr") or "")[-1000:], str(demo_out)))
     if run_nextflow:
         wrapper = project_root / "bin" / "neoag-nextflow"
-        if not wrapper.exists():
+        if not _safe_exists(wrapper):
             rows.append(_row("smoke", "nextflow_fixture", "MISSING", "bin/neoag-nextflow not found", str(wrapper)))
         else:
             res = run_command([str(wrapper), "run", "workflows/main.nf", "--pvac_files", "data/fixtures/pvacseq_aggregated.tsv", "--outdir", str(outdir / "nextflow_demo")], cwd=project_root, timeout=600, logger=logger, risk_level="MEDIUM", allow_execute=allow_execute)
