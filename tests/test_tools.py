@@ -15,7 +15,8 @@ def test_tool_registry_covers_runners():
     assert "pvacseq" in RUNNERS
 
 def test_netmhcpan_allele_format():
-    assert "HLA-A0201" in netmhcpan_allele_string(["HLA-A*02:01"])
+    assert netmhcpan_allele_string(["HLA-A*02:01"]) == "HLA-A02:01"
+    assert netmhcpan_allele_string(["HLA-A02:06", "HLA-B*13:02"]) == "HLA-A02:06,HLA-B13:02"
 
 def test_unique_peptides_from_fixture():
     pairs = unique_peptide_hla_pairs(ROOT / "data/fixtures/pvacseq_aggregated.tsv")

@@ -846,6 +846,9 @@ def cmd_run_full(args):
     cancer_gene_list = inputs.get("cancer_gene_list_tsv") or inputs.get("cancer_gene_list")
     if cancer_gene_list and not Path(cancer_gene_list).is_absolute():
         cancer_gene_list = str(ROOT / cancer_gene_list)
+    normal_junctions = inputs.get("normal_junctions") or os.environ.get("NEOAG_NORMAL_JUNCTIONS")
+    if normal_junctions and not Path(normal_junctions).is_absolute():
+        normal_junctions = str(ROOT / normal_junctions)
     for p in inputs.get("pvac_files") or []:
         path = ROOT / p if not Path(p).is_absolute() else Path(p)
         if path.is_file():
@@ -882,6 +885,7 @@ def cmd_run_full(args):
         "cnv": upstream.get("cnv"),
         "normal_expression": upstream.get("normal_expression"),
         "normal_hla_ligands": upstream.get("normal_hla_ligands"),
+        "normal_junctions": normal_junctions,
         "immunogenicity_stub": bool(tools_cfg.get("immunogenicity_stub", False)),
         "tool_executables": tools_cfg.get("executables") or {},
         "rna_junction": inputs.get("rna_junction_tsv") or inputs.get("rna_junction"),

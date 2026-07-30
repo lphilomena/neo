@@ -177,6 +177,21 @@ fi
 
 echo
 
+echo "==> Normal junction safety background"
+normal_junctions="${NEOAG_NORMAL_JUNCTIONS:-}"
+if [[ -n "$normal_junctions" ]]; then
+  check_file "$normal_junctions" "Normal junction catalog"
+  check_file "$normal_junctions.meta.json" "Normal junction metadata"
+elif [[ -f "${NEOAG_REF_BUNDLE:-}/data/normal/junctions/normal_junctions.GRCh38.tsv.gz" ]]; then
+  pass "Normal junction catalog: ${NEOAG_REF_BUNDLE}/data/normal/junctions/normal_junctions.GRCh38.tsv.gz"
+elif [[ -f "${NEOAG_REF_BUNDLE:-}/data/normal/junctions/gtex_v8_liver.GRCh38.tsv.gz" ]]; then
+  warn "Pan-tissue normal junction catalog missing; Liver catalog is available"
+else
+  warn "Normal junction catalog missing; splice/fusion normal-background safety will be unassessed"
+fi
+
+echo
+
 echo "==> RNA expression quantification"
 salmon_bin="${SALMON_BIN:-}"
 [[ -z "$salmon_bin" ]] && salmon_bin="$(command -v salmon 2>/dev/null || true)"

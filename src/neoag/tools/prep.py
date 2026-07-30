@@ -77,13 +77,13 @@ def write_netmhcpan_pmhc_input(pairs: list[tuple[str, str]], path: str | Path) -
 
 
 def netmhcpan_allele_string(alleles: list[str]) -> str:
-    """Convert HLA-A*02:01 style alleles to NetMHCpan -a format (HLA-A0201)."""
+    """Convert HLA-A*02:01 alleles to NetMHCpan 4.2 -a format (HLA-A02:01)."""
     out: list[str] = []
     for allele in alleles:
         s = str(allele or "").strip().upper()
         if s.startswith("HLA-"):
             s = s[4:]
-        s = s.replace("*", "").replace(":", "")
+        s = s.replace("*", "")
         out.append(f"HLA-{s}")
     return ",".join(out)
 

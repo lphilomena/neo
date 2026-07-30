@@ -586,7 +586,8 @@ def _netmhcpan_subprocess_env() -> dict[str, str]:
             home = str(Path(tools_root) / "tools" / "netMHCpan")
     if home:
         env["NETMHCPAN_HOME"] = home
-        env["NETMHCpan"] = home
+        platform_home = Path(home) / f"Linux_{os.uname().machine}"
+        env["NETMHCpan"] = str(platform_home if (platform_home / "data").is_dir() else Path(home))
         tmpdir = env.get("NEOAG_NETMHCPAN_TMPDIR") or str(Path(home) / "tmp")
         Path(tmpdir).mkdir(parents=True, exist_ok=True)
         env["TMPDIR"] = tmpdir
