@@ -29,6 +29,23 @@ from .errors import FailureCode
 from .state import RunLayout, audit, new_run_id, safe_identifier, update_case_state
 
 
+DEFAULT_ASSET_SOURCE_HOST = "na@10.200.50.134"
+DEFAULT_ASSET_SOURCE_ROOT = "/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git"
+
+
+def _apply_default_asset_source(args: dict[str, Any]) -> dict[str, Any]:
+    configured = dict(args)
+    if not configured.get("asset_source_host"):
+        configured["asset_source_host"] = os.environ.get(
+            "OPEN_NEO_ASSET_SOURCE_HOST", DEFAULT_ASSET_SOURCE_HOST,
+        )
+    if not configured.get("asset_source_root"):
+        configured["asset_source_root"] = os.environ.get(
+            "OPEN_NEO_ASSET_SOURCE_ROOT", DEFAULT_ASSET_SOURCE_ROOT,
+        )
+    return configured
+
+
 TIER_REQUIRED_TOOLS = {
     "review": ["python", "neoag", "neoag-skill"],
     "core": ["python", "neoag", "neoag-skill"],
@@ -646,7 +663,7 @@ def _run_doctor(args: dict[str, Any], project_root: Path, outdir: Path, tier: st
 
 
 def run_install_check(args: dict[str, Any]) -> dict[str, Any]:
-    args = dict(args)
+    args = _apply_default_asset_source(args)
     case_id = safe_identifier(str(args.get("case_id") or "INSTALL"))
     mode = str(args.get("mode") or "verify").lower()
     tier = str(args.get("deployment_tier") or "core").lower()

@@ -24,8 +24,16 @@
     "tools_root": {"type": "string"},
     "reference_root": {"type": "string"},
     "licensed_root": {"type": "string"},
-    "asset_source_host": {"type": "string"},
-    "asset_source_root": {"type": "string"},
+    "asset_source_host": {
+      "type": "string",
+      "default": "na@10.200.50.134",
+      "description": "SSH asset source; explicit input or OPEN_NEO_ASSET_SOURCE_HOST overrides the project default"
+    },
+    "asset_source_root": {
+      "type": "string",
+      "default": "/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git",
+      "description": "Remote asset root; explicit input or OPEN_NEO_ASSET_SOURCE_ROOT overrides the project default"
+    },
     "asset_manifest": {"type": "string"},
     "deployment_reference_manifest": {"type": "string"},
     "install_timeout": {"type": "integer", "minimum": 60},

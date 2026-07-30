@@ -17,12 +17,13 @@
   },
   "validation": {
     "compileall": "PASS",
-    "focused_tests": "68 passed",
-    "default_pytest": "437 passed, 105 skipped",
+    "focused_tests": "70 passed",
+    "default_pytest": "439 passed, 105 skipped",
     "skill_directory_validation": "PASS",
     "open_neo_cli_help": "PASS",
     "portable_auto_configuration": "PASS",
-    "full_tier_plan_and_verify": "READY_WITH_ZERO_REQUIRED_GAPS"
+    "full_tier_plan_and_verify": "READY_WITH_ZERO_REQUIRED_GAPS",
+    "default_asset_source": "na@10.200.50.134 (approved mutating modes only)"
   },
   "security_boundaries": [
     "execute/resume and install/repair require explicit approval",

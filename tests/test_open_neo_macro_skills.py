@@ -13,6 +13,9 @@ from neoag.open_neo.capability_planner import build_automatic_production_plan
 from neoag.open_neo.errors import FailureCode, exit_code_for_result
 from neoag.controlled_execution.doctor import CheckRow
 from neoag.open_neo.install_check import (
+    DEFAULT_ASSET_SOURCE_HOST,
+    DEFAULT_ASSET_SOURCE_ROOT,
+    _apply_default_asset_source,
     _assess_tier,
     _deployment_command,
     _required_asset_sources_missing,
@@ -457,6 +460,28 @@ def test_deployment_profile_defaults_follow_requested_tier(tmp_path: Path):
     assert "--standard" in full
     assert "--minimal" in core
     assert "--all-open" in explicit
+
+
+def test_install_skill_defaults_to_central_asset_server(monkeypatch):
+    monkeypatch.delenv("OPEN_NEO_ASSET_SOURCE_HOST", raising=False)
+    monkeypatch.delenv("OPEN_NEO_ASSET_SOURCE_ROOT", raising=False)
+    defaults = _apply_default_asset_source({})
+    assert defaults["asset_source_host"] == DEFAULT_ASSET_SOURCE_HOST
+    assert defaults["asset_source_root"] == DEFAULT_ASSET_SOURCE_ROOT
+    explicit = _apply_default_asset_source({
+        "asset_source_host": "user@other-host",
+        "asset_source_root": "/srv/other-assets",
+    })
+    assert explicit["asset_source_host"] == "user@other-host"
+    assert explicit["asset_source_root"] == "/srv/other-assets"
+
+
+def test_install_skill_asset_server_defaults_can_be_overridden_by_environment(monkeypatch):
+    monkeypatch.setenv("OPEN_NEO_ASSET_SOURCE_HOST", "asset-user@asset-host")
+    monkeypatch.setenv("OPEN_NEO_ASSET_SOURCE_ROOT", "/data/neoag-assets")
+    configured = _apply_default_asset_source({})
+    assert configured["asset_source_host"] == "asset-user@asset-host"
+    assert configured["asset_source_root"] == "/data/neoag-assets"
 
 
 def test_install_checkpoint_can_be_reused(tmp_path: Path):

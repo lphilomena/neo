@@ -27,7 +27,7 @@ It preserves the v0.4.4 exact-junction non-leakage rules and adds stable foreign
 | Shell syntax for v0.5.0 production drivers | PASS |
 | CLI help for source installation | PASS |
 | v0.4.4 + v0.5.0 splice regression suite | 33 passed, 0 failed |
-| Full default repository test suite | 437 passed, 105 skipped, 0 failed |
+| Full default repository test suite | 439 passed, 105 skipped, 0 failed |
 | Unstranded-junction downgrade and strict rejection | PASS |
 | pVACbind event/transcript/ORF/hash-chain rejection tests | PASS |
 | Cryptic-exon/exitron event normalization | PASS |
@@ -45,6 +45,7 @@ It preserves the v0.4.4 exact-junction non-leakage rules and adds stable foreign
 | Prediction/full tier default installer profile | PASS (`standard`; explicit override preserved) |
 | Full-tier required tool/reference readiness after portable installation | READY (0 required gaps) |
 | BAM-matcher GRCh38 loci provenance and FASTA REF validation | PASS (1,303 exact rsID-mapped loci) |
+| Default central asset-source routing and explicit override | PASS (connection remains approval-gated) |
 | Headered/headerless SplAdder fixture parsing | PASS |
 | RegTools exact-junction non-leakage fixture | PASS |
 | IRFinder-S retained/spliced hypothesis fixture | PASS |

@@ -7,7 +7,7 @@
   "source_file_count": 872,
   "validation": {
     "full_default_tests": {
-      "passed": 437,
+      "passed": 439,
       "skipped": 105,
       "failed": 0
     },
@@ -37,7 +37,8 @@
       "project_wrapper_and_conda_environment_discovery": "PASS",
       "portable_reference_layout_discovery": "PASS",
       "tier_aware_installer_profile_selection": "PASS",
-      "full_tier_required_assets": "READY"
+      "full_tier_required_assets": "READY",
+      "default_central_asset_source_routing": "PASS"
     },
     "synthetic_pvacbind_two_pass_smoke": "PASS",
     "wheel_isolated_import_and_cli": "PASS"

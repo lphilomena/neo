@@ -45,6 +45,12 @@ local/mounted asset tree or `--asset-source-host user@host` for remote source
 paths. Approved execution stops before installation when required sources are
 not reachable.
 
+When neither option is supplied, the project defaults to
+`na@10.200.50.134:/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git`. The default
+is used only by approved `install`, `repair`, or `resume` execution; `plan` and
+`verify` do not connect to the server. Override it with explicit CLI options or
+`OPEN_NEO_ASSET_SOURCE_HOST` and `OPEN_NEO_ASSET_SOURCE_ROOT`.
+
 ## Reproducible derived assets
 
 - Java is installed in the dedicated `neoag-runtime` environment; discover it through the configured tools manifest instead of assuming it is on the login-shell PATH.
