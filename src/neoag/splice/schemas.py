@@ -83,14 +83,14 @@ NORMAL_BACKGROUND_FIELDS = [
 
 TOOL_EVIDENCE_FIELDS = [
     "evidence_id", "entity_type", "entity_id", "sample_id", "evidence_group", "evidence_type",
-    "source_tool", "source_tool_version", "source_file", "source_row_number", "source_record_id",
+    "source_tool", "source_tool_version", "source_assay_id", "source_file", "source_row_number", "source_record_id",
     "provided_value", "verified_value", "resolution_status", "resolution_reason", "raw_payload_sha256",
 ]
 
 CONSENSUS_FIELDS = [
     "consensus_id", "splice_event_id", "origin_peptide_id", "peptide_id", "sample_id",
     "event_evidence_grade", "orf_evidence_grade", "normal_safety_grade", "presentation_grade",
-    "independent_evidence_groups", "independent_translation_generators",
+    "independent_evidence_groups", "independent_rna_sources", "independent_translation_generators",
     "event_consensus_status", "orf_consensus_status", "normal_background_status",
     "final_evidence_tier", "priority_cap", "consensus_reason", "hard_fail_codes", "cap_codes",
 ]

@@ -24,9 +24,10 @@ USAGE
 
 SAMPLE_ID=""; OUTDIR=""; GENOME_BUILD="GRCh38"; DISEASE_PROFILE="default"
 JUNCTIONS=""; JUNCTION_COORD="auto"; STAR_JUNCTIONS=""
-SPLADDER_GFF3=(); SPLADDER_TXT=(); IRFINDER=(); IMMUNO_META=(); IMMUNO_KMERS=()
+JUNCTION_ASSAY=""; STAR_JUNCTION_ASSAY=""
+SPLADDER_GFF3=(); SPLADDER_TXT=(); IRFINDER=(); IMMUNO_META=(); IMMUNO_KMERS=(); HIGH_ORDER=()
 NORMAL_JUNCTIONS=(); NORMAL_COVERAGE=(); TOOL_VERSIONS=()
-IR_COORD="intron_1based_closed"; NORMAL_COORD="auto"
+IR_COORD=""; NORMAL_COORD="auto"
 HLA=""; HLA_FILE=""; PVAC_ALGORITHMS="MHCflurry"; PVAC_THREADS="4"; PVAC_REF_PROTEOME=""
 STRICT=0; SKIP_PVAC=0
 while [[ $# -gt 0 ]]; do
@@ -37,7 +38,9 @@ while [[ $# -gt 0 ]]; do
     --disease-profile) DISEASE_PROFILE="$2"; shift 2 ;;
     --junctions) JUNCTIONS="$2"; shift 2 ;;
     --junction-coordinate-system) JUNCTION_COORD="$2"; shift 2 ;;
+    --junction-source-assay-id) JUNCTION_ASSAY="$2"; shift 2 ;;
     --star-junctions) STAR_JUNCTIONS="$2"; shift 2 ;;
+    --star-junction-source-assay-id) STAR_JUNCTION_ASSAY="$2"; shift 2 ;;
     --spladder-gff3) SPLADDER_GFF3+=("$2"); shift 2 ;;
     --spladder-txt) SPLADDER_TXT+=("$2"); shift 2 ;;
     --irfinder) IRFINDER+=("$2"); shift 2 ;;
@@ -47,6 +50,7 @@ while [[ $# -gt 0 ]]; do
     --normal-junctions) NORMAL_JUNCTIONS+=("$2"); shift 2 ;;
     --normal-coordinate-system) NORMAL_COORD="$2"; shift 2 ;;
     --normal-coverage) NORMAL_COVERAGE+=("$2"); shift 2 ;;
+    --high-order-evidence) HIGH_ORDER+=("$2"); shift 2 ;;
     --tool-version) TOOL_VERSIONS+=("$2"); shift 2 ;;
     --hla) HLA="$2"; shift 2 ;;
     --hla-file) HLA_FILE="$2"; shift 2 ;;
@@ -61,6 +65,10 @@ while [[ $# -gt 0 ]]; do
 done
 [[ -n "$SAMPLE_ID" ]] || { echo "ERROR: --sample-id required" >&2; exit 2; }
 [[ -n "$OUTDIR" ]] || { echo "ERROR: --outdir required" >&2; exit 2; }
+if [[ ${#IRFINDER[@]} -gt 0 && -z "$IR_COORD" ]]; then
+  echo "ERROR: --irfinder-coordinate-system is required when --irfinder is used" >&2
+  exit 2
+fi
 mkdir -p "$OUTDIR"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PYTHON_BIN="${NEOAG_PYTHON:-python}"
@@ -74,11 +82,13 @@ build_args=(
   -m neoag.splice.cli build --sample-id "$SAMPLE_ID" --outdir "$PRE"
   --genome-build "$GENOME_BUILD" --disease-profile "$DISEASE_PROFILE"
   --junction-coordinate-system "$JUNCTION_COORD"
-  --irfinder-coordinate-system "$IR_COORD"
   --normal-coordinate-system "$NORMAL_COORD"
 )
+[[ -n "$IR_COORD" ]] && build_args+=(--irfinder-coordinate-system "$IR_COORD")
 [[ -n "$JUNCTIONS" ]] && build_args+=(--junctions "$JUNCTIONS")
+[[ -n "$JUNCTION_ASSAY" ]] && build_args+=(--junction-source-assay-id "$JUNCTION_ASSAY")
 [[ -n "$STAR_JUNCTIONS" ]] && build_args+=(--star-junctions "$STAR_JUNCTIONS")
+[[ -n "$STAR_JUNCTION_ASSAY" ]] && build_args+=(--star-junction-source-assay-id "$STAR_JUNCTION_ASSAY")
 for value in "${SPLADDER_GFF3[@]}"; do build_args+=(--spladder-gff3 "$value"); done
 for value in "${SPLADDER_TXT[@]}"; do build_args+=(--spladder-txt "$value"); done
 for value in "${IRFINDER[@]}"; do build_args+=(--irfinder "$value"); done
@@ -86,6 +96,7 @@ for value in "${IMMUNO_META[@]}"; do build_args+=(--immunopepper-meta "$value");
 for value in "${IMMUNO_KMERS[@]}"; do build_args+=(--immunopepper-kmers "$value"); done
 for value in "${NORMAL_JUNCTIONS[@]}"; do build_args+=(--normal-junctions "$value"); done
 for value in "${NORMAL_COVERAGE[@]}"; do build_args+=(--normal-coverage "$value"); done
+for value in "${HIGH_ORDER[@]}"; do build_args+=(--high-order-evidence "$value"); done
 for value in "${TOOL_VERSIONS[@]}"; do build_args+=(--tool-version "$value"); done
 [[ "$STRICT" == 1 ]] && build_args+=(--strict)
 "$PYTHON_BIN" "${build_args[@]}" > "$OUTDIR/pre_pvacbind.outputs.json"

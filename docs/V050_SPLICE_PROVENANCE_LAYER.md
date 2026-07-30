@@ -27,6 +27,8 @@ This is a research pipeline. A computationally generated ORF or peptide is not a
 6. A partial ImmunoPepper translation is labelled as a partial translated segment, not a confirmed full-length ORF.
 7. Conflicts are materialized in `splice_conflicts.tsv`; they are never silently overwritten.
 8. Multi-tool agreement is evaluated by independent evidence groups, not raw tool count.
+9. RegTools and STAR evidence generated from the same RNA assay/BAM share one `source_assay_id` and count as one RNA source.
+10. E3/O3 evidence is accepted only through an exact formal entity ID in a validated high-order evidence table.
 
 ## 3. Stable identifiers
 
@@ -58,6 +60,8 @@ IDs are deterministic from biological identity fields. Caller-local names remain
 
 SplAdder HDF5 is deliberately not parsed in v0.5.0. Export GFF3 or TXT first.
 
+Reference and alternative junction sets are populated only when the exported path role is explicit (`reference`/`canonical` or `alternative`/`variant`). `retained`, `observed`, and caller-local isoform labels remain unresolved rather than being guessed.
+
 Normalized biological event types include `SE`, `A3SS`, `A5SS`, `MXE`, `MULTI_SE`, `RI`, `CRYPTIC_EXON`, `EXITRON`, `NOVEL_JUNCTION`, and `COMPLEX_SPLICE`. Cryptic-exon and exitron labels are accepted from explicit SplAdder exports and ImmunoPepper mutation modes; they remain transcript hypotheses until independently validated.
 
 ### Intron retention
@@ -81,6 +85,22 @@ The parser accepts pVACtools 6.x/7.x header aliases, but the producing pVACtools
 
 - exact normal-junction files;
 - explicit coverage-aware normal assessment tables.
+
+The formal `assessment_status` state machine is:
+
+```text
+DETECTED_MATCHED_NORMAL
+DETECTED_CRITICAL_TISSUE
+DETECTED_BROAD_NORMAL
+LOW_LEVEL_NONCRITICAL_NORMAL
+NOT_DETECTED_ADEQUATE_COVERAGE
+NOT_DETECTED_LOW_COVERAGE
+UNASSESSED
+```
+
+### High-order validation evidence
+
+An optional `--high-order-evidence` TSV can register `LONG_READ`, `DNA_CAUSAL`, `PROTEIN_VALIDATION`, or `LIGANDOME` evidence. Required columns are `entity_type`, `entity_id`, `evidence_group`, `evidence_status`, `source_tool`, and `source_tool_version`. The ID must exactly match an existing junction, splice event, transcript hypothesis, ORF, or peptide origin. Unknown IDs and unsupported status values are written to `splice_conflicts.tsv` and do not upgrade E/O grades.
 
 ## 5. Authoritative outputs
 
@@ -122,6 +142,8 @@ bash scripts/run_splice_provenance_v050.sh \
   --genome-build GRCh38 \
   --junctions regtools_junctions.tsv \
   --junction-coordinate-system bed12 \
+  --junction-source-assay-id RNA_BAM_SHA256_<digest> \
+  --star-junction-source-assay-id RNA_BAM_SHA256_<digest> \
   --spladder-gff3 merge_graphs_exon_skip_C3.confirmed.gff3 \
   --irfinder IRFinder-IR-nondir.txt \
   --irfinder-coordinate-system intron_1based_closed \
@@ -129,6 +151,7 @@ bash scripts/run_splice_provenance_v050.sh \
   --immunopepper-kmers ref_graph_kmer_JuncExpr.tsv \
   --normal-junctions protocol_matched_normal_junctions.tsv \
   --normal-coverage normal_coverage.tsv \
+  --high-order-evidence validated_high_order_evidence.tsv \
   --hla-file hla.txt \
   --pvacbind-algorithms MHCflurry,MHCflurryEL \
   --tool-version STAR=2.7.11b \
@@ -168,6 +191,8 @@ neoag-splice-layer build \
 
 `--strict` requires an explicit `TOOL=VERSION` value for every external tool whose input is used in that invocation. Missing, `UNKNOWN`, or `UNASSESSED` versions block the run.
 
+When `--irfinder` is supplied, `--irfinder-coordinate-system` is mandatory even outside strict mode. For RegTools and STAR derived from the same BAM, pass the same assay ID; independent RNA libraries/BAMs must receive distinct stable assay IDs. If omitted, RNA evidence is conservatively grouped as `RNA_ASSAY_UNRESOLVED`.
+
 ## 7. Evidence grades
 
 ### Event evidence
@@ -177,12 +202,16 @@ neoag-splice-layer build \
 - `E2`: exact RNA support plus an independent event model such as SplAdder or IRFinder-S;
 - `E3`: DNA-causal, long-read, or equivalent higher-order evidence.
 
+E3 is not inferred from a tool name. It requires a validated high-order evidence record exactly linked to a formal event, transcript, ORF, peptide origin, or junction.
+
 ### ORF evidence
 
 - `O0`: invalid or unresolved;
 - `O1`: one valid generator;
 - `O2`: independent generators agree on event, frame, and protein sequence;
 - `O3`: long-read/protein/ligandome validation.
+
+O3 likewise requires exact high-order provenance. The conservative v0.5.0 policy still applies `CAP_SINGLE_PEPTIDE_GENERATOR_R2` when only one translation generator produced the ORF, even if a separate higher-order record is present.
 
 ### Normal safety
 
@@ -192,6 +221,8 @@ neoag-splice-layer build \
 - `N3`: at least two independent adequate-coverage negative sources.
 
 Final `R1–R4` tiers are constrained by caps and hard failures. Unknown peptide novelty is a review cap, not an automatic assertion of novelty. Explicitly non-junction-crossing and non-novel candidates can receive `HARD_NO_NOVEL_AMINO_ACID`.
+
+Every applied hard-fail and priority-cap code is also materialized as a row in `splice_conflicts.tsv` (`CONSENSUS_HARD_FAIL` or `CONSENSUS_PRIORITY_CAP`) so the final tier can be audited without parsing a composite text field.
 
 ## 8. pVACbind mapping safeguards
 

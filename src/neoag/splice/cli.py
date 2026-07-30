@@ -30,11 +30,13 @@ def build_parser() -> argparse.ArgumentParser:
     build.add_argument("--disease-profile", default="default")
     build.add_argument("--junctions")
     build.add_argument("--junction-coordinate-system", default="auto")
+    build.add_argument("--junction-source-assay-id", default="")
     build.add_argument("--star-junctions")
+    build.add_argument("--star-junction-source-assay-id", default="")
     build.add_argument("--spladder-gff3", action="append", default=[])
     build.add_argument("--spladder-txt", action="append", default=[])
     build.add_argument("--irfinder", action="append", default=[])
-    build.add_argument("--irfinder-coordinate-system", default="intron_1based_closed")
+    build.add_argument("--irfinder-coordinate-system", default="UNSPECIFIED")
     build.add_argument("--immunopepper-meta", action="append", default=[])
     build.add_argument("--immunopepper-kmers", action="append", default=[])
     build.add_argument("--pvacbind", action="append", default=[])
@@ -42,6 +44,7 @@ def build_parser() -> argparse.ArgumentParser:
     build.add_argument("--normal-junctions", action="append", default=[])
     build.add_argument("--normal-coordinate-system", default="auto")
     build.add_argument("--normal-coverage", action="append", default=[])
+    build.add_argument("--high-order-evidence", action="append", default=[])
     build.add_argument("--tool-version", action="append", type=_tool_version, default=[])
     build.add_argument("--strict", action="store_true")
 
@@ -95,13 +98,17 @@ def main(argv: list[str] | None = None) -> int:
         outputs = build_splice_provenance_layer(
             sample_id=args.sample_id, outdir=args.outdir, genome_build=args.genome_build,
             disease_profile=args.disease_profile, junctions=args.junctions,
-            junction_coordinate_system=args.junction_coordinate_system, star_junctions=args.star_junctions,
+            junction_coordinate_system=args.junction_coordinate_system,
+            junction_source_assay_id=args.junction_source_assay_id,
+            star_junctions=args.star_junctions,
+            star_junction_source_assay_id=args.star_junction_source_assay_id,
             spladder_gff3=args.spladder_gff3, spladder_txt=args.spladder_txt,
             irfinder=args.irfinder, irfinder_coordinate_system=args.irfinder_coordinate_system,
             immunopepper_meta=args.immunopepper_meta, immunopepper_kmers=args.immunopepper_kmers,
             pvacbind=args.pvacbind, pvacbind_fasta_map=args.pvacbind_fasta_map,
             normal_junctions=args.normal_junctions, normal_coordinate_system=args.normal_coordinate_system,
-            normal_coverage=args.normal_coverage, tool_versions=dict(args.tool_version), strict=args.strict,
+            normal_coverage=args.normal_coverage, high_order_evidence=args.high_order_evidence,
+            tool_versions=dict(args.tool_version), strict=args.strict,
         )
         print(json.dumps({key: str(path) for key, path in outputs.items()}, indent=2, ensure_ascii=False))
         return 0

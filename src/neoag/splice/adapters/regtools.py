@@ -17,6 +17,7 @@ def parse_junction_source(
     source_tool_version: str = "UNASSESSED",
     genome_build: str = "GRCh38",
     coordinate_system: str = "auto",
+    source_assay_id: str = "",
     strict: bool = False,
 ) -> dict[str, list[dict[str, str]]]:
     junctions: list[dict[str, str]] = []
@@ -53,6 +54,7 @@ def parse_junction_source(
                 "entity_type": "JUNCTION", "entity_id": entity_id, "sample_id": sample_id,
                 "evidence_group": "RNA_JUNCTION", "evidence_type": "UNRESOLVED_SOURCE_RECORD",
                 "source_tool": source_tool, "source_tool_version": source_tool_version,
+                "source_assay_id": source_assay_id or "RNA_ASSAY_UNRESOLVED",
                 "source_file": str(Path(path)), "source_row_number": str(record.source_row_number),
                 "source_record_id": record.source_record_id, "provided_value": str(record.total_split_reads),
                 "verified_value": "", "resolution_status": "UNRESOLVED",
@@ -102,6 +104,7 @@ def parse_junction_source(
             "evidence_group": "RNA_JUNCTION",
             "evidence_type": "EXACT_SPLIT_READ_SUPPORT" if exact_resolution else "UNSTRANDED_SPLIT_READ_SUPPORT_UNVERIFIED",
             "source_tool": source_tool, "source_tool_version": source_tool_version,
+            "source_assay_id": source_assay_id or "RNA_ASSAY_UNRESOLVED",
             "source_file": str(Path(path)), "source_row_number": str(record.source_row_number),
             "source_record_id": record.source_record_id, "provided_value": str(record.total_split_reads),
             "verified_value": str(record.total_split_reads) if exact_resolution else "",

@@ -60,6 +60,16 @@ def _path_junctions(genome_build: str, chrom: str, strand: str, exons: list[tupl
     return result
 
 
+def _classify_path_role(value: str) -> str:
+    """Classify a path only when the source role is explicit and unambiguous."""
+    token = re.sub(r"[^a-z0-9]+", "_", clean(value).casefold()).strip("_")
+    if token in {"reference", "ref", "canonical", "normal", "reference_path", "canonical_path"}:
+        return "REFERENCE"
+    if token in {"alternative", "alt", "variant", "event", "alternative_path", "variant_path"}:
+        return "ALTERNATIVE"
+    return "UNRESOLVED"
+
+
 def _junction_row(j: CanonicalJunction, *, sample_id: str, path: Path, record_id: str, tool_version: str) -> dict[str, str]:
     stranded = j.strand in {"+", "-"}
     return {
@@ -114,15 +124,34 @@ def _build_event_bundle(
     ) if all_junctions else link_id("SEV0", source_event_id, event_type, gene, affected_exons)
     stranded = strand in {"+", "-"}
 
+    reference_junctions: set[str] = set()
+    alternative_junctions: set[str] = set()
+    classified_roles: list[str] = []
+    for path in paths:
+        classification = _classify_path_role(clean(path.get("path_role")))
+        classified_roles.append(classification)
+        if classification == "REFERENCE":
+            reference_junctions.update(path_junctions.get(path["path_id"], []))
+        elif classification == "ALTERNATIVE":
+            alternative_junctions.update(path_junctions.get(path["path_id"], []))
+    if reference_junctions and alternative_junctions:
+        reference_path_status = "RESOLVED_EXPLICIT_SOURCE_ROLE"
+    elif alternative_junctions:
+        reference_path_status = "ALTERNATIVE_ONLY_REFERENCE_UNRESOLVED"
+    elif reference_junctions:
+        reference_path_status = "REFERENCE_ONLY_ALTERNATIVE_UNRESOLVED"
+    else:
+        reference_path_status = "UNRESOLVED"
+
     junction_rows = [_junction_row(j, sample_id=sample_id, path=source_path, record_id=source_record, tool_version=tool_version) for j in all_junctions.values()]
     event_row = {
         "splice_event_id": event_id, "sample_id": sample_id, "genome_build": genome_build,
         "event_type": event_type, "gene": gene, "gene_id": gene_id, "strand": strand,
-        "junction_ids": join_tokens(all_junctions), "reference_junction_ids": "",
-        "alternative_junction_ids": join_tokens(all_junctions), "affected_exons": join_tokens(affected_exons),
+        "junction_ids": join_tokens(all_junctions), "reference_junction_ids": join_tokens(reference_junctions),
+        "alternative_junction_ids": join_tokens(alternative_junctions), "affected_exons": join_tokens(affected_exons),
         "annotation_status": annotation_status, "cryptic_exon_status": "UNASSESSED",
         "psi": psi, "delta_psi": "", "qvalue": "", "outlier_score": "", "event_expression": "",
-        "event_confidence": "SPLADDER_GRAPH_CONFIRMED", "reference_path_status": "UNRESOLVED",
+        "event_confidence": "SPLADDER_GRAPH_CONFIRMED", "reference_path_status": reference_path_status,
         "cohort_analysis_status": "NOT_APPLICABLE", "source_tools": "SplAdder",
         "source_tool_versions": tool_version, "source_files": str(source_path),
         "source_record_ids": source_record, "provenance_record_count": "1",
@@ -134,6 +163,7 @@ def _build_event_bundle(
     for idx, path in enumerate(paths, start=1):
         path_id = clean(path.get("path_id")) or f"path_{idx}"
         role = clean(path.get("path_role")) or f"ISOFORM_{idx}"
+        classified_role = _classify_path_role(role)
         exons = [(int(a), int(b)) for a, b in path.get("exons", [])]
         exon_chain = [_exon_token(chrom, a, b, strand) for a, b in (sorted(exons, reverse=(strand == "-")))]
         junction_chain = path_junctions.get(path_id, [])
@@ -165,7 +195,7 @@ def _build_event_bundle(
                 "event_junction_link_id": link_id("EJL", event_id, jid, path_id, edge_index),
                 "splice_event_id": event_id, "junction_id": jid, "sample_id": sample_id,
                 "path_id": path_id, "path_role": role, "edge_index": str(edge_index),
-                "junction_role": "PATH_EDGE", "source_tool": "SplAdder",
+                "junction_role": f"{classified_role}_PATH_EDGE" if classified_role != "UNRESOLVED" else "PATH_EDGE_UNRESOLVED",
                 "source_record_id": source_record, "link_status": "RESOLVED",
             })
     evidence = [{

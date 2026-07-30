@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from neoag.splice.adapters.immunopepper import parse_immunopepper_meta
+from neoag.splice.adapters.high_order import parse_high_order_evidence
 from neoag.splice.adapters.irfinder import parse_irfinder
 from neoag.splice.adapters.pvacbind import parse_pvacbind
 from neoag.splice.adapters.regtools import parse_junction_source
@@ -12,6 +13,8 @@ from neoag.splice.adapters.spladder import infer_event_type, parse_spladder_gff3
 from neoag.splice.coordinates import JunctionNormalizationError
 from neoag.splice.identifiers import sequence_sha256, splice_event_id
 from neoag.splice.pipeline import build_splice_provenance_layer
+from neoag.splice.consensus import build_consensus, consensus_reason_conflicts
+from neoag.splice.normal_background import parse_normal_coverage
 from neoag.utils import read_tsv, write_tsv
 
 
@@ -68,6 +71,27 @@ def test_spladder_gff3_builds_event_paths_and_exact_junction(tmp_path: Path):
     assert len(bundle["transcripts"]) == 2
     assert {row["path_role"] for row in bundle["transcripts"]} == {"alternative", "retained"}
     assert any(row["entity_id"] == "SJ|GRCh38|chr1|151|200|+" and row["evidence_group"] == "SPLICE_GRAPH" for row in bundle["tool_evidence"])
+    assert bundle["events"][0]["alternative_junction_ids"] == "SJ|GRCh38|chr1|151|200|+"
+    assert bundle["events"][0]["reference_junction_ids"] == ""
+    assert bundle["events"][0]["reference_path_status"] == "ALTERNATIVE_ONLY_REFERENCE_UNRESOLVED"
+
+
+def test_spladder_uses_only_explicit_reference_and_alternative_roles(tmp_path: Path):
+    gff = _write(
+        tmp_path / "events.gff3",
+        "##gff-version 3\n"
+        "chr1\tSplAdder\tevent\t100\t350\t.\t+\t.\tID=EV2;gene_name=G\n"
+        "chr1\tSplAdder\tmRNA\t100\t350\t.\t+\t.\tID=EV2.ref;Parent=EV2;role=reference\n"
+        "chr1\tSplAdder\texon\t100\t150\t.\t+\t.\tID=r1;Parent=EV2.ref\n"
+        "chr1\tSplAdder\texon\t201\t250\t.\t+\t.\tID=r2;Parent=EV2.ref\n"
+        "chr1\tSplAdder\tmRNA\t100\t350\t.\t+\t.\tID=EV2.alt;Parent=EV2;role=alternative\n"
+        "chr1\tSplAdder\texon\t100\t150\t.\t+\t.\tID=a1;Parent=EV2.alt\n"
+        "chr1\tSplAdder\texon\t301\t350\t.\t+\t.\tID=a2;Parent=EV2.alt\n",
+    )
+    event = parse_spladder_gff3(gff, sample_id="S1")["events"][0]
+    assert event["reference_junction_ids"] == "SJ|GRCh38|chr1|151|200|+"
+    assert event["alternative_junction_ids"] == "SJ|GRCh38|chr1|151|300|+"
+    assert event["reference_path_status"] == "RESOLVED_EXPLICIT_SOURCE_ROLE"
 
 
 def test_irfinder_registers_retained_and_spliced_hypotheses(tmp_path: Path):
@@ -172,6 +196,12 @@ def test_strict_irfinder_rejects_unsupported_coordinate_system(tmp_path: Path):
     ir = _write(tmp_path / "ir.tsv", "Chr\tStart\tEnd\tName\tStrand\tIRratio\nchr1\t10\t20\tG\t+\t0.2\n")
     with pytest.raises(Exception):
         parse_irfinder(ir, sample_id="S1", coordinate_system="unknown", strict=True)
+
+
+def test_production_layer_requires_explicit_irfinder_coordinate_system(tmp_path: Path):
+    ir = _write(tmp_path / "ir.tsv", "Chr\tStart\tEnd\tName\tStrand\tIRratio\nchr1\t10\t20\tG\t+\t0.2\n")
+    with pytest.raises(ValueError, match="explicit --irfinder-coordinate-system"):
+        build_splice_provenance_layer(sample_id="S1", outdir=tmp_path / "out", irfinder=[ir])
 
 
 def test_spladder_headerless_build_txt_is_parsed_without_feature_columns_becoming_exons(tmp_path: Path):
@@ -336,3 +366,87 @@ def test_strict_layer_requires_versions_for_executed_tools(tmp_path: Path):
         tool_versions={"RegTools": "1.0-fixture"}, strict=True,
     )
     assert outputs["junctions"].is_file()
+
+
+def test_normal_background_emits_formal_seven_state_machine(tmp_path: Path):
+    table = tmp_path / "normal.tsv"
+    cases = [
+        ("DETECTED", "ADEQUATE", "MATCHED_NORMAL", "false", "DETECTED_MATCHED_NORMAL"),
+        ("DETECTED", "ADEQUATE", "GTEX_PANEL", "false", "DETECTED_BROAD_NORMAL"),
+        ("DETECTED", "ADEQUATE", "TISSUE", "true", "DETECTED_CRITICAL_TISSUE"),
+        ("LOW_LEVEL", "ADEQUATE", "TISSUE", "false", "LOW_LEVEL_NONCRITICAL_NORMAL"),
+        ("NOT_DETECTED", "ADEQUATE", "PANEL", "false", "NOT_DETECTED_ADEQUATE_COVERAGE"),
+        ("NOT_DETECTED", "LOW_COVERAGE", "PANEL", "false", "NOT_DETECTED_LOW_COVERAGE"),
+        ("NOT_DETECTED", "UNASSESSED", "PANEL", "false", "UNASSESSED"),
+    ]
+    write_tsv(table, [
+        {"junction_id": f"SJ|GRCh38|chr1|{i}|{i + 1}|+", "detection_status": detection,
+         "coverage_status": coverage, "normal_source_type": source, "critical_tissue": critical}
+        for i, (detection, coverage, source, critical, _) in enumerate(cases, start=10)
+    ])
+    observed = parse_normal_coverage(table, sample_id="S1")["normal_background"]
+    assert [row["assessment_status"] for row in observed] == [case[-1] for case in cases]
+
+
+def test_high_order_evidence_requires_exact_entity_and_upgrades_e3_o3(tmp_path: Path):
+    entities = {
+        "junctions": [{"junction_id": "SJ|GRCh38|chr1|151|200|+"}],
+        "events": [{"splice_event_id": "SEV|1"}],
+        "transcripts": [{"transcript_hypothesis_id": "STH|1", "splice_event_id": "SEV|1"}],
+        "orfs": [{"orf_id": "ORF|1", "splice_event_id": "SEV|1", "transcript_hypothesis_id": "STH|1",
+                  "protein_sequence_sha256": "abc", "frame_status": "IN_FRAME", "orf_validity_status": "VALID",
+                  "source_generator": "Generator1"}],
+        "peptide_origins": [{"origin_peptide_id": "POR|1", "peptide_id": "PEP|1", "orf_id": "ORF|1",
+                             "splice_event_id": "SEV|1", "junction_ids": "SJ|GRCh38|chr1|151|200|+",
+                             "crosses_junction": "true", "contains_novel_aa": "true"}],
+        "event_junction_links": [{"splice_event_id": "SEV|1", "junction_id": "SJ|GRCh38|chr1|151|200|+"}],
+        "presentation": [{"origin_peptide_id": "POR|1"}], "normal_background": [],
+        "tool_evidence": [{"entity_id": "SJ|GRCh38|chr1|151|200|+", "evidence_group": "RNA_JUNCTION",
+                           "source_assay_id": "RNA_BAM_SHA256_1", "verified_value": "12", "resolution_status": "RESOLVED_EXACT"}],
+    }
+    high = _write(
+        tmp_path / "high.tsv",
+        "entity_type\tentity_id\tevidence_group\tevidence_status\tsource_tool\tsource_tool_version\n"
+        "SPLICE_EVENT\tSEV|1\tLONG_READ\tCONFIRMED\tIsoSeq\t1.0\n"
+        "ORF\tORF|1\tPROTEIN_VALIDATION\tVALIDATED\tProteomics\t2.0\n"
+        "ORF\tORF|missing\tLIGANDOME\tDETECTED\tMS\t1.0\n",
+    )
+    parsed = parse_high_order_evidence(high, sample_id="S1", entity_bundle=entities)
+    assert len(parsed["tool_evidence"]) == 2
+    assert len(parsed["conflicts"]) == 1
+    entities["tool_evidence"].extend(parsed["tool_evidence"])
+    consensus = build_consensus(entities, sample_id="S1")[0]
+    assert consensus["event_evidence_grade"] == "E3"
+    assert consensus["orf_evidence_grade"] == "O3"
+
+
+def test_rna_assay_identity_collapses_same_source_and_separates_independent_sources():
+    base = {
+        "events": [{"splice_event_id": "SEV|1"}],
+        "event_junction_links": [{"splice_event_id": "SEV|1", "junction_id": "SJ|1"}],
+        "orfs": [{"orf_id": "ORF|1", "splice_event_id": "SEV|1", "protein_sequence_sha256": "abc",
+                  "frame_status": "IN_FRAME", "orf_validity_status": "VALID", "source_generator": "G1"}],
+        "peptide_origins": [{"origin_peptide_id": "POR|1", "peptide_id": "PEP|1", "orf_id": "ORF|1",
+                             "splice_event_id": "SEV|1", "crosses_junction": "true", "contains_novel_aa": "true"}],
+        "presentation": [], "normal_background": [],
+        "tool_evidence": [
+            {"entity_id": "SJ|1", "evidence_group": "RNA_JUNCTION", "source_assay_id": "BAM_SHA_1",
+             "verified_value": "5", "resolution_status": "RESOLVED_EXACT"},
+            {"entity_id": "SJ|1", "evidence_group": "RNA_JUNCTION", "source_assay_id": "BAM_SHA_1",
+             "verified_value": "5", "resolution_status": "RESOLVED_EXACT"},
+        ],
+    }
+    same = build_consensus(base, sample_id="S1")[0]
+    assert same["independent_rna_sources"] == "BAM_SHA_1"
+    base["tool_evidence"].append({"entity_id": "SJ|1", "evidence_group": "RNA_JUNCTION", "source_assay_id": "BAM_SHA_2",
+                                  "verified_value": "4", "resolution_status": "RESOLVED_EXACT"})
+    separate = build_consensus(base, sample_id="S1")[0]
+    assert separate["independent_rna_sources"] == "BAM_SHA_1;BAM_SHA_2"
+
+
+def test_consensus_reason_codes_are_materialized_as_conflicts():
+    rows = [{"consensus_id": "CON|1", "origin_peptide_id": "POR|1", "final_evidence_tier": "R4",
+             "hard_fail_codes": "HARD_ORF_INVALID", "cap_codes": "CAP_PRESENTATION_UNASSESSED_R3"}]
+    conflicts = consensus_reason_conflicts(rows, sample_id="S1")
+    assert {row["conflict_type"] for row in conflicts} == {"CONSENSUS_HARD_FAIL", "CONSENSUS_PRIORITY_CAP"}
+    assert {row["observed_values"] for row in conflicts} == {"HARD_ORF_INVALID", "CAP_PRESENTATION_UNASSESSED_R3"}

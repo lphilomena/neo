@@ -15,6 +15,9 @@ Release date: 2026-07-30
 - Formal compatibility projection into existing `raw_events.tsv`, `raw_peptides.tsv`, and `rna_junction_evidence.tsv`.
 - `neoag-splice-layer` CLI and two-pass production shell driver.
 - Machine-readable table contract at `resources/splice_provenance_v050.schema.json`.
+- Seven-state, coverage-aware normal-background assessment contract.
+- Exact high-order evidence adapter for long-read, DNA-causal, protein-validation, and ligandome evidence.
+- RNA `source_assay_id` tracking so STAR and RegTools from the same BAM are not counted as independent assays.
 
 ## Safety changes
 
@@ -28,6 +31,10 @@ Release date: 2026-07-30
 - ImmunoPepper `isJunctionList` is not used as a crossing flag.
 - Cryptic-exon, exitron, novel-junction, and complex-splice event labels are normalized explicitly.
 - Strict production builds require a locked version for every external tool whose input is consumed.
+- IRFinder-S input now requires an explicit coordinate-system declaration at the production entrypoint.
+- SplAdder reference/alternative path classification is populated only from explicit source roles.
+- High-order evidence with an unknown entity ID, unsupported group/status, or missing strict-mode version is rejected to `splice_conflicts.tsv`.
+- Every consensus cap and hard-fail reason is materialized as an auditable conflict row.
 
 ## Compatibility
 

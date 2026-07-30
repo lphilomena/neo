@@ -4,15 +4,15 @@
   "release_date": "2026-07-30",
   "release_name": "formal_splice_provenance_layer",
   "baseline_version": "0.4.4",
-  "source_file_count": 867,
+  "source_file_count": 868,
   "validation": {
     "full_default_tests": {
-      "passed": 424,
+      "passed": 430,
       "skipped": 104,
       "failed": 0
     },
     "splice_regression_tests": {
-      "passed": 27,
+      "passed": 33,
       "failed": 0
     },
     "p0_p1_provenance_hardening": {
@@ -20,6 +20,14 @@
       "pvacbind_foreign_key_and_sequence_hash_validation": "PASS",
       "cryptic_exon_and_exitron_normalization": "PASS",
       "strict_tool_version_locking": "PASS"
+    },
+    "formal_consensus_completion": {
+      "seven_state_normal_background": "PASS",
+      "spladder_explicit_path_classification": "PASS",
+      "irfinder_explicit_coordinate_contract": "PASS",
+      "exact_high_order_evidence_linking": "PASS",
+      "rna_assay_independence_tracking": "PASS",
+      "hard_fail_and_cap_conflict_materialization": "PASS"
     },
     "synthetic_pvacbind_two_pass_smoke": "PASS",
     "wheel_isolated_import_and_cli": "PASS"

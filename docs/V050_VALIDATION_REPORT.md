@@ -26,12 +26,18 @@ It preserves the v0.4.4 exact-junction non-leakage rules and adds stable foreign
 | Python `compileall` over `src/` and `scripts/` | PASS |
 | Shell syntax for v0.5.0 production drivers | PASS |
 | CLI help for source installation | PASS |
-| v0.4.4 + v0.5.0 splice regression suite | 27 passed, 0 failed |
-| Full default repository test suite | 424 passed, 104 skipped, 0 failed |
+| v0.4.4 + v0.5.0 splice regression suite | 33 passed, 0 failed |
+| Full default repository test suite | 430 passed, 104 skipped, 0 failed |
 | Unstranded-junction downgrade and strict rejection | PASS |
 | pVACbind event/transcript/ORF/hash-chain rejection tests | PASS |
 | Cryptic-exon/exitron event normalization | PASS |
 | Strict external-tool version locks | PASS |
+| Seven-state normal-background fixture | PASS |
+| SplAdder explicit reference/alternative path roles | PASS |
+| IRFinder-S missing coordinate declaration rejection | PASS |
+| High-order evidence exact-entity linking and E3/O3 fixture | PASS |
+| Same-assay RNA source collapse / independent-assay separation | PASS |
+| Consensus hard-fail and priority-cap conflict materialization | PASS |
 | Headered/headerless SplAdder fixture parsing | PASS |
 | RegTools exact-junction non-leakage fixture | PASS |
 | IRFinder-S retained/spliced hypothesis fixture | PASS |
@@ -57,6 +63,10 @@ The 104 skipped tests remain conditional tests in the existing project configura
 7. Unknown normal coverage remains incomplete; it is not promoted to a strong normal-negative result.
 8. Single-generator ORFs are capped below the highest evidence tier.
 9. Compatibility `raw_events.tsv`, `raw_peptides.tsv`, and `rna_junction_evidence.tsv` retain formal provenance identifiers.
+10. SplAdder path roles remain unresolved unless the source explicitly identifies reference or alternative paths.
+11. STAR and RegTools records sharing one `source_assay_id` remain one RNA source; different assay IDs remain distinct.
+12. High-order evidence with an unknown formal entity ID cannot upgrade E3/O3.
+13. Every consensus hard-fail and cap reason is present as an auditable conflict record.
 
 ## 4. Synthetic presentation smoke
 

@@ -9,6 +9,43 @@ from neoag.splice.identifiers import stable_id
 from .adapters.base import as_float_text, as_int, get, read_delimited, source_record_id
 
 
+_ADEQUATE_COVERAGE = {"ADEQUATE", "PASS", "SUFFICIENT", "LOCUS_COVERAGE_ADEQUATE"}
+_LOW_COVERAGE = {"LOW", "LOW_COVERAGE", "INSUFFICIENT", "FAIL", "LOCUS_COVERAGE_LOW"}
+_NEGATIVE = {"NOT_DETECTED", "ABSENT", "NEGATIVE"}
+_DETECTED = {"DETECTED", "PRESENT", "POSITIVE"}
+_LOW_LEVEL = {"LOW_LEVEL", "LOW_LEVEL_DETECTED", "TRACE", "WEAK_POSITIVE"}
+
+
+def _is_true(value: str | bool) -> bool:
+    return str(value).strip().casefold() in {"1", "true", "yes", "y"}
+
+
+def _assessment_status(
+    *,
+    detection: str,
+    coverage: str,
+    source_type: str,
+    critical_tissue: str | bool,
+) -> tuple[str, str]:
+    detection = str(detection or "UNASSESSED").upper()
+    coverage = str(coverage or "UNASSESSED").upper()
+    source_type_upper = str(source_type or "").upper()
+    detected = detection in _DETECTED | _LOW_LEVEL
+    if detected and _is_true(critical_tissue):
+        return "DETECTED_CRITICAL_TISSUE", "Normal signal detected in a critical tissue."
+    if detected and source_type_upper in {"MATCHED_NORMAL", "PATIENT_MATCHED_NORMAL", "MATCHED_NORMAL_RNA"}:
+        return "DETECTED_MATCHED_NORMAL", "Signal detected in the patient-matched normal sample."
+    if detection in _LOW_LEVEL:
+        return "LOW_LEVEL_NONCRITICAL_NORMAL", "Low-level normal signal detected outside a classified critical tissue."
+    if detected:
+        return "DETECTED_BROAD_NORMAL", "Signal detected in a normal tissue, cohort, or panel."
+    if detection in _NEGATIVE and coverage in _ADEQUATE_COVERAGE:
+        return "NOT_DETECTED_ADEQUATE_COVERAGE", "No signal detected with explicit adequate locus coverage."
+    if detection in _NEGATIVE and coverage in _LOW_COVERAGE:
+        return "NOT_DETECTED_LOW_COVERAGE", "No signal detected, but locus coverage was insufficient."
+    return "UNASSESSED", "Normal absence cannot be assessed without an explicit adequate-coverage result."
+
+
 def parse_normal_junctions(
     path: str | Path,
     *,
@@ -41,17 +78,22 @@ def parse_normal_junctions(
             continue
         jid = record.junction.junction_id
         detected = record.total_split_reads > 0
+        detection = "DETECTED" if detected else "NOT_DETECTED"
+        coverage = "LOCUS_COVERAGE_UNASSESSED"
+        assessment, reason = _assessment_status(
+            detection=detection, coverage=coverage, source_type=source_type, critical_tissue=critical_tissue,
+        )
         background_id = stable_id("NBG", source_name, jid, tissue, source_type)
         rows.append({
             "normal_background_id": background_id, "splice_event_id": "", "junction_id": jid,
             "origin_peptide_id": "", "sample_id": sample_id, "normal_source": source_name,
             "normal_source_type": source_type, "normal_tissue": tissue,
             "critical_tissue": "true" if critical_tissue else "false",
-            "detection_status": "DETECTED" if detected else "NOT_DETECTED",
-            "coverage_status": "LOCUS_COVERAGE_UNASSESSED",
+            "detection_status": detection,
+            "coverage_status": coverage,
             "junction_reads": str(record.total_split_reads), "sample_prevalence": "",
-            "kmer_prevalence": "", "assessment_status": "NORMAL_DETECTED" if detected else "INCOMPLETE_NEGATIVE",
-            "assessment_reason": "Exact normal junction detected." if detected else "Zero reads without independent locus coverage cannot establish absence.",
+            "kmer_prevalence": "", "assessment_status": assessment,
+            "assessment_reason": reason,
             "source_file": str(p), "source_record_id": record.source_record_id,
             "evidence_conflict_status": "NONE",
         })
@@ -98,26 +140,18 @@ def parse_normal_coverage(
             continue
         detection = get(row, "detection_status", "status", default="UNASSESSED").upper()
         coverage = get(row, "coverage_status", "coverage", default="UNASSESSED").upper()
-        adequate = coverage in {"ADEQUATE", "PASS", "SUFFICIENT", "LOCUS_COVERAGE_ADEQUATE"}
-        if detection in {"NOT_DETECTED", "ABSENT", "NEGATIVE"} and not adequate:
-            assessment = "INCOMPLETE_NEGATIVE"
-            reason = "Negative detection was not supported by explicit adequate locus coverage."
-        elif detection in {"NOT_DETECTED", "ABSENT", "NEGATIVE"}:
-            assessment = "NOT_DETECTED_ADEQUATE_COVERAGE"
-            reason = "No signal detected with explicit adequate locus coverage."
-        elif detection in {"DETECTED", "PRESENT", "POSITIVE"}:
-            assessment = "NORMAL_DETECTED"
-            reason = "Normal-background signal detected."
-        else:
-            assessment = "UNASSESSED"
-            reason = "Detection status was not resolved."
+        source_type = get(row, "normal_source_type", "source_type", default="EXPLICIT_COVERAGE_TABLE")
+        critical = get(row, "critical_tissue", default="false")
+        assessment, reason = _assessment_status(
+            detection=detection, coverage=coverage, source_type=source_type, critical_tissue=critical,
+        )
         rows.append({
             "normal_background_id": stable_id("NBG", source_name, jid, event_id, por, rid),
             "splice_event_id": event_id, "junction_id": jid, "origin_peptide_id": por,
             "sample_id": sample_id, "normal_source": source_name,
-            "normal_source_type": get(row, "normal_source_type", "source_type", default="EXPLICIT_COVERAGE_TABLE"),
+            "normal_source_type": source_type,
             "normal_tissue": get(row, "normal_tissue", "tissue"),
-            "critical_tissue": get(row, "critical_tissue", default="false"),
+            "critical_tissue": critical,
             "detection_status": detection, "coverage_status": coverage,
             "junction_reads": str(as_int(get(row, "junction_reads", "reads"), 0)),
             "sample_prevalence": as_float_text(get(row, "sample_prevalence", "prevalence")),

@@ -13,11 +13,12 @@ from neoag.splice.identifiers import link_id, splice_event_id, stable_digest, st
 from neoag.utils import write_json, write_tsv
 
 from .adapters.immunopepper import parse_immunopepper_kmers, parse_immunopepper_meta
+from .adapters.high_order import parse_high_order_evidence
 from .adapters.irfinder import parse_irfinder
 from .adapters.pvacbind import parse_pvacbind
 from .adapters.regtools import parse_junction_source
 from .adapters.spladder import parse_spladder_gff3, parse_spladder_txt
-from .consensus import build_consensus
+from .consensus import build_consensus, consensus_reason_conflicts
 from .normal_background import parse_normal_coverage, parse_normal_junctions
 from .projection import project_legacy
 from .schemas import (
@@ -259,6 +260,10 @@ class SpliceLayer:
     def finalise(self) -> None:
         self.consolidate()
         self.tables["consensus"] = build_consensus(self.tables, sample_id=self.sample_id)
+        self.tables.setdefault("conflicts", []).extend(
+            consensus_reason_conflicts(self.tables["consensus"], sample_id=self.sample_id)
+        )
+        self.tables["conflicts"] = self._merge_table("conflicts", self.tables.get("conflicts", []))
         projection = project_legacy(self.tables, sample_id=self.sample_id, disease_profile=self.disease_profile)
         self.tables.update(projection)
         self.tables["qc"] = self._referential_qc()
@@ -328,11 +333,13 @@ def build_splice_provenance_layer(
     disease_profile: str = "default",
     junctions: str | Path | None = None,
     junction_coordinate_system: str = "auto",
+    junction_source_assay_id: str = "",
     star_junctions: str | Path | None = None,
+    star_junction_source_assay_id: str = "",
     spladder_gff3: Iterable[str | Path] | None = None,
     spladder_txt: Iterable[str | Path] | None = None,
     irfinder: Iterable[str | Path] | None = None,
-    irfinder_coordinate_system: str = "intron_1based_closed",
+    irfinder_coordinate_system: str = "UNSPECIFIED",
     immunopepper_meta: Iterable[str | Path] | None = None,
     immunopepper_kmers: Iterable[str | Path] | None = None,
     pvacbind: Iterable[str | Path] | None = None,
@@ -340,10 +347,13 @@ def build_splice_provenance_layer(
     normal_junctions: Iterable[str | Path] | None = None,
     normal_coordinate_system: str = "auto",
     normal_coverage: Iterable[str | Path] | None = None,
+    high_order_evidence: Iterable[str | Path] | None = None,
     tool_versions: dict[str, str] | None = None,
     strict: bool = False,
 ) -> dict[str, Path]:
     versions = tool_versions or {}
+    if irfinder and str(irfinder_coordinate_system).strip().upper() in {"", "UNSPECIFIED", "AUTO"}:
+        raise ValueError("IRFinder-S inputs require an explicit --irfinder-coordinate-system declaration")
     required_tools: list[str] = []
     if junctions:
         required_tools.append("RegTools")
@@ -369,12 +379,14 @@ def build_splice_provenance_layer(
         layer.register_input(junctions, role="primary_rna_junctions", tool="RegTools", version=versions.get("RegTools", "UNASSESSED"))
         layer.extend(parse_junction_source(
             junctions, sample_id=sample_id, source_tool="RegTools", source_tool_version=versions.get("RegTools", "UNASSESSED"),
+            source_assay_id=junction_source_assay_id,
             genome_build=genome_build, coordinate_system=junction_coordinate_system, strict=strict,
         ))
     if star_junctions:
         layer.register_input(star_junctions, role="primary_rna_junctions", tool="STAR-SJ", version=versions.get("STAR", "UNASSESSED"))
         layer.extend(parse_junction_source(
             star_junctions, sample_id=sample_id, source_tool="STAR-SJ", source_tool_version=versions.get("STAR", "UNASSESSED"),
+            source_assay_id=star_junction_source_assay_id,
             genome_build=genome_build, coordinate_system="star_sj", strict=strict,
         ))
     for path in _as_paths(spladder_gff3):
@@ -411,6 +423,11 @@ def build_splice_provenance_layer(
 
     # Preliminary consolidation is required to create an exact ORF→FASTA index.
     layer.consolidate()
+    for path in _as_paths(high_order_evidence):
+        layer.register_input(path, role="high_order_validation", tool="ValidatedEvidence")
+        layer.extend(parse_high_order_evidence(
+            path, sample_id=sample_id, entity_bundle=layer.tables, strict=strict,
+        ))
     _, generated_map = layer.write_pvacbind_fasta(outdir)
     map_for_pvac = Path(pvacbind_fasta_map) if pvacbind_fasta_map else generated_map
     for path in _as_paths(pvacbind):

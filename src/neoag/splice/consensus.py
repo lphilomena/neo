@@ -18,24 +18,42 @@ def _grade_num(value: str) -> int:
         return 0
 
 
+def _resolved_evidence(row: dict[str, str]) -> bool:
+    status = str(row.get("resolution_status", "")).upper()
+    if not status or any(token in status for token in ("UNRESOLVED", "UNVERIFIED", "REJECTED", "AMBIGUOUS")):
+        return False
+    return str(row.get("verified_value", "")).strip() not in {"", "0", "0.0"}
+
+
 def build_consensus(tables: dict[str, list[dict[str, str]]], *, sample_id: str) -> list[dict[str, str]]:
     evidence_by_entity: dict[str, set[str]] = defaultdict(set)
     for row in tables.get("tool_evidence", []):
-        evidence_by_entity[row.get("entity_id", "")].add(row.get("evidence_group", ""))
+        if _resolved_evidence(row):
+            evidence_by_entity[row.get("entity_id", "")].add(row.get("evidence_group", ""))
     links_by_event: dict[str, set[str]] = defaultdict(set)
     for row in tables.get("event_junction_links", []):
         links_by_event[row.get("splice_event_id", "")].add(row.get("junction_id", ""))
     exact_rna_junctions = {
         row.get("entity_id", "") for row in tables.get("tool_evidence", [])
         if row.get("evidence_group") == "RNA_JUNCTION"
-        and row.get("resolution_status", "").startswith("RESOLVED")
-        and str(row.get("verified_value", "")).strip() not in {"", "0", "0.0"}
+        and row.get("resolution_status", "") == "RESOLVED_EXACT"
+        and _resolved_evidence(row)
     }
+    rna_sources_by_junction: dict[str, set[str]] = defaultdict(set)
+    for row in tables.get("tool_evidence", []):
+        if row.get("entity_id", "") in exact_rna_junctions and row.get("evidence_group") == "RNA_JUNCTION" and _resolved_evidence(row):
+            rna_sources_by_junction[row.get("entity_id", "")].add(
+                row.get("source_assay_id", "") or "RNA_ASSAY_UNRESOLVED"
+            )
     event_groups: dict[str, set[str]] = defaultdict(set)
     for event_id, jids in links_by_event.items():
         for jid in jids:
             event_groups[event_id].update(evidence_by_entity.get(jid, set()))
         event_groups[event_id].update(evidence_by_entity.get(event_id, set()))
+    for transcript in tables.get("transcripts", []):
+        event_groups[transcript.get("splice_event_id", "")].update(
+            evidence_by_entity.get(transcript.get("transcript_hypothesis_id", ""), set())
+        )
     orfs = {row.get("orf_id", ""): row for row in tables.get("orfs", [])}
     origins = tables.get("peptide_origins", [])
     presentations_by_origin: dict[str, list[dict[str, str]]] = defaultdict(list)
@@ -64,6 +82,9 @@ def build_consensus(tables: dict[str, list[dict[str, str]]], *, sample_id: str) 
         groups.update(evidence_by_entity.get(por, set()))
         event_jids = links_by_event.get(event_id, set()) | _split(origin.get("junction_ids", ""))
         has_exact_rna = bool(event_jids & exact_rna_junctions)
+        independent_rna_sources = {
+            source for jid in event_jids for source in rna_sources_by_junction.get(jid, set()) if source
+        }
         has_event_model = bool(groups & {"SPLICE_GRAPH", "INTRON_RETENTION", "DNA_CAUSAL", "LONG_READ"})
         if "LONG_READ" in groups or "DNA_CAUSAL" in groups:
             event_grade = "E3"
@@ -76,7 +97,7 @@ def build_consensus(tables: dict[str, list[dict[str, str]]], *, sample_id: str) 
 
         generator_key = (event_id, orf.get("protein_sequence_sha256", ""), orf.get("frame_status", ""))
         generators = {x for x in protein_generators.get(generator_key, set()) if x}
-        if "PROTEIN_VALIDATION" in groups or "LONG_READ" in groups:
+        if groups & {"PROTEIN_VALIDATION", "LIGANDOME", "LONG_READ"}:
             orf_grade = "O3"
         elif len(generators) >= 2:
             orf_grade = "O2"
@@ -88,16 +109,16 @@ def build_consensus(tables: dict[str, list[dict[str, str]]], *, sample_id: str) 
         normal_rows: list[dict[str, str]] = []
         for key in [por, event_id, *event_jids]:
             normal_rows.extend(normal_by_entity.get(key, []))
-        detected_critical = any(
-            row.get("assessment_status") == "NORMAL_DETECTED" and row.get("critical_tissue", "").lower() == "true"
-            for row in normal_rows
-        )
-        detected_any = any(row.get("assessment_status") == "NORMAL_DETECTED" for row in normal_rows)
+        detected_statuses = {
+            "DETECTED_MATCHED_NORMAL", "DETECTED_CRITICAL_TISSUE",
+            "DETECTED_BROAD_NORMAL", "LOW_LEVEL_NONCRITICAL_NORMAL",
+        }
+        detected_any = any(row.get("assessment_status") in detected_statuses for row in normal_rows)
         adequate_negative_sources = {
             (row.get("normal_source_type", ""), row.get("normal_source", ""))
             for row in normal_rows if row.get("assessment_status") == "NOT_DETECTED_ADEQUATE_COVERAGE"
         }
-        if detected_critical or detected_any:
+        if detected_any:
             normal_grade = "N0"
             normal_status = "NORMAL_DETECTED"
         elif len(adequate_negative_sources) >= 2:
@@ -158,6 +179,7 @@ def build_consensus(tables: dict[str, list[dict[str, str]]], *, sample_id: str) 
             "event_evidence_grade": event_grade, "orf_evidence_grade": orf_grade,
             "normal_safety_grade": normal_grade, "presentation_grade": presentation_grade,
             "independent_evidence_groups": ";".join(sorted(x for x in groups if x)),
+            "independent_rna_sources": ";".join(sorted(independent_rna_sources)),
             "independent_translation_generators": ";".join(sorted(generators)),
             "event_consensus_status": "RNA_EVENT_SUPPORTED" if has_exact_rna else "RNA_EVENT_UNCONFIRMED",
             "orf_consensus_status": "MULTI_GENERATOR_CONSENSUS" if len(generators) >= 2 else "SINGLE_GENERATOR",
@@ -169,3 +191,25 @@ def build_consensus(tables: dict[str, list[dict[str, str]]], *, sample_id: str) 
             "hard_fail_codes": ";".join(hard), "cap_codes": ";".join(caps),
         })
     return rows
+
+
+def consensus_reason_conflicts(consensus_rows: list[dict[str, str]], *, sample_id: str) -> list[dict[str, str]]:
+    conflicts: list[dict[str, str]] = []
+    for row in consensus_rows:
+        entity_id = row.get("origin_peptide_id", "") or row.get("splice_event_id", "")
+        for field_name, conflict_type, severity in (
+            ("hard_fail_codes", "CONSENSUS_HARD_FAIL", "ERROR"),
+            ("cap_codes", "CONSENSUS_PRIORITY_CAP", "WARNING"),
+        ):
+            for code in _split(row.get(field_name, "")):
+                conflict = {
+                    "entity_type": "PEPTIDE_ORIGIN", "entity_id": entity_id, "sample_id": sample_id,
+                    "conflict_type": conflict_type, "field_name": field_name,
+                    "observed_values": code, "source_tools": "NeoAgEvidenceConsensus",
+                    "source_record_ids": row.get("consensus_id", ""), "severity": severity,
+                    "resolution_status": "RULE_APPLIED",
+                    "resolution_reason": f"{code} contributed to final tier {row.get('final_evidence_tier', '')}.",
+                }
+                conflict["conflict_id"] = stable_id("CFL", conflict)
+                conflicts.append(conflict)
+    return conflicts
