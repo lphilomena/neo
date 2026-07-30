@@ -4,11 +4,11 @@
   "release_date": "2026-07-30",
   "release_name": "formal_splice_provenance_layer",
   "baseline_version": "0.4.4",
-  "source_file_count": 868,
+  "source_file_count": 871,
   "validation": {
     "full_default_tests": {
       "passed": 430,
-      "skipped": 104,
+      "skipped": 105,
       "failed": 0
     },
     "splice_regression_tests": {

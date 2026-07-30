@@ -27,7 +27,7 @@ It preserves the v0.4.4 exact-junction non-leakage rules and adds stable foreign
 | Shell syntax for v0.5.0 production drivers | PASS |
 | CLI help for source installation | PASS |
 | v0.4.4 + v0.5.0 splice regression suite | 33 passed, 0 failed |
-| Full default repository test suite | 430 passed, 104 skipped, 0 failed |
+| Full default repository test suite | 430 passed, 105 skipped, 0 failed |
 | Unstranded-junction downgrade and strict rejection | PASS |
 | pVACbind event/transcript/ORF/hash-chain rejection tests | PASS |
 | Cryptic-exon/exitron event normalization | PASS |
@@ -50,7 +50,7 @@ It preserves the v0.4.4 exact-junction non-leakage rules and adds stable foreign
 | JSON example config and machine-readable schema parsing | PASS |
 | Wheel content, isolated import, and console CLI smoke | PASS |
 
-The 104 skipped tests remain conditional tests in the existing project configuration. They are not counted as successful executions. Integration validation also confirmed that the dependency-light manifest parser preserves nested scalar lists when PyYAML is unavailable.
+The 105 skipped tests remain conditional tests in the existing project configuration. They are not counted as successful executions. Integration validation also confirmed that the dependency-light manifest parser preserves nested scalar lists when PyYAML is unavailable.
 
 ## 3. Safety properties explicitly tested
 
