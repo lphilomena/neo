@@ -14,6 +14,7 @@ from neoag.open_neo.errors import FailureCode, exit_code_for_result
 from neoag.controlled_execution.doctor import CheckRow
 from neoag.open_neo.install_check import (
     _assess_tier,
+    _deployment_command,
     _required_asset_sources_missing,
     _rewrite_asset_manifest,
     _run_deployment,
@@ -335,6 +336,63 @@ def test_auto_config_skips_inaccessible_paths_from_another_machine(tmp_path: Pat
     assert row["resolved_path"] == str(portable_fasta.resolve())
 
 
+def test_auto_config_discovers_project_wrappers_conda_envs_and_portable_assets(tmp_path: Path):
+    project = tmp_path / "project"
+    tools_root = tmp_path / "miniforge"
+    refs_root = tmp_path / "neodata4git"
+    (project / "bin").mkdir(parents=True)
+    wrapper = project / "bin/neoag-nextflow"
+    wrapper.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    wrapper.chmod(0o755)
+    for executable in ("STAR", "regtools", "salmon"):
+        path = tools_root / "envs/neoag-fusion/bin" / executable
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        path.chmod(0o755)
+    prime = refs_root / "data/predictors/prime/PRIME"
+    prime.parent.mkdir(parents=True)
+    prime.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    prime.chmod(0o755)
+    portable_assets = {
+        "normal_proteome": "data/normal/proteome/Homo_sapiens.GRCh38.pep.all.fa",
+        "normal_ligandome": "data/normal/ligandome/normal_ms_ligands.tsv",
+        "normal_junctions": "data/normal/junctions/normal_junctions.GRCh38.tsv.gz",
+        "easyfuse_ref": "data/ref/ctat/current",
+    }
+    for relative in portable_assets.values():
+        path = refs_root / relative
+        if path.suffix:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("fixture\n", encoding="utf-8")
+        else:
+            path.mkdir(parents=True, exist_ok=True)
+    tools_manifest = tmp_path / "tools.json"
+    tools_manifest.write_text(json.dumps({"tools": {
+        "nextflow": {"executable": "/root/old/bin/nextflow"},
+        "star": {"executable": "star"},
+        "regtools": {"executable": "regtools-neoag"},
+        "salmon": {"executable": "salmon"},
+        "prime": {"executable": "PRIME"},
+    }}), encoding="utf-8")
+    refs_manifest = tmp_path / "references.json"
+    refs_manifest.write_text(json.dumps({"genome_build": "GRCh38", "references": {
+        name: {"path": f"/root/old/{name}"} for name in portable_assets
+    }}), encoding="utf-8")
+    result = configure_machine(
+        project_root=project, tools_manifest=tools_manifest, reference_manifest=refs_manifest,
+        outdir=tmp_path / "configured", tools_root=tools_root, reference_root=refs_root,
+        licensed_root=tmp_path / "licensed",
+    )
+    rows = {(row["component_type"], row["component"]): row for row in result.rows}
+    for tool in ("nextflow", "star", "regtools", "salmon", "prime"):
+        assert rows[("tool", tool)]["status"] == "CONFIGURED"
+    for reference in portable_assets:
+        assert rows[("reference", reference)]["status"] == "CONFIGURED"
+    assert rows[("tool", "nextflow")]["resolved_path"] == str(wrapper.resolve())
+    assert rows[("tool", "star")]["resolved_path"].endswith("neoag-fusion/bin/STAR")
+    assert rows[("tool", "prime")]["resolved_path"] == str(prime.resolve())
+
+
 def test_auto_config_rejects_wrong_build_bam_matcher_panel(tmp_path: Path):
     project = tmp_path / "project"; project.mkdir()
     tools_root = tmp_path / "tools"; (tools_root / "bin").mkdir(parents=True)
@@ -383,6 +441,22 @@ def test_local_asset_manifest_rewrites_source_and_target_roots(tmp_path: Path):
     assert str(tmp_path / "licensed/tool") in text
     assert _required_asset_sources_missing(output, "") == [f"tool={source_root}/tools/tool"]
     assert _required_asset_sources_missing(output, "asset-host") == []
+
+
+def test_deployment_profile_defaults_follow_requested_tier(tmp_path: Path):
+    project = tmp_path / "project"
+    script = project / ".agents/skills/neoag-remote-deploy/scripts/16_install_new_machine.sh"
+    script.parent.mkdir(parents=True)
+    script.write_text("#!/bin/sh\n", encoding="utf-8")
+    layout = RunLayout.create(tmp_path / "run")
+    full = _deployment_command({"deployment_tier": "full"}, project, layout, execute=False)
+    core = _deployment_command({"deployment_tier": "core"}, project, layout, execute=False)
+    explicit = _deployment_command(
+        {"deployment_tier": "full", "installer_profile": "all-open"}, project, layout, execute=False,
+    )
+    assert "--standard" in full
+    assert "--minimal" in core
+    assert "--all-open" in explicit
 
 
 def test_install_checkpoint_can_be_reused(tmp_path: Path):

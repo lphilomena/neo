@@ -5,7 +5,7 @@ owner: neoag
 
 references:
   reference_fasta:
-    path: /root/neo/neodata4git/data/ref/hg38/Homo_sapiens_assembly38.fasta
+    path: ${OPEN_NEO_REFERENCE_ROOT}/data/ref/hg38/Homo_sapiens_assembly38.fasta
     source: Ensembl/EasyFuse reference bundle
     version: GRCh38.110
     sha256: "-"
@@ -13,14 +13,14 @@ references:
     required: true
 
   gencode_gtf:
-    path: /root/neo/neodata4git/data/ref/hg38/gencode.gtf
+    path: ${OPEN_NEO_REFERENCE_ROOT}/data/ref/hg38/gencode.gtf
     source: Ensembl/EasyFuse reference bundle
     version: GRCh38.110
     sha256: "-"
     required: true
 
   vep_cache:
-    path: /root/neo/neodata4git/data/vep/homo_sapiens/105_GRCh38
+    path: ${OPEN_NEO_REFERENCE_ROOT}/data/vep/homo_sapiens/105_GRCh38
     source: Ensembl VEP
     version: 105_GRCh38
     vep_version_required: "105"
@@ -28,97 +28,97 @@ references:
     required: true
 
   bigmhc_models:
-    path: /root/neo/env_tool/tools/bigmhc/models
+    path: ${OPEN_NEO_TOOLS_ROOT}/tools/bigmhc/models
     source: BigMHC
     version: project_default
     marker: bat512/im
     required: true
 
   easyfuse_ref:
-    path: /root/neo/neodata4git/data/easyfuse/easyfuse_ref_v4
+    path: ${OPEN_NEO_REFERENCE_ROOT}/data/easyfuse/easyfuse_ref_v4
     source: EasyFuse
     version: v4
     marker: BEFORE_EXECUTING_EASYFUSE
     required: false
 
   hla_la_graph:
-    path: /root/neo/neodata4git/data/hla/PRG_MHC_GRCh38_withIMGT
+    path: ${OPEN_NEO_REFERENCE_ROOT}/data/hla/PRG_MHC_GRCh38_withIMGT
     source: HLA-LA graph bundle
     version: PRG_MHC_GRCh38_withIMGT
     marker: serializedGRAPH
     required: false
 
   facets_common_snp_vcf:
-    path: /root/neo/neodata4git/data/facets/reference/common_snp.hg38.vcf.gz
+    path: ${OPEN_NEO_REFERENCE_ROOT}/data/facets/reference/common_snp.hg38.vcf.gz
     source: FACETS common SNP reference
     version: hg38
     marker: .tbi
     required: true
 
   bam_matcher_loci:
-    path: /root/neo/neodata4git/data/sample_identity/bam_matcher.common_snps.hg38.vcf
+    path: ${OPEN_NEO_REFERENCE_ROOT}/data/sample_identity/bam_matcher.common_snps.hg38.vcf
     source: curated common high-MAF biallelic SNP identity panel
     version: GRCh38
     sha256: "-"
     required: false
 
   normal_proteome:
-    path: /root/neo/neodata4git/data/normal/proteome/Homo_sapiens.GRCh38.pep.all.fa
+    path: ${OPEN_NEO_REFERENCE_ROOT}/data/normal/proteome/Homo_sapiens.GRCh38.pep.all.fa
     source: Ensembl peptide reference
     version: GRCh38.110
     required: true
 
   normal_ligandome:
-    path: /root/neo/neodata4git/data/normal/ligandome/normal_ms_ligands.tsv
+    path: ${OPEN_NEO_REFERENCE_ROOT}/data/normal/ligandome/normal_ms_ligands.tsv
     source: HLA Ligand Atlas
     version: "2020.12"
     license: CC-BY-4.0
-    manifest: /root/neo/neodata4git/data/normal/hla_ligand_atlas/2020.12/manifest.json
-    checksums: /root/neo/neodata4git/data/normal/hla_ligand_atlas/2020.12/SHA256SUMS
+    manifest: ${OPEN_NEO_REFERENCE_ROOT}/data/normal/hla_ligand_atlas/2020.12/manifest.json
+    checksums: ${OPEN_NEO_REFERENCE_ROOT}/data/normal/hla_ligand_atlas/2020.12/SHA256SUMS
     builder: scripts/build_hla_ligand_atlas_reference.py
     required: true
 
   iedb_human_ms_ligands_detail:
-    path: /root/neo/neodata4git/data/normal/iedb_mhc_ligand/2026-07-14/build/iedb_human_ms_ligands_detail.tsv
+    path: ${OPEN_NEO_REFERENCE_ROOT}/data/normal/iedb_mhc_ligand/2026-07-14/build/iedb_human_ms_ligands_detail.tsv
     source: IEDB MHC ligand full TSV export
     version: IEDB-export-2026-07-14
     sha256: 219125f7501f951b6c42f2a0ca513d5e57b5266c1a74a8c674258edb2acb0207
-    manifest: /root/neo/neodata4git/data/normal/iedb_mhc_ligand/2026-07-14/manifest.json
+    manifest: ${OPEN_NEO_REFERENCE_ROOT}/data/normal/iedb_mhc_ligand/2026-07-14/manifest.json
     required: true
 
   iedb_human_ms_ligands:
-    path: /root/neo/neodata4git/data/normal/iedb_mhc_ligand/2026-07-14/build/iedb_human_ms_ligands.tsv
+    path: ${OPEN_NEO_REFERENCE_ROOT}/data/normal/iedb_mhc_ligand/2026-07-14/build/iedb_human_ms_ligands.tsv
     source: IEDB MHC ligand full TSV export
     version: IEDB-export-2026-07-14
     sha256: e72f6fad29dfe96fa3a147ffe5b47ef1112cb14f655cdac8e8d84fcddc49bddf
     required: true
 
   iedb_strict_normal_ligands:
-    path: /root/neo/neodata4git/data/normal/iedb_mhc_ligand/2026-07-14/build/iedb_human_normal_direct_ex_vivo_ligands.tsv
+    path: ${OPEN_NEO_REFERENCE_ROOT}/data/normal/iedb_mhc_ligand/2026-07-14/build/iedb_human_normal_direct_ex_vivo_ligands.tsv
     source: IEDB healthy-or-unspecified Direct Ex Vivo subset
     version: IEDB-export-2026-07-14
     sha256: e8da603e58a8bd697d0c3375c6318fec260737321803fa277684b9886a4fa7eb
-    manifest: /root/neo/neodata4git/data/normal/iedb_mhc_ligand/2026-07-14/manifest.json
+    manifest: ${OPEN_NEO_REFERENCE_ROOT}/data/normal/iedb_mhc_ligand/2026-07-14/manifest.json
     required: true
 
   cancer_gene_list:
-    path: /root/neo/neodata4git/data/annotation/cancer_gene/oncokb_v7.3_2026-06-25/cancerGeneList.tsv
+    path: ${OPEN_NEO_REFERENCE_ROOT}/data/annotation/cancer_gene/oncokb_v7.3_2026-06-25/cancerGeneList.tsv
     source: OncoKB Cancer Gene List
     version: v7.3_2026-06-25
     sha256: e333f58739c8fdf31b98ee5cb00c9fb05a36eeba74719a25d17d7f68c27156ba
-    manifest: /root/neo/neodata4git/data/annotation/cancer_gene/oncokb_v7.3_2026-06-25/manifest.json
+    manifest: ${OPEN_NEO_REFERENCE_ROOT}/data/annotation/cancer_gene/oncokb_v7.3_2026-06-25/manifest.json
     required: false
     scoring_role: annotation_and_report_only
 
   normal_junctions_liver:
-    path: /root/neo/neodata4git/data/normal/junctions/gtex_v8_liver.GRCh38.tsv.gz
+    path: ${OPEN_NEO_REFERENCE_ROOT}/data/normal/junctions/gtex_v8_liver.GRCh38.tsv.gz
     source: recount3 GTEx v8 Liver exon-exon junction counts
     version: recount3_2023-01-04_GRCh38
     marker: .meta.json
     required: false
 
   normal_junctions:
-    path: /root/neo/neodata4git/data/normal/junctions/normal_junctions.GRCh38.tsv.gz
+    path: ${OPEN_NEO_REFERENCE_ROOT}/data/normal/junctions/normal_junctions.GRCh38.tsv.gz
     source: recount3 GTEx v8 pan-tissue exon-exon junction counts
     version: recount3_2023-01-04_GRCh38
     sha256: f0e4292f8a873530d06d0621295c415f20be917a9d17c0ed55feb30e5df3fe5b
@@ -126,21 +126,59 @@ references:
     required: false
 
   salmon_index:
-    path: /root/neo/neodata4git/data/rna/salmon_index
+    path: ${OPEN_NEO_REFERENCE_ROOT}/data/rna/salmon_index
     source: transcriptome Salmon index
     version: GRCh38_matching_project_gtf
     marker: versionInfo.json
     required: false
 
   salmon_tx2gene:
-    path: /root/neo/neodata4git/data/rna/tx2gene.tsv
+    path: ${OPEN_NEO_REFERENCE_ROOT}/data/rna/tx2gene.tsv
     source: transcript-to-gene mapping
     version: GRCh38_matching_project_gtf
     required: false
 
   rsem_reference:
-    path: /root/neo/neodata4git/data/rna/rsem_reference
+    path: ${OPEN_NEO_REFERENCE_ROOT}/data/rna/rsem_reference
     source: RSEM reference prefix directory
     version: GRCh38_matching_project_gtf
     marker: grp
+    required: false
+
+  star_index:
+    path: ${OPEN_NEO_REFERENCE_ROOT}/data/ref/ctat/current/ctat_genome_lib_build_dir/ref_genome.fa.star.idx
+    source: CTAT/STAR genome index matching the configured GRCh38 FASTA and GTF
+    version: GRCh38_project_bundle
+    marker: Genome
+    required: false
+
+  ctat_genome_lib:
+    path: ${OPEN_NEO_REFERENCE_ROOT}/data/ref/ctat/current/ctat_genome_lib_build_dir
+    source: CTAT genome library
+    version: project_current
+    marker: ref_genome.fa.star.idx
+    required: false
+
+  spechla_db:
+    path: ${OPEN_NEO_REFERENCE_ROOT}/data/hla/spechla/db
+    source: SpecHLA database assets
+    version: project_frozen
+    required: false
+
+  lohhla_reference:
+    path: ${OPEN_NEO_REFERENCE_ROOT}/data/lohhla/polysolver
+    source: LOHHLA/Polysolver HLA reference assets
+    version: project_frozen
+    required: false
+
+  sequenza_gc_wiggle:
+    path: ${OPEN_NEO_REFERENCE_ROOT}/data/sequenza/reference/Homo_sapiens.GRCh38.dna.primary_assembly.chr.gc50.wig.gz
+    source: Sequenza GRCh38 GC wiggle
+    version: GRCh38_gc50
+    required: false
+
+  purple_reference:
+    path: ${OPEN_NEO_REFERENCE_ROOT}/data/hmf/purple_reference
+    source: PURPLE/AMBER/COBALT reference bundle
+    version: project_frozen
     required: false

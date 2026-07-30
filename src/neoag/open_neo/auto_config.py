@@ -14,8 +14,19 @@ from neoag.controlled_execution.io_utils import load_limited_yaml, write_json, w
 
 
 TOOL_ENV_PATHS = {
+    "nextflow": ("NEXTFLOW_BIN",),
+    "star": ("STAR_BIN",),
+    "regtools": ("REGTOOLS_BIN",),
+    "salmon": ("SALMON_BIN",),
+    "rsem": ("RSEM_CALCULATE_EXPRESSION_BIN",),
+    "vep": ("VEP_BIN",),
+    "gatk": ("GATK_BIN",),
+    "optitype": ("OPTITYPE_BIN",),
     "hla_la": ("HLALA_BIN", "HLA_LA_BIN"),
     "spechla": ("SPECHLA_BIN",),
+    "lohhla": ("LOHHLA_BIN",),
+    "facets": ("FACETS_BIN",),
+    "sequenza": ("SEQUENZA_BIN",),
     "purple": ("PURPLE_BIN",),
     "ascat": ("ASCAT_BIN",),
     "snaf": ("SNAF_BIN",),
@@ -23,6 +34,59 @@ TOOL_ENV_PATHS = {
     "bam_matcher": ("BAM_MATCHER_BIN",),
     "netmhcpan": ("NEOAG_NETMHCPAN_BIN",),
     "netmhcstabpan": ("NETMHCSTABPAN_BIN",),
+    "prime": ("PRIME_BIN",),
+    "mixmhcpred": ("MIXMHCPRED_BIN",),
+    "bigmhc_im": ("BIGMHC_BIN",),
+}
+
+# Manifest names, upstream executable names and project wrappers intentionally
+# differ. Keep the mapping explicit so a copied release can be configured
+# without relying on the old machine's PATH.
+TOOL_EXECUTABLE_CANDIDATES = {
+    "nextflow": ("nextflow", "neoag-nextflow"),
+    "star": ("STAR",),
+    "regtools": ("regtools", "regtools-neoag"),
+    "salmon": ("salmon",),
+    "rsem": ("rsem-calculate-expression",),
+    "vep": ("vep", "vep-neoag"),
+    "gatk": ("gatk",),
+    "optitype": ("optitype", "OptiTypePipeline.py"),
+    "pvacseq": ("pvacseq", "pvacseq-neoag7"),
+    "pvacfuse": ("pvacfuse", "pvacfuse-neoag7"),
+    "pvacsplice": ("pvacsplice", "pvacsplice-neoag7"),
+    "pvacbind": ("pvacbind", "pvacbind-neoag7"),
+    "mhcflurry": ("mhcflurry-predict",),
+    "hla_la": ("HLA-LA.pl", "HLA-LA"),
+    "spechla": ("SpecHLA.py", "SpecHLA"),
+    "lohhla": ("LOHHLA", "LOHHLA.pl"),
+    "facets": ("runFACETS.R", "snp-pileup"),
+    "sequenza": ("sequenza-utils",),
+    "ascat": ("ascat.R", "ascat-v3"),
+    "purple": ("purple",),
+    "amber": ("amber",),
+    "cobalt": ("cobalt",),
+    "easyfuse": ("easyfuse", "easyfuse-neoag"),
+    "star_fusion": ("STAR-Fusion", "star-fusion-neoag"),
+    "fusioncatcher": ("fusioncatcher", "fusioncatcher-neoag"),
+    "spladder": ("spladder", "spladder-neoag"),
+    "irfinder_s": ("IRFinder", "irfinder-s-neoag"),
+    "immunopepper": ("immunopepper", "immunopepper-neoag"),
+    "splicemutr": ("SpliceMutr", "splicemutr-neoag"),
+    "bigmhc_im": ("bigmhc_predict",),
+    "pyclone": ("pyclone", "pyclone-vi"),
+    "polysolver": ("run-polysolver", "shell_call_hla_type"),
+    "bam_matcher": ("bam-matcher", "bam_matcher.py"),
+    "netmhcpan": ("netMHCpan",),
+    "netmhcstabpan": ("netMHCstabpan",),
+    "prime": ("PRIME",),
+    "mixmhcpred": ("MixMHCpred",),
+}
+
+TOOL_RELATIVE_CANDIDATES = {
+    "netmhcpan": ("data/predictors/netMHCpan/netMHCpan",),
+    "prime": ("data/predictors/prime/PRIME",),
+    "mixmhcpred": ("data/predictors/mixMHCpred_install/MixMHCpred",),
+    "lohhla": ("data/tools/lohhla/LOHHLA",),
 }
 
 REFERENCE_ENV_PATHS = {
@@ -42,6 +106,16 @@ REFERENCE_ENV_PATHS = {
     "splicemutr_workflow": ("SPLICEMUTR_WORKFLOW",),
     "ascat_loci": ("ASCAT_LOCI",),
     "ascat_alleles": ("ASCAT_ALLELES",),
+    "normal_proteome": ("NEOAG_NORMAL_PROTEOME",),
+    "normal_ligandome": ("NEOAG_NORMAL_LIGANDOME",),
+    "normal_junctions": ("NEOAG_NORMAL_JUNCTIONS",),
+    "normal_junctions_liver": ("NEOAG_NORMAL_JUNCTIONS_LIVER",),
+    "ctat_genome_lib": ("CTAT_GENOME_LIB",),
+    "easyfuse_ref": ("EASYFUSE_REF",),
+    "salmon_index": ("SALMON_INDEX",),
+    "salmon_tx2gene": ("SALMON_TX2GENE", "TX2GENE_TSV"),
+    "rsem_reference": ("RSEM_REFERENCE",),
+    "bigmhc_models": ("BIGMHC_MODELS",),
 }
 
 REFERENCE_CANDIDATES = {
@@ -49,14 +123,32 @@ REFERENCE_CANDIDATES = {
     "gencode_gtf": ("data/ref/hg38/gencode.gtf", "GRCh38/gencode/gencode.v44.annotation.gtf.gz"),
     "vep_cache": ("data/vep/homo_sapiens/105_GRCh38", "GRCh38/vep/vep_115_GRCh38"),
     "hla_la_graph": ("data/hla/PRG_MHC_GRCh38_withIMGT", "hla/hla-la/graph/PRG_MHC_GRCh38_withIMGT"),
-    "spechla_db": ("data/hla/spechla_db", "hla/spechla/db"),
+    "spechla_db": ("data/hla/spechla/db", "data/hla/spechla_db", "hla/spechla/db"),
     "facets_snp_vcf": ("data/facets/reference/common_snp.hg38.vcf.gz", "cnv/facets/common_snp.vcf.gz"),
+    "facets_common_snp_vcf": ("data/facets/reference/common_snp.hg38.vcf.gz", "cnv/facets/common_snp.vcf.gz"),
     "sequenza_gc_wiggle": ("data/sequenza/reference/Homo_sapiens.GRCh38.dna.primary_assembly.chr.gc50.wig.gz",),
     "purple_reference": ("data/hmf/purple_reference", "cnv/purple"),
     "bam_matcher_loci": ("data/sample_identity/bam_matcher.common_snps.hg38.vcf", "GRCh38/sample_identity/bam_matcher.common_snps.vcf"),
     "snaf_db": ("data/snaf/reference/data", "splice/snaf/reference/data"),
     "ascat_loci": ("data/ascat/G1000_loci_hg38.txt", "cnv/ascat/loci/G1000_loci_hg38.txt"),
     "ascat_alleles": ("data/ascat/G1000_alleles_hg38.txt", "cnv/ascat/loci/G1000_alleles_hg38.txt"),
+    "normal_proteome": ("data/normal/proteome/Homo_sapiens.GRCh38.pep.all.fa",),
+    "normal_ligandome": ("data/normal/ligandome/normal_ms_ligands.tsv",),
+    "normal_junctions": ("data/normal/junctions/normal_junctions.GRCh38.tsv.gz",),
+    "normal_junctions_liver": ("data/normal/junctions/gtex_v8_liver.GRCh38.tsv.gz",),
+    "ctat_genome_lib": ("data/ref/ctat/current/ctat_genome_lib_build_dir", "data/ref/ctat/current"),
+    "easyfuse_ref": ("data/easyfuse/easyfuse_ref_v4", "data/ref/ctat/current"),
+    "star_index": ("data/ref/ctat/current/ctat_genome_lib_build_dir/ref_genome.fa.star.idx",),
+    "salmon_index": ("data/rna/salmon_index",),
+    "salmon_tx2gene": ("data/rna/tx2gene.tsv",),
+    "tx2gene": ("data/rna/tx2gene.tsv",),
+    "rsem_reference": ("data/rna/rsem_reference",),
+    "bigmhc_models": ("data/predictors/bigmhc/models",),
+    "lohhla_reference": ("data/lohhla/polysolver", "data/tools/lohhla"),
+    "iedb_human_ms_ligands_detail": ("data/normal/iedb_mhc_ligand/2026-07-14/build/iedb_human_ms_ligands_detail.tsv",),
+    "iedb_human_ms_ligands": ("data/normal/iedb_mhc_ligand/2026-07-14/build/iedb_human_ms_ligands.tsv",),
+    "iedb_strict_normal_ligands": ("data/normal/iedb_mhc_ligand/2026-07-14/build/iedb_human_normal_direct_ex_vivo_ligands.tsv",),
+    "cancer_gene_list": ("data/annotation/cancer_gene/oncokb_v7.3_2026-06-25/cancerGeneList.tsv",),
 }
 
 SPECIAL_REQUIREMENTS = {
@@ -121,8 +213,18 @@ def _resolve_executable(name: str, spec: dict[str, Any], roots: list[Path]) -> s
     for env_name in TOOL_ENV_PATHS.get(name, ()):
         if _existing(os.environ.get(env_name)):
             return _existing(os.environ[env_name])
-    candidates = [declared, name, name.replace("_", "-"), name.replace("_", "")]
+    candidates = list(dict.fromkeys([
+        declared,
+        *TOOL_EXECUTABLE_CANDIDATES.get(name, ()),
+        name,
+        name.replace("_", "-"),
+        name.replace("_", ""),
+    ]))
     for root in roots:
+        for relative in TOOL_RELATIVE_CANDIDATES.get(name, ()):
+            resolved = _existing(root / relative)
+            if resolved and Path(resolved).is_file() and os.access(resolved, os.X_OK):
+                return resolved
         for candidate in candidates:
             if not candidate:
                 continue
@@ -235,8 +337,9 @@ def configure_machine(
     tools = tool_data.setdefault("tools", {})
     references = ref_data.setdefault("references", {})
     genome_build = str(ref_data.get("genome_build") or "")
-    search_tool_roots = [project, Path(tools_root).resolve(), Path(licensed_root).resolve()]
-    search_ref_roots = [Path(reference_root).resolve(), project]
+    reference_root_path = Path(reference_root).resolve()
+    search_tool_roots = [project, Path(tools_root).resolve(), Path(licensed_root).resolve(), reference_root_path]
+    search_ref_roots = [reference_root_path, project]
 
     resolved_refs: dict[str, str] = {}
     rows: list[dict[str, str]] = []

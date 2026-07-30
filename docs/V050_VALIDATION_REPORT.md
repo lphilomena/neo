@@ -27,7 +27,7 @@ It preserves the v0.4.4 exact-junction non-leakage rules and adds stable foreign
 | Shell syntax for v0.5.0 production drivers | PASS |
 | CLI help for source installation | PASS |
 | v0.4.4 + v0.5.0 splice regression suite | 33 passed, 0 failed |
-| Full default repository test suite | 433 passed, 105 skipped, 0 failed |
+| Full default repository test suite | 435 passed, 105 skipped, 0 failed |
 | Unstranded-junction downgrade and strict rejection | PASS |
 | pVACbind event/transcript/ORF/hash-chain rejection tests | PASS |
 | Cryptic-exon/exitron event normalization | PASS |
@@ -41,6 +41,8 @@ It preserves the v0.4.4 exact-junction non-leakage rules and adds stable foreign
 | Install Skill cross-machine inaccessible-path fallback | PASS |
 | Doctor inaccessible tool/reference reporting without crash | PASS |
 | Full-tier install-check plan and verify execution | PASS (`BLOCKED` readiness result as expected) |
+| Project wrapper, conda environment, and portable asset auto-discovery | PASS |
+| Prediction/full tier default installer profile | PASS (`standard`; explicit override preserved) |
 | Headered/headerless SplAdder fixture parsing | PASS |
 | RegTools exact-junction non-leakage fixture | PASS |
 | IRFinder-S retained/spliced hypothesis fixture | PASS |

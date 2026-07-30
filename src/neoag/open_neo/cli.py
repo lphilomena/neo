@@ -78,7 +78,10 @@ def build_parser() -> argparse.ArgumentParser:
     install.add_argument("--deployment-reference-manifest")
     install.add_argument("--install-timeout", type=int, default=7200)
     install.add_argument("--allow-download", action="store_true")
-    install.add_argument("--installer-profile", choices=["minimal", "standard", "all-open", "all"], default="minimal")
+    install.add_argument(
+        "--installer-profile", choices=["minimal", "standard", "all-open", "all"], default=None,
+        help="Installer scope; defaults to minimal for review/core and standard for prediction/full",
+    )
     install.add_argument("--no-sync-assets", action="store_true")
 
     run = sub.add_parser("run", help="Detect inputs, route, run the pipeline, and emit weighted plus evidence-consensus rankings")

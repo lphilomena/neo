@@ -7,7 +7,7 @@
   "source_file_count": 871,
   "validation": {
     "full_default_tests": {
-      "passed": 433,
+      "passed": 435,
       "skipped": 105,
       "failed": 0
     },
@@ -33,7 +33,10 @@
       "inaccessible_tool_path_handling": "PASS",
       "inaccessible_reference_path_handling": "PASS",
       "cross_machine_manifest_tier_assessment": "PASS",
-      "full_tier_plan_and_verify_execution": "PASS_BLOCKED_AS_EXPECTED"
+      "full_tier_plan_and_verify_execution": "PASS_BLOCKED_AS_EXPECTED",
+      "project_wrapper_and_conda_environment_discovery": "PASS",
+      "portable_reference_layout_discovery": "PASS",
+      "tier_aware_installer_profile_selection": "PASS"
     },
     "synthetic_pvacbind_two_pass_smoke": "PASS",
     "wheel_isolated_import_and_cli": "PASS"

@@ -32,6 +32,15 @@ profiles:
       - fusioncatcher
       - easyfuse
       - regtools
+      - nextflow
+      - bwa
+      - star
+      - optitype
+      - spechla
+      - hla_la
+      - sequenza
+      - purple
+      - splicemutr
   licensed:
     description: "Tools requiring registration, institutional license, or non-redistributable assets."
     tools:
@@ -107,7 +116,7 @@ tools:
     category: splice
     executable: snaf-neoag
     env: env.neoag-splice
-    install_root: /root/neo/env_tool/tools/SNAF
+    install_root: ${OPEN_NEO_TOOLS_ROOT}/tools/SNAF
     required: false
     license_required: false
     distributable: true
@@ -117,7 +126,7 @@ tools:
     category: splice
     executable: asneo-neoag
     env: env.neoag-splice
-    install_root: /root/neo/env_tool/tools/ASNEO
+    install_root: ${OPEN_NEO_TOOLS_ROOT}/tools/ASNEO
     required: false
     license_required: false
     distributable: true
@@ -127,7 +136,7 @@ tools:
     category: splice
     executable: neosplice-neoag
     env: env.neoag-splice
-    install_root: /root/neo/env_tool/tools/NeoSplice
+    install_root: ${OPEN_NEO_TOOLS_ROOT}/tools/NeoSplice
     required: false
     license_required: false
     distributable: true
@@ -137,7 +146,7 @@ tools:
     category: splice
     executable: splice2neo-neoag
     env: env.neoag-splice
-    install_root: /root/neo/env_tool/tools/splice2neo
+    install_root: ${OPEN_NEO_TOOLS_ROOT}/tools/splice2neo
     required: false
     license_required: false
     distributable: true
@@ -215,7 +224,7 @@ tools:
     category: presentation
     executable: mhcflurry-predict
     env: env.neoag-tools
-    model_dir: /root/neo/env_tool/miniforge3/envs/neoag-tools/share/mhcflurry
+    model_dir: ${OPEN_NEO_TOOLS_ROOT}/miniforge3/envs/neoag-tools/share/mhcflurry
     required: true
     license_required: false
     distributable: true
@@ -250,7 +259,7 @@ tools:
     env: env.neoag-mhc
     container: neoag-netmhcpan:4.2c-ubuntu22.04
     asset: netmhcpan_install
-    target_path: /root/neo/licensed_tools/netMHCpan
+    target_path: ${OPEN_NEO_LICENSED_ROOT}/netMHCpan
     required: false
     recommended: true
     license_required: true
@@ -260,11 +269,11 @@ tools:
 
   netmhcstabpan:
     category: presentation
-    executable: /root/neo/licensed_tools/netMHCstabpan/netMHCstabpan
+    executable: ${OPEN_NEO_LICENSED_ROOT}/netMHCstabpan/netMHCstabpan
     env: env.neoag-mhc
     container: neoag-netmhcstabpan:1.0-ubuntu22.04
     asset: netmhcstabpan_install
-    target_path: /root/neo/licensed_tools/netMHCstabpan
+    target_path: ${OPEN_NEO_LICENSED_ROOT}/netMHCstabpan
     required: false
     license_required: true
     distributable: false
@@ -274,7 +283,7 @@ tools:
     category: immunogenicity
     executable: PRIME
     env: env.neoag-tools
-    install_root: /root/neo/env_tool/tools/prime
+    install_root: ${OPEN_NEO_TOOLS_ROOT}/tools/prime
     required: true
     license_required: false
     distributable: true
@@ -284,7 +293,7 @@ tools:
     category: immunogenicity
     executable: MixMHCpred
     env: env.neoag-tools
-    install_root: /root/neo/env_tool/tools/mixMHCpred_install
+    install_root: ${OPEN_NEO_TOOLS_ROOT}/tools/mixMHCpred_install
     required: true
     license_required: false
     distributable: true
@@ -294,8 +303,8 @@ tools:
     category: immunogenicity
     executable: bigmhc_predict
     env: env.neoag-tools
-    install_root: /root/neo/env_tool/tools/bigmhc
-    model_dir: /root/neo/env_tool/tools/bigmhc/models
+    install_root: ${OPEN_NEO_TOOLS_ROOT}/tools/bigmhc
+    model_dir: ${OPEN_NEO_TOOLS_ROOT}/tools/bigmhc/models
     asset: bigmhc_models
     required: true
     license_required: false
@@ -306,7 +315,7 @@ tools:
     category: immunogenicity
     executable: deepimmuno-cnn.py
     env: env.neoag-tools
-    install_root: /root/neo/env_tool/tools/DeepImmuno
+    install_root: ${OPEN_NEO_TOOLS_ROOT}/tools/DeepImmuno
     asset: deepimmuno_source
     required_markers:
       - deepimmuno-cnn.py
@@ -320,9 +329,9 @@ tools:
 
   sherpa_presentation:
     category: immunogenicity
-    executable: /root/neo/env_tool/bin/sherpa-presentation
+    executable: ${OPEN_NEO_TOOLS_ROOT}/bin/sherpa-presentation
     env: env.neoag-tools
-    install_root: /root/neo/env_tool/tools/SHERPA-Presentation
+    install_root: ${OPEN_NEO_TOOLS_ROOT}/tools/SHERPA-Presentation
     required: false
     license_required: true
     distributable: false
@@ -333,9 +342,9 @@ tools:
     executable: LOHHLA
     env: env.neoag-facets
     container: quay.io/biocontainers/lohhla:20171108--hdfd78af_3
-    install_root: /root/neo/env_tool/tools/lohhla
+    install_root: ${OPEN_NEO_TOOLS_ROOT}/tools/lohhla
     asset: lohhla_source
-    reference_dir: /root/neo/env_tool/tools/lohhla
+    reference_dir: ${OPEN_NEO_TOOLS_ROOT}/tools/lohhla
     required: true
     license_required: false
     distributable: true
@@ -409,7 +418,7 @@ tools:
     executable: arriba
     env: env.neoag-fusion
     container: uhrigs/arriba:2.5.1
-    wrapper: /root/neo/src/na0707_upload_release/bin/arriba
+    wrapper: ${OPEN_NEO_PROJECT_ROOT}/bin/arriba
     required: false
     license_required: false
     distributable: true
@@ -417,24 +426,107 @@ tools:
 
   polysolver:
     category: hla_typing
-    executable: /root/neo/licensed_tools/polysolver/scripts/shell_call_hla_type
+    executable: ${OPEN_NEO_LICENSED_ROOT}/polysolver/scripts/shell_call_hla_type
     env: env.neoag-hla
     asset: polysolver_distribution
-    target_path: /root/neo/licensed_tools/polysolver
+    target_path: ${OPEN_NEO_LICENSED_ROOT}/polysolver
     required: false
     license_required: true
     distributable: false
     companion_assets:
       - novoalign_license
-    smoke_command: "/root/neo/licensed_tools/polysolver/scripts/shell_call_hla_type --help"
+    smoke_command: "${OPEN_NEO_LICENSED_ROOT}/polysolver/scripts/shell_call_hla_type --help"
 
   novoalign_license:
     category: hla_typing
-    executable: /root/neo/licensed_tools/novoalign/novoalign.lic
+    executable: ${OPEN_NEO_LICENSED_ROOT}/novoalign/novoalign.lic
     env: env.neoag-hla
     asset: novoalign_license
-    target_path: /root/neo/licensed_tools/novoalign/novoalign.lic
+    target_path: ${OPEN_NEO_LICENSED_ROOT}/novoalign/novoalign.lic
     required: false
     license_required: true
     distributable: false
-    smoke_command: "test -s /root/neo/licensed_tools/novoalign/novoalign.lic"
+    smoke_command: "test -s ${OPEN_NEO_LICENSED_ROOT}/novoalign/novoalign.lic"
+
+  nextflow:
+    category: workflow_runtime
+    executable: neoag-nextflow
+    required: true
+    license_required: false
+    distributable: true
+    smoke_command: "neoag-nextflow -version"
+
+  bwa:
+    category: alignment
+    executable: bwa
+    env: env.neoag-gatk
+    required: true
+    license_required: false
+    distributable: true
+    smoke_command: "bwa"
+
+  star:
+    category: alignment
+    executable: STAR
+    env: env.neoag-fusion
+    required: true
+    license_required: false
+    distributable: true
+    smoke_command: "STAR --version"
+
+  optitype:
+    category: hla_typing
+    executable: optitype
+    env: env.neoag-optitype
+    required: false
+    license_required: false
+    distributable: true
+    smoke_command: "optitype --help"
+
+  spechla:
+    category: hla_typing
+    executable: SpecHLA.py
+    env: env.neoag-spechla
+    reference_dir: spechla_db
+    required: false
+    license_required: false
+    distributable: true
+    smoke_command: "SpecHLA.py --help"
+
+  hla_la:
+    category: hla_typing
+    executable: HLA-LA.pl
+    env: env.neoag-hla-la
+    reference_dir: hla_la_graph
+    required: false
+    license_required: false
+    distributable: true
+    smoke_command: "HLA-LA.pl --help"
+
+  sequenza:
+    category: purity_cnv
+    executable: sequenza-utils
+    env: env.neoag-sequenza
+    reference_dir: sequenza_gc_wiggle
+    required: false
+    license_required: false
+    distributable: true
+    smoke_command: "sequenza-utils --help"
+
+  purple:
+    category: purity_cnv
+    executable: purple
+    reference_dir: purple_reference
+    required: false
+    license_required: false
+    distributable: true
+    smoke_command: "purple --help"
+
+  splicemutr:
+    category: splice
+    executable: splicemutr-neoag
+    env: env.neoag-splice
+    required: false
+    license_required: false
+    distributable: true
+    smoke_command: "splicemutr-neoag --help"

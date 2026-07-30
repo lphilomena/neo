@@ -550,6 +550,9 @@ def _assess_tier(tier: str, doctor_rows: list[CheckRow], reference_manifest: str
 def _deployment_command(args: dict[str, Any], project_root: Path, layout: RunLayout, *, execute: bool) -> list[str]:
     deploy_root = Path(str(args.get("deploy_root") or "/opt/neoag"))
     script = project_root / ".agents/skills/neoag-remote-deploy/scripts/16_install_new_machine.sh"
+    tier = str(args.get("deployment_tier") or "core").lower()
+    default_profile = "standard" if tier in {"prediction", "full"} else "minimal"
+    installer_profile = str(args.get("installer_profile") or default_profile)
     command = [
         "bash", str(script),
         "--project-root", str(project_root),
@@ -557,7 +560,7 @@ def _deployment_command(args: dict[str, Any], project_root: Path, layout: RunLay
         "--reference-root", str(args.get("reference_root") or deploy_root / "refs"),
         "--licensed-root", str(args.get("licensed_root") or deploy_root / "licensed_tools"),
         "--outdir", str(layout.root / "deployment"),
-        "--" + str(args.get("installer_profile") or "minimal"),
+        "--" + installer_profile,
     ]
     asset_manifest = args.get("asset_manifest")
     deployment_reference_manifest = args.get("deployment_reference_manifest") or args.get("reference_manifest")
