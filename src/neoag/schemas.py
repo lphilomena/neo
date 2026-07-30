@@ -1,8 +1,8 @@
 # Layer 1: mutation_source | Layer 2: peptide_consequence | Layer 3: scored in ranked_peptides (l3_*)
 EVENT_FIELDS = [
-    "event_id","sample_id","disease_profile","event_type","mutation_source","peptide_consequence",
+    "event_id","splice_event_id","sample_id","disease_profile","event_type","mutation_source","peptide_consequence",
     "evidence_scope","priority_cap","wes_confidence_tier",
-    "gene","event_name",
+    "gene","event_name","splice_event_type","junction_ids",
     "genome_build","canonical_junction_id","source_junction_id",
     "junction_chrom","junction_start","junction_end","junction_strand","junction_donor","junction_acceptor",
     "junction_coordinate_system","junction_resolution_status","junction_resolution_reason",
@@ -39,13 +39,14 @@ EVENT_FIELDS = [
     "safety_status","safety_reason","appm_mhc_i_integrity","appm_mhc_ii_integrity",
     "source_file","source_row_number","source_record_id","source_tools","source_records",
     "provenance_record_count","evidence_conflict_status",
+    "splice_event_evidence_grade","orf_evidence_grade","normal_safety_grade","splice_consensus_tier",
     "event_score","source"
 ]
 
 PEPTIDE_FIELDS = [
-    "peptide_id","event_id","sample_id","event_type","mutation_source","peptide_consequence",
+    "peptide_id","event_id","splice_event_id","transcript_hypothesis_id","orf_id","origin_peptide_id","sample_id","event_type","mutation_source","peptide_consequence",
     "evidence_scope","priority_cap","wes_confidence_tier",
-    "gene","peptide","wildtype_peptide",
+    "gene","peptide","wildtype_peptide","splice_event_type","junction_ids",
     "genome_build","canonical_junction_id","source_junction_id",
     "junction_chrom","junction_start","junction_end","junction_strand","junction_donor","junction_acceptor",
     "junction_coordinate_system","junction_resolution_status","junction_resolution_reason",
@@ -106,6 +107,8 @@ PEPTIDE_FIELDS = [
     "l3_hla_binding_score","l3_hla_presentation_score","l3_rna_support_score","l3_rna_junction_support_score",
     "l3_normal_tissue_safety_score","l3_apm_integrity_score","l3_immunogenicity_score",
     "immunology_composite_score",
+    "splice_event_evidence_grade","orf_evidence_grade","normal_safety_grade",
+    "independent_translation_generators","splice_consensus_tier",
     "efficacy_score","final_priority","recommended_use"
 ]
 
@@ -179,6 +182,13 @@ STANDARD_INTERMEDIATE_PATHS = {
     "splice_consensus_provenance": "parsed/splice_consensus_provenance.tsv",
     "splice_consensus_conflicts": "parsed/splice_consensus_conflicts.tsv",
     "junction_aliases": "parsed/junction_aliases.tsv",
+    "splice_layer_junctions": "parsed/splice/splice_junctions.tsv",
+    "splice_layer_events": "parsed/splice/splice_events.tsv",
+    "splice_layer_event_junction_links": "parsed/splice/splice_event_junction_links.tsv",
+    "splice_layer_transcripts": "parsed/splice/splice_transcript_hypotheses.tsv",
+    "splice_layer_orfs": "parsed/splice/splice_orfs.tsv",
+    "splice_layer_peptide_origins": "parsed/splice/splice_peptide_origins.tsv",
+    "splice_layer_consensus": "parsed/splice/splice_consensus.tsv",
     "presentation_evidence": "presentation/presentation_evidence.tsv",
     "expression_evidence": "parsed/expression_evidence.tsv",
     "rna_junction_evidence": "parsed/rna_junction_evidence.tsv",

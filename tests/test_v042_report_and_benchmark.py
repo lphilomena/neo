@@ -20,8 +20,8 @@ def test_report_v041_contains_appm_cards(tmp_path):
     assert "MHC_I_CORE" in text
     assert "Peptide Mechanism Cards" in text
     assert "v0.4.2" not in text
-    assert "v0.4.4" in text
-    assert "<title>NeoAg v0.4.4 Evidence Report</title>" in text
+    assert "v0.5.0" in text
+    assert "<title>NeoAg v0.5.0 Evidence Report</title>" in text
 
 
 def test_benchmark_v042_external_required_outputs(tmp_path):

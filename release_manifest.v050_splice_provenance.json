@@ -1,0 +1,45 @@
+{
+  "schema_version": "neoag-release-manifest-v1",
+  "version": "0.5.0",
+  "release_date": "2026-07-30",
+  "release_name": "formal_splice_provenance_layer",
+  "baseline_version": "0.4.4",
+  "source_file_count": 867,
+  "validation": {
+    "full_default_tests": {
+      "passed": 416,
+      "skipped": 104,
+      "failed": 0
+    },
+    "splice_regression_tests": {
+      "passed": 19,
+      "failed": 0
+    },
+    "synthetic_pvacbind_two_pass_smoke": "PASS",
+    "wheel_isolated_import_and_cli": "PASS"
+  },
+  "authoritative_outputs": [
+    "splice_junctions.tsv",
+    "splice_events.tsv",
+    "splice_event_junction_links.tsv",
+    "splice_transcript_hypotheses.tsv",
+    "splice_orfs.tsv",
+    "splice_peptide_origins.tsv",
+    "splice_peptide_origin_links.tsv",
+    "splice_pvacbind_predictions.tsv",
+    "splice_normal_background.tsv",
+    "splice_tool_evidence.long.tsv",
+    "splice_consensus.tsv",
+    "splice_conflicts.tsv",
+    "splice_qc.tsv",
+    "splice_pvacbind_input.fasta",
+    "splice_pvacbind_fasta_map.tsv",
+    "provenance_manifest.json"
+  ],
+  "compatibility_outputs": [
+    "raw_events.tsv",
+    "raw_peptides.tsv",
+    "rna_junction_evidence.tsv"
+  ],
+  "source_checksum_file": "SOURCE_SHA256SUMS.v050.txt"
+}

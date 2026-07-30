@@ -1,17 +1,19 @@
 cff-version: 1.2.0
 message: "If you use this software, please cite it using the metadata below and cite all external tools and datasets used in your run."
 title: "NeoAg Event Pipeline"
-version: "0.4.4"
-date-released: "2026-07-28"
+version: "0.5.0"
+date-released: "2026-07-29"
 type: software
 license: MIT
 authors:
   - name: "NeoAg Event Pipeline contributors"
-abstract: "Research-oriented neoantigen event prioritization pipeline with APPM 2.0, CCF 2.0, safety, immune-escape, and validation evidence layers."
+abstract: "Research-oriented neoantigen event prioritization pipeline with a formal splice provenance layer linking exact junctions, splice events, transcript hypotheses, ORFs, peptide origins, and peptide-HLA presentation evidence."
 repository-code: "https://example.org/neoag-event-pipeline"
 keywords:
   - neoantigen
   - immunogenomics
+  - alternative splicing
+  - provenance
   - antigen presentation
   - clonality
   - immune escape

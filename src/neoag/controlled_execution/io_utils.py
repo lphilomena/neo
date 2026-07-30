@@ -176,7 +176,18 @@ def load_limited_yaml(path: str | Path) -> dict[str, Any]:
             stack.append((indent, child))
         else:
             parent[key] = _parse_scalar(val)
-    return root
+    return _collapse_yaml_lists(root)
+
+
+def _collapse_yaml_lists(value: Any) -> Any:
+    """Convert the fallback parser's list sentinels into ordinary lists."""
+    if isinstance(value, dict):
+        if set(value) == {"_list"}:
+            return [_collapse_yaml_lists(item) for item in value["_list"]]
+        return {key: _collapse_yaml_lists(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_collapse_yaml_lists(item) for item in value]
+    return value
 
 
 def _parse_scalar(s: str) -> Any:

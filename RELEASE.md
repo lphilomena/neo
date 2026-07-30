@@ -1,3 +1,26 @@
+# NeoAg Event Pipeline v0.5.0 — Formal Splice Provenance Layer
+
+- Version: `v0.5.0`
+- Release date: 2026-07-29
+- Scope: formal junction/event/transcript-hypothesis/ORF/peptide-origin/presentation provenance with compatibility projection.
+
+## v0.5.0 Major Additions
+
+- Introduces stable `SEV|`, `STH|`, `ORF|`, `PEP|`, `POR|`, and `PRE|` entity identifiers.
+- Materializes authoritative junction, event, event-junction link, transcript-hypothesis, ORF, peptide-origin, presentation, normal-background, evidence, consensus, conflict, and QC tables.
+- Adds RegTools/STAR-compatible junction, SplAdder GFF3/TXT, IRFinder-S, ImmunoPepper, and pVACbind adapters.
+- Requires exact pVACbind FASTA Index provenance and verifies every returned epitope against its mapped ORF sequence.
+- Separates event evidence, ORF reconstruction, normal safety, and presentation into independent evidence groups; raw tool count is not treated as independent confirmation.
+- Applies conservative E0–E3, O0–O3, N0–N3, P0/P1, and R1–R4 consensus rules with explicit caps and hard-fail codes.
+- Preserves v0.4.4 exact-junction non-leakage and emits backward-compatible `raw_events.tsv`, `raw_peptides.tsv`, and `rna_junction_evidence.tsv`.
+- Adds the `neoag-splice-layer` CLI and a two-pass production shell driver that can generate pVACbind input, run pVACbind, and rebuild the final layer with presentation evidence.
+
+## Compatibility
+
+The v0.5.0 layer is additive. Existing v0.4.4 workflows can continue reading the compatibility tables, while new consumers should treat the formal splice tables and `provenance_manifest.json` as authoritative.
+
+---
+
 # NeoAg Event Pipeline v0.4.4 — Exact Junction & Provenance Repair
 
 - Version: `v0.4.4`

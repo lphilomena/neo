@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "neoag-event-pipeline"
-version = "0.4.4"
+version = "0.5.0"
 description = "Neoantigen event prioritization pipeline with APPM 2.0, CCF 2.1, safety, immune-escape, and DNA SV-derived neoantigen P0 evidence layers"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -28,6 +28,7 @@ neoag-ranking-compare = "neoag.agent_skills.ranking_compare:main"
 neoag-production-run = "neoag.production_runner:main"
 neoag-workflow-select = "neoag.workflow_selection:main"
 open-neo = "neoag.open_neo.cli:main"
+neoag-splice-layer = "neoag.splice.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

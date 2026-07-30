@@ -1,10 +1,20 @@
-# NeoAg Event Pipeline v0.4.4 Splice Provenance Release
+# NeoAg Event Pipeline v0.5.0 Formal Splice Provenance Layer
 
 NeoAg Event Pipeline is a research-oriented neoantigen prioritization pipeline. It converts SNV/InDel, fusion, splice, structural-variant, and peptide-only candidates into standardized event and peptide-HLA tables, then layers presentation, APPM, CCF, safety, immune-escape, validation-plan, and report evidence.
 
 This package is a lightweight online release. It includes source code, CLI entry points, Nextflow workflows, tests, fixtures, profiles, setup scripts, and documentation. It does not bundle large references, licensed tools, conda environments, cached work directories, real patient data, or production results.
 
 Important boundary: the pipeline produces computational triage and validation-planning outputs. It does not make clinical diagnoses, clinical resistance calls, or validated treatment recommendations.
+
+## v0.5.0 Formal Splice Provenance Layer
+
+v0.5.0 upgrades the v0.4.4 exact-junction repair into a formal, referentially intact splice provenance model:
+
+```text
+junction → splice event → transcript hypothesis → ORF → peptide origin → peptide-HLA presentation
+```
+
+The release adds canonical entity registries, event-to-junction and peptide-origin link tables, conservative normal-background state handling, independent evidence-group consensus, strict pVACbind FASTA-index mapping, and compatibility projections back to `raw_events.tsv`, `raw_peptides.tsv`, and `rna_junction_evidence.tsv`. The production entry point is `scripts/run_splice_provenance_v050.sh`; the Python CLI is `neoag-splice-layer`. See `docs/V050_SPLICE_PROVENANCE_LAYER.md` and `CHANGELOG_V050_SPLICE_PROVENANCE_LAYER.md`.
 
 ## v0.4.4 Exact Junction and Provenance Repair
 
@@ -25,7 +35,7 @@ The pipeline can:
 - Produce both patient-facing and technical HTML reports.
 - Run fixture workflows through the CLI or the included Nextflow wrappers.
 
-The `.tsv` suffix in ranked outputs is a schema-compatibility label. It is not the software version. The current release is v0.4.4 and writes schema-compatible tables so older downstream scripts can keep reading the same filenames.
+The `.tsv` suffix in ranked outputs is a schema-compatibility label. It is not the software version. The current release is v0.5.0 and writes schema-compatible tables so older downstream scripts can keep reading the same filenames.
 
 ## Agent Skills And Coordinator
 
