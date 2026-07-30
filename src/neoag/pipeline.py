@@ -144,11 +144,14 @@ def run(
     apply_immunogenicity_evidence(pres_rows, immuno_paths, profile)
     write_tsv(pres_path, pres_rows, PRESENTATION_FIELDS)
 
-    appm_rows, appm_summary = build_appm_lite(sample_id, vep_appm, expression, hla_loh, profile, appm, cnv_tsv=cnv, raw_peptides=raw_peptides_path)
     ccf_path = clon / "ccf_2.tsv"
     ccf_lite_alias = clon / "ccf_lite.tsv"
     build_ccf_2(raw_events_path, purity, cnv, profile, ccf_path)
     shutil.copy2(ccf_path, ccf_lite_alias)
+    appm_rows, appm_summary = build_appm_lite(
+        sample_id, vep_appm, expression, hla_loh, profile, appm,
+        cnv_tsv=cnv, raw_peptides=raw_peptides_path, ccf_tsv=ccf_path,
+    )
 
     evidence_paths = build_standard_evidence_layer(
         outdir,
@@ -283,10 +286,12 @@ def run(
         "peptide_safety": str(peptide_safety_path),
         "event_safety": str(event_safety_path),
         "immune_escape_summary": immune_paths["immune_escape_summary"],
+        "immune_escape_events": immune_paths["immune_escape_events"],
         "peptide_escape_flags": immune_paths["peptide_escape_flags"],
         "appm_lite": str(appm / "appm_lite.tsv"),
         "appm_summary": str(appm / "appm_summary.tsv"),
         "appm_gene_status": str(appm / "appm_gene_status.tsv"),
+        "appm_variant_evidence": str(appm / "appm_variant_evidence.tsv"),
         "appm_pathway_status": str(appm / "appm_pathway_status.tsv"),
         "appm_module_scores": str(appm / "appm_module_scores.tsv"),
         "appm_submodule_scores": str(appm / "appm_submodule_scores.tsv"),

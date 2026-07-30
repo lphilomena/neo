@@ -68,6 +68,59 @@ def test_appm_2_writes_native_sidecars_and_avoids_hla_loh_double_penalty(tmp_pat
     assert completeness["hla_loh_assessed"] == "yes"
 
 
+def test_appm_variant_evidence_links_wgs_wes_depth_vaf_and_ccf_to_escape(tmp_path):
+    vep = tmp_path / "events.tsv"
+    ccf = tmp_path / "ccf.tsv"
+    expr = tmp_path / "expr.tsv"
+    cnv = tmp_path / "cnv.tsv"
+    peps = tmp_path / "peptides.tsv"
+    write_tsv(vep, [{
+        "event_id": "EV_B2M", "sample_id": "S1", "gene": "B2M",
+        "chrom": "chr15", "pos": "44711587", "ref": "C", "alt": "T",
+        "consequence": "stop_gained", "tumor_vaf": "0.31", "tumor_depth": "160", "tumor_alt_count": "49",
+        "wgs_tumor_vaf": "0.28", "wgs_tumor_depth": "120", "wgs_tumor_alt_count": "34",
+        "wes_tumor_vaf": "0.33", "wes_tumor_depth": "600", "wes_tumor_alt_count": "198",
+    }])
+    write_tsv(ccf, [{
+        "event_id": "EV_B2M", "ccf_best": "0.87", "ccf_min": "0.72", "ccf_max": "1.00",
+        "ccf_status": "clonal_like", "ccf_confidence": "high", "ccf_method": "SNV_INDEL_COPY_NUMBER_AWARE",
+    }])
+    write_tsv(expr, [{"gene": "B2M", "TPM": "0.05"}, {"gene": "HLA-A", "TPM": "8"}])
+    write_tsv(cnv, [{"gene": "B2M", "copy_number_status": "copy_neutral_loh", "total_cn": "1", "minor_cn": "0"}])
+    write_tsv(peps, [{"peptide_id": "P1", "event_id": "E1", "peptide": "AAAAAAAAA", "hla_allele": "HLA-A*02:01", "mhc_class": "I"}])
+
+    appm = build_appm_2(
+        sample_id="S1", outdir=tmp_path / "appm", vep_tsv=vep, ccf_tsv=ccf,
+        expression_tsv=expr, cnv_tsv=cnv, raw_peptides=peps, profile=load_profile("default"),
+    )
+    variants = read_tsv(appm["appm_variant_evidence"])
+    assert variants[0]["event_id"] == "EV_B2M"
+    assert variants[0]["wgs_tumor_vaf"] == "0.28"
+    assert variants[0]["wes_tumor_depth"] == "600"
+    assert variants[0]["ccf_best"] == "0.87"
+    assert variants[0]["wgs_evidence_status"] == "VAF_DEPTH_AVAILABLE"
+    assert variants[0]["wes_evidence_status"] == "VAF_DEPTH_AVAILABLE"
+    assert variants[0]["ccf_evidence_status"] == "AVAILABLE"
+    assert variants[0]["evidence_chain_status"] == "COMPLETE_CROSS_PLATFORM"
+
+    gene = {r["gene"]: r for r in read_tsv(appm["appm_gene_status"])}["B2M"]
+    assert gene["source_event_ids"] == "EV_B2M"
+    assert gene["max_wgs_tumor_vaf"] == "0.28"
+    assert gene["max_wes_tumor_vaf"] == "0.33"
+    assert gene["max_ccf"] == "0.87"
+
+    escape = build_immune_escape_evidence(
+        sample_id="S1", raw_peptides=peps, outdir=tmp_path / "escape",
+        appm_gene_status=appm["appm_gene_status"], appm_pathway_status=appm["appm_pathway_status"],
+        ccf_tsv=ccf,
+    )
+    event = next(r for r in read_tsv(escape["immune_escape_events"]) if r["gene_or_hla"] == "B2M")
+    assert event["escape_event_source_event_ids"] == "EV_B2M"
+    assert event["escape_event_max_wgs_tumor_vaf"] == "0.28"
+    assert event["escape_event_max_wes_tumor_vaf"] == "0.33"
+    assert event["escape_event_ccf_best"] == "0.87"
+
+
 
 
 def test_appm_2_expression_missing_gene_is_not_called_low_expression(tmp_path):
@@ -215,4 +268,3 @@ def test_appm_2_fixed_gene_sets_and_immune_context_annotation_only(tmp_path):
     assert context["CXCL9"]["context_marker_class"] == "interferon_inflamed_context"
     assert context["GZMB"]["context_marker_class"] == "cytotoxic_t_cell_context"
     assert context["CXCL9"]["context_interpretation"] == "background_annotation_not_appm_integrity"
-

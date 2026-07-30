@@ -41,8 +41,25 @@ APPM_GENE_FIELDS = [
     "loh_status", "expression_tpm", "expression_percentile", "expression_status",
     "expression_input_status", "rna_assay_status", "protein_status", "ligandome_support",
     "biallelic_status", "functional_status", "gene_integrity_status", "gene_integrity_score",
+    "source_event_ids", "variant_count", "damaging_variant_count", "variant_evidence_status",
+    "max_tumor_vaf", "max_wes_tumor_vaf", "max_wgs_tumor_vaf", "max_ccf",
     "functional_validation_status", "validation_evidence_source", "evidence_level",
     "evidence_completeness", "claim_strength", "reason", "risk_reason",
+]
+
+APPM_VARIANT_EVIDENCE_FIELDS = [
+    "sample_id", "event_id", "gene", "pathway", "module", "gene_set", "appm_integrity_role",
+    "chrom", "pos", "ref", "alt", "transcript_id", "event_type", "mutation_source",
+    "mutation_consequence", "damaging_variant", "damaging_class",
+    "source_vcf_tumor_ad", "source_vcf_tumor_af",
+    "tumor_depth", "tumor_alt_count", "tumor_vaf",
+    "wes_tumor_depth", "wes_tumor_alt_count", "wes_tumor_vaf",
+    "wgs_tumor_depth", "wgs_tumor_alt_count", "wgs_tumor_vaf",
+    "normal_depth", "normal_alt_count", "normal_alt_vaf",
+    "cross_platform_status", "cross_platform_confidence",
+    "wgs_evidence_status", "wes_evidence_status", "ccf_evidence_status",
+    "ccf_best", "ccf_min", "ccf_max", "ccf_status", "ccf_confidence", "ccf_method",
+    "ccf_resolution", "ccf_resolution_reason", "evidence_chain_status",
 ]
 
 APPM_PATHWAY_FIELDS = [
@@ -263,6 +280,89 @@ def load_variants(path: str | Path | None) -> dict[str, list[str]]:
                 if item and item not in bucket:
                     bucket.append(item)
     return d
+
+
+def _event_map(path: str | Path | None) -> dict[str, dict[str, str]]:
+    if not _path_exists(path):
+        return {}
+    return {r.get("event_id", ""): r for r in read_tsv(path) if r.get("event_id")}
+
+
+def load_variant_evidence(
+    path: str | Path | None,
+    *,
+    sample_id: str,
+    ccf_tsv: str | Path | None = None,
+) -> list[dict[str, str]]:
+    """Preserve event-level APPM evidence instead of collapsing variants to consequences."""
+    if not _path_exists(path):
+        return []
+    ccf_by_event = _event_map(ccf_tsv)
+    target_genes = set(APPM_INTEGRITY_GENES + APPM_CONTEXT_GENES)
+    out: list[dict[str, str]] = []
+    for source in read_tsv(path):
+        gene = first(source, ["gene", "Gene", "SYMBOL", "symbol"], "").upper()
+        if gene not in target_genes:
+            continue
+        consequence = first(source, ["mutation_consequence", "consequence", "Consequence", "variant_consequence", "effect", "IMPACT"], "")
+        damaging_class = first(source, ["damaging_class", "mutation_class"], "")
+        consequences = [x.strip() for x in str(consequence).replace(";", "&").replace(",", "&").split("&") if x.strip()]
+        if first(source, ["is_damaging_missense"], "").lower() == "yes":
+            consequences.append("damaging_missense")
+        if first(source, ["damaging_variant"], "").lower() == "yes" and damaging_class and damaging_class != "none":
+            consequences.append(damaging_class)
+        damaging = _damaging(list(dict.fromkeys(consequences)))
+        event_id = first(source, ["event_id", "variant_id", "id", "ID"], "")
+        if not event_id:
+            event_id = ":".join(first(source, [k], "") for k in ["chrom", "pos", "ref", "alt"])
+        ccf = ccf_by_event.get(event_id, {})
+        row = {
+            "sample_id": first(source, ["sample_id"], sample_id) or sample_id,
+            "event_id": event_id,
+            "gene": gene,
+            "pathway": _gene_pathway(gene),
+            "module": _gene_pathway(gene),
+            "gene_set": _gene_group(gene),
+            "appm_integrity_role": "context_annotation_only" if gene in IMMUNE_CONTEXT_GENES else "integrity_scored",
+            "chrom": first(source, ["chrom", "CHROM", "#CHROM"], ""),
+            "pos": first(source, ["pos", "POS", "position"], ""),
+            "ref": first(source, ["ref", "REF"], ""),
+            "alt": first(source, ["alt", "ALT"], ""),
+            "transcript_id": first(source, ["transcript_id", "Feature", "transcript"], ""),
+            "event_type": first(source, ["event_type", "variant_type"], ""),
+            "mutation_source": first(source, ["mutation_source", "source"], ""),
+            "mutation_consequence": consequence,
+            "damaging_variant": "yes" if damaging else "no",
+            "damaging_class": damaging_class,
+        }
+        for field in APPM_VARIANT_EVIDENCE_FIELDS:
+            if field in row or field in {"ccf_best", "ccf_min", "ccf_max", "ccf_status", "ccf_confidence", "ccf_method", "ccf_resolution", "ccf_resolution_reason", "evidence_chain_status"}:
+                continue
+            row[field] = first(source, [field], "")
+        row.update({
+            "ccf_best": first(ccf, ["ccf_best", "ccf_estimate"], first(source, ["ccf_best", "ccf_estimate", "raw_ccf"], "")),
+            "ccf_min": first(ccf, ["ccf_min"], first(source, ["ccf_min"], "")),
+            "ccf_max": first(ccf, ["ccf_max"], first(source, ["ccf_max"], "")),
+            "ccf_status": first(ccf, ["ccf_status", "clonality_status"], first(source, ["ccf_status", "clonality_status"], "")),
+            "ccf_confidence": first(ccf, ["ccf_confidence", "clonality_confidence"], first(source, ["ccf_confidence", "clonality_confidence"], "")),
+            "ccf_method": first(ccf, ["ccf_method"], first(source, ["ccf_method"], "")),
+            "ccf_resolution": first(ccf, ["ccf_resolution"], first(source, ["ccf_resolution"], "")),
+            "ccf_resolution_reason": first(ccf, ["ccf_resolution_reason"], first(source, ["ccf_resolution_reason"], "")),
+        })
+        has_vaf = any(row.get(k) for k in ["tumor_vaf", "wes_tumor_vaf", "wgs_tumor_vaf"])
+        has_depth = any(row.get(k) for k in ["tumor_depth", "wes_tumor_depth", "wgs_tumor_depth"])
+        wgs_complete = bool(row.get("wgs_tumor_vaf") and row.get("wgs_tumor_depth"))
+        wes_complete = bool(row.get("wes_tumor_vaf") and row.get("wes_tumor_depth"))
+        has_ccf = to_float(row.get("ccf_best", ""), -1.0) >= 0
+        row["wgs_evidence_status"] = "VAF_DEPTH_AVAILABLE" if wgs_complete else ("DEPTH_ONLY" if row.get("wgs_tumor_depth") else "NOT_AVAILABLE")
+        row["wes_evidence_status"] = "VAF_DEPTH_AVAILABLE" if wes_complete else ("DEPTH_ONLY" if row.get("wes_tumor_depth") else "NOT_AVAILABLE")
+        row["ccf_evidence_status"] = "AVAILABLE" if has_ccf else "NOT_AVAILABLE"
+        row["evidence_chain_status"] = "COMPLETE_CROSS_PLATFORM" if event_id and wgs_complete and wes_complete and has_ccf else (
+            "COMPLETE_SOURCE_PLATFORM" if event_id and has_vaf and has_depth and has_ccf else
+            "VAF_DEPTH_NO_CCF" if event_id and has_vaf and has_depth else "PARTIAL"
+        )
+        out.append(row)
+    return out
 
 
 def _loss_status(status: str) -> bool:
@@ -604,6 +704,7 @@ def build_appm_2(
     raw_peptides: str | Path | None = None,
     hla_typing_tsv: str | Path | None = None,
     tumor_purity_tsv: str | Path | None = None,
+    ccf_tsv: str | Path | None = None,
     proteomics_tsv: str | Path | None = None,
     phosphoproteomics_tsv: str | Path | None = None,
     hla_ligandome_tsv: str | Path | None = None,
@@ -628,6 +729,10 @@ def build_appm_2(
     protein_assessed = _input_assessed(input_status_rows, "proteomics") or _input_assessed(input_status_rows, "phosphoproteomics")
     ligandome_assessed = _input_assessed(input_status_rows, "hla_ligandome")
     variants = load_variants(vep_tsv)
+    variant_evidence_rows = load_variant_evidence(vep_tsv, sample_id=sample_id, ccf_tsv=ccf_tsv)
+    variants_by_gene: dict[str, list[dict[str, str]]] = {}
+    for variant_row in variant_evidence_rows:
+        variants_by_gene.setdefault(variant_row["gene"], []).append(variant_row)
     expr = load_expression(expression_tsv)
     rna_status = expression_input_status(expression_tsv, expr)
     expression_assessed = rna_status == "gene_level_tpm"
@@ -652,6 +757,14 @@ def build_appm_2(
     gene_rows: list[dict[str, str]] = []
     for g in genes:
         cons = variants.get(g, [])
+        gene_variants = variants_by_gene.get(g, [])
+        damaging_gene_variants = [r for r in gene_variants if r.get("damaging_variant") == "yes"]
+
+        def max_value(field: str) -> str:
+            values = [(to_float(r.get(field, ""), -1.0), r.get(field, "")) for r in gene_variants]
+            values = [item for item in values if item[0] >= 0]
+            return max(values, default=(-1.0, ""), key=lambda item: item[0])[1]
+
         biallelic, reason = _biallelic_status(g, variants, cnv, expr, expression_assessed, low_tpm)
         functional = _functional_status(biallelic)
         expr_tpm, expr_status = _expression_status(g, expr, expression_assessed, low_tpm)
@@ -703,6 +816,17 @@ def build_appm_2(
             "functional_status": functional,
             "gene_integrity_status": integrity_status,
             "gene_integrity_score": f"{_gene_integrity_score(integrity_status):.4f}",
+            "source_event_ids": ";".join(r.get("event_id", "") for r in damaging_gene_variants if r.get("event_id")),
+            "variant_count": str(len(gene_variants)),
+            "damaging_variant_count": str(len(damaging_gene_variants)),
+            "variant_evidence_status": (
+                "COMPLETE" if damaging_gene_variants and all(r.get("evidence_chain_status", "").startswith("COMPLETE_") for r in damaging_gene_variants)
+                else "PARTIAL" if gene_variants else "NO_CALLED_VARIANT"
+            ),
+            "max_tumor_vaf": max_value("tumor_vaf"),
+            "max_wes_tumor_vaf": max_value("wes_tumor_vaf"),
+            "max_wgs_tumor_vaf": max_value("wgs_tumor_vaf"),
+            "max_ccf": max_value("ccf_best"),
             "functional_validation_status": gene_functional_validation_status,
             "validation_evidence_source": gene_validation_source,
             "evidence_level": "HIGH" if biallelic == "BIALLELIC_LOSS" else ("MEDIUM" if functional == "caution" else "LOW"),
@@ -920,6 +1044,7 @@ def build_appm_2(
 
     paths = {
         "appm_gene_status": str(out / "appm_gene_status.tsv"),
+        "appm_variant_evidence": str(out / "appm_variant_evidence.tsv"),
         "appm_pathway_status": str(out / "appm_pathway_status.tsv"),
         "appm_module_scores": str(out / "appm_module_scores.tsv"),
         "appm_submodule_scores": str(out / "appm_submodule_scores.tsv"),
@@ -932,6 +1057,7 @@ def build_appm_2(
         "appm_summary": str(out / "appm_summary.tsv"),
     }
     write_tsv(paths["appm_gene_status"], gene_rows, APPM_GENE_FIELDS)
+    write_tsv(paths["appm_variant_evidence"], variant_evidence_rows, APPM_VARIANT_EVIDENCE_FIELDS)
     write_tsv(paths["appm_pathway_status"], pathway_rows, APPM_PATHWAY_FIELDS)
     write_tsv(paths["appm_module_scores"], module_rows, APPM_MODULE_SCORE_FIELDS)
     write_tsv(paths["appm_immune_context"], context_rows, APPM_IMMUNE_CONTEXT_FIELDS)

@@ -51,6 +51,13 @@ workflow NEOAG_SV_SCORE {
             profile_name
         )
 
+        CCF_2(
+            raw_events,
+            profile_name,
+            purity_file,
+            cnv_file
+        )
+
         APPM_2(
             sample_id,
             profile_name,
@@ -59,14 +66,8 @@ workflow NEOAG_SV_SCORE {
             hla_loh_file,
             cnv_file,
             raw_peptides,
-            purity_file
-        )
-
-        CCF_2(
-            raw_events,
-            profile_name,
             purity_file,
-            cnv_file
+            CCF_2.out.ccf_2
         )
 
         PEPTIDE_SAFETY(

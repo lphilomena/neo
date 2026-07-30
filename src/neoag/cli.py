@@ -121,7 +121,7 @@ def cmd_build_presentation(args):
     print("Built PresentationEvidence.")
 
 def cmd_appm(args):
-    build_appm_lite(args.sample_id, args.vep_tsv, args.expression, args.hla_loh, load_profile(args.profile), args.outdir, cnv_tsv=getattr(args, "cnv", None), raw_peptides=getattr(args, "raw_peptides", None))
+    build_appm_lite(args.sample_id, args.vep_tsv, args.expression, args.hla_loh, load_profile(args.profile), args.outdir, cnv_tsv=getattr(args, "cnv", None), raw_peptides=getattr(args, "raw_peptides", None), ccf_tsv=getattr(args, "ccf", None))
     print("Built APPM 2.0 sidecars via compatibility entry point.")
 
 def cmd_appm_2(args):
@@ -133,6 +133,7 @@ def cmd_appm_2(args):
         cnv_tsv=args.cnv,
         raw_peptides=args.raw_peptides,
         tumor_purity_tsv=getattr(args, "tumor_purity", None),
+        ccf_tsv=getattr(args, "ccf", None),
         profile=load_profile(args.profile),
         outdir=args.outdir,
     )
@@ -1026,9 +1027,9 @@ def build_parser():
     bp = sub.add_parser("build-presentation-evidence")
     bp.add_argument("--raw-peptides", required=True); bp.add_argument("--netmhcpan"); bp.add_argument("--mhcflurry"); bp.add_argument("--netmhcstabpan"); bp.add_argument("--profile", default="default"); bp.add_argument("--out", required=True); bp.set_defaults(func=cmd_build_presentation)
     ap = sub.add_parser("appm-lite")
-    ap.add_argument("--sample-id", default="SAMPLE001"); ap.add_argument("--vep-tsv"); ap.add_argument("--expression"); ap.add_argument("--hla-loh"); ap.add_argument("--cnv"); ap.add_argument("--raw-peptides"); ap.add_argument("--profile", default="default"); ap.add_argument("--outdir", required=True); ap.set_defaults(func=cmd_appm)
+    ap.add_argument("--sample-id", default="SAMPLE001"); ap.add_argument("--vep-tsv"); ap.add_argument("--expression"); ap.add_argument("--hla-loh"); ap.add_argument("--cnv"); ap.add_argument("--raw-peptides"); ap.add_argument("--ccf"); ap.add_argument("--profile", default="default"); ap.add_argument("--outdir", required=True); ap.set_defaults(func=cmd_appm)
     ap2 = sub.add_parser("appm-2", help="Build APPM 2.0 gene/pathway/peptide evidence sidecars")
-    ap2.add_argument("--sample-id", default="SAMPLE001"); ap2.add_argument("--vep-tsv"); ap2.add_argument("--expression"); ap2.add_argument("--hla-loh"); ap2.add_argument("--cnv"); ap2.add_argument("--raw-peptides"); ap2.add_argument("--tumor-purity", help="Tumor purity TSV for APPM 2.0 input evidence status"); ap2.add_argument("--profile", default="default"); ap2.add_argument("--outdir", required=True); ap2.set_defaults(func=cmd_appm_2)
+    ap2.add_argument("--sample-id", default="SAMPLE001"); ap2.add_argument("--vep-tsv"); ap2.add_argument("--expression"); ap2.add_argument("--hla-loh"); ap2.add_argument("--cnv"); ap2.add_argument("--raw-peptides"); ap2.add_argument("--tumor-purity", help="Tumor purity TSV for APPM 2.0 input evidence status"); ap2.add_argument("--ccf", help="CCF 2.1 TSV joined to APPM variants by event_id"); ap2.add_argument("--profile", default="default"); ap2.add_argument("--outdir", required=True); ap2.set_defaults(func=cmd_appm_2)
     cc = sub.add_parser("ccf-lite")
     cc.add_argument("--events", required=True); cc.add_argument("--purity"); cc.add_argument("--cnv"); cc.add_argument("--profile", default="default"); cc.add_argument("--out", required=True); cc.set_defaults(func=cmd_ccf)
     cc2 = sub.add_parser("ccf-2", help="Build copy-number/multiplicity-aware CCF 2.0 table")

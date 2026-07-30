@@ -12,16 +12,20 @@
   ],
   "required_inputs": [
     "gene_status_or_appm",
-    "peptides_optional"
+    "peptides_optional",
+    "raw_events"
   ],
   "optional_inputs": [
     "hla_loh",
-    "ranked_peptides"
+    "ranked_peptides",
+    "ccf_2"
   ],
   "outputs": [
     "appm_summary.tsv",
     "appm_gene_status.tsv",
+    "appm_variant_evidence.tsv",
     "appm_peptide_modifiers.tsv",
+    "immune_escape_events.tsv",
     "immune_escape_summary.tsv",
     "peptide_escape_flags.tsv"
   ],
@@ -33,6 +37,8 @@
   "boundaries": [
     "Skill 不承担临床决策；不得判断患者是否适合治疗或推荐临床用药。",
     "缺失证据只能标记为 missing/unassessed，不能解释为阴性结果。",
+    "逐变异证据必须保留 event_id、WGS/WES VAF、深度、ALT读段和CCF，并可从免疫逃逸事件回链。",
+    "NO_CALLED_VARIANT 仅表示输入调用集中没有变异，不代表全基因所有碱基均可评估。",
     "高风险写入、HPC 提交、安装工具、下载参考库、删除或覆盖文件必须经过 human approval。",
     "Skill 目录不包含患者 BAM/FASTQ/VCF、大型参考库、VEP cache、NetMHCpan license、LOHHLA reference 或大型 conda env。"
   ]

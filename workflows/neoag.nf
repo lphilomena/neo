@@ -38,6 +38,13 @@ workflow NEOAG {
       profile_name
     )
 
+    CCF_2(
+      PARSE_PVAC.out.raw_events,
+      profile_name,
+      purity_file,
+      cnv_file
+    )
+
     APPM_2(
       sample_id,
       profile_name,
@@ -46,14 +53,8 @@ workflow NEOAG {
       hla_loh_file,
       cnv_file,
       PARSE_PVAC.out.raw_peptides,
-      purity_file
-    )
-
-    CCF_2(
-      PARSE_PVAC.out.raw_events,
-      profile_name,
       purity_file,
-      cnv_file
+      CCF_2.out.ccf_2
     )
 
     PEPTIDE_SAFETY(
