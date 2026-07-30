@@ -12,8 +12,10 @@ REVISION="${BAM_MATCHER_REVISION:-e0c50af498d35a487cbb0dcff6a3a4506dba695a}"
 MAMBA="$NEOAG_CONDA_BASE/bin/mamba"; [[ -x "$MAMBA" ]] || MAMBA="$NEOAG_CONDA_BASE/bin/conda"
 
 if [[ ! -x "$NEOAG_CONDA_BASE/envs/$ENV_NAME/bin/python2" ]]; then
-  "$MAMBA" create -y -n "$ENV_NAME" -c conda-forge -c bioconda \
-    python=2.7 pysam pyvcf cheetah3 fisher freebayes samtools
+  # BAM-matcher is Python 2-only. Cheetah 2.4.4 is still available from the
+  # defaults archive, whereas current Cheetah3 builds require Python 3.
+  "$MAMBA" create -y -n "$ENV_NAME" -c defaults -c conda-forge -c bioconda \
+    python=2.7 pysam pyvcf cheetah=2.4.4 fisher freebayes samtools
 fi
 if [[ ! -d "$INSTALL_DIR/.git" ]]; then
   mkdir -p "$(dirname "$INSTALL_DIR")"

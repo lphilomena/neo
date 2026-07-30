@@ -106,6 +106,43 @@ def test_doctor_treats_top_level_reference_sha256_as_metadata(tmp_path):
     assert ("reference", "gencode_gtf.sha256") not in checks
 
 
+def test_doctor_ignores_reference_descriptive_metadata_and_hash_placeholders(tmp_path):
+    fasta = tmp_path / "GRCh38.fa"
+    fasta.write_text(">1\nA\n", encoding="utf-8")
+    ref = tmp_path / "reference.json"
+    ref.write_text(json.dumps({"references": {"reference_fasta": {
+        "path": str(fasta),
+        "source": "Ensembl reference bundle",
+        "version": "GRCh38",
+        "marker": ".fai",
+        "sha256": "-",
+        "required": True,
+    }}}), encoding="utf-8")
+    result = run_doctor(
+        project_root=Path.cwd(), outdir=tmp_path / "doctor-metadata",
+        reference_manifest=ref, release_audit=False, allow_execute=False,
+    )
+    checks = {(row.category, row.name): row.status for row in result.rows}
+    assert checks[("reference", "references.reference_fasta.path")] == "OK"
+    assert not any(name.endswith((".source", ".version", ".marker")) for category, name in checks if category == "reference")
+    assert ("reference_hash", "reference_fasta.sha256") not in checks
+
+
+def test_doctor_uses_configured_java_executable_for_version_check(tmp_path):
+    java = tmp_path / "java"
+    java.write_text("#!/bin/sh\necho openjdk-test >&2\n", encoding="utf-8")
+    java.chmod(0o755)
+    tools = tmp_path / "tools.json"
+    tools.write_text(json.dumps({"tools": {"java": {"executable": str(java)}}}), encoding="utf-8")
+    result = run_doctor(
+        project_root=Path.cwd(), outdir=tmp_path / "doctor-java",
+        tools_manifest=tools, release_audit=False, allow_execute=True,
+    )
+    checks = {(row.category, row.name): row for row in result.rows}
+    assert checks[("workflow", "java_version")].status == "OK"
+    assert str(java) in checks[("workflow", "java_version")].path
+
+
 def test_doctor_reports_inaccessible_cross_machine_paths_without_crashing(tmp_path, monkeypatch):
     inaccessible_tool = "/root/other-machine/licensed/netMHCpan"
     inaccessible_ref = "/root/other-machine/ref/GRCh38.fa"

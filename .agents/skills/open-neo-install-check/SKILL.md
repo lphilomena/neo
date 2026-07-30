@@ -45,6 +45,13 @@ local/mounted asset tree or `--asset-source-host user@host` for remote source
 paths. Approved execution stops before installation when required sources are
 not reachable.
 
+## Reproducible derived assets
+
+- Java is installed in the dedicated `neoag-runtime` environment; discover it through the configured tools manifest instead of assuming it is on the login-shell PATH.
+- Salmon index and `tx2gene.tsv` must come from the same GENCODE release. The portable v49 layout is `data/rna/gencode_v49/{salmon_index,tx2gene.tsv}` and its `SHA256SUMS` must pass before use.
+- Install BAM-matcher with `scripts/install_bam_matcher.sh`. It pins the upstream revision and retains its isolated Python 2 environment; do not merge these legacy dependencies into the main project environment.
+- Never use BAM-matcher's bundled GRCh37 loci with GRCh38 data. Build the portable panel with `scripts/build_bam_matcher_grch38_loci.sh`; the script requires exact dbSNP-ID mapping, biallelic SNVs, GRCh38 FASTA REF agreement, and emits a metadata manifest plus checksums.
+
 ## Outputs
 
 - `environment_inventory.tsv`

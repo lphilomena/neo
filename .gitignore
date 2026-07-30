@@ -56,6 +56,7 @@ conf/*.local.toml
 /bin/LOHHLA
 /bin/ascat.R
 /bin/runFACETS.R
+/bin/bam-matcher
 
 # Large FACETS/reference resources; document download instead of committing
 /data/facets/reference/*.vcf.gz

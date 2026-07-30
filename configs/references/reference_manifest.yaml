@@ -8,7 +8,7 @@ references:
     path: ${OPEN_NEO_REFERENCE_ROOT}/data/ref/hg38/Homo_sapiens_assembly38.fasta
     source: Ensembl/EasyFuse reference bundle
     version: GRCh38.110
-    sha256: "-"
+    sha256: 1e74081a49ceb9739cc14c812fbb8b3db978eb80ba8e5350beb80d8ad8dfef3b
     marker: .fai
     required: true
 
@@ -16,7 +16,7 @@ references:
     path: ${OPEN_NEO_REFERENCE_ROOT}/data/ref/hg38/gencode.gtf
     source: Ensembl/EasyFuse reference bundle
     version: GRCh38.110
-    sha256: "-"
+    sha256: 12582b0db02ebe19c29c5733c6edaa62599fe934af593cb7f24423a14db3186c
     required: true
 
   vep_cache:
@@ -52,6 +52,7 @@ references:
     path: ${OPEN_NEO_REFERENCE_ROOT}/data/facets/reference/common_snp.hg38.vcf.gz
     source: FACETS common SNP reference
     version: hg38
+    sha256: dd21f5de0057743bf6a374b43fab0c30bfc70c5078e0a7e25cd7b37938dc3d3b
     marker: .tbi
     required: true
 
@@ -59,7 +60,7 @@ references:
     path: ${OPEN_NEO_REFERENCE_ROOT}/data/sample_identity/bam_matcher.common_snps.hg38.vcf
     source: curated common high-MAF biallelic SNP identity panel
     version: GRCh38
-    sha256: "-"
+    sha256: 5c1391ea76712ca9098af4b89fa4eb69c475dec0b2e13d483cae681f1085bb3f
     required: false
 
   normal_proteome:
@@ -126,16 +127,16 @@ references:
     required: false
 
   salmon_index:
-    path: ${OPEN_NEO_REFERENCE_ROOT}/data/rna/salmon_index
-    source: transcriptome Salmon index
-    version: GRCh38_matching_project_gtf
+    path: ${OPEN_NEO_REFERENCE_ROOT}/data/rna/gencode_v49/salmon_index
+    source: GENCODE v49 transcriptome Salmon index
+    version: GENCODE_v49_GRCh38
     marker: versionInfo.json
     required: false
 
   salmon_tx2gene:
-    path: ${OPEN_NEO_REFERENCE_ROOT}/data/rna/tx2gene.tsv
-    source: transcript-to-gene mapping
-    version: GRCh38_matching_project_gtf
+    path: ${OPEN_NEO_REFERENCE_ROOT}/data/rna/gencode_v49/tx2gene.tsv
+    source: GENCODE v49 transcript-to-gene mapping
+    version: GENCODE_v49_GRCh38
     required: false
 
   rsem_reference:

@@ -33,6 +33,7 @@ profiles:
       - easyfuse
       - regtools
       - nextflow
+      - java
       - bwa
       - star
       - optitype
@@ -455,6 +456,15 @@ tools:
     license_required: false
     distributable: true
     smoke_command: "neoag-nextflow -version"
+
+  java:
+    category: workflow_runtime
+    executable: java
+    env: env.neoag-runtime
+    required: true
+    license_required: false
+    distributable: true
+    smoke_command: "java -version"
 
   bwa:
     category: alignment

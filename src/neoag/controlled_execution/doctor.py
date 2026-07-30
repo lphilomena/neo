@@ -137,6 +137,9 @@ def _check_executable(name: str, exe: str) -> CheckRow:
 def _check_manifest_paths(data: dict[str, Any], category: str) -> list[CheckRow]:
     rows: list[CheckRow] = []
     for key, val in manifest_paths(data):
+        leaf = key.rsplit(".", 1)[-1].lower()
+        if leaf in {"source", "marker", "required", "sha256", "license_required", "distributable"} or "version" in leaf:
+            continue
         if val.startswith("docker://") or val.startswith("oras://") or ":" in val and not val.startswith("/") and not val.startswith("."):
             rows.append(_row(category, key, "INFO", "non-local reference/image; not checked as a filesystem path", val))
             continue
@@ -202,7 +205,7 @@ def _check_declared_hashes(data: dict[str, Any], category: str) -> list[CheckRow
             continue
         expected = str(spec.get("sha256") or "")
         path_value = str(spec.get("path") or "")
-        if not expected or expected.startswith("<"):
+        if not expected or expected.startswith("<") or expected.lower() in {"-", "na", "n/a", "none", "unknown"}:
             continue
         p, exists = _path_exists(path_value)
         if not p:
@@ -338,17 +341,22 @@ def _check_workflow_readiness(project_root: Path, profile: str) -> list[CheckRow
     return rows
 
 
-def _run_version_checks(project_root: Path, logger: AuditLogger, *, allow_execute: bool) -> list[CheckRow]:
+def _run_version_checks(project_root: Path, logger: AuditLogger, tools_data: dict[str, Any] | None = None, *, allow_execute: bool) -> list[CheckRow]:
     rows: list[CheckRow] = []
     commands = {
         "java_version": ["java", "-version"],
         "nextflow_version": ["nextflow", "-version"],
         "gatk_mutect2_help": ["gatk", "Mutect2", "--help"],
     }
+    configured = _flatten_tools(tools_data or {})
+    logical_names = {"java_version": "java", "nextflow_version": "nextflow", "gatk_mutect2_help": "gatk"}
     for name, cmd in commands.items():
-        if not shutil.which(cmd[0]):
-            rows.append(_row("workflow" if name != "gatk_mutect2_help" else "tool_smoke", name, "MISSING", f"{cmd[0]} not found on PATH", cmd[0], blocking=name == "java_version"))
+        executable = configured.get(logical_names[name], cmd[0])
+        resolved = executable if (os.path.sep in executable and _safe_exists(Path(executable))) else shutil.which(executable)
+        if not resolved:
+            rows.append(_row("workflow" if name != "gatk_mutect2_help" else "tool_smoke", name, "MISSING", f"{executable} not found", executable, blocking=name == "java_version"))
             continue
+        cmd = [str(resolved), *cmd[1:]]
         res = run_command(cmd, cwd=project_root, timeout=60, logger=logger, risk_level="LOW", allow_execute=allow_execute)
         if res.get("dry_run"):
             rows.append(_row("workflow" if name != "gatk_mutect2_help" else "tool_smoke", name, "DRY_RUN", " ".join(cmd), " ".join(cmd)))
@@ -498,7 +506,6 @@ def run_doctor(
     for name in ["python", "neoag", "neoag-agent", "neoag-llm-agent"]:
         rows.append(_check_executable(name, DEFAULT_TOOL_EXECUTABLES[name]))
     rows.extend(_check_workflow_readiness(root, profile))
-    rows.extend(_run_version_checks(root, logger, allow_execute=allow_execute))
 
     # Manifest loading.
     for label, path in [("tools_manifest", tools_manifest), ("reference_manifest", reference_manifest), ("sample_manifest", sample_manifest)]:
@@ -508,6 +515,7 @@ def run_doctor(
     tools_data = load_manifest(tools_manifest).data if tools_manifest else {}
     ref_data = load_manifest(reference_manifest).data if reference_manifest else {}
     sample_data = load_manifest(sample_manifest).data if sample_manifest else {}
+    rows.extend(_run_version_checks(root, logger, tools_data, allow_execute=allow_execute))
 
     # Tool checks.
     for name, exe in sorted(_flatten_tools(tools_data).items()):
