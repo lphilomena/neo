@@ -15,6 +15,7 @@
 
 # Reference data
 # export NEOAG_NORMAL_PROTEOME_FASTA="/path/to/Homo_sapiens.GRCh38.pep.all.fa"
+# export NEOAG_NORMAL_JUNCTIONS="/path/to/normal_junctions.GRCh38.tsv.gz"
 # export NEOAG_DBSNP_VCF="/path/to/dbsnp_chr.vcf.gz"
 # export NEOAG_SHARED_REF_DIR="/path/to/shared_refs"
 #

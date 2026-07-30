@@ -697,6 +697,11 @@ fi
 
 export NEOAG_TOOLS_ROOT="$TOOLS_ROOT"
 export NEOAG_REF_BUNDLE="$REFERENCE_ROOT"
+if [[ -f "$REFERENCE_ROOT/data/normal/junctions/normal_junctions.GRCh38.tsv.gz" ]]; then
+  export NEOAG_NORMAL_JUNCTIONS="$REFERENCE_ROOT/data/normal/junctions/normal_junctions.GRCh38.tsv.gz"
+elif [[ -f "$REFERENCE_ROOT/data/normal/junctions/gtex_v8_liver.GRCh38.tsv.gz" ]]; then
+  export NEOAG_NORMAL_JUNCTIONS="$REFERENCE_ROOT/data/normal/junctions/gtex_v8_liver.GRCh38.tsv.gz"
+fi
 export NETMHCPAN_HOME="$LICENSED_ROOT/netMHCpan"
 export NETMHCpan="$LICENSED_ROOT/netMHCpan"
 export NETMHCSTABPAN_HOME="$LICENSED_ROOT/netMHCstabpan"

@@ -8,7 +8,10 @@ inside a single scalar ranking score.
 
 from __future__ import annotations
 
+import csv
+import gzip
 from pathlib import Path
+import re
 from typing import Any, Mapping
 
 from .utils import read_tsv, write_tsv, to_float, first
@@ -109,43 +112,93 @@ def _normal_ligand_rows(
     return out
 
 
-def _normal_junctions(path: str | Path | None) -> dict[str, dict[str, str]]:
+def _normalize_chromosome(value: Any) -> str:
+    chrom = str(value or '').strip()
+    if not chrom:
+        return ''
+    if chrom.lower().startswith('chr'):
+        chrom = chrom[3:]
+    if chrom.upper() in {'M', 'MT'}:
+        chrom = 'M'
+    return f'chr{chrom}'
+
+
+def _junction_coordinate_keys(row: Mapping[str, Any]) -> list[str]:
+    chrom = first(row, ['chromosome', 'chrom', 'chr', 'seqname', 'seqnames'], '')
+    start = first(row, ['junction_start', 'start', 'donor', 'intron_start'], '')
+    end = first(row, ['junction_end', 'end', 'acceptor', 'intron_end'], '')
+    strand = first(row, ['strand', 'junction_strand'], '')
+    if not (chrom and str(start).strip() and str(end).strip()):
+        embedded = first(row, ['junction_id', 'event_id'], '')
+        match = re.search(r'(chr)?([0-9]+|X|Y|M|MT):(\d+)-(\d+)(?::([+?.-]))?', str(embedded), re.I)
+        if match:
+            chrom, start, end, embedded_strand = match.group(2), match.group(3), match.group(4), match.group(5)
+            strand = strand or embedded_strand or ''
+    chrom = _normalize_chromosome(chrom)
+    try:
+        start_i, end_i = int(str(start)), int(str(end))
+    except (TypeError, ValueError):
+        return []
+    if not chrom or start_i < 0 or end_i < 0:
+        return []
+    if start_i > end_i:
+        start_i, end_i = end_i, start_i
+    base = f'{chrom}:{start_i}-{end_i}'
+    strand = str(strand or '').strip()
+    return [f'{base}:{strand}', base] if strand in {'+', '-'} else [base]
+
+
+def _normal_junctions(
+    path: str | Path | None,
+    target_keys: set[str] | None = None,
+) -> dict[str, dict[str, str]]:
     if not path:
         return {}
     p = Path(path)
     if not p.exists():
         return {}
     out={}
-    for r in read_tsv(p):
-        keys=[]
-        for k in ('event_id','junction_id','gene_pair','fusion'):
-            v = r.get(k)
-            if v:
-                keys.append(v)
-        if r.get('gene1') and r.get('gene2'):
-            keys.extend([f"{r.get('gene1')}::{r.get('gene2')}", f"{r.get('gene2')}::{r.get('gene1')}"])
-        normalized=[]
-        for key in keys:
-            value = str(key).strip()
-            if not value:
-                continue
-            normalized.extend([value, value.replace('--', '::')])
-            if '::' in value.replace('--', '::'):
-                left, right = value.replace('--', '::').split('::', 1)
-                normalized.append(f'{right}::{left}')
-        for key in normalized:
-            out[key] = r
+    handle = gzip.open(p, 'rt', encoding='utf-8', newline='') if p.suffix == '.gz' else p.open('r', encoding='utf-8', newline='')
+    with handle:
+        for r in csv.DictReader(handle, delimiter='\t'):
+            keys=[]
+            for k in ('event_id','junction_id','gene_pair','fusion'):
+                v = r.get(k)
+                if v:
+                    keys.append(v)
+            if r.get('gene1') and r.get('gene2'):
+                keys.extend([f"{r.get('gene1')}::{r.get('gene2')}", f"{r.get('gene2')}::{r.get('gene1')}"])
+            normalized=[]
+            for key in keys:
+                value = str(key).strip()
+                if not value:
+                    continue
+                normalized.extend([value, value.replace('--', '::')])
+                if '::' in value.replace('--', '::'):
+                    left, right = value.replace('--', '::').split('::', 1)
+                    normalized.append(f'{right}::{left}')
+            normalized.extend(_junction_coordinate_keys(r))
+            if target_keys is not None:
+                normalized = [key for key in normalized if key in target_keys]
+            for key in dict.fromkeys(normalized):
+                out[key] = r
     return out
 
 
 def _normal_junction_scopes(path: str | Path | None) -> set[str]:
     if not path or not Path(path).is_file():
         return set()
-    scopes = {
-        str(row.get('junction_class') or '').strip()
-        for row in read_tsv(path)
-        if str(row.get('junction_class') or '').strip()
-    }
+    p = Path(path)
+    handle = gzip.open(p, 'rt', encoding='utf-8', newline='') if p.suffix == '.gz' else p.open('r', encoding='utf-8', newline='')
+    with handle:
+        reader = csv.DictReader(handle, delimiter='\t')
+        if 'junction_class' not in (reader.fieldnames or []):
+            return {'all_junctions'}
+        scopes = {
+            str(row.get('junction_class') or '').strip()
+            for row in reader
+            if str(row.get('junction_class') or '').strip()
+        }
     # Backward compatibility for user-provided files predating scoped refs.
     return scopes or {'all_junctions'}
 
@@ -188,15 +241,9 @@ def _candidate_junction_keys(
             value = str(row.get(field) or '').strip()
             if value and value not in keys:
                 keys.append(value)
-        chrom = str(row.get('chrom') or '').strip()
-        start = str(row.get('junction_start') or row.get('start') or '').strip()
-        end = str(row.get('junction_end') or row.get('end') or '').strip()
-        strand = str(row.get('strand') or '').strip()
-        if chrom and start and end:
-            coordinate = f'{chrom}:{start}-{end}'
-            for value in (coordinate, f'{coordinate}:{strand}' if strand else ''):
-                if value and value not in keys:
-                    keys.append(value)
+        for value in _junction_coordinate_keys(row):
+            if value not in keys:
+                keys.append(value)
     return keys
 
 
@@ -308,7 +355,14 @@ def build_peptide_safety_gate(
     target_peptides = {(row.get('peptide') or '').upper().strip() for row in peptides if row.get('peptide')}
     ligs = _normal_ligand_rows(normal_hla_ligands, target_peptides=target_peptides)
     ref_idx = build_reference_index(reference_proteome, target_peptides=target_peptides)
-    junctions = _normal_junctions(normal_junctions)
+    target_junction_keys: set[str] = set()
+    for peptide_row in peptides:
+        event_row = events.get(peptide_row.get('event_id', ''), {})
+        target_junction_keys.update(_candidate_junction_keys(peptide_row, event_row))
+        gene_pair = str(event_row.get('gene') or '').strip()
+        if gene_pair:
+            target_junction_keys.add(gene_pair)
+    junctions = _normal_junctions(normal_junctions, target_keys=target_junction_keys)
     junction_scopes = _normal_junction_scopes(normal_junctions)
     ref_assessed = bool(reference_proteome and Path(reference_proteome).is_file())
     ligand_assessed = bool(normal_hla_ligands and Path(normal_hla_ligands).is_file())

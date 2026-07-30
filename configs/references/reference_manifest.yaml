@@ -110,6 +110,21 @@ references:
     required: false
     scoring_role: annotation_and_report_only
 
+  normal_junctions_liver:
+    path: /root/neo/neodata4git/data/normal/junctions/gtex_v8_liver.GRCh38.tsv.gz
+    source: recount3 GTEx v8 Liver exon-exon junction counts
+    version: recount3_2023-01-04_GRCh38
+    marker: .meta.json
+    required: false
+
+  normal_junctions:
+    path: /root/neo/neodata4git/data/normal/junctions/normal_junctions.GRCh38.tsv.gz
+    source: recount3 GTEx v8 pan-tissue exon-exon junction counts
+    version: recount3_2023-01-04_GRCh38
+    sha256: f0e4292f8a873530d06d0621295c415f20be917a9d17c0ed55feb30e5df3fe5b
+    marker: .meta.json
+    required: false
+
   salmon_index:
     path: /root/neo/neodata4git/data/rna/salmon_index
     source: transcriptome Salmon index

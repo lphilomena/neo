@@ -65,12 +65,20 @@ cat > "$ACT" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
 export NEOAG_TOOLS_ROOT="$TOOLS_ROOT"
+export NEOAG_REF_BUNDLE="\${NEOAG_REF_BUNDLE:-$REFERENCE_ROOT}"
 export NEOAG_CONDA_BASE="\${NEOAG_CONDA_BASE:-$TOOLS_ROOT/miniforge3}"
 export NEOAG_PROJECT_ROOT="\${NEOAG_PROJECT_ROOT:-$PROJECT_ROOT}"
 export PATH="$TOOLS_ROOT/bin:$TOOLS_ROOT/tools/prime:\${NEOAG_PROJECT_ROOT}/bin:\${NEOAG_CONDA_BASE}/envs/neoag-tools/bin:\${NEOAG_CONDA_BASE}/envs/neoag-core/bin:\${NEOAG_CONDA_BASE}/envs/neoag-sequenza/bin:\${NEOAG_CONDA_BASE}/bin:\${PATH}"
 export LD_LIBRARY_PATH="\${NEOAG_CONDA_BASE}/envs/neoag-tools/lib:\${NEOAG_CONDA_BASE}/envs/neoag-core/lib:\${NEOAG_CONDA_BASE}/envs/neoag-sequenza/lib\${LD_LIBRARY_PATH:+:\${LD_LIBRARY_PATH}}"
 export NEOAG_REFERENCE_FASTA="\${NEOAG_REFERENCE_FASTA:-$REFERENCE_ROOT/data/ref/hg38/Homo_sapiens_assembly38.fasta}"
 export NEOAG_GENCODE_GTF="\${NEOAG_GENCODE_GTF:-$REFERENCE_ROOT/data/ref/hg38/gencode.gtf}"
+if [[ -z "\${NEOAG_NORMAL_JUNCTIONS:-}" ]]; then
+  if [[ -f "$REFERENCE_ROOT/data/normal/junctions/normal_junctions.GRCh38.tsv.gz" ]]; then
+    export NEOAG_NORMAL_JUNCTIONS="$REFERENCE_ROOT/data/normal/junctions/normal_junctions.GRCh38.tsv.gz"
+  elif [[ -f "$REFERENCE_ROOT/data/normal/junctions/gtex_v8_liver.GRCh38.tsv.gz" ]]; then
+    export NEOAG_NORMAL_JUNCTIONS="$REFERENCE_ROOT/data/normal/junctions/gtex_v8_liver.GRCh38.tsv.gz"
+  fi
+fi
 export NEOAG_VEP_CACHE="\${NEOAG_VEP_CACHE:-$REFERENCE_ROOT/data/vep}"
 export NEOAG_VEP_CACHE_VERSION="\${NEOAG_VEP_CACHE_VERSION:-105}"
 export NEOAG_VEP_BIN="\${NEOAG_VEP_BIN:-$TOOLS_ROOT/bin/vep}"
