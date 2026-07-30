@@ -1,7 +1,6 @@
-"""Formal v0.5.0 Splice Provenance Layer orchestration."""
+"""Formal v0.5.1 Splice Provenance Layer orchestration."""
 from __future__ import annotations
 
-import json
 from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -12,38 +11,68 @@ from neoag.splice.coordinates import file_sha256
 from neoag.splice.identifiers import link_id, splice_event_id, stable_digest, stable_id
 from neoag.utils import write_json, write_tsv
 
+from .adapters.easyquant import parse_easyquant
 from .adapters.immunopepper import parse_immunopepper_kmers, parse_immunopepper_meta
 from .adapters.high_order import parse_high_order_evidence
 from .adapters.irfinder import parse_irfinder
+from .adapters.k4neo import parse_k4neo
+from .adapters.mopepgen import parse_mopepgen
 from .adapters.pvacbind import parse_pvacbind
+from .adapters.pvacsplice import parse_pvacsplice
 from .adapters.regtools import parse_junction_source
+from .adapters.splice2neo import parse_splice2neo
 from .adapters.spladder import parse_spladder_gff3, parse_spladder_txt
 from .consensus import build_consensus, consensus_reason_conflicts
+from .evidence_chains import build_evidence_chains
 from .normal_background import parse_normal_coverage, parse_normal_junctions
 from .projection import project_legacy
-from .schemas import (
-    CONFLICT_FIELDS, OUTPUT_FILENAMES, PVACBIND_FASTA_MAP_FIELDS,
-    SPLICE_PROVENANCE_SCHEMA_VERSION, TABLE_FIELDS, TOOL_EVIDENCE_FIELDS,
-)
+from .schemas import OUTPUT_FILENAMES, PVACBIND_FASTA_MAP_FIELDS, SPLICE_PROVENANCE_SCHEMA_VERSION, TABLE_FIELDS
+from .sequence_queries import write_external_query_files
 
 _ID_FIELDS = {
     "junctions": "junction_id", "events": "splice_event_id",
     "event_junction_links": "event_junction_link_id", "transcripts": "transcript_hypothesis_id",
     "orfs": "orf_id", "peptide_origins": "origin_peptide_id",
-    "peptide_origin_links": "peptide_origin_link_id", "presentation": "presentation_id",
+    "peptide_origin_links": "peptide_origin_link_id", "variants": "variant_id",
+    "causal_links": "causal_link_id", "sequence_queries": "query_id",
+    "targeted_quantification": "targeted_quant_id",
+    "pvacsplice_predictions": "pvacsplice_prediction_id", "presentation": "presentation_id",
     "normal_background": "normal_background_id", "tool_evidence": "evidence_id",
-    "consensus": "consensus_id", "conflicts": "conflict_id",
+    "evidence_chains": "evidence_chain_id", "consensus": "consensus_id", "conflicts": "conflict_id",
 }
 _SET_FIELDS = {
     "source_tools", "source_tool_versions", "source_files", "source_record_ids",
     "junction_ids", "reference_junction_ids", "alternative_junction_ids", "affected_exons",
+    "transcript_ids", "independent_source_groups", "supporting_entity_ids", "supporting_evidence_ids",
+    "limiting_reasons", "independent_evidence_groups", "independent_translation_generators",
+    "independent_peptide_generators",
 }
-_MAX_FIELDS = {"unique_split_reads", "multi_split_reads", "total_split_reads", "max_overhang"}
+_MAX_FIELDS = {
+    "unique_split_reads", "multi_split_reads", "total_split_reads", "max_overhang",
+    "junction_reads", "easyquant_junction_reads", "easyquant_spanning_pairs", "junction_score",
+    "sample_count", "total_samples", "sample_prevalence", "kmer_prevalence", "uniqueness_rate",
+}
 _IDENTITY_FIELDS = {
     "genome_build", "chrom", "intron_start_1based", "intron_end_1based", "strand",
     "donor_1based", "acceptor_1based", "event_type", "junction_ids", "gene", "gene_id",
     "splice_event_id", "transcript_hypothesis_id", "orf_id", "protein_sequence",
-    "protein_sequence_sha256", "frame_status", "peptide_sequence",
+    "protein_sequence_sha256", "frame_status", "peptide_sequence", "variant_id", "pos_1based",
+    "ref", "alt", "query_id", "sequence_sha256",
+}
+_STATUS_PRIORITY: dict[str, dict[str, int]] = {
+    "causal_status": {
+        "UNASSESSED": 0, "DNA_PREDICTION_ONLY": 1, "DNA_RNA_CIS_SUPPORTED": 2,
+        "TARGETED_SPANNING_ONLY": 3, "PVACSPLICE_SUPPORTED": 4, "TARGETED_REQUANT_SUPPORTED": 5,
+    },
+    "targeted_requant_status": {
+        "UNASSESSED": 0, "TARGETED_REQUANT_NEGATIVE": 1, "TARGETED_SPANNING_ONLY": 2,
+        "TARGETED_REQUANT_SUPPORTED": 3,
+    },
+    "pvacsplice_status": {"UNASSESSED": 0, "PVACSPLICE_SUPPORTED": 1},
+    "rna_junction_status": {"UNASSESSED": 0, "EXACT_RNA_SUPPORTED": 1},
+    "support_status": {
+        "TARGETED_REQUANT_NEGATIVE": 0, "TARGETED_SPANNING_ONLY": 1, "TARGETED_REQUANT_SUPPORTED": 2,
+    },
 }
 
 
@@ -67,6 +96,11 @@ def _numeric_max(values: set[str]) -> str:
         return ""
     maximum = max(parsed)
     return str(int(maximum)) if maximum.is_integer() else f"{maximum:.12g}"
+
+
+def _status_best(field_name: str, values: set[str]) -> str:
+    priority = _STATUS_PRIORITY.get(field_name, {})
+    return max(values, key=lambda x: (priority.get(x, -1), x), default="")
 
 
 @dataclass
@@ -98,9 +132,8 @@ class SpliceLayer:
             if not id_field:
                 continue
             for idx, row in enumerate(rows, start=1):
-                if row.get(id_field):
-                    continue
-                row[id_field] = stable_id(table[:3].upper(), self.sample_id, idx, row)
+                if not row.get(id_field):
+                    row[id_field] = stable_id(table[:3].upper(), self.sample_id, idx, row)
 
     def _merge_table(self, table: str, rows: list[dict[str, str]]) -> list[dict[str, str]]:
         id_field = _ID_FIELDS.get(table)
@@ -121,6 +154,8 @@ class SpliceLayer:
                     output[field_name] = ";".join(sorted({token for value in values for token in _tokens(value)}))
                 elif field_name in _MAX_FIELDS:
                     output[field_name] = _numeric_max(values)
+                elif field_name in _STATUS_PRIORITY:
+                    output[field_name] = _status_best(field_name, values)
                 elif field_name == "provenance_record_count":
                     records = {token for row in group for token in _tokens(row.get("source_record_ids", ""))}
                     output[field_name] = str(len(records) or len(group))
@@ -144,11 +179,11 @@ class SpliceLayer:
 
     def consolidate(self) -> None:
         self._ensure_ids()
-        # Merge entity tables only by their exact stable identifiers.
         for table in [
             "junctions", "events", "event_junction_links", "transcripts", "orfs",
-            "peptide_origins", "peptide_origin_links", "presentation", "normal_background",
-            "tool_evidence", "conflicts",
+            "peptide_origins", "peptide_origin_links", "variants", "causal_links",
+            "sequence_queries", "targeted_quantification", "pvacsplice_predictions",
+            "presentation", "normal_background", "tool_evidence", "conflicts",
         ]:
             self.tables[table] = self._merge_table(table, self.tables.get(table, []))
         self._add_fallback_events()
@@ -207,7 +242,7 @@ class SpliceLayer:
                 continue
             index = f"SPORF_{stable_digest(orf.get('orf_id'), sequence, length=20)}"
             lines.append(f">{index}")
-            lines.extend(sequence[i:i+60] for i in range(0, len(sequence), 60))
+            lines.extend(sequence[i:i + 60] for i in range(0, len(sequence), 60))
             map_rows.append({
                 "index": index, "orf_id": orf.get("orf_id", ""),
                 "transcript_hypothesis_id": orf.get("transcript_hypothesis_id", ""),
@@ -222,6 +257,9 @@ class SpliceLayer:
         write_tsv(map_path, map_rows, PVACBIND_FASTA_MAP_FIELDS)
         return fasta_path, map_path
 
+    def write_external_queries(self, outdir: str | Path) -> dict[str, Path]:
+        return write_external_query_files(outdir, self.tables.get("sequence_queries", []))
+
     def _referential_qc(self) -> list[dict[str, str]]:
         events = {x.get("splice_event_id", "") for x in self.tables.get("events", [])}
         junctions = {x.get("junction_id", "") for x in self.tables.get("junctions", [])}
@@ -231,6 +269,9 @@ class SpliceLayer:
         unstranded_junctions = sum(
             1 for row in self.tables.get("junctions", []) if row.get("strand") not in {"+", "-"}
         )
+        variants = {x.get("variant_id", "") for x in self.tables.get("variants", [])}
+        causal = {x.get("causal_link_id", "") for x in self.tables.get("causal_links", [])}
+        queries = {x.get("query_id", "") for x in self.tables.get("sequence_queries", [])}
         checks = {
             "event_junction_links_missing_event": sum(1 for r in self.tables.get("event_junction_links", []) if r.get("splice_event_id") not in events),
             "event_junction_links_missing_junction": sum(1 for r in self.tables.get("event_junction_links", []) if r.get("junction_id") not in junctions),
@@ -240,6 +281,12 @@ class SpliceLayer:
             "origins_missing_orf": sum(1 for r in self.tables.get("peptide_origins", []) if r.get("orf_id") not in orfs),
             "origins_missing_event": sum(1 for r in self.tables.get("peptide_origins", []) if r.get("splice_event_id") not in events),
             "presentation_missing_origin": sum(1 for r in self.tables.get("presentation", []) if r.get("origin_peptide_id") not in origins),
+            "causal_links_missing_variant": sum(1 for r in self.tables.get("causal_links", []) if r.get("variant_id") not in variants),
+            "causal_links_missing_junction": sum(1 for r in self.tables.get("causal_links", []) if r.get("junction_id") not in junctions),
+            "causal_links_missing_event": sum(1 for r in self.tables.get("causal_links", []) if r.get("splice_event_id") not in events),
+            "targeted_quant_missing_query": sum(1 for r in self.tables.get("targeted_quantification", []) if r.get("query_id") not in queries),
+            "pvacsplice_missing_causal_link": sum(1 for r in self.tables.get("pvacsplice_predictions", []) if r.get("causal_link_id") not in causal),
+            "pvacsplice_missing_origin": sum(1 for r in self.tables.get("pvacsplice_predictions", []) if r.get("origin_peptide_id") not in origins),
         }
         rows = [{"metric": key, "value": str(value), "status": "PASS" if value == 0 else "FAIL", "detail": "Exact-ID referential integrity check."} for key, value in checks.items()]
         rows.extend([
@@ -253,12 +300,18 @@ class SpliceLayer:
             {"metric": "transcript_hypothesis_count", "value": str(len(transcripts)), "status": "INFO", "detail": "Transcript hypotheses."},
             {"metric": "orf_count", "value": str(len(orfs)), "status": "INFO", "detail": "ORF/translated segment entities."},
             {"metric": "peptide_origin_count", "value": str(len(origins)), "status": "INFO", "detail": "Peptide origins."},
+            {"metric": "variant_count", "value": str(len(variants)), "status": "INFO", "detail": "Canonical DNA variants in the causal branch."},
+            {"metric": "causal_link_count", "value": str(len(causal)), "status": "INFO", "detail": "Exact variant-junction causal links."},
+            {"metric": "sequence_query_count", "value": str(len(queries)), "status": "INFO", "detail": "Exact EasyQuant/k4neo queries."},
             {"metric": "gene_or_nearest_locus_fallbacks_used", "value": "0", "status": "PASS", "detail": "Approximate provenance linking is forbidden."},
+            {"metric": "dna_causal_requires_variant_and_junction", "value": "1", "status": "PASS", "detail": "Causal support is never inferred from gene co-membership."},
+            {"metric": "normal_kmer_negative_equated_to_locus_negative", "value": "0", "status": "PASS", "detail": "k4neo non-detection remains distinct from coverage-aware locus non-detection."},
         ])
         return rows
 
     def finalise(self) -> None:
         self.consolidate()
+        self.tables["evidence_chains"] = build_evidence_chains(self.tables, sample_id=self.sample_id)
         self.tables["consensus"] = build_consensus(self.tables, sample_id=self.sample_id)
         self.tables.setdefault("conflicts", []).extend(
             consensus_reason_conflicts(self.tables["consensus"], sample_id=self.sample_id)
@@ -272,8 +325,9 @@ class SpliceLayer:
         out = Path(outdir)
         out.mkdir(parents=True, exist_ok=True)
         outputs: dict[str, Path] = {}
+        special = {"manifest", "pvacbind_fasta", "easyquant_input", "easyquant_query_map", "k4neo_input", "k4neo_query_map"}
         for table, filename in OUTPUT_FILENAMES.items():
-            if table in {"manifest", "pvacbind_fasta"}:
+            if table in special:
                 continue
             path = out / filename
             if table == "raw_events":
@@ -289,15 +343,27 @@ class SpliceLayer:
         fasta, fasta_map = self.write_pvacbind_fasta(out)
         outputs["pvacbind_fasta"] = fasta
         outputs["pvacbind_fasta_map"] = fasta_map
+        outputs.update(self.write_external_queries(out))
         manifest = {
             "schema_version": SPLICE_PROVENANCE_SCHEMA_VERSION,
-            "software_version": "0.5.0", "sample_id": self.sample_id,
+            "software_version": "0.5.1", "sample_id": self.sample_id,
             "genome_build": self.genome_build, "disease_profile": self.disease_profile,
+            "evidence_chains": {
+                "RNA_DRIVEN": "exact RNA junction + exact event/peptide provenance; ImmunoPepper and moPepGen are independent generator groups",
+                "DNA_CAUSAL": "exact variant + exact strand-aware junction; splice2neo, EasyQuant and pVACsplice",
+                "NORMAL_BACKGROUND": "coverage-aware normal evidence separated from k4neo sequence-index screening",
+            },
             "matching_policy": {
                 "junction_identity": "genome_build+chrom+1based_closed_intron_start+intron_end+strand",
+                "variant_identity": "genome_build+chrom+1based_position+ref+alt",
                 "approximate_gene_or_nearest_locus_fallback": False,
+                "mopepgen_event_mapping": "exact_event_id_or_canonical_junction_map_only",
+                "easyquant_mapping": "exact_project_query_id_only",
+                "pvacsplice_mapping": "exact_variant_and_strand_aware_junction_only",
+                "k4neo_mapping": "exact_project_cts_id_only",
                 "pvacbind_mapping": "exact_fasta_index_only",
                 "negative_normal_evidence_requires_coverage": True,
+                "k4neo_negative_is_not_locus_coverage_negative": True,
             },
             "inputs": self.input_files,
             "outputs": {key: {"path": path.name, "sha256": file_sha256(path)} for key, path in outputs.items() if path.is_file()},
@@ -342,12 +408,26 @@ def build_splice_provenance_layer(
     irfinder_coordinate_system: str = "UNSPECIFIED",
     immunopepper_meta: Iterable[str | Path] | None = None,
     immunopepper_kmers: Iterable[str | Path] | None = None,
+    mopepgen_fasta: Iterable[str | Path] | None = None,
+    mopepgen_gvf: Iterable[str | Path] | None = None,
+    mopepgen_provenance_map: Iterable[str | Path] | None = None,
+    splice2neo: Iterable[str | Path] | None = None,
+    easyquant: Iterable[str | Path] | None = None,
+    easyquant_query_map: str | Path | None = None,
+    pvacsplice: Iterable[str | Path] | None = None,
+    pvacsplice_junction_map: str | Path | None = None,
     pvacbind: Iterable[str | Path] | None = None,
     pvacbind_fasta_map: str | Path | None = None,
     normal_junctions: Iterable[str | Path] | None = None,
     normal_coordinate_system: str = "auto",
     normal_coverage: Iterable[str | Path] | None = None,
     high_order_evidence: Iterable[str | Path] | None = None,
+    k4neo_healthy_sample_rate: Iterable[str | Path] | None = None,
+    k4neo_annotated: Iterable[str | Path] | None = None,
+    k4neo_uniqueness: Iterable[str | Path] | None = None,
+    k4neo_query_map: str | Path | None = None,
+    k4neo_license_accepted: bool = False,
+    critical_tissues: Iterable[str] | None = None,
     tool_versions: dict[str, str] | None = None,
     strict: bool = False,
 ) -> dict[str, Path]:
@@ -374,7 +454,10 @@ def build_splice_provenance_layer(
                 "strict mode requires explicit TOOL=VERSION locks for all executed tools: "
                 + ", ".join(missing_versions)
             )
+    out = Path(outdir)
+    out.mkdir(parents=True, exist_ok=True)
     layer = SpliceLayer(sample_id=sample_id, genome_build=genome_build, disease_profile=disease_profile)
+
     if junctions:
         layer.register_input(junctions, role="primary_rna_junctions", tool="RegTools", version=versions.get("RegTools", "UNASSESSED"))
         layer.extend(parse_junction_source(
@@ -401,16 +484,39 @@ def build_splice_provenance_layer(
             path, sample_id=sample_id, genome_build=genome_build,
             coordinate_system=irfinder_coordinate_system, source_tool_version=versions.get("IRFinder-S", "UNASSESSED"), strict=strict,
         ))
+
     meta_bundle: dict[str, list[dict[str, str]]] = defaultdict(list)
     for path in _as_paths(immunopepper_meta):
-        layer.register_input(path, role="translated_splice_paths", tool="ImmunoPepper", version=versions.get("ImmunoPepper", "UNASSESSED"))
+        layer.register_input(path, role="rna_driven_translation", tool="ImmunoPepper", version=versions.get("ImmunoPepper", "UNASSESSED"))
         bundle = parse_immunopepper_meta(path, sample_id=sample_id, genome_build=genome_build, source_tool_version=versions.get("ImmunoPepper", "UNASSESSED"))
         layer.extend(bundle)
         for key, rows in bundle.items():
             meta_bundle[key].extend(rows)
     for path in _as_paths(immunopepper_kmers):
-        layer.register_input(path, role="translated_splice_kmers", tool="ImmunoPepper", version=versions.get("ImmunoPepper", "UNASSESSED"))
+        layer.register_input(path, role="rna_driven_translation_kmers", tool="ImmunoPepper", version=versions.get("ImmunoPepper", "UNASSESSED"))
         layer.extend(parse_immunopepper_kmers(path, sample_id=sample_id, source_tool_version=versions.get("ImmunoPepper", "UNASSESSED"), meta_bundle=dict(meta_bundle)))
+
+    # Establish canonical events before exact downstream linking.
+    layer.consolidate()
+    for path in _as_paths(splice2neo):
+        layer.register_input(path, role="dna_causal_splice_model", tool="splice2neo", version=versions.get("splice2neo", "UNASSESSED"))
+        layer.extend(parse_splice2neo(
+            path, sample_id=sample_id, genome_build=genome_build,
+            source_tool_version=versions.get("splice2neo", "UNASSESSED"), entity_bundle=layer.tables, strict=strict,
+        ))
+    layer.consolidate()
+    for path in _as_paths(mopepgen_fasta):
+        layer.register_input(path, role="rna_driven_second_peptide_generator", tool="moPepGen", version=versions.get("moPepGen", "UNASSESSED"))
+        layer.extend(parse_mopepgen(
+            path, sample_id=sample_id, genome_build=genome_build, gvf_paths=_as_paths(mopepgen_gvf),
+            provenance_maps=_as_paths(mopepgen_provenance_map), source_tool_version=versions.get("moPepGen", "UNASSESSED"),
+            entity_bundle=layer.tables, strict=strict,
+        ))
+    for path in _as_paths(mopepgen_gvf):
+        layer.register_input(path, role="mopepgen_variant_graph_input", tool="moPepGen", version=versions.get("moPepGen", "UNASSESSED"))
+    for path in _as_paths(mopepgen_provenance_map):
+        layer.register_input(path, role="mopepgen_exact_provenance_map", tool="NeoAg-moPepGen-map", version="0.5.1")
+
     for path in _as_paths(normal_junctions):
         layer.register_input(path, role="normal_junction_background", tool="NormalPanel")
         layer.extend(parse_normal_junctions(
@@ -421,14 +527,48 @@ def build_splice_provenance_layer(
         layer.register_input(path, role="normal_coverage_background", tool="NormalCoverage")
         layer.extend(parse_normal_coverage(path, sample_id=sample_id))
 
-    # Preliminary consolidation is required to create an exact ORF→FASTA index.
     layer.consolidate()
     for path in _as_paths(high_order_evidence):
         layer.register_input(path, role="high_order_validation", tool="ValidatedEvidence")
         layer.extend(parse_high_order_evidence(
             path, sample_id=sample_id, entity_bundle=layer.tables, strict=strict,
         ))
-    _, generated_map = layer.write_pvacbind_fasta(outdir)
+    layer.consolidate()
+    generated_queries = layer.write_external_queries(out)
+    eq_map = Path(easyquant_query_map) if easyquant_query_map else generated_queries["easyquant_query_map"]
+    for path in _as_paths(easyquant):
+        layer.register_input(path, role="targeted_causal_requantification", tool="EasyQuant", version=versions.get("EasyQuant", "UNASSESSED"))
+        layer.extend(parse_easyquant(
+            path, sample_id=sample_id, query_map=eq_map,
+            source_tool_version=versions.get("EasyQuant", "UNASSESSED"), strict=strict,
+        ))
+
+    layer.consolidate()
+    for path in _as_paths(pvacsplice):
+        layer.register_input(path, role="dna_causal_presentation", tool="pVACsplice", version=versions.get("pVACsplice", "UNASSESSED"))
+        layer.extend(parse_pvacsplice(
+            path, sample_id=sample_id, genome_build=genome_build,
+            source_tool_version=versions.get("pVACsplice", "UNASSESSED"),
+            junction_map=pvacsplice_junction_map, entity_bundle=layer.tables, strict=strict,
+        ))
+
+    has_k4neo = bool(_as_paths(k4neo_healthy_sample_rate) or _as_paths(k4neo_annotated) or _as_paths(k4neo_uniqueness))
+    if has_k4neo and not k4neo_license_accepted:
+        raise ValueError("k4neo output was supplied but --k4neo-license-accepted was not set. Review the upstream license before use.")
+    if has_k4neo:
+        k4_map = Path(k4neo_query_map) if k4neo_query_map else generated_queries["k4neo_query_map"]
+        for path in [*_as_paths(k4neo_healthy_sample_rate), *_as_paths(k4neo_annotated), *_as_paths(k4neo_uniqueness)]:
+            layer.register_input(path, role="normal_background_kmer_screen", tool="k4neo", version=versions.get("k4neo", "UNASSESSED"))
+        layer.extend(parse_k4neo(
+            sample_id=sample_id, query_map=k4_map,
+            healthy_sample_rate=_as_paths(k4neo_healthy_sample_rate), annotated=_as_paths(k4neo_annotated),
+            uniqueness=_as_paths(k4neo_uniqueness), source_tool_version=versions.get("k4neo", "UNASSESSED"),
+            critical_tissues=critical_tissues or (), strict=strict,
+        ))
+
+    # Preliminary consolidation creates the exact ORF→FASTA map for pVACbind.
+    layer.consolidate()
+    _, generated_map = layer.write_pvacbind_fasta(out)
     map_for_pvac = Path(pvacbind_fasta_map) if pvacbind_fasta_map else generated_map
     for path in _as_paths(pvacbind):
         layer.register_input(path, role="presentation_prediction", tool="pVACbind", version=versions.get("pVACbind", "UNASSESSED"))
@@ -437,4 +577,4 @@ def build_splice_provenance_layer(
             source_tool_version=versions.get("pVACbind", "UNASSESSED"), entity_bundle=layer.tables,
         ))
     layer.finalise()
-    return layer.write(outdir, strict=strict)
+    return layer.write(out, strict=strict)

@@ -1,7 +1,14 @@
-"""Canonical v0.5.0 Splice Provenance Layer table schemas."""
+"""Canonical v0.5.1 Splice Provenance Layer table schemas.
+
+v0.5.1 adds three independently auditable evidence chains:
+
+* RNA-driven translation (ImmunoPepper + moPepGen)
+* DNA-causal splicing (splice2neo + EasyQuant + pVACsplice)
+* normal-background sequence screening (coverage-aware panels + k4neo)
+"""
 from __future__ import annotations
 
-SPLICE_PROVENANCE_SCHEMA_VERSION = "0.5.0"
+SPLICE_PROVENANCE_SCHEMA_VERSION = "0.5.1"
 
 JUNCTION_FIELDS = [
     "junction_id", "sample_id", "genome_build", "chrom",
@@ -73,12 +80,60 @@ PRESENTATION_FIELDS = [
     "source_record_id", "mapping_status", "evidence_conflict_status",
 ]
 
+VARIANT_FIELDS = [
+    "variant_id", "sample_id", "genome_build", "chrom", "pos_1based", "ref", "alt",
+    "variant_type", "gene", "gene_id", "transcript_ids", "hgvsc", "hgvsp",
+    "spliceai_score", "pangolin_score", "mmsplice_score", "ci_spliceai_score",
+    "source_tools", "source_tool_versions", "source_files", "source_record_ids",
+    "variant_resolution_status", "evidence_conflict_status",
+]
+
+CAUSAL_LINK_FIELDS = [
+    "causal_link_id", "variant_id", "junction_id", "splice_event_id", "sample_id",
+    "gene", "gene_id", "transcript_id", "causal_status", "prediction_status",
+    "rna_junction_status", "targeted_requant_status", "pvacsplice_status",
+    "junction_reads", "easyquant_junction_reads", "easyquant_spanning_pairs",
+    "spliceai_score", "pangolin_score", "mmsplice_score", "ci_spliceai_score",
+    "source_tools", "source_tool_versions", "source_files", "source_record_ids",
+    "link_resolution_status", "resolution_reason", "evidence_conflict_status",
+]
+
+SEQUENCE_QUERY_FIELDS = [
+    "query_id", "sample_id", "query_name", "query_type", "splice_event_id", "junction_id",
+    "variant_id", "transcript_hypothesis_id", "orf_id", "origin_peptide_id",
+    "nucleotide_sequence", "sequence_sha256", "position_1based", "query_length",
+    "sequence_scope", "source_generator", "source_file", "source_record_id",
+    "query_status", "evidence_conflict_status",
+]
+
+TARGETED_QUANT_FIELDS = [
+    "targeted_quant_id", "query_id", "sample_id", "query_name", "splice_event_id",
+    "junction_id", "variant_id", "position_1based", "junction_reads", "spanning_pairs",
+    "max_anchor", "left_reads", "right_reads", "interval", "within_interval",
+    "coverage_percent", "coverage_mean", "coverage_median", "support_status",
+    "source_tool", "source_tool_version", "source_file", "source_record_id",
+    "mapping_status", "evidence_conflict_status",
+]
+
+PVACSPLICE_PREDICTION_FIELDS = [
+    "pvacsplice_prediction_id", "causal_link_id", "variant_id", "junction_id",
+    "splice_event_id", "origin_peptide_id", "peptide_id", "sample_id", "chrom",
+    "variant_start_1based", "variant_stop_1based", "ref", "alt", "junction_score",
+    "junction_anchor", "transcript_id", "gene", "gene_id", "hla_allele", "mhc_class",
+    "epitope_sequence", "epitope_length", "protein_position", "best_ic50",
+    "best_percentile", "best_binding_percentile", "best_presentation_percentile",
+    "presentation_score", "immunogenicity_score", "prediction_methods", "aggregate_tier",
+    "source_tool", "source_tool_version", "source_file", "source_record_id",
+    "mapping_status", "evidence_conflict_status",
+]
+
 NORMAL_BACKGROUND_FIELDS = [
-    "normal_background_id", "splice_event_id", "junction_id", "origin_peptide_id", "sample_id",
-    "normal_source", "normal_source_type", "normal_tissue", "critical_tissue",
-    "detection_status", "coverage_status", "junction_reads", "sample_prevalence",
-    "kmer_prevalence", "assessment_status", "assessment_reason", "source_file",
-    "source_record_id", "evidence_conflict_status",
+    "normal_background_id", "splice_event_id", "junction_id", "origin_peptide_id", "query_id",
+    "sample_id", "normal_source", "normal_source_type", "normal_tissue", "critical_tissue",
+    "developmental_stage", "study_id", "detection_status", "coverage_status",
+    "junction_reads", "sample_count", "total_samples", "sample_prevalence",
+    "kmer_prevalence", "uniqueness_rate", "assessment_status", "assessment_reason",
+    "source_file", "source_record_id", "evidence_conflict_status",
 ]
 
 TOOL_EVIDENCE_FIELDS = [
@@ -87,10 +142,19 @@ TOOL_EVIDENCE_FIELDS = [
     "provided_value", "verified_value", "resolution_status", "resolution_reason", "raw_payload_sha256",
 ]
 
+EVIDENCE_CHAIN_FIELDS = [
+    "evidence_chain_id", "splice_event_id", "origin_peptide_id", "peptide_id", "sample_id",
+    "chain_type", "chain_status", "chain_strength", "independent_source_groups",
+    "source_tools", "supporting_entity_ids", "supporting_evidence_ids",
+    "limiting_reasons", "conflict_status", "chain_reason",
+]
+
 CONSENSUS_FIELDS = [
     "consensus_id", "splice_event_id", "origin_peptide_id", "peptide_id", "sample_id",
     "event_evidence_grade", "orf_evidence_grade", "normal_safety_grade", "presentation_grade",
     "independent_evidence_groups", "independent_rna_sources", "independent_translation_generators",
+    "rna_driven_chain_status", "dna_causal_chain_status", "normal_background_chain_status",
+    "translation_consensus_level", "independent_peptide_generators",
     "event_consensus_status", "orf_consensus_status", "normal_background_status",
     "final_evidence_tier", "priority_cap", "consensus_reason", "hard_fail_codes", "cap_codes",
 ]
@@ -116,14 +180,24 @@ OUTPUT_FILENAMES = {
     "orfs": "splice_orfs.tsv",
     "peptide_origins": "splice_peptide_origins.tsv",
     "peptide_origin_links": "splice_peptide_origin_links.tsv",
+    "variants": "splice_variants.tsv",
+    "causal_links": "splice_causal_links.tsv",
+    "sequence_queries": "splice_sequence_queries.tsv",
+    "targeted_quantification": "splice_targeted_quantification.tsv",
+    "pvacsplice_predictions": "splice_pvacsplice_predictions.tsv",
     "presentation": "splice_pvacbind_predictions.tsv",
     "normal_background": "splice_normal_background.tsv",
     "tool_evidence": "splice_tool_evidence.long.tsv",
+    "evidence_chains": "splice_evidence_chains.tsv",
     "consensus": "splice_consensus.tsv",
     "conflicts": "splice_conflicts.tsv",
     "qc": "splice_qc.tsv",
     "pvacbind_fasta": "splice_pvacbind_input.fasta",
     "pvacbind_fasta_map": "splice_pvacbind_fasta_map.tsv",
+    "easyquant_input": "splice_easyquant_input.tsv",
+    "easyquant_query_map": "splice_easyquant_query_map.tsv",
+    "k4neo_input": "splice_k4neo_input.tsv",
+    "k4neo_query_map": "splice_k4neo_query_map.tsv",
     "raw_events": "raw_events.tsv",
     "raw_peptides": "raw_peptides.tsv",
     "rna_junction_evidence": "rna_junction_evidence.tsv",
@@ -138,11 +212,19 @@ TABLE_FIELDS = {
     "orfs": ORF_FIELDS,
     "peptide_origins": PEPTIDE_ORIGIN_FIELDS,
     "peptide_origin_links": PEPTIDE_ORIGIN_LINK_FIELDS,
+    "variants": VARIANT_FIELDS,
+    "causal_links": CAUSAL_LINK_FIELDS,
+    "sequence_queries": SEQUENCE_QUERY_FIELDS,
+    "targeted_quantification": TARGETED_QUANT_FIELDS,
+    "pvacsplice_predictions": PVACSPLICE_PREDICTION_FIELDS,
     "presentation": PRESENTATION_FIELDS,
     "normal_background": NORMAL_BACKGROUND_FIELDS,
     "tool_evidence": TOOL_EVIDENCE_FIELDS,
+    "evidence_chains": EVIDENCE_CHAIN_FIELDS,
     "consensus": CONSENSUS_FIELDS,
     "conflicts": CONFLICT_FIELDS,
     "qc": QC_FIELDS,
     "pvacbind_fasta_map": PVACBIND_FASTA_MAP_FIELDS,
+    "easyquant_query_map": SEQUENCE_QUERY_FIELDS,
+    "k4neo_query_map": SEQUENCE_QUERY_FIELDS,
 }

@@ -1,4 +1,4 @@
-"""Splice-junction normalization and formal provenance primitives (v0.5.0)."""
+"""Splice-junction normalization and formal provenance primitives (v0.5.1)."""
 
 from .coordinates import (
     CANONICAL_JUNCTION_FIELDS,

@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "neoag-event-pipeline"
-version = "0.5.0"
-description = "Neoantigen event prioritization pipeline with APPM 2.0, CCF 2.1, safety, immune-escape, and DNA SV-derived neoantigen P0 evidence layers"
+version = "0.5.1"
+description = "Neoantigen event prioritization pipeline with formal splice provenance and RNA-driven, DNA-causal, and normal-background evidence chains"
 readme = "README.md"
 requires-python = ">=3.11"
 authors = [{name = "OpenAI generated prototype"}]

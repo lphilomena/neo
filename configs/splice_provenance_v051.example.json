@@ -1,0 +1,47 @@
+{
+  "schema_version": "0.5.1",
+  "sample_id": "PATIENT_001",
+  "genome_build": "GRCh38",
+  "disease_profile": "default",
+  "strict": true,
+  "rna_driven": {
+    "junctions": "results/regtools/junctions.tsv",
+    "junction_coordinate_system": "regtools_annotated",
+    "spladder_gff3": ["results/spladder/events.confirmed.gff3"],
+    "irfinder": ["results/irfinder/IRFinder-IR-nondir.txt"],
+    "immunopepper_meta": ["results/immunopepper/peptides_meta.tsv"],
+    "immunopepper_kmers": ["results/immunopepper/graph_kmer_JuncExpr.tsv"],
+    "mopepgen_fasta": ["results/mopepgen/variant_peptides.fasta"],
+    "mopepgen_gvf": ["results/mopepgen/alt_splice.gvf"],
+    "mopepgen_provenance_map": ["results/mopepgen/neoag_provenance_map.tsv"]
+  },
+  "dna_causal": {
+    "splice2neo": ["results/splice2neo/splice2neo_export.tsv"],
+    "easyquant": ["results/easyquant/quantification.tsv"],
+    "easyquant_query_map": "results/splice_v051/phase1_registry/splice_easyquant_query_map.tsv",
+    "pvacsplice": ["results/pvacsplice/MHC_Class_I/PATIENT_001.all_epitopes.tsv"]
+  },
+  "normal_background": {
+    "normal_junctions": ["references/normal_junction_catalog.tsv"],
+    "normal_coverage": ["results/matched_normal/normal_coverage.tsv"],
+    "k4neo_healthy_sample_rate": ["results/k4neo/neoag_healthy_sample_rate_raptor.tsv"],
+    "k4neo_query_map": "results/splice_v051/phase1_registry/splice_k4neo_query_map.tsv",
+    "critical_tissues": ["brain", "heart", "lung", "liver", "kidney", "bone marrow"]
+  },
+  "presentation": {
+    "pvacbind": ["results/pvacbind/MHC_Class_I/PATIENT_001.all_epitopes.tsv"],
+    "pvacbind_fasta_map": "results/splice_v051/pre_pvacbind/splice_pvacbind_fasta_map.tsv"
+  },
+  "tool_versions": {
+    "RegTools": "PINNED_AT_SITE",
+    "SplAdder": "PINNED_AT_SITE",
+    "IRFinder-S": "PINNED_AT_SITE",
+    "ImmunoPepper": "PINNED_COMMIT",
+    "moPepGen": "1.4.6",
+    "splice2neo": "0.6.14",
+    "EasyQuant": "0.6.0",
+    "pVACsplice": "PINNED_AND_REGRESSION_TESTED",
+    "pVACbind": "PINNED_AND_REGRESSION_TESTED",
+    "k4neo": "PINNED_COMMIT_AND_LICENSE_REVIEWED"
+  }
+}

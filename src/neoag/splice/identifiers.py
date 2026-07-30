@@ -1,4 +1,4 @@
-"""Stable identifiers for the v0.5.0 Splice Provenance Layer.
+"""Stable identifiers for the v0.5.1 Splice Provenance Layer.
 
 Identifiers are content-derived and independent of input row order.  The readable
 prefix exposes the entity class while the SHA-256 digest protects against unsafe

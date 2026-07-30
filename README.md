@@ -1208,3 +1208,6 @@ Missing optional tools or normal-background references remain `UNASSESSED` or
 `SAFETY_PARTIAL`; they are never reported as negative evidence.
 
 `plan`, `verify`, and review operations are non-destructive. Installation, repair, execution, and resume require explicit approval. See [docs/OPEN_NEO_MACRO_SKILLS.md](docs/OPEN_NEO_MACRO_SKILLS.md).
+## v0.5.1 three evidence chains
+
+The formal splice layer now supports an RNA-driven ImmunoPepper + moPepGen branch, a DNA-causal splice2neo + EasyQuant + pVACsplice branch, and a separately audited normal-background + k4neo branch. See `README_v0.5.1.md` and `docs/V051_THREE_EVIDENCE_CHAINS.md`.

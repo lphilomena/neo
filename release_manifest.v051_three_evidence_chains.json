@@ -1,0 +1,46 @@
+{
+  "release": "NeoAg Event Pipeline v0.5.1",
+  "schema_version": "0.5.1",
+  "created_at": "2026-07-30T02:06:59.191388+00:00",
+  "base_release": "0.5.0",
+  "capabilities": {
+    "RNA_DRIVEN": [
+      "ImmunoPepper",
+      "moPepGen",
+      "exact peptide vs exact ORF consensus"
+    ],
+    "DNA_CAUSAL": [
+      "splice2neo",
+      "EasyQuant",
+      "pVACsplice",
+      "exact variant-junction-event links"
+    ],
+    "NORMAL_BACKGROUND": [
+      "coverage-aware normal sources",
+      "k4neo sequence-index screening"
+    ]
+  },
+  "matching_policy": {
+    "junction": "build+chrom+1based_closed_intron_start+intron_end+strand",
+    "variant": "build+chrom+1based_position+ref+alt",
+    "easyquant": "exact generated query_id",
+    "k4neo": "exact generated cts_id/query_id",
+    "pvacsplice": "exact variant+strand-aware junction+event",
+    "gene_or_nearest_locus_fallback": false
+  },
+  "tests": {
+    "full": "450 passed; 105 skipped; 0 failed",
+    "splice_regression": "48 passed; 13 skipped; 0 failed",
+    "v051_focused": "11 passed; 0 failed"
+  },
+  "external_binaries_bundled": false,
+  "clinical_validation": false,
+  "source_file_count": 898,
+  "source_checksums": "SOURCE_SHA256SUMS.v051.txt",
+  "key_files": [
+    "README_v0.5.1.md",
+    "docs/V051_THREE_EVIDENCE_CHAINS.md",
+    "resources/splice_provenance_v051.schema.json",
+    "scripts/run_splice_provenance_v051.sh"
+  ]
+}

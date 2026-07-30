@@ -70,7 +70,7 @@ def project_legacy(tables: dict[str, list[dict[str, str]]], *, sample_id: str, d
             "orf_evidence_grade": best.get("orf_evidence_grade", ""),
             "normal_safety_grade": best.get("normal_safety_grade", ""),
             "splice_consensus_tier": best.get("final_evidence_tier", ""),
-            "source": "SpliceProvenanceLayer_v0.5.0",
+            "source": "SpliceProvenanceLayer_v0.5.1",
         }
         raw_events.append(enrich_event_layers(row))
 
