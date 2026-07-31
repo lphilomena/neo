@@ -15,6 +15,9 @@ Options:
   --install-k4neo                Install k4neo source after license review
   --k4neo-ref REF                Required with --install-k4neo
   --k4neo-license-accepted       Explicit acknowledgement
+  --k4neo-env-dir DIR            Dedicated Conda env; default: ENV-k4neo
+  --k4neo-source-dir DIR         Optional complete recursive source checkout
+  --conda PATH                   Conda executable; default: conda
   --python PYTHON                Default: python3
 
 The script records exact versions. splice2neo is installed from its tagged
@@ -23,7 +26,7 @@ continues to use rtracklayer. The script does not download GTEx/TCGA/k4neo indic
 IEDB assets, licensed NetMHC software, or patient data.
 USAGE
 }
-ENV_DIR=""; PY="python3"; MO="1.4.6"; EQ="0.6.0"; PV=""; S2N=0; S2N_REF="v0.6.14"; RSCRIPT="Rscript"; K4=0; K4_REF=""; K4_ACCEPT=0
+ENV_DIR=""; PY="python3"; MO="1.4.6"; EQ="0.6.0"; PV=""; S2N=0; S2N_REF="v0.6.14"; RSCRIPT="Rscript"; K4=0; K4_REF=""; K4_ACCEPT=0; K4_ENV=""; K4_SOURCE=""; CONDA="conda"
 while [[ $# -gt 0 ]]; do
  case "$1" in
   --env-dir) ENV_DIR="$2"; shift 2;; --python) PY="$2"; shift 2;;
@@ -32,11 +35,14 @@ while [[ $# -gt 0 ]]; do
   --splice2neo-ref) S2N_REF="$2"; shift 2;; --rscript) RSCRIPT="$2"; shift 2;;
   --install-k4neo) K4=1; shift;;
   --k4neo-ref) K4_REF="$2"; shift 2;; --k4neo-license-accepted) K4_ACCEPT=1; shift;;
+  --k4neo-env-dir) K4_ENV="$2"; shift 2;; --k4neo-source-dir) K4_SOURCE="$2"; shift 2;;
+  --conda) CONDA="$2"; shift 2;;
   -h|--help) usage; exit 0;; *) echo "ERROR: unknown argument $1" >&2; exit 2;;
  esac
 done
 [[ -n "$ENV_DIR" ]] || { echo "ERROR: --env-dir required" >&2; exit 2; }
 if [[ "$K4" == 1 ]]; then [[ "$K4_ACCEPT" == 1 && -n "$K4_REF" ]] || { echo "ERROR: k4neo requires --k4neo-ref and --k4neo-license-accepted" >&2; exit 2; }; fi
+[[ -n "$K4_ENV" ]] || K4_ENV="${ENV_DIR}-k4neo"
 "$PY" -c 'import sys; assert (3, 10) <= sys.version_info[:2] <= (3, 12), "use Python 3.10-3.12 for pinned moPepGen/EasyQuant wheels"' || exit 3
 "$PY" -m venv "$ENV_DIR"
 # shellcheck disable=SC1091
@@ -61,7 +67,39 @@ if [[ "$S2N" == 1 ]]; then
  trap - EXIT
 fi
 if [[ "$K4" == 1 ]]; then
- python -m pip install "git+https://github.com/TRON-Bioinformatics/k4neo.git@${K4_REF}"
+ command -v "$CONDA" >/dev/null || [[ -x "$CONDA" ]] || { echo "ERROR: Conda is required for k4neo" >&2; exit 3; }
+ if [[ -n "$K4_SOURCE" ]]; then
+  [[ -f "$K4_SOURCE/k4neo.yaml" && -f "$K4_SOURCE/pyproject.toml" ]] || { echo "ERROR: incomplete --k4neo-source-dir" >&2; exit 3; }
+  k4_src="$K4_SOURCE"
+ else
+  command -v git >/dev/null || { echo "ERROR: git is required for k4neo" >&2; exit 3; }
+  k4_src="$(mktemp -d)"
+  git -C "$k4_src" init -q
+  git -C "$k4_src" remote add origin https://github.com/TRON-Bioinformatics/k4neo.git
+  git -C "$k4_src" config extensions.partialClone origin
+  git -C "$k4_src" config remote.origin.promisor true
+  git -C "$k4_src" config remote.origin.partialclonefilter blob:none
+  git -C "$k4_src" -c protocol.version=2 fetch --depth=1 --filter=blob:none origin "$K4_REF"
+  git -C "$k4_src" checkout -q --detach FETCH_HEAD
+  git -C "$k4_src" submodule update --init --recursive --depth=1
+ fi
+ k4_commit="$(git -C "$k4_src" rev-parse HEAD 2>/dev/null || cat "$k4_src/.k4neo_source_commit" 2>/dev/null || printf '%s' "$K4_REF")"
+ k4_submodules="$(git -C "$k4_src" submodule status --recursive 2>/dev/null | tr '\n' ';' || true)"
+ "$CONDA" env create -p "$K4_ENV" -f "$k4_src/k4neo.yaml"
+ (
+  cd "$k4_src"
+  POETRY_VIRTUALENVS_CREATE=false "$K4_ENV/bin/poetry" build --format wheel
+  k4_wheel="$(ls -1t dist/k4neo-*-py3-none-any.whl | head -1)"
+  "$K4_ENV/bin/python" -m pip install "$k4_wheel"
+ )
+ # This deployment profile is local-only. Upstream's unpinned Slurm plugin
+ # currently conflicts with k4neo's pinned pandas/PyYAML requirements.
+ "$K4_ENV/bin/python" -m pip uninstall -y snakemake-executor-plugin-slurm snakemake-executor-plugin-slurm-jobstep || true
+ "$K4_ENV/bin/python" -m pip install 'packaging>=24,<26'
+ "$K4_ENV/bin/python" -m pip check
+ PATH="$K4_ENV/bin:$PATH" k4neo-annotator --help >/dev/null
+ PATH="$K4_ENV/bin:$PATH" raptor --version >/dev/null
+ [[ -n "$K4_SOURCE" ]] || rm -rf "$k4_src"
 fi
 {
  echo "created_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -72,6 +110,9 @@ fi
  echo "splice2neo_ref=$S2N_REF"
  echo "splice2neo_rscript=$RSCRIPT"
  echo "k4neo_ref=$K4_REF"
+ echo "k4neo_commit=${k4_commit:-}"
+ echo "k4neo_submodules=${k4_submodules:-}"
+ echo "k4neo_env=${K4_ENV:-}"
  echo "k4neo_license_acknowledged=$K4_ACCEPT"
 } > "$ENV_DIR/neoag_splice_v051_versions.txt"
 cat "$ENV_DIR/neoag_splice_v051_versions.txt"

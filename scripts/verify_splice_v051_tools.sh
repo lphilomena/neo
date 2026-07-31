@@ -40,7 +40,7 @@ check EasyQuant "$BP_QUANT_BIN" --help
 check pVACsplice "$PVACSPLICE_BIN" --help
 check pVACbind "$PVACBIND_BIN" --help
 K4NEO_BIN="${NEOAG_K4NEO_BIN:-k4neo-annotator}"
-check k4neo "$K4NEO_BIN" --version
+check k4neo "$K4NEO_BIN" --help
 if [[ -x "$RSCRIPT_BIN" ]] || command -v "$RSCRIPT_BIN" >/dev/null 2>&1; then
  value="$("$RSCRIPT_BIN" -e "cat(if (requireNamespace('splice2neo', quietly=TRUE)) as.character(packageVersion('splice2neo')) else 'MISSING')" 2>/dev/null || true)"
  [[ "$value" == "MISSING" || -z "$value" ]] && printf 'splice2neo\tMISSING\t\n' || printf 'splice2neo\tPASS\t%s\n' "$value"
