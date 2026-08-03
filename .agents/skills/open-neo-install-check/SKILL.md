@@ -26,6 +26,10 @@ description: Public macro Skill1 for Open-Neo installation, new-machine migratio
 ## Required input
 
 - `project_root`, or a verified release tarball supplied by the user.
+- Optional `--conda-base DIR` / `NEOAG_CONDA_BASE`: an existing
+  site-managed Conda or Miniforge root, including a NAS path. When supplied,
+  the Skill uses that installation and does not search for or install another
+  Miniconda/Miniforge.
 
 ## Procedure
 
@@ -50,6 +54,19 @@ When neither option is supplied, the project defaults to
 is used only by approved `install`, `repair`, or `resume` execution; `plan` and
 `verify` do not connect to the server. Override it with explicit CLI options or
 `OPEN_NEO_ASSET_SOURCE_HOST` and `OPEN_NEO_ASSET_SOURCE_ROOT`.
+
+For a NAS-managed Conda installation, use:
+
+```bash
+open-neo install-check \
+  --project-root . \
+  --mode verify \
+  --conda-base /nas/path/to/miniforge3 \
+  --outdir work/install-check
+```
+
+The selected path is propagated to the portable installer as `--conda-base`
+and recorded in `manifests/paths.env`.
 
 ## Reproducible derived assets
 

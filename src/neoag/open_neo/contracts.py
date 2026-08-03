@@ -93,6 +93,7 @@ class MacroInput:
 class InstallCheckInput(MacroInput):
     project_root: str = "."
     release_tarball: str = ""
+    conda_base: str = ""
     deployment_tier: str = "review"
     mode: str = "plan"
     approved: bool = False

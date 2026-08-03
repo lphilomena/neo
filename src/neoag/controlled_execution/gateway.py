@@ -105,7 +105,7 @@ ROUTE_SPECS: dict[str, RouteSpec] = {
     "/open/install-check": RouteSpec(
         route="/open/install-check",
         risk_level="LOW",
-        optional=("outdir", "case_id", "project_root", "release_tarball", "sha256", "deployment_tier", "mode", "tools_manifest", "reference_manifest", "sample_manifest", "profile", "run_demo", "run_pytest", "run_nextflow", "mini_smoke", "release_audit", "approved", "deploy_root", "tools_root", "reference_root", "licensed_root", "asset_source_host", "asset_source_root", "asset_manifest", "deployment_reference_manifest", "install_timeout", "allow_download", "installer_profile", "no_sync_assets"),
+        optional=("outdir", "case_id", "project_root", "release_tarball", "sha256", "deployment_tier", "mode", "tools_manifest", "reference_manifest", "sample_manifest", "profile", "run_demo", "run_pytest", "run_nextflow", "mini_smoke", "release_audit", "approved", "deploy_root", "tools_root", "reference_root", "licensed_root", "conda_base", "asset_source_host", "asset_source_root", "asset_manifest", "deployment_reference_manifest", "install_timeout", "allow_download", "installer_profile", "no_sync_assets"),
         description="Open-Neo public macro Skill1.",
     ),
     "/open/run": RouteSpec(

@@ -436,6 +436,7 @@ references:
             f"export OPEN_NEO_TOOLS_ROOT={shlex.quote(str(tools_root))}",
             f"export OPEN_NEO_REFERENCE_ROOT={shlex.quote(str(reference_root))}",
             f"export OPEN_NEO_LICENSED_ROOT={shlex.quote(str(licensed_root))}",
+            *([f"export NEOAG_CONDA_BASE={shlex.quote(str(args['conda_base']))}"] if args.get("conda_base") else []),
             "",
         ]),
         encoding="utf-8",
@@ -579,6 +580,9 @@ def _deployment_command(args: dict[str, Any], project_root: Path, layout: RunLay
         "--outdir", str(layout.root / "deployment"),
         "--" + installer_profile,
     ]
+    conda_base = args.get("conda_base") or os.environ.get("NEOAG_CONDA_BASE", "")
+    if conda_base:
+        command += ["--conda-base", str(conda_base)]
     asset_manifest = args.get("asset_manifest")
     deployment_reference_manifest = args.get("deployment_reference_manifest") or args.get("reference_manifest")
     if asset_manifest:

@@ -61,6 +61,10 @@ def build_parser() -> argparse.ArgumentParser:
     install.add_argument("--tools-manifest")
     install.add_argument("--reference-manifest")
     install.add_argument("--sample-manifest")
+    install.add_argument(
+        "--conda-base",
+        help="Existing Conda/Miniforge root; use this NAS/site installation instead of auto-installing Miniforge",
+    )
     install.add_argument("--profile", default="local")
     install.add_argument("--run-demo", action="store_true")
     install.add_argument("--run-pytest", action="store_true")
