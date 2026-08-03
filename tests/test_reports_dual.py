@@ -42,6 +42,36 @@ def test_patient_report_is_plain_language(tmp_path):
     assert "netmhcpan.xls" not in text
     assert "fastq" not in text.lower()
     assert "移码变异" not in text or "点突变" in text
+    assert "重点变异事件（按类型、按事件去重）" in text
+    assert "候选肽段Top 10" in text
+    assert "附录A：R1–R4证据分层" in text
+    assert "附录B：术语说明" in text
+    assert "附件与可追溯文件" in text
+    assert "缺失证据统一视为未评估" in text
+    assert "DQA1/DQB1" not in text
+    assert "EWSR1::WT1" not in text
+
+
+def test_patient_report_has_track_top5_when_present(tmp_path):
+    bundle = _bundle()
+    bundle.peptides.extend([
+        {
+            "peptide_id": "P2", "event_id": "FUS1", "gene": "GENE1::GENE2",
+            "peptide": "BBBBBBBBB", "hla_allele": "HLA-B*07:02", "event_type": "Fusion",
+            "pipeline_r_grade": "R3", "rna_support_status": "RNA_JUNCTION_SUPPORTED",
+        },
+        {
+            "peptide_id": "P3", "event_id": "SPL1", "gene": "GENE3",
+            "peptide": "CCCCCCCCC", "hla_allele": "HLA-C*07:02", "event_type": "Splice",
+            "pipeline_r_grade": "R2", "rna_support_status": "RNA_JUNCTION_SUPPORTED",
+        },
+    ])
+    out = tmp_path / "patient_tracks.html"
+    make_patient_report(out, bundle)
+    text = out.read_text(encoding="utf-8")
+    assert "Fusion Top 5" in text
+    assert "Splice Top 5" in text
+    assert "GENE1::GENE2" in text
 
 
 def test_technical_report_has_provenance_and_thresholds(tmp_path):

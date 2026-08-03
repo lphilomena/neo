@@ -328,7 +328,7 @@ def _patient_cancer_context(row: Mapping[str, Any]) -> str:
     return "未评估"
 
 
-def make_patient_report(path: str | Path, bundle: ReportBundle) -> None:
+def _make_patient_report_legacy(path: str | Path, bundle: ReportBundle) -> None:
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
     val_map = _val_by_peptide(bundle.validation_rows)
@@ -659,6 +659,275 @@ def make_patient_report(path: str | Path, bundle: ReportBundle) -> None:
     out.append("<li>本报告<strong>不包含</strong>原始测序质控、文件路径或生信命令细节；技术细节见科研技术版报告。</li>")
     out.append("<li>不得将本报告直接用于患者诊断、预后判断或个体化治疗处方。</li>")
     out.append("</ul></div>")
+    out.append("</body></html>")
+    p.write_text("\n".join(out), encoding="utf-8")
+
+
+R_GRADE_PATIENT = {
+    "R1": ("第一批实验优先", "关键证据较完整，可优先进入研究性实验验证。"),
+    "R2": ("值得推进", "总体证据较好，但仍有一项或少量谨慎因素需要补充。"),
+    "R3": ("优先补证据", "先补 RNA、事件真实性、安全性或呈递证据，再决定是否进入免疫学实验。"),
+    "R4": ("当前暂不推进", "存在硬失败、明确风险、证据明显不足或呈递一致弱等原因。"),
+}
+
+
+def _patient_grade(row: Mapping[str, Any]) -> str:
+    for key in ("pipeline_r_grade", "evidence_grade", "r_grade", "final_priority"):
+        value = str(row.get(key) or "").strip().upper()
+        if value:
+            return value
+    return "UNASSESSED"
+
+
+def _patient_track(row: Mapping[str, Any]) -> str:
+    text = " ".join(str(row.get(key) or "") for key in (
+        "event_type", "mutation_source", "peptide_consequence", "source_type", "event_kind"
+    )).lower()
+    if "fusion" in text:
+        return "Fusion"
+    if "splice" in text or "junction" in text or "exon" in text:
+        return "Splice"
+    if "sv" in text or "structural" in text:
+        return "DNA SV"
+    if any(token in text for token in ("indel", "frameshift", "insertion", "deletion")):
+        return "InDel"
+    if any(token in text for token in ("snv", "missense", "substitution")):
+        return "SNV"
+    return "Other"
+
+
+def _patient_representatives(rows: list[dict[str, str]], limit: int, track: str | None = None) -> list[dict[str, str]]:
+    selected: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for row in rows:
+        if track and _patient_track(row) != track:
+            continue
+        event_id = str(row.get("event_id") or row.get("event_name") or row.get("peptide_id") or "")
+        key = event_id or f"{row.get('gene', '')}|{row.get('peptide', '')}"
+        if key in seen:
+            continue
+        seen.add(key)
+        selected.append(row)
+        if len(selected) >= limit:
+            break
+    return selected
+
+
+def _patient_evidence_summary(row: Mapping[str, Any]) -> str:
+    evidence: list[str] = []
+    if str(row.get("rna_support_status") or "") in {"RNA_ALT_SUPPORTED", "RNA_JUNCTION_SUPPORTED", "RNA_CONFIRMED"}:
+        evidence.append("RNA支持")
+    if str(row.get("cross_platform_status") or "") == "CROSS_PLATFORM_PASS_CONCORDANT":
+        evidence.append("DNA跨平台一致")
+    presentation = str(row.get("presentation_consensus_state") or row.get("presentation_evidence_grade") or "")
+    if presentation:
+        evidence.append(f"呈递证据 {presentation}")
+    specificity = str(row.get("mutant_specificity_status") or row.get("mutant_specificity_state") or "")
+    if specificity:
+        evidence.append(f"MT/WT {specificity}")
+    source_chain = str(row.get("source_chain_confidence_tier") or "")
+    if source_chain:
+        evidence.append(f"来源链 {source_chain}")
+    return "；".join(evidence) if evidence else "现有证据尚未完整归一化"
+
+
+def _patient_limitation(row: Mapping[str, Any]) -> str:
+    reasons = str(row.get("hard_failure_codes") or row.get("priority_cap_reason_codes") or row.get("reason_codes") or "")
+    if reasons:
+        return reasons.replace("|", "；")
+    missing: list[str] = []
+    if str(row.get("rna_support_status") or "") in {"", "UNASSESSED", "RNA_ONLY_UNRESOLVED"}:
+        missing.append("RNA证据未评估")
+    if str(row.get("safety_status") or "") in {"", "UNASSESSED", "SAFETY_PARTIAL"}:
+        missing.append("安全性证据不完整")
+    if str(row.get("hla_loh_status") or row.get("escape_status") or "") in {"", "UNASSESSED"}:
+        missing.append("HLA LOH未完整评估")
+    return "；".join(missing) if missing else "未见明确限制；仍需实验验证"
+
+
+def _patient_validation(row: Mapping[str, Any], val_map: Mapping[str, Mapping[str, str]]) -> str:
+    val = val_map.get(str(row.get("peptide_id") or ""), {})
+    explicit = str(val.get("validation_strategy") or val.get("recommended_assay") or row.get("recommended_validation") or row.get("recommended_use") or "")
+    if explicit:
+        return explicit
+    track = _patient_track(row)
+    if track == "SNV":
+        return "MT/WT成对短肽与ELISpot/多聚体"
+    if track == "InDel":
+        return "新生尾部长肽或minigene"
+    if track == "Fusion":
+        return "RT-PCR/Sanger确认断点，再做融合junction长肽或minigene"
+    if track == "Splice":
+        return "targeted RNA确认junction，再做异常junction长肽或minigene"
+    return "先确认事件真实性，再设计功能实验"
+
+
+def _patient_hla_rows(peptides: list[dict[str, str]]) -> list[dict[str, str]]:
+    loci: dict[str, list[str]] = {"A": [], "B": [], "C": []}
+    for row in peptides:
+        allele = str(row.get("hla_allele") or "").replace("HLA-", "")
+        locus = allele.split("*", 1)[0]
+        if locus in loci and allele and allele not in loci[locus]:
+            loci[locus].append(allele)
+    return [{"位点": key, "推荐等位基因": " / ".join(values[:2]) if values else "未评估", "用途": "限制性HLA-I呈递背景"} for key, values in loci.items()]
+
+
+def _patient_appm_rows(bundle: ReportBundle) -> list[dict[str, str]]:
+    summary = bundle.appm_summary
+    dimensions = [
+        ("MHC-I核心", "mhc_i_integrity_status"),
+        ("MHC-II背景", "mhc_ii_integrity_status"),
+        ("IFNG/JAK-STAT", "ifng_response_status"),
+        ("APPM证据完整度", "appm_evidence_completeness"),
+    ]
+    rows = []
+    for label, key in dimensions:
+        status = str(summary.get(key) or "UNASSESSED")
+        rows.append({"维度": label, "结果": status, "通俗解释": "未评估不等于正常或阴性" if status == "UNASSESSED" else "用于判断抗原加工呈递条件，不能单独预测临床疗效"})
+    lost = sorted({str(row.get("hla_allele") or row.get("allele") or "") for row in bundle.peptide_escape_flags if str(row.get("restricting_hla_lost") or "").lower() in {"yes", "true", "1"}})
+    rows.append({"维度": "限制性HLA-I LOH", "结果": "LOST: " + ", ".join(lost) if lost else "未见影响当前候选或未评估", "通俗解释": "仅HLA-A/B/C丢失可直接影响相应HLA-I候选"})
+    return rows
+
+
+def _patient_tool_rows(provenance: Mapping[str, Any]) -> list[dict[str, str]]:
+    tools = provenance.get("tools") or {}
+    rows: list[dict[str, str]] = []
+    if isinstance(tools, Mapping):
+        for name, record in tools.items():
+            if not isinstance(record, Mapping):
+                continue
+            rows.append({"流程/工具": str(name), "版本": str(record.get("version") or "未记录"), "状态": str(record.get("status") or "未评估"), "作用": str(record.get("purpose") or record.get("mode") or "证据生成")})
+    return rows
+
+
+def make_patient_report(path: str | Path, bundle: ReportBundle) -> None:
+    """Write the template-aligned, sample-agnostic patient HTML report."""
+    p = Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    val_map = _val_by_peptide(bundle.validation_rows)
+    ranked = list(bundle.peptides)
+    top = _patient_representatives(ranked, 10)
+    grade_counts: dict[str, int] = {}
+    for row in ranked:
+        grade = _patient_grade(row)
+        grade_counts[grade] = grade_counts.get(grade, 0) + 1
+    track_counts: dict[str, int] = {}
+    event_seen: set[str] = set()
+    for row in bundle.events or ranked:
+        event_id = str(row.get("event_id") or row.get("event_name") or row.get("peptide_id") or "")
+        if event_id and event_id in event_seen:
+            continue
+        if event_id:
+            event_seen.add(event_id)
+        track = _patient_track(row)
+        track_counts[track] = track_counts.get(track, 0) + 1
+
+    out = [
+        "<!doctype html><html><head><meta charset='utf-8'>",
+        f"<title>肿瘤新抗原筛选报告—{esc(bundle.sample_id)}</title>", REPORT_CSS,
+        "</head><body class='patient'><h1>肿瘤新抗原筛选报告</h1><p class='small'>患者沟通版</p>",
+        "<div class='info'><b>阅读提示：</b>本报告先给出结论与候选分层，再说明样本、HLA、变异、肽段和验证建议。"
+        "R1–R4是研究性证据等级，不是疗效等级。</div>",
+        "<div class='warn'><b>重要说明：</b>本报告为研究性计算筛选，不能替代临床诊断或治疗决策。预测候选不等于体内真实呈递、不等于T细胞能够识别，也不等于确定治疗方案；所有候选均需进一步实验和临床专业判断。</div>",
+    ]
+
+    out.append("<div class='section'><h2>1. 报告摘要</h2>")
+    summary = [
+        {"项目": "样本编号", "结果": bundle.sample_id or "未注明", "说明": "以运行清单为准"},
+        {"项目": "分析入口", "结果": bundle.entry_mode or "未注明", "说明": "可能为VCF、融合、剪接或联合入口"},
+        {"项目": "独立事件", "结果": str(len(event_seen) or len(bundle.events)), "说明": "按event_id去重"},
+        {"项目": "肽段-HLA组合", "结果": str(len(ranked)), "说明": "同一事件可产生多个组合"},
+        {"项目": "评分配置", "结果": str(bundle.profile.get("_profile_name") or "未记录"), "说明": "研究性规则版本"},
+    ]
+    out.append(_table(summary, ["项目", "结果", "说明"]))
+    grade_rows = [{"等级": grade, "数量": count, "含义": R_GRADE_PATIENT.get(grade, ("旧版/其他分层", "见技术报告"))[0], "下一步": R_GRADE_PATIENT.get(grade, ("复核", "按证据缺口处理"))[1]} for grade, count in sorted(grade_counts.items())]
+    out.append("<h3>关键结论与R1–R4分层</h3>" + _table(grade_rows, ["等级", "数量", "含义", "下一步"]))
+    out.append("<p>候选选择同时考虑事件真实性、RNA支持、HLA呈递、MT/WT突变特异性、克隆性、HLA/APPM和安全性；缺失证据统一视为未评估，不作为阴性结论。</p></div>")
+
+    out.append("<div class='section'><h2>2. 患者样本与测序数据</h2>")
+    qc_rows = [
+        {"项目": "肿瘤/正常配对", "结果": str(bundle.provenance.get("pairing_status") or "未评估"), "解释": "需由样本清单和指纹核验"},
+        {"项目": "肿瘤纯度/倍性", "结果": str(bundle.provenance.get("purity_ploidy") or "未评估"), "解释": "用于CNV、CCF和LOH解释"},
+        {"项目": "肿瘤DNA深度", "结果": str(bundle.provenance.get("tumor_dna_depth") or "未评估"), "解释": "低深度会降低变异检出能力"},
+        {"项目": "正常DNA深度", "结果": str(bundle.provenance.get("normal_dna_depth") or "未评估"), "解释": "用于排除胚系和正常支持"},
+        {"项目": "RNA质量/覆盖", "结果": str(bundle.provenance.get("rna_qc_status") or "未评估"), "解释": "决定RNA未检出的解释强度"},
+        {"项目": "参考版本", "结果": str(bundle.provenance.get("genome_build") or "未记录"), "解释": "FASTA、GTF、VEP和坐标必须一致"},
+    ]
+    out.append(_table(qc_rows, ["项目", "结果", "解释"]))
+    out.append("<p class='small'>未提供的QC项目保持“未评估”，不会自动写成正常。</p></div>")
+
+    out.append("<div class='section'><h2>3. HLA分型与抗原呈递条件</h2>")
+    out.append("<h3>推荐HLA-I背景</h3>" + _table(_patient_hla_rows(ranked), ["位点", "推荐等位基因", "用途"]))
+    out.append("<h3>抗原加工呈递与免疫逃逸</h3>" + _table(_patient_appm_rows(bundle), ["维度", "结果", "通俗解释"]))
+    out.append("<p>这些结果说明候选是否具备被加工和呈递的条件，但不能单独判断免疫治疗敏感、耐药或患者获益。</p></div>")
+
+    out.append("<div class='section'><h2>4. 重点变异事件（按类型、按事件去重）</h2>")
+    overall = [{"事件类型": track, "事件数": count, "主要复核重点": {"SNV": "DNA深度/VAF、RNA alt、MT/WT", "InDel": "局部重比对、阅读框、NMD和phasing", "Fusion": "精确断点、junction reads、frame和正常read-through", "Splice": "精确junction、PSI/reads、正常isoform和ORF", "DNA SV": "断点与异常转录本"}.get(track, "事件真实性和证据完整性")} for track, count in sorted(track_counts.items())]
+    out.append(_table(overall, ["事件类型", "事件数", "主要复核重点"]))
+    for track in ("SNV", "InDel", "Fusion", "Splice", "DNA SV"):
+        representatives = _patient_representatives(ranked, 5, track)
+        if not representatives:
+            continue
+        rows = []
+        for rank, row in enumerate(representatives, 1):
+            rows.append({"排名": rank, "基因/事件": row.get("gene") or row.get("event_name") or row.get("event_id", ""), "改变": _patient_event_change(row), "来源链": row.get("source_chain_confidence_tier", "未评估"), "R等级": _patient_grade(row), "关键证据": _patient_evidence_summary(row), "主要限制": _patient_limitation(row)})
+        out.append(f"<h3>{esc(track)} Top 5</h3>" + _table(rows, ["排名", "基因/事件", "改变", "来源链", "R等级", "关键证据", "主要限制"]))
+    out.append("<p class='small'>不同事件赛道的证据结构不同，Top5用于赛道内审阅，不应仅凭序号直接跨赛道比较。</p></div>")
+
+    out.append("<div class='section'><h2>5. 候选肽段Top 10（跨赛道、按事件去重）</h2>")
+    peptide_rows = []
+    for rank, row in enumerate(top, 1):
+        peptide_rows.append({"排名": rank, "基因": row.get("gene", ""), "类型": _patient_track(row), "肽段-HLA": f"{row.get('peptide', '')} / {row.get('hla_allele', '')}", "等级": _patient_grade(row), "关键证据": _patient_evidence_summary(row), "主要限制": _patient_limitation(row), "建议实验": _patient_validation(row, val_map), "审阅状态": row.get("review_status", "待实验复核")})
+    out.append(_table(peptide_rows, ["排名", "基因", "类型", "肽段-HLA", "等级", "关键证据", "主要限制", "建议实验", "审阅状态"]))
+    out.append("<p class='small'>排序顺序为：R1–R4证据等级 → 同赛道Pareto排序 → 确定性tie-break → 事件去重。旧版weighted baseline仅作为并行比较，不覆盖证据共识结论。</p></div>")
+
+    out.append("<div class='section'><h2>6. Top候选解读与实验建议</h2>")
+    interpretation_rows = []
+    for row in top[:5]:
+        interpretation_rows.append({"候选": f"{row.get('gene', '')} | {row.get('peptide', '')} | {row.get('hla_allele', '')}", "为什么值得关注": _patient_evidence_summary(row), "当前不确定性": _patient_limitation(row), "建议下一步": _patient_validation(row, val_map)})
+    out.append(_table(interpretation_rows, ["候选", "为什么值得关注", "当前不确定性", "建议下一步"]))
+    out.append("<ol><li>先确认事件和异常转录本真实性；</li><li>再补RNA alt/VAF或精确junction证据；</li><li>完成MT/WT、正常背景和限制性HLA复核；</li><li>最后开展短肽、长肽、minigene及T细胞功能实验。</li></ol></div>")
+
+    out.append("<div class='section'><h2>7. 分析方法与工具状态</h2>")
+    method_rows = [
+        {"阶段": "事件输入与质控", "方法": "VCF/Fusion/Splice/SV标准化与来源链检查", "状态": "按当前输入执行"},
+        {"阶段": "肽段构建", "方法": "SNV MT/WT；InDel novel tail；Fusion/Splice精确junction ORF", "状态": "无可追溯ORF时不形成高等级证据"},
+        {"阶段": "呈递预测", "方法": "核心结合/呈递、稳定性和免疫原性样模型分组汇总", "状态": "工具缺失记为UNASSESSED"},
+        {"阶段": "综合排序", "方法": "证据状态、hard fail、priority cap、R1–R4、Pareto和事件去重", "状态": "研究性规则"},
+    ]
+    out.append(_table(method_rows, ["阶段", "方法", "状态"]))
+    tool_rows = _patient_tool_rows(bundle.provenance)
+    if tool_rows:
+        out.append("<h3>运行工具</h3>" + _table(tool_rows, ["流程/工具", "版本", "状态", "作用"]))
+    out.append("</div>")
+
+    out.append("<div class='section'><h2>8. 局限性与总体结论</h2><ul>")
+    out.append("<li>DNA/RNA覆盖不足时的未检出属于低检出能力或未评估，不是阴性。</li><li>计算呈递不等于体内真实呈递，体内呈递也不等于T细胞能够识别。</li><li>正常表达、HSPC、正常蛋白组、正常ligandome和正常junction不完整时，安全性必须标记为PARTIAL。</li><li>患者版不输出用药建议、疗效承诺或已确认新抗原结论。</li></ul>")
+    out.append("<p><b>总体结论：</b>本次结果提供了可追溯的研究候选和分层验证顺序。应优先围绕事件真实性、RNA支持、MT/WT特异性、HLA/APPM和正常背景补证，再决定首批实验集合。</p></div>")
+
+    grade_rows = [{"等级": grade, "定义": value[0], "核心要求/处理": value[1]} for grade, value in R_GRADE_PATIENT.items()]
+    out.append("<div class='section'><h2>附录A：R1–R4证据分层</h2>" + _table(grade_rows, ["等级", "定义", "核心要求/处理"]) + "</div>")
+    glossary = [
+        {"术语": "HLA", "通俗解释": "细胞表面的‘展示架’，把肽段展示给T细胞。"},
+        {"术语": "APPM", "通俗解释": "抗原从蛋白被切割、运输到HLA展示的一整套加工呈递机制。"},
+        {"术语": "LOH", "通俗解释": "某个HLA等位基因在肿瘤中丢失，可能使受它限制的候选无法呈递。"},
+        {"术语": "MT/WT", "通俗解释": "突变肽与正常肽成对比较，用于判断候选是否真正具有突变特异性。"},
+        {"术语": "CCF", "通俗解释": "估计携带该事件的肿瘤细胞比例；低可信结果不能当作精确比例。"},
+        {"术语": "RNA alt reads / RNA VAF", "通俗解释": "直接支持突变转录本的RNA reads及其比例，比仅有gene TPM更接近突变表达证据。"},
+        {"术语": "junction reads", "通俗解释": "跨越融合或异常剪接连接点的reads，必须精确对应同一junction。"},
+        {"术语": "来源链 C1–C4", "通俗解释": "评价事件到转录本、ORF和肽段是否可追溯；与最终R1–R4推荐等级不同。"},
+        {"术语": "Pareto排序", "通俗解释": "在多个证据维度间保留没有被全面压倒的候选，避免单一总分掩盖重要短板。"},
+    ]
+    out.append("<div class='section'><h2>附录B：术语说明</h2>" + _table(glossary, ["术语", "通俗解释"]) + "</div>")
+    trace_rows = [
+        {"文件": "运行与来源清单", "用途": "记录输入、参考、工具版本和运行身份"},
+        {"文件": "全部工具证据表", "用途": "所有工具证据的统一可追溯表"},
+        {"文件": "事件级候选排序表", "用途": "按事件去重的研究候选排序"},
+        {"文件": "肽段-HLA候选排序表", "用途": "肽段-HLA级研究候选排序"},
+        {"文件": "实验验证计划", "用途": "短肽、长肽、minigene和targeted RNA建议"},
+        {"文件": "证据冲突清单", "用途": "来源字段冲突和复核原因"},
+    ]
+    out.append("<div class='section'><h2>附录C：附件与可追溯文件</h2>" + _table(trace_rows, ["文件", "用途"]) + "<p class='small'>患者版仅列逻辑文件名，不展示服务器绝对路径；实际位置和校验和见技术报告与run manifest。</p></div>")
     out.append("</body></html>")
     p.write_text("\n".join(out), encoding="utf-8")
 

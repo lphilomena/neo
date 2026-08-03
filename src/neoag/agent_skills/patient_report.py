@@ -13,8 +13,22 @@ def load_top_candidates(path: str | None, n: int = 20) -> tuple[list[dict[str, s
     p_counts = dict(count_by(rows, "final_priority"))
     event_counts = dict(count_by(rows, "event_type"))
     top = []
-    for r in rows[:n]:
-        top.append({"priority": r.get("final_priority", ""), "gene": r.get("gene", ""), "peptide": r.get("peptide", ""), "hla": r.get("hla_allele", ""), "type": r.get("event_type", ""), "use": r.get("recommended_use", "")[:120]})
+    seen_events: set[str] = set()
+    for r in rows:
+        event_id = r.get("event_id") or r.get("peptide_id") or ""
+        if event_id in seen_events:
+            continue
+        seen_events.add(event_id)
+        top.append({
+            "grade": r.get("pipeline_r_grade") or r.get("evidence_grade") or r.get("final_priority", ""),
+            "gene": r.get("gene", ""), "peptide": r.get("peptide", ""),
+            "hla": r.get("hla_allele", ""), "type": r.get("event_type", ""),
+            "evidence": r.get("evidence_rank_key") or r.get("rna_support_status", ""),
+            "limitation": r.get("hard_failure_codes") or r.get("priority_cap_reason_codes") or "待实验验证",
+            "use": (r.get("recommended_validation") or r.get("recommended_use", ""))[:160],
+        })
+        if len(top) >= n:
+            break
     return top, p_counts, event_counts
 
 
@@ -26,11 +40,28 @@ def write_docx_if_available(path: Path, title: str, sections: list[tuple[str, st
         return False
     doc = Document()
     doc.add_heading(title, 0)
+    doc.add_paragraph("研究性计算筛选结果；不构成临床诊断、治疗建议或疗效承诺。")
     for heading, body in sections:
         doc.add_heading(heading, level=1)
-        for para in body.split("\n"):
-            if para.strip():
-                doc.add_paragraph(para.strip())
+        lines = [line for line in body.split("\n") if line.strip()]
+        table_lines = [line for line in lines if line.strip().startswith("|")]
+        if len(table_lines) >= 2:
+            headers = [cell.strip() for cell in table_lines[0].strip("|").split("|")]
+            table = doc.add_table(rows=1, cols=len(headers))
+            table.style = "Table Grid"
+            for index, header in enumerate(headers):
+                table.rows[0].cells[index].text = header
+            for line in table_lines[2:]:
+                values = [cell.strip() for cell in line.strip("|").split("|")]
+                cells = table.add_row().cells
+                for index, value in enumerate(values[:len(headers)]):
+                    cells[index].text = value
+            for line in lines:
+                if line not in table_lines:
+                    doc.add_paragraph(line.strip())
+        else:
+            for line in lines:
+                doc.add_paragraph(line.strip())
     doc.save(path)
     return True
 
@@ -63,15 +94,21 @@ def main(argv: list[str] | None = None) -> int:
         if k in html_summary:
             appm_bits.append(f"{k}: {html_summary[k]}")
     appm_text = "；".join(appm_bits) if appm_bits else "未提供完整 APPM evidence report。"
-    top_md = markdown_table(top, ["priority", "gene", "peptide", "hla", "type", "use"], max_rows=20)
+    top_md = markdown_table(top, ["grade", "gene", "type", "peptide", "hla", "evidence", "limitation", "use"], max_rows=10)
 
     sections = []
-    sections.append(("重要说明", "本报告是基于测序数据和计算模型形成的研究性分析，用于候选靶点筛选和后续实验设计参考。报告中的候选新抗原不等同于已经验证的新抗原，也不等同于已经确定的治疗方案。最终是否用于个体化疫苗或 T 细胞相关治疗，需要结合 RNA 表达复核、HLA LOH、APPM、ELISpot、minigene 或 long peptide 等验证，以及临床医生综合判断。"))
-    sections.append(("本次综合结果", f"{unique_summary}\n综合推荐分级为：{priority_text}。A/B/C/D 级表示实验验证优先级，不是临床疗效等级。"))
-    sections.append(("APPM 与免疫逃逸", f"{appm_text}\n这表示当前没有发现足以直接推翻 MHC-I 候选的强免疫逃逸证据；但如果 evidence completeness 为 PARTIAL，应理解为证据仍不完整，而不是完全证明抗原呈递系统正常。"))
-    sections.append(("候选肽段分层", "B 级候选可作为优先验证对象；C 级中 RNA 支持较强或生物学意义明确者也可进入验证池；C_CAUTION 候选需要 WT peptide、normal proteome/ligandome 或安全性复核；D 级一般不优先推进，但 KRAS、TP53、EWSR1::WT1 等机制重要事件仍可人工审阅。"))
-    sections.append(("Top 候选示例", top_md))
-    sections.append(("后续验证建议", "SNV 错义候选可先做 mutant short peptide + WT peptide 对照的 ELISpot 或 T 细胞激活检测；frameshift、fusion、splice/exon junction 类候选更建议 targeted RNA、long peptide 或 minigene 验证；第一批实验建议选择 10–20 个候选，而不是一次性推进所有非 D 候选。"))
+    sections.append(("阅读提示与重要说明", "本报告是基于测序数据和计算模型形成的研究性分析。计算候选不等于体内真实呈递、不等于T细胞能够识别，也不等于确定治疗方案。缺失证据按UNASSESSED/PARTIAL处理，不能解释为阴性。"))
+    sections.append(("1. 报告摘要", f"{unique_summary}\n综合推荐分级为：{priority_text}。R1–R4或旧版A–D均表示研究验证优先级，不是临床疗效等级。"))
+    sections.append(("2. 患者样本与测序数据", "样本配对、肿瘤/正常DNA深度、肿瘤纯度/倍性、RNA质量和参考版本应从run manifest读取；未提供项目保持未评估。"))
+    sections.append(("3. HLA分型与抗原呈递条件", f"{appm_text}\nAPPM、HLA LOH和IFNG/JAK-STAT用于解释呈递条件，不能单独判断免疫治疗敏感、耐药或患者获益。"))
+    sections.append(("4. 重点变异事件", "应按SNV、InDel、Fusion、Splice和DNA SV分别统计总体情况，并在每个赛道内按event_id去重展示Top5；不同赛道不按单一数值直接比较。"))
+    sections.append(("5. 候选肽段Top10（按事件去重）", top_md))
+    sections.append(("6. Top候选解读与实验建议", "SNV采用MT/WT成对短肽；InDel/frameshift采用novel-tail长肽或minigene；Fusion先做RT-PCR/Sanger断点确认；Splice先做targeted RNA精确junction确认，再进入长肽/minigene和T细胞功能实验。"))
+    sections.append(("7. 分析方法", "事件标准化 → 肽段构建 → 呈递预测 → RNA/CCF/HLA-LOH/APPM/安全性证据 → hard fail与priority cap → R1–R4 → 同赛道Pareto → 确定性tie-break → 事件去重。"))
+    sections.append(("8. 局限性与总体结论", "预测结合不等于体内呈递或临床疗效。正常表达、HSPC、正常蛋白组、ligandome和正常junction不完整时，安全性不得写为完全通过。"))
+    sections.append(("附录A：R1–R4证据分层", "R1：关键证据较完整，第一批实验优先。\nR2：值得推进，但有一项或少量谨慎因素。\nR3：优先补RNA、事件真实性、安全性或呈递证据。\nR4：硬失败、明确风险或证据明显不足，当前暂不推进。"))
+    sections.append(("附录B：术语说明", "HLA：细胞表面的肽段展示架。\nMT/WT：突变肽与正常肽的成对比较。\nCCF：估计携带事件的肿瘤细胞比例。\nAPPM：抗原加工与呈递机制。\njunction reads：精确跨越融合或异常剪接连接点的reads。"))
+    sections.append(("附录C：附件与可追溯文件", "run_manifest.json；all_tool_results.tsv；ranked_events.evidence_consensus.tsv；ranked_peptides.evidence_consensus.tsv；ranked_peptides.weighted_baseline.tsv；validation_plan.tsv；evidence_conflicts.tsv。患者版不展示服务器绝对路径。"))
 
     md_lines = [f"# {args.title}", ""]
     for h, b in sections:

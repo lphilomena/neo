@@ -317,12 +317,18 @@ def _write_reports(layout: RunLayout, context: dict[str, Any], review_rows: list
     uncertainties = sum(row["review_status"] == "COMPLETE_EVIDENCE" for row in review_rows)
     outputs: dict[str, str] = {}
     patient_sections = [
-        ("样本与分析背景", _context_summary(context)),
-        ("主要发现", f"共审阅 {len(review_rows)} 个事件级候选；{len(first_batch)} 个进入第一批研究验证集合。候选经过事件、单倍型和重复窗口去重。"),
-        ("为什么值得关注", "优先事件同时考虑事件真实性、RNA 支持、HLA 呈递、突变特异性、克隆性、HLA/APPM 和安全性，而不是只看单一结合分数。"),
-        ("主要不确定性", f"{uncertainties} 个事件应先补 RNA、融合/剪接确认、phasing、安全性或呈递证据；缺失证据不解释为阴性。APPM/HLA-LOH 和 CCF 结果仅按当前可用证据解释。"),
-        ("建议补充验证", "错义突变采用 MT/WT 成对短肽；移码采用 novel-tail long peptide/minigene；融合和剪接先确认异常转录本，再进行 long peptide/minigene。"),
-        ("研究性边界", "这些结果是计算候选和实验优先级，不代表已经确认新抗原、确定治疗方案、临床耐药或预期获益。"),
+        ("阅读提示与重要说明", "本报告按事件而非重复肽段审阅。R1–R4是研究证据等级，不是疗效等级；缺失证据不解释为阴性。"),
+        ("1. 报告摘要", f"共审阅 {len(review_rows)} 个事件级候选；{len(first_batch)} 个进入第一批研究验证集合。候选经过事件、单倍型和重复窗口去重。"),
+        ("2. 患者样本与测序数据", _context_summary(context) + "\n样本配对、肿瘤/正常DNA深度、纯度/倍性和RNA质量以run manifest为准；缺失项目标记为未评估。"),
+        ("3. HLA分型与抗原呈递条件", "HLA、HLA LOH、APPM与IFNG/JAK-STAT仅用于解释呈递条件，不能单独预测免疫治疗敏感、耐药或患者获益。"),
+        ("4. 重点变异事件", "按SNV、InDel、Fusion、Splice和DNA SV分赛道审阅；同一event_id最多选择1–2个代表peptide-HLA，不让重叠窗口占据实验名额。"),
+        ("5. 候选肽段Top10", "第一批候选见文末事件去重表。优先事件同时考虑事件真实性、RNA支持、HLA呈递、MT/WT特异性、克隆性、HLA/APPM和安全性。"),
+        ("6. Top候选解读与实验建议", "错义突变采用MT/WT成对短肽；移码采用novel-tail长肽/minigene；融合先做RT-PCR/Sanger；剪接先做targeted RNA，再进行junction长肽/minigene。"),
+        ("7. 分析方法", "Evidence consensus分层后，在同赛道内进行Pareto排序和确定性tie-break，再进行事件级代表候选选择；不修改pipeline原始R等级和事件排名。"),
+        ("8. 局限性与总体结论", f"{uncertainties} 个事件应先补RNA、融合/剪接确认、phasing、安全性或呈递证据。这些结果不代表已经确认新抗原、确定治疗方案、临床耐药或预期获益。"),
+        ("附录A：R1–R4", "R1第一批实验优先；R2值得推进但有谨慎因素；R3优先补证据；R4当前暂不推进。"),
+        ("附录B：术语说明", "MT/WT为突变肽与正常肽对照；CCF估计事件克隆比例；APPM描述抗原加工呈递；junction reads必须精确支持同一异常连接。"),
+        ("附录C：可追溯文件", "run manifest、all_tool_results、事件/肽段证据共识排序、weighted baseline、validation plan和evidence conflicts共同构成审计链。"),
     ]
     if "patient" in reports:
         patient_md = ["# Open-Neo 患者沟通版审阅报告", ""]
