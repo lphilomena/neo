@@ -68,7 +68,9 @@ export NEOAG_TOOLS_ROOT="$TOOLS_ROOT"
 export NEOAG_REF_BUNDLE="\${NEOAG_REF_BUNDLE:-$REFERENCE_ROOT}"
 export NEOAG_CONDA_BASE="\${NEOAG_CONDA_BASE:-$TOOLS_ROOT/miniforge3}"
 export NEOAG_PROJECT_ROOT="\${NEOAG_PROJECT_ROOT:-$PROJECT_ROOT}"
-export PATH="$TOOLS_ROOT/bin:$TOOLS_ROOT/tools/prime:\${NEOAG_PROJECT_ROOT}/bin:\${NEOAG_CONDA_BASE}/envs/neoag-tools/bin:\${NEOAG_CONDA_BASE}/envs/neoag-core/bin:\${NEOAG_CONDA_BASE}/envs/neoag-sequenza/bin:\${NEOAG_CONDA_BASE}/bin:\${PATH}"
+export OPTITYPE_ENV_PREFIX="\${OPTITYPE_ENV_PREFIX:-$TOOLS_ROOT/conda_envs/neoag-optitype}"
+export NEOAG_BAM_MATCHER_ENV_PREFIX="\${NEOAG_BAM_MATCHER_ENV_PREFIX:-$TOOLS_ROOT/conda_envs/neoag-bam-matcher}"
+export PATH="$TOOLS_ROOT/bin:$TOOLS_ROOT/tools/prime:\${OPTITYPE_ENV_PREFIX}/bin:\${NEOAG_BAM_MATCHER_ENV_PREFIX}/bin:\${NEOAG_PROJECT_ROOT}/bin:\${NEOAG_CONDA_BASE}/envs/neoag-tools/bin:\${NEOAG_CONDA_BASE}/envs/neoag-core/bin:\${NEOAG_CONDA_BASE}/envs/neoag-sequenza/bin:\${NEOAG_CONDA_BASE}/envs/neoag-gatk/bin:\${NEOAG_CONDA_BASE}/bin:\${PATH}"
 export LD_LIBRARY_PATH="\${NEOAG_CONDA_BASE}/envs/neoag-tools/lib:\${NEOAG_CONDA_BASE}/envs/neoag-core/lib:\${NEOAG_CONDA_BASE}/envs/neoag-sequenza/lib\${LD_LIBRARY_PATH:+:\${LD_LIBRARY_PATH}}"
 export NEOAG_REFERENCE_FASTA="\${NEOAG_REFERENCE_FASTA:-$REFERENCE_ROOT/data/ref/hg38/Homo_sapiens_assembly38.fasta}"
 export NEOAG_GENCODE_GTF="\${NEOAG_GENCODE_GTF:-$REFERENCE_ROOT/data/ref/hg38/gencode.gtf}"
@@ -95,15 +97,27 @@ export NEOAG_NETMHCSTABPAN_IMAGE="\${NEOAG_NETMHCSTABPAN_IMAGE:-neoag-netmhcstab
 export POLYSOLVER_HOME="\${POLYSOLVER_HOME:-$LICENSED_ROOT/polysolver}"
 export POLYSOLVER_CONDA_ENV="\${POLYSOLVER_CONDA_ENV:-neoag-polysolver}"
 export NOVOALIGN_LICENSE_FILE="\${NOVOALIGN_LICENSE_FILE:-$LICENSED_ROOT/novoalign/novoalign.lic}"
+export OPTITYPE_BIN="\${OPTITYPE_BIN:-\${OPTITYPE_ENV_PREFIX}/bin/optitype}"
+export OPTITYPE_REFERENCE="\${OPTITYPE_REFERENCE:-\${OPTITYPE_ENV_PREFIX}/share/optitype/data}"
+export BAM_MATCHER_HOME="\${BAM_MATCHER_HOME:-$TOOLS_ROOT/tools/bam-matcher}"
+export BAM_MATCHER_BIN="\${BAM_MATCHER_BIN:-$TOOLS_ROOT/bin/bam-matcher}"
+export BAM_MATCHER_PYTHON="\${BAM_MATCHER_PYTHON:-\${NEOAG_BAM_MATCHER_ENV_PREFIX}/bin/python}"
+export BAM_MATCHER_REFERENCE="\${BAM_MATCHER_REFERENCE:-$REFERENCE_ROOT/data/sequenza/reference/GRCh38.primary_assembly.chr.fa}"
+export BAM_MATCHER_LOCI="\${BAM_MATCHER_LOCI:-$REFERENCE_ROOT/data/facets/reference/bam_matcher.identity.hg38.vcf.gz}"
+export FACETS_SNP_VCF="\${FACETS_SNP_VCF:-$REFERENCE_ROOT/data/facets/reference/1000G_omni2.5.hg38.biallelic.vcf.gz}"
+export NEOAG_CONTAMINATION_SITES="\${NEOAG_CONTAMINATION_SITES:-$REFERENCE_ROOT/data/facets/reference/contamination.common.hg38.vcf.gz}"
 export SPECHLA_HOME="\${SPECHLA_HOME:-$TOOLS_ROOT/tools/SpecHLA}"
 export NEOAG_SPECHLA_HOME="\${NEOAG_SPECHLA_HOME:-\${SPECHLA_HOME}}"
 export NEOAG_SPECHLA_IMAGE="\${NEOAG_SPECHLA_IMAGE:-neoag-spechla:ubuntu22.04}"
 export HLALA_HOME="\${HLALA_HOME:-$TOOLS_ROOT/tools/HLA-LA}"
 export HLA_LA_HOME="\${HLA_LA_HOME:-\${HLALA_HOME}}"
-export HLALA_BIN="\${HLALA_BIN:-\${HLALA_HOME}/bin/HLA-LA.pl}"
+export HLALA_ENV_PREFIX="\${HLALA_ENV_PREFIX:-\${HLALA_HOME}/.conda}"
+export HLA_LA_ENV_PREFIX="\${HLA_LA_ENV_PREFIX:-\${HLALA_ENV_PREFIX}}"
+export HLALA_BIN="\${HLALA_BIN:-\${HLALA_ENV_PREFIX}/bin/HLA-LA.pl}"
 export HLA_LA_BIN="\${HLA_LA_BIN:-\${HLALA_BIN}}"
 export HLALA_GRAPH="\${HLALA_GRAPH:-$REFERENCE_ROOT/data/hla/PRG_MHC_GRCh38_withIMGT}"
 export HLA_LA_GRAPH="\${HLA_LA_GRAPH:-\${HLALA_GRAPH}}"
+export NEOAG_HLALA_BACKEND="\${NEOAG_HLALA_BACKEND:-auto}"
 export NEOAG_HLALA_IMAGE="\${NEOAG_HLALA_IMAGE:-neoag-hla-la:ubuntu22.04}"
 export HMFTOOLS_HOME="\${HMFTOOLS_HOME:-$TOOLS_ROOT/tools/HMFTOOLS}"
 export NEOAG_HMFTOOLS_HOME="\${NEOAG_HMFTOOLS_HOME:-\${HMFTOOLS_HOME}}"
@@ -118,6 +132,44 @@ export CUDA_VISIBLE_DEVICES="\${CUDA_VISIBLE_DEVICES:--1}"
 export TF_CPP_MIN_LOG_LEVEL="\${TF_CPP_MIN_LOG_LEVEL:-2}"
 EOF
 chmod +x "$ACT"
+LOCAL_ENV="$PROJECT_ROOT/conf/tools.env.local.sh"
+python3 - "$LOCAL_ENV" "$TOOLS_ROOT" "$REFERENCE_ROOT" <<'PY'
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+tools_root, reference_root = sys.argv[2:]
+begin = "# BEGIN NEOAG PRODUCTION OVERRIDES"
+end = "# END NEOAG PRODUCTION OVERRIDES"
+text = path.read_text() if path.exists() else ""
+if begin in text and end in text:
+    prefix, remainder = text.split(begin, 1)
+    _, suffix = remainder.split(end, 1)
+    text = prefix.rstrip() + "\n\n" + suffix.lstrip()
+block = f'''{begin}
+# Unconditional site paths override portable bundle paths from another host.
+export OPTITYPE_ENV="{tools_root}/conda_envs/neoag-optitype"
+export OPTITYPE_ENV_PREFIX="${{OPTITYPE_ENV}}"
+export OPTITYPE_BIN="${{OPTITYPE_ENV}}/bin/optitype"
+export OPTITYPE_REFERENCE="${{OPTITYPE_ENV}}/share/optitype/data"
+export NEOAG_BAM_MATCHER_ENV_PREFIX="{tools_root}/conda_envs/neoag-bam-matcher"
+export BAM_MATCHER_HOME="{tools_root}/tools/bam-matcher"
+export BAM_MATCHER_BIN="{tools_root}/bin/bam-matcher"
+export BAM_MATCHER_PYTHON="${{NEOAG_BAM_MATCHER_ENV_PREFIX}}/bin/python"
+export BAM_MATCHER_REFERENCE="{reference_root}/data/sequenza/reference/GRCh38.primary_assembly.chr.fa"
+export BAM_MATCHER_LOCI="{reference_root}/data/facets/reference/bam_matcher.identity.hg38.vcf.gz"
+export FACETS_SNP_VCF="{reference_root}/data/facets/reference/1000G_omni2.5.hg38.biallelic.vcf.gz"
+export NEOAG_CONTAMINATION_SITES="{reference_root}/data/facets/reference/contamination.common.hg38.vcf.gz"
+export PRIME_HOME="{reference_root}/data/predictors/prime"
+export NEOAG_PRIME_BIN="${{PRIME_HOME}}/PRIME"
+export MIXMHCPRED_HOME="{reference_root}/data/predictors/mixMHCpred_install"
+export MIXMHCPRED_BIN="${{MIXMHCPRED_HOME}}/MixMHCpred"
+export PATH="${{OPTITYPE_ENV}}/bin:${{NEOAG_BAM_MATCHER_ENV_PREFIX}}/bin:${{PRIME_HOME}}:${{MIXMHCPRED_HOME}}:${{PATH}}"
+{end}
+'''
+path.parent.mkdir(parents=True, exist_ok=True)
+path.write_text(text.rstrip() + "\n\n" + block)
+PY
 COMMON="$PROJECT_ROOT/scripts/common.sh"
 if [[ -f "$COMMON" ]]; then
   cp "$COMMON" "$COMMON.bak_$(date +%Y%m%d_%H%M%S)"

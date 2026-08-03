@@ -34,7 +34,7 @@ def _loh_positive(raw: str) -> bool:
     return raw.strip().upper() in {"Y", "YES", "LOH", "LOSS", "LOST", "1", "TRUE"}
 
 
-def parse_spechla_loh_merge(path: str | Path) -> list[dict[str, str]]:
+def parse_spechla_loh_merge(path: str | Path, *, min_het: float = 5) -> list[dict[str, str]]:
     """Parse SpecHLA merge.hla.copy.txt to per-allele LOH status."""
     allele_status: dict[str, str] = {}
     for row in read_tsv(path):
@@ -44,6 +44,16 @@ def parse_spechla_loh_merge(path: str | Path) -> list[dict[str, str]]:
         lost = normalize_spechla_allele(locus, first(row, ["LossHLA", "loss_hla", "LossAllele"], ""))
         kept = normalize_spechla_allele(locus, first(row, ["KeptHLA", "kept_hla"], ""))
         alleles = [a for a in (allele1, allele2) if a]
+        het_raw = first(row, ["Het_num", "het_num", "heterozygous_snp_count"], "")
+        try:
+            informative = float(het_raw) >= min_het
+        except (TypeError, ValueError):
+            informative = True
+        homogeneous = first(row, ["LossHLA", "loss_hla", "LossAllele"], "").strip().lower() == "homogeneous"
+        if homogeneous or not informative:
+            for allele in alleles:
+                allele_status.setdefault(allele, "unassessed")
+            continue
         if _loh_positive(first(row, ["LOH", "loh", "loh_status"], "")):
             if lost:
                 allele_status[lost] = "loh"

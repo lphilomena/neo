@@ -10,7 +10,7 @@ approval_required: true
 
 ## 目标
 
-manifest-driven full pipeline runner
+manifest-driven full pipeline runner；上游 HLA、纯度/CNV、HLA LOH 完成后接入 VCF 排序
 
 ## 什么时候使用
 - 需要从 manifest 到报告的端到端规划或执行
@@ -20,6 +20,11 @@ manifest-driven full pipeline runner
 
 ## 必需输入
 - `sample_manifest`
+- Step 0 `input_status.json` 必须不是 FAIL
+- `recommended_hla.txt`
+- `recommended_purity.tsv`
+- `recommended_cnv_segments.tsv`
+- `recommended_hla_loh.tsv`，或明确标记为 UNASSESSED
 
 ## 可选输入
 - `tools_manifest`
@@ -41,3 +46,6 @@ neoag-skill run neoag-pipeline-full --outdir work/neoag-pipeline-full --dry-run
 - 缺失证据只能标记为 missing/unassessed，不能解释为阴性结果。
 - 高风险写入、HPC 提交、安装工具、下载参考库、删除或覆盖文件必须经过 human approval。
 - Skill 目录不包含患者 BAM/FASTQ/VCF、大型参考库、VEP cache、NetMHCpan license、LOHHLA reference 或大型 conda env。
+- `pipeline-full` 不得把缺失的 HLA、纯度、CNV、RNA 或 HLA LOH 自动解释为阴性。
+- 没有肿瘤 RNA 时必须采用 DNA-only profile，并将 RNA ALT/VAF/TPM 写为 `UNASSESSED`。
+- 生产执行前必须检查共享工作盘剩余空间；不得在空间不足的 `/root` 中生成 WGS 中间文件。

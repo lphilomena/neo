@@ -16,6 +16,12 @@ Sample\tHLA\tAllele1\tAllele2\tcopyratio\tKeptHLA\tLossHLA\tFreq1\tFreq2\tPurity
 S1\tA\tA*02:01:01:01\tA*11:01:01:01\t1:0\tA*02:01:01:01\tA*11:01:01:01\t0.8\t0.2\t0.5\t40\tY
 """
 
+MERGE_UNINFORMATIVE = """\
+Sample\tHLA\tAllele1\tAllele2\tcopyratio\tKeptHLA\tLossHLA\tFreq1\tFreq2\tPurity\tHet_num\tLOH
+S1\tA\tA*02:01:01:01\tA*02:01:01:01\t2:0\tA*02:01:01:01\thomogeneous\t1\t0\t0.5\t0\tN
+S1\tB\tB*13:02:01:01\tB*48:01:01:01\t1:1\tB*13:02:01:01\tB*48:01:01:01\t0.52\t0.48\t0.5\t3\tN
+"""
+
 
 def test_parse_spechla_no_loh(tmp_path: Path):
     path = tmp_path / "merge.hla.copy.txt"
@@ -48,6 +54,25 @@ def test_spechla_to_hla_loh_tsv(tmp_path: Path):
     assert "HLA-A*30:01\tno" in text
     assert "HLA-B*13:02\tno" in text
     assert "spechla" in text
+
+
+def test_parse_spechla_marks_homozygous_and_low_information_unassessed(tmp_path: Path):
+    path = tmp_path / "merge.hla.copy.txt"
+    path.write_text(MERGE_UNINFORMATIVE, encoding="utf-8")
+    rows = parse_spechla_loh_merge(path)
+    by_allele = {r["hla_allele"]: r["loh_status"] for r in rows}
+    assert by_allele == {
+        "HLA-A*02:01": "unassessed",
+        "HLA-B*13:02": "unassessed",
+        "HLA-B*48:01": "unassessed",
+    }
+
+
+def test_parse_spechla_respects_custom_minimum_het(tmp_path: Path):
+    path = tmp_path / "merge.hla.copy.txt"
+    path.write_text(MERGE_NO_LOH, encoding="utf-8")
+    rows = parse_spechla_loh_merge(path, min_het=100)
+    assert {r["loh_status"] for r in rows} == {"unassessed"}
 
 
 def test_upstream_spechla_merge_passthrough(tmp_path: Path):

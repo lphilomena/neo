@@ -37,7 +37,8 @@ FACETS_STEP="${FACETS_STEP:-all}"
 FACETS_SNPSET_NAME="${FACETS_SNPSET_NAME:-omni2p5}"
 FACETS_SNP_VCF="${FACETS_SNP_VCF:-${OMNI2P5_VCF:-${ROOT}/data/facets/reference/1000G_omni2.5.hg38.biallelic.vcf.gz}}"
 SNP_PILEUP_BIN="${SNP_PILEUP_BIN:-${ROOT}/bin/snp-pileup}"
-RSCRIPT="${RSCRIPT:-${NEOAG_CONDA_BASE}/envs/${NEOAG_FUSION_ENV:-neoag-fusion-r36}/bin/Rscript}"
+FACETS_R_ENV_PREFIX="${FACETS_R_ENV_PREFIX:-${NEOAG_CONDA_BASE}/envs/${NEOAG_FACETS_ENV:-neoag-facets}}"
+RSCRIPT="${RSCRIPT:-${FACETS_R_ENV_PREFIX}/bin/Rscript}"
 SNP_PILEUP_MIN_READS="${SNP_PILEUP_MIN_READS:-5,5}"
 FACETS_TARGET_ROWS="${FACETS_TARGET_ROWS:-1000000}"
 FACETS_NDEPTH="${FACETS_NDEPTH:-5}"
@@ -45,9 +46,7 @@ FACETS_CVAL_PRE="${FACETS_CVAL_PRE:-25}"
 FACETS_CVAL_PROC="${FACETS_CVAL_PROC:-25}"
 FACETS_MIN_NHET="${FACETS_MIN_NHET:-5}"
 
-FACETS_HOME="${FACETS_HOME:-${NEOAG_TOOLS_ROOT}/tools/facets}"
-FACETS_QUARANTINE="${ROOT}/../neoag_event_pipeline_artifact_quarantine_20260622_091158/tools/facets"
-RUN_FACETS_R="${FACETS_HOME}/runFACETS.R"
+RUN_FACETS_R="${FACETS_EXPORT_SCRIPT:-${ROOT}/scripts/facets_export_from_rds.R}"
 
 PILEUP="${OUT}/${PATIENT_ID}.${FACETS_SNPSET_NAME}.snponly.pileup.csv"
 DOWNSAMPLED="${OUT}/${PATIENT_ID}.${FACETS_SNPSET_NAME}.snponly.downsample${FACETS_TARGET_ROWS}.csv"
@@ -65,19 +64,6 @@ step_wanted() {
   [[ "${FACETS_STEP}" == "all" || "${FACETS_STEP}" == "$1" ]]
 }
 
-resolve_facets_home() {
-  if [[ -f "${RUN_FACETS_R}" ]]; then
-    return 0
-  fi
-  if [[ -f "${FACETS_QUARANTINE}/runFACETS.R" ]]; then
-    FACETS_HOME="${FACETS_QUARANTINE}"
-    RUN_FACETS_R="${FACETS_HOME}/runFACETS.R"
-    return 0
-  fi
-  echo "ERROR: runFACETS.R not found under ${FACETS_HOME} or ${FACETS_QUARANTINE}" >&2
-  exit 1
-}
-
 check_prereqs() {
   [[ -x "${SNP_PILEUP_BIN}" ]] || { echo "ERROR: missing snp-pileup: ${SNP_PILEUP_BIN}" >&2; exit 1; }
   [[ -x "${RSCRIPT}" ]] || { echo "ERROR: missing Rscript: ${RSCRIPT}" >&2; exit 1; }
@@ -90,7 +76,7 @@ check_prereqs() {
     echo "ERROR: facets R package missing in ${RSCRIPT}" >&2
     exit 1
   fi
-  resolve_facets_home
+  [[ -s "${RUN_FACETS_R}" ]] || { echo "ERROR: missing FACETS exporter: ${RUN_FACETS_R}" >&2; exit 1; }
 }
 
 write_summary() {

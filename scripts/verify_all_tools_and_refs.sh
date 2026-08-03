@@ -156,17 +156,36 @@ fi
 
 echo
 echo "==> BAM-matcher sample identity"
-bam_matcher_bin="$(command -v bam-matcher 2>/dev/null || true)"
+bam_matcher_bin="${BAM_MATCHER_BIN:-$(command -v bam-matcher 2>/dev/null || true)}"
 if [[ -n "$bam_matcher_bin" && -x "$bam_matcher_bin" ]]; then
   pass "BAM-matcher executable: $bam_matcher_bin"
   "$bam_matcher_bin" --help >/dev/null 2>&1 || soft_fail "BAM-matcher --help returned non-zero"
+  bam_matcher_env="${NEOAG_BAM_MATCHER_ENV_PREFIX:-}"
+  if [[ -n "$bam_matcher_env" ]]; then
+    check_file "$bam_matcher_env/bin/python2" "BAM-matcher Python 2 runtime"
+    check_file "$bam_matcher_env/bin/freebayes" "BAM-matcher FreeBayes"
+    check_file "$bam_matcher_env/bin/samtools" "BAM-matcher samtools"
+  fi
 else
   warn "BAM-matcher missing; tumor-normal genotype identity will remain UNASSESSED"
 fi
 if [[ -n "${BAM_MATCHER_LOCI:-}" ]]; then
   check_file "$BAM_MATCHER_LOCI" "BAM-matcher build-matched SNP panel"
+  check_file "$BAM_MATCHER_LOCI.tbi" "BAM-matcher SNP panel index"
 else
   warn "BAM_MATCHER_LOCI unset; declare references.bam_matcher_loci in the reference manifest"
+fi
+if [[ -n "${BAM_MATCHER_REFERENCE:-}" ]]; then
+  check_file "$BAM_MATCHER_REFERENCE" "BAM-matcher chr-named GRCh38 FASTA"
+  check_file "$BAM_MATCHER_REFERENCE.fai" "BAM-matcher GRCh38 FASTA index"
+else
+  warn "BAM_MATCHER_REFERENCE unset"
+fi
+if [[ -n "${NEOAG_CONTAMINATION_SITES:-}" ]]; then
+  check_file "$NEOAG_CONTAMINATION_SITES" "GATK contamination SNP panel"
+  check_file "$NEOAG_CONTAMINATION_SITES.tbi" "GATK contamination SNP panel index"
+else
+  warn "NEOAG_CONTAMINATION_SITES unset; contamination remains UNASSESSED"
 fi
 if [[ -n "${NEOAG_REFERENCE_FASTA:-}" ]]; then
   check_file "$NEOAG_REFERENCE_FASTA" "GRCh38 FASTA"
@@ -354,6 +373,18 @@ fi
 
 echo
 
+echo "==> OptiType"
+optitype_bin="${OPTITYPE_BIN:-$(command -v optitype 2>/dev/null || true)}"
+if [[ -n "$optitype_bin" && -x "$optitype_bin" ]]; then
+  pass "OptiType executable: $optitype_bin"
+  "$optitype_bin" check-deps >/dev/null 2>&1 && pass "OptiType dependency check" || soft_fail "OptiType dependency check failed"
+else
+  soft_fail "OptiType executable missing; set OPTITYPE_BIN or install with --optitype"
+fi
+[[ -n "${OPTITYPE_REFERENCE:-}" ]] && check_dir "$OPTITYPE_REFERENCE" "OptiType reference" || warn "OPTITYPE_REFERENCE unset"
+
+echo
+
 echo "==> SpecHLA"
 spechla_home="${SPECHLA_HOME:-${NEOAG_SPECHLA_HOME:-${NEOAG_TOOLS_ROOT:-$ROOT}/tools/SpecHLA}}"
 spechla_env="${SPECHLA_ENV:-${spechla_home}/spechla_env}"
@@ -370,14 +401,33 @@ echo
 
 echo "==> HLA-LA"
 hlala_graph="${HLALA_GRAPH:-${HLA_LA_GRAPH:-${NEOAG_REF_BUNDLE:-}/data/hla/PRG_MHC_GRCh38_withIMGT}}"
-hlala_bin="${HLALA_BIN:-${HLA_LA_BIN:-}}"
+hlala_home="${HLALA_HOME:-${HLA_LA_HOME:-${NEOAG_TOOLS_ROOT:-$ROOT}/tools/HLA-LA}}"
+hlala_env_prefix="${HLALA_ENV_PREFIX:-${HLA_LA_ENV_PREFIX:-${hlala_home}/.conda}}"
+hlala_bin="${HLALA_BIN:-${HLA_LA_BIN:-${hlala_env_prefix}/bin/HLA-LA.pl}}"
 [[ -z "$hlala_bin" ]] && hlala_bin="$(command -v HLA-LA.pl 2>/dev/null || command -v hla-la 2>/dev/null || true)"
 if [[ -n "$hlala_bin" && -x "$hlala_bin" ]]; then
   pass "HLA-LA executable: $hlala_bin"
+  [[ -x "${hlala_env_prefix}/bin/perl" ]] && pass "HLA-LA Perl runtime: ${hlala_env_prefix}/bin/perl" || soft_fail "HLA-LA Perl runtime missing: ${hlala_env_prefix}/bin/perl"
+  [[ -x "${hlala_env_prefix}/bin/samtools" ]] && pass "HLA-LA samtools: ${hlala_env_prefix}/bin/samtools" || soft_fail "HLA-LA samtools missing: ${hlala_env_prefix}/bin/samtools"
 else
   soft_fail "HLA-LA executable missing; set HLALA_BIN or HLA_LA_BIN"
 fi
-[[ -n "$hlala_graph" ]] && check_dir "$hlala_graph" "HLA-LA PRG graph" || soft_fail "HLA-LA graph path unset"
+if [[ -n "$hlala_graph" ]]; then
+  check_dir "$hlala_graph" "HLA-LA PRG graph"
+  check_file "$hlala_graph/serializedGRAPH" "HLA-LA serialized graph"
+  check_file "$hlala_graph/PRG/graph.txt" "HLA-LA PRG graph payload"
+else
+  soft_fail "HLA-LA graph path unset"
+fi
+if [[ -x "$hlala_bin" && -x "${hlala_env_prefix}/bin/perl" ]]; then
+  hlala_test_log="$(mktemp "${TMPDIR:-/tmp}/neoag-hlala-test.XXXXXX")"
+  if PATH="${hlala_env_prefix}/bin:${PATH}" "${hlala_env_prefix}/bin/perl" "$hlala_bin" --testing 1 >"$hlala_test_log" 2>&1; then
+    pass "HLA-LA built-in functional test"
+    rm -f "$hlala_test_log"
+  else
+    soft_fail "HLA-LA built-in functional test failed; inspect $hlala_test_log"
+  fi
+fi
 
 echo
 

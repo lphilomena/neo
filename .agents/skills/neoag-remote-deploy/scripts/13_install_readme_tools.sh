@@ -26,6 +26,7 @@ INSTALL_NETMHCSTABPAN=0
 INSTALL_LOHHLA=0
 INSTALL_POLYSOLVER=0
 INSTALL_OPTITYPE=0
+INSTALL_BAM_MATCHER=0
 INSTALL_FACETS=0
 INSTALL_ASCAT_PYCLONE=0
 INSTALL_FUSION=0
@@ -34,6 +35,7 @@ INSTALL_SNAF=1
 INSTALL_SPLICEMUTR=1
 INSTALL_SPECHLA=0
 INSTALL_HLALA=0
+HLALA_VERSION="1.0.4"
 INSTALL_SEQUENZA=0
 INSTALL_HMF_PURPLE=0
 RUN_VERIFY=0
@@ -74,6 +76,7 @@ SHERPA_SOURCE=""
 SHERPA_ARCHIVE=""
 SHERPA_CONTAINER_IMAGE=""
 SHERPA_SMOKE_COMMAND=""
+SPECHLA_SOURCE=""
 
 usage() {
   cat <<'USAGE'
@@ -116,6 +119,7 @@ Tool groups:
   --lohhla                   LOHHLA source wrapper via scripts/install_lohhla.sh
   --polysolver               Configure existing Polysolver; requires --polysolver-home
   --optitype                 OptiType via scripts/install_optitype.sh
+  --bam-matcher              BAM-matcher plus Python 2 compatibility env via scripts/install_bam_matcher.sh
   --facets                   FACETS via scripts/install_facets.sh
   --ascat-pyclone            ASCAT + PyClone-VI via scripts/install_ascat_pyclone.sh
   --fusion                   Arriba/Nextflow fusion env plus STAR-Fusion/FusionCatcher clones
@@ -123,7 +127,9 @@ Tool groups:
   --skip-snaf                Skip SNAF when installing the splice group
   --skip-splicemutr          Skip SpliceMutr when installing the splice group
   --spechla                  Register/load SpecHLA container assets and database if present
+  --spechla-source DIR       Existing complete SpecHLA source tree; required when the staged image has runtime only
   --hla-la                   Register/load HLA-LA container assets and PRG graph if present
+  --hla-la-version VERSION   Bioconda HLA-LA version (default: 1.0.4)
   --sequenza                 Install Sequenza conda env and reference hooks
   --hmf-purple               Register/load HMF PURPLE/AMBER/COBALT container assets and references
   --all-open                 Install open/conda/git tools except very large VEP cache, licensed packages, and NetMHCstabpan
@@ -214,6 +220,7 @@ while [[ $# -gt 0 ]]; do
     --lohhla) INSTALL_LOHHLA=1; shift ;;
     --polysolver) INSTALL_POLYSOLVER=1; shift ;;
     --optitype) INSTALL_OPTITYPE=1; shift ;;
+    --bam-matcher) INSTALL_BAM_MATCHER=1; shift ;;
     --facets) INSTALL_FACETS=1; shift ;;
     --ascat-pyclone) INSTALL_ASCAT_PYCLONE=1; shift ;;
     --fusion) INSTALL_FUSION=1; shift ;;
@@ -221,20 +228,22 @@ while [[ $# -gt 0 ]]; do
     --skip-snaf) INSTALL_SNAF=0; shift ;;
     --skip-splicemutr) INSTALL_SPLICEMUTR=0; shift ;;
     --spechla) INSTALL_SPECHLA=1; shift ;;
+    --spechla-source) SPECHLA_SOURCE="$2"; INSTALL_SPECHLA=1; shift 2 ;;
     --hla-la) INSTALL_HLALA=1; shift ;;
+    --hla-la-version) HLALA_VERSION="$2"; INSTALL_HLALA=1; shift 2 ;;
     --sequenza) INSTALL_SEQUENZA=1; shift ;;
     --hmf-purple) INSTALL_HMF_PURPLE=1; shift ;;
     --all-open)
       INSTALL_CORE_ENV=1; INSTALL_VEP=1; INSTALL_GATK=1; INSTALL_RNA_EXPRESSION=1; INSTALL_IMMUNOGENICITY=1
       INSTALL_DEEPIMMUNO=1; INSTALL_LOHHLA=1
-      INSTALL_OPTITYPE=1; INSTALL_FACETS=1; INSTALL_ASCAT_PYCLONE=1; INSTALL_FUSION=1; INSTALL_SPLICE=1
+      INSTALL_OPTITYPE=1; INSTALL_BAM_MATCHER=1; INSTALL_FACETS=1; INSTALL_ASCAT_PYCLONE=1; INSTALL_FUSION=1; INSTALL_SPLICE=1
       INSTALL_SPECHLA=1; INSTALL_HLALA=1; INSTALL_SEQUENZA=1; INSTALL_HMF_PURPLE=1
       SKIP_TORCH_INSTALL=0
       shift ;;
     --all)
       INSTALL_CORE_ENV=1; INSTALL_VEP=1; INSTALL_VEP_CACHE=1; INSTALL_GATK=1; INSTALL_RNA_EXPRESSION=1; INSTALL_IMMUNOGENICITY=1
       INSTALL_DEEPIMMUNO=1; INSTALL_LOHHLA=1
-      INSTALL_OPTITYPE=1; INSTALL_FACETS=1; INSTALL_ASCAT_PYCLONE=1; INSTALL_FUSION=1; INSTALL_SPLICE=1
+      INSTALL_OPTITYPE=1; INSTALL_BAM_MATCHER=1; INSTALL_FACETS=1; INSTALL_ASCAT_PYCLONE=1; INSTALL_FUSION=1; INSTALL_SPLICE=1
       INSTALL_SPECHLA=1; INSTALL_HLALA=1; INSTALL_SEQUENZA=1; INSTALL_HMF_PURPLE=1
       SKIP_TORCH_INSTALL=0
       shift ;;
@@ -464,20 +473,22 @@ register_spechla_if_requested() {
   if [[ "$EXECUTE" != "1" ]]; then
     log ""
     log "==> [DRY_RUN] register SpecHLA container wrappers and DB link"
-    log "+ create $home, link $home/db to $db, load $image_tar if present"
+    log "+ install complete SpecHLA source, link $home/db to $db, load $image_tar if present"
     return 0
   fi
   mkdir -p "$home" "$TOOLS_ROOT/bin"
-  [[ -d "$db" && ! -e "$home/db" && ! -L "$home/db" ]] && ln -s "$db" "$home/db"
-  mkdir -p "$home/script/whole"
-  if [[ ! -x "$home/script/whole/SpecHLA.sh" ]]; then
-    cat > "$home/script/whole/SpecHLA.sh" <<EOF
-#!/usr/bin/env bash
-set -euo pipefail
-exec "$PROJECT_ROOT/scripts/run_spechla_container.sh" "\$@"
-EOF
-    chmod +x "$home/script/whole/SpecHLA.sh"
+  if [[ -n "$SPECHLA_SOURCE" ]]; then
+    [[ -f "$SPECHLA_SOURCE/script/whole/SpecHLA.sh" && -f "$SPECHLA_SOURCE/script/cal.hla.copy.pl" ]] || {
+      echo "SPECHLA_SOURCE_INVALID: expected script/whole/SpecHLA.sh and script/cal.hla.copy.pl below $SPECHLA_SOURCE" >&2
+      return 1
+    }
+    rsync -a --exclude '.git/' --exclude 'db/' --exclude 'spechla_env/' "$SPECHLA_SOURCE/" "$home/"
   fi
+  [[ -d "$db" && ! -e "$home/db" && ! -L "$home/db" ]] && ln -s "$db" "$home/db"
+  [[ -f "$home/script/whole/SpecHLA.sh" && -f "$home/script/cal.hla.copy.pl" ]] || {
+    echo "SPECHLA_SOURCE_REQUIRED: provide --spechla-source with a complete official SpecHLA checkout; a database and runtime-only image are insufficient" >&2
+    return 1
+  }
   if [[ ! -x "$TOOLS_ROOT/bin/SpecHLA" ]]; then
     cat > "$TOOLS_ROOT/bin/SpecHLA" <<EOF
 #!/usr/bin/env bash
@@ -493,23 +504,32 @@ EOF
 register_hlala_if_requested() {
   [[ "$INSTALL_HLALA" == "1" ]] || return 0
   local home="$TOOLS_ROOT/tools/HLA-LA"
+  local env_prefix="$home/.conda"
   local image_tar="$TOOLS_ROOT/container_images/neoag-hla-la_ubuntu22.04.tar"
   if [[ "$EXECUTE" != "1" ]]; then
     log ""
-    log "==> [DRY_RUN] register HLA-LA container wrapper and graph path"
-    log "+ create $home/bin/HLA-LA.pl, link $TOOLS_ROOT/bin/HLA-LA.pl, load $image_tar if present"
+    log "==> [DRY_RUN] install/register HLA-LA and graph path"
+    log "+ install hla-la=$HLALA_VERSION at $env_prefix, link real HLA-LA.pl, load $image_tar if present"
     return 0
   fi
   mkdir -p "$home/bin" "$TOOLS_ROOT/bin"
-  cat > "$home/bin/HLA-LA.pl" <<EOF
+  if [[ ! -x "$env_prefix/bin/HLA-LA.pl" ]]; then
+    need_download_ok "HLA-LA Bioconda package"
+    "$CONDA_BASE/bin/mamba" create -y -p "$env_prefix" --override-channels -c conda-forge -c bioconda "hla-la=$HLALA_VERSION"
+  fi
+  if [[ -f "$home/bin/HLA-LA.pl" && ! -L "$home/bin/HLA-LA.pl" ]] && grep -q 'run_hla_la_container.sh' "$home/bin/HLA-LA.pl"; then
+    mv "$home/bin/HLA-LA.pl" "$home/bin/HLA-LA.pl.legacy_wrapper"
+  fi
+  ln -sfn "$env_prefix/bin/HLA-LA.pl" "$home/bin/HLA-LA.pl"
+  cat > "$TOOLS_ROOT/bin/HLA-LA.pl" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
 export HLALA_HOME="\${HLALA_HOME:-$home}"
+export HLALA_ENV_PREFIX="\${HLALA_ENV_PREFIX:-$env_prefix}"
 export HLALA_GRAPH="\${HLALA_GRAPH:-$REFERENCE_ROOT/data/hla/PRG_MHC_GRCh38_withIMGT}"
 exec "$PROJECT_ROOT/scripts/run_hla_la_container.sh" "\$@"
 EOF
-  chmod +x "$home/bin/HLA-LA.pl"
-  ln -sf "$home/bin/HLA-LA.pl" "$TOOLS_ROOT/bin/HLA-LA.pl"
+  chmod +x "$TOOLS_ROOT/bin/HLA-LA.pl"
   load_container_image_if_present "HLA-LA" "neoag-hla-la:ubuntu22.04" "$image_tar"
 }
 
@@ -689,7 +709,7 @@ install_miniforge_if_needed() {
 cd "$PROJECT_ROOT"
 [[ -f "pyproject.toml" || -f "setup.py" ]] || { echo "PROJECT_ROOT_INVALID: $PROJECT_ROOT" >&2; exit 30; }
 
-if [[ "$INSTALL_CORE_ENV$INSTALL_VEP$INSTALL_GATK$INSTALL_RNA_EXPRESSION$INSTALL_IMMUNOGENICITY$INSTALL_DEEPIMMUNO$INSTALL_SHERPA$INSTALL_NETMHCSTABPAN$INSTALL_LOHHLA$INSTALL_POLYSOLVER$INSTALL_OPTITYPE$INSTALL_FACETS$INSTALL_ASCAT_PYCLONE$INSTALL_FUSION$INSTALL_SPLICE$INSTALL_SPECHLA$INSTALL_HLALA$INSTALL_SEQUENZA$INSTALL_HMF_PURPLE" =~ 1 ]]; then
+if [[ "$INSTALL_CORE_ENV$INSTALL_VEP$INSTALL_GATK$INSTALL_RNA_EXPRESSION$INSTALL_IMMUNOGENICITY$INSTALL_DEEPIMMUNO$INSTALL_SHERPA$INSTALL_NETMHCSTABPAN$INSTALL_LOHHLA$INSTALL_POLYSOLVER$INSTALL_OPTITYPE$INSTALL_BAM_MATCHER$INSTALL_FACETS$INSTALL_ASCAT_PYCLONE$INSTALL_FUSION$INSTALL_SPLICE$INSTALL_SPECHLA$INSTALL_HLALA$INSTALL_SEQUENZA$INSTALL_HMF_PURPLE" =~ 1 ]]; then
   install_miniforge_if_needed
   export NEOAG_CONDA_BASE="$CONDA_BASE"
   export PATH="$CONDA_BASE/bin:$PATH"
@@ -713,10 +733,18 @@ export DEEPIMMUNO_DIR="$TOOLS_ROOT/tools/DeepImmuno"
 export SHERPA_PRESENTATION_HOME="$TOOLS_ROOT/tools/SHERPA-Presentation"
 export SHERPA_PRESENTATION_BIN="$TOOLS_ROOT/bin/sherpa-presentation"
 export SPECHLA_HOME="$TOOLS_ROOT/tools/SpecHLA"
+export NEOAG_BAM_MATCHER_ENV_PREFIX="$TOOLS_ROOT/conda_envs/neoag-bam-matcher"
+export BAM_MATCHER_HOME="$TOOLS_ROOT/tools/bam-matcher"
+export BAM_MATCHER_LOCI="$REFERENCE_ROOT/data/facets/reference/1000G_omni2.5.hg38.biallelic.vcf.gz"
 export HLALA_HOME="$TOOLS_ROOT/tools/HLA-LA"
 export HLA_LA_HOME="$HLALA_HOME"
+export HLALA_ENV_PREFIX="$TOOLS_ROOT/tools/HLA-LA/.conda"
+export HLA_LA_ENV_PREFIX="$HLALA_ENV_PREFIX"
+export HLALA_BIN="$HLALA_ENV_PREFIX/bin/HLA-LA.pl"
+export HLA_LA_BIN="$HLALA_BIN"
 export HLALA_GRAPH="$REFERENCE_ROOT/data/hla/PRG_MHC_GRCh38_withIMGT"
 export HLA_LA_GRAPH="$HLALA_GRAPH"
+export NEOAG_HLALA_BACKEND="auto"
 export HMFTOOLS_HOME="$TOOLS_ROOT/tools/HMFTOOLS"
 export HMFTOOLS_AMBER_LOCI="$REFERENCE_ROOT/data/hmf/purple_reference/amber/GermlineHetPon.38.vcf.gz"
 export HMFTOOLS_GC_PROFILE="$REFERENCE_ROOT/data/hmf/purple_reference/cobalt/GC_profile.1000bp.38.cnp"
@@ -775,6 +803,7 @@ if [[ "$INSTALL_POLYSOLVER" == "1" ]]; then
   run "configure Polysolver" bash -lc "$env_cmd bash scripts/install_polysolver.sh"
 fi
 [[ "$INSTALL_OPTITYPE" == "1" ]] && run "install OptiType" bash scripts/install_optitype.sh
+[[ "$INSTALL_BAM_MATCHER" == "1" ]] && { need_download_ok "BAM-matcher pinned source and compatibility environment"; run "install BAM-matcher" bash scripts/install_bam_matcher.sh; }
 [[ "$INSTALL_FACETS" == "1" ]] && run "install FACETS" bash scripts/install_facets.sh
 [[ "$INSTALL_ASCAT_PYCLONE" == "1" ]] && run "install ASCAT/PyClone-VI" bash scripts/install_ascat_pyclone.sh
 [[ "$INSTALL_FUSION" == "1" ]] && { need_download_ok "fusion tool git clones/conda packages"; run "install fusion tools" bash scripts/install_fusion_tools.sh; }
@@ -840,7 +869,7 @@ fi
     "core-env:$INSTALL_CORE_ENV" "core-env-lite:$CORE_ENV_LITE" "skip-torch-install:$SKIP_TORCH_INSTALL" "vep:$INSTALL_VEP" "vep-cache:$INSTALL_VEP_CACHE" "vep-version:$VEP_VERSION" \
     "gatk:$INSTALL_GATK" "rna-expression:$INSTALL_RNA_EXPRESSION" "immunogenicity:$INSTALL_IMMUNOGENICITY" \
     "netmhcstabpan:$INSTALL_NETMHCSTABPAN" "deepimmuno:$INSTALL_DEEPIMMUNO" "sherpa:$INSTALL_SHERPA" \
-    "lohhla:$INSTALL_LOHHLA" "polysolver:$INSTALL_POLYSOLVER" "optitype:$INSTALL_OPTITYPE" \
+    "lohhla:$INSTALL_LOHHLA" "polysolver:$INSTALL_POLYSOLVER" "optitype:$INSTALL_OPTITYPE" "bam-matcher:$INSTALL_BAM_MATCHER" \
     "facets:$INSTALL_FACETS" "ascat-pyclone:$INSTALL_ASCAT_PYCLONE" "fusion:$INSTALL_FUSION" "splice:$INSTALL_SPLICE" \
     "spechla:$INSTALL_SPECHLA" "hla-la:$INSTALL_HLALA" "sequenza:$INSTALL_SEQUENZA" "hmf-purple:$INSTALL_HMF_PURPLE" \
     "verify:$RUN_VERIFY" "real-vcf-smoke:$RUN_REAL_VCF_SMOKE" "sync-assets:$SYNC_ASSETS" "reference-manifest:${REFERENCE_MANIFEST:+1}" "bigmhc-models:${BIGMHC_MODELS_DIR:+1}"; do

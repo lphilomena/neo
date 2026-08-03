@@ -6,6 +6,12 @@ REPO_ROOT=$(cd -- "$SCRIPT_DIR/.." && pwd)
 IMAGE=${NEOAG_SPECHLA_IMAGE:-neoag-spechla:ubuntu22.04}
 docker image inspect "$IMAGE" >/dev/null 2>&1 || { echo "WARN: SpecHLA image missing; build with scripts/build_priority_tool_containers.sh spechla"; exit 0; }
 docker run --rm "$IMAGE" "python3 --version && samtools --version >/dev/null && bowtie2 --version >/dev/null && echo PASS: SpecHLA container base runtime starts"
-SPECHLA_HOME=${SPECHLA_HOME:-$REPO_ROOT/tools/SpecHLA}
+SPECHLA_HOME=${SPECHLA_HOME:-${NEOAG_SPECHLA_HOME:-${NEOAG_TOOLS_ROOT:-$REPO_ROOT}/tools/SpecHLA}}
 [[ -d "$SPECHLA_HOME/script" ]] && echo "PASS: SpecHLA scripts exist: $SPECHLA_HOME/script" || echo "WARN: SpecHLA scripts missing: $SPECHLA_HOME/script"
 [[ -d "$SPECHLA_HOME/db" ]] && echo "PASS: SpecHLA db exists: $SPECHLA_HOME/db" || echo "WARN: SpecHLA db missing: $SPECHLA_HOME/db"
+[[ -f "$SPECHLA_HOME/script/cal.hla.copy.pl" ]] && echo "PASS: SpecHLA LOH module exists" || { echo "ERROR: SpecHLA LOH module missing: $SPECHLA_HOME/script/cal.hla.copy.pl" >&2; exit 1; }
+SPECHLA_MODE=loh "$REPO_ROOT/scripts/run_spechla_container.sh" -h >/dev/null 2>&1 || {
+  rc=$?
+  [[ "$rc" == "255" ]] || { echo "ERROR: SpecHLA LOH module smoke failed with exit_code=$rc" >&2; exit "$rc"; }
+}
+echo "PASS: SpecHLA LOH module starts"

@@ -22,8 +22,13 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+_LOHHLA_GATK_DIR_OVERRIDE="${LOHHLA_GATK_DIR:-}"
 # shellcheck source=/dev/null
 source "${ROOT}/conf/tools.env.sh"
+if [[ -n "${_LOHHLA_GATK_DIR_OVERRIDE}" ]]; then
+  LOHHLA_GATK_DIR="${_LOHHLA_GATK_DIR_OVERRIDE}"
+fi
+unset _LOHHLA_GATK_DIR_OVERRIDE
 : "${NEOAG_CONDA_BASE:?ERROR: set NEOAG_CONDA_BASE to your conda/mamba installation root}"
 export PATH="${NEOAG_CONDA_BASE}/bin:${PATH}"
 export PYTHONPATH="${ROOT}/src${PYTHONPATH:+:${PYTHONPATH}}"
@@ -45,7 +50,7 @@ BAM_LINK_DIR="${BAM_LINK_DIR:-${ROOT}/work/bam_links/${PATIENT_ID}}"
 
 PSHOME="${POLYSOLVER_HOME:-${NEOAG_TOOLS_ROOT:-${ROOT}}/tools/polysolver}"
 LOHHLA_HOME="${LOHHLA_HOME:-${NEOAG_TOOLS_ROOT}/tools/lohhla}"
-FUSION_ENV="${NEOAG_CONDA_BASE}/envs/${NEOAG_FUSION_ENV:-neoag-fusion}"
+FUSION_ENV="${LOHHLA_ENV_PREFIX:-${NEOAG_CONDA_BASE}/envs/${NEOAG_FUSION_ENV:-neoag-fusion}}"
 GATK_ENV="${NEOAG_CONDA_BASE}/envs/${NEOAG_GATK_ENV:-neoag-gatk}"
 
 POLYSOLVER_RACE="${POLYSOLVER_RACE:-Unknown}"
@@ -58,6 +63,7 @@ COPYNUM_LOC="${COPYNUM_LOC:-FALSE}"
 MIN_COVERAGE="${MIN_COVERAGE_FILTER:-10}"
 LOHHLA_MAPPING_STEP="${LOHHLA_MAPPING_STEP:-TRUE}"
 LOHHLA_FISHING_STEP="${LOHHLA_FISHING_STEP:-TRUE}"
+LOHHLA_GENOME_ASSEMBLY="${LOHHLA_GENOME_ASSEMBLY:-grch38}"
 
 PS_OUT="${OUT}/polysolver"
 HLA_DIR="${OUT}/hla"
@@ -65,7 +71,7 @@ WINNERS="${PS_OUT}/winners.hla.txt"
 PATIENT_HLA_FASTA="${HLA_DIR}/${PATIENT_ID}.patient.hlaFasta.fa"
 LOHHLA_SCRIPT="${LOHHLA_HOME}/LOHHLAscript.R"
 HLA_EXON_LOC="${LOHHLA_HOME}/data/hla.dat"
-GATK_DIR="${LOHHLA_GATK_DIR:-${LOHHLA_HOME}}"
+LOHHLA_GATK_RUNTIME_DIR="${LOHHLA_GATK_DIR:-${LOHHLA_HOME}}"
 NOVO_DIR="${PSHOME}/binaries"
 NOVOINDEX="${PSHOME}/scripts/novoindex"
 ABC_FASTA="${PSHOME}/data/abc_complete.fasta"
@@ -112,7 +118,8 @@ resolve_bam_for_tools() {
   mkdir -p "${BAM_LINK_DIR}"
   local base
   base="$(basename "${bam}")"
-  local link_bam="${BAM_LINK_DIR}/${base}"
+  local role="${var_name%_bam}"
+  local link_bam="${BAM_LINK_DIR}/${PATIENT_ID}_${role}.bam"
   local link_bai="${link_bam}.bai"
   local bai_src="${ROOT}/work/${base}.bai"
 
@@ -317,8 +324,8 @@ run_lohhla() {
     echo "ERROR: LOHHLA install incomplete under ${LOHHLA_HOME}" >&2
     exit 1
   }
-  [[ -f "${GATK_DIR}/picard.jar" ]] || {
-    echo "ERROR: picard.jar missing in ${GATK_DIR}" >&2
+  [[ -f "${LOHHLA_GATK_RUNTIME_DIR}/picard.jar" ]] || {
+    echo "ERROR: picard.jar missing in ${LOHHLA_GATK_RUNTIME_DIR}" >&2
     exit 1
   }
 
@@ -342,14 +349,18 @@ run_lohhla() {
   [[ -n "${JAVA_HOME:-}" ]] && echo "    JAVA_HOME=${JAVA_HOME}"
   mkdir -p "${LOHHLA_OUT}"
   if [[ -s "${flagstat_dir}/$(basename "${tumor_bam}").proc.flagstat" && -s "${flagstat_dir}/$(basename "${normal_bam}").proc.flagstat" ]]; then
-    override_dir="${flagstat_dir}"
-    echo "    reusing flagstat from ${override_dir}"
+    # LOHHLA reuses files in its default flagstat directory automatically.
+    # Passing that same directory through --overrideDir triggers an upstream
+    # character-to-logical conversion bug in some LOHHLA revisions.
+    echo "    reusing flagstat from ${flagstat_dir}"
   fi
   Rscript "${LOHHLA_SCRIPT}" \
     --patientId "${PATIENT_ID}" \
     --outputDir "${LOHHLA_OUT}" \
+    --LOHHLA_loc "${LOHHLA_HOME}" \
     --normalBAMfile "${normal_bam}" \
     --tumorBAMfile "${tumor_bam}" \
+    --BAMDir "${BAM_LINK_DIR}" \
     --hlaPath "${WINNERS}" \
     --HLAfastaLoc "${PATIENT_HLA_FASTA}" \
     --CopyNumLoc "${COPYNUM_LOC}" \
@@ -360,9 +371,10 @@ run_lohhla() {
     --coverageStep TRUE \
     --minCoverageFilter "${MIN_COVERAGE}" \
     --cleanUp FALSE \
-    --gatkDir "${GATK_DIR}" \
+    --gatkDir "${LOHHLA_GATK_RUNTIME_DIR}" \
     --novoDir "${NOVO_DIR}" \
-    --HLAexonLoc "${HLA_EXON_LOC}"
+    --HLAexonLoc "${HLA_EXON_LOC}" \
+    --genomeAssembly "${LOHHLA_GENOME_ASSEMBLY}"
 
   echo ""
   echo "==> Done. Key outputs:"
