@@ -21,10 +21,22 @@ mkdir -p "$OUTDIR/reads" "$OUTDIR/typing"
 if [[ -s "$OUTDIR/.complete" && "$FORCE" != 1 ]]; then echo "SpecHLA already complete: $OUTDIR"; exit 0; fi
 rm -f "$OUTDIR/.complete"
 
-SPECHLA_MODE=extract "$ROOT/scripts/run_spechla_container.sh" \
-  -s "$SAMPLE_ID" -b "$BAM" -r hg38 -o "$OUTDIR/reads" 2>&1 | tee "$OUTDIR/extract.log"
 fq1="$OUTDIR/reads/${SAMPLE_ID}_extract_1.fq.gz"
 fq2="$OUTDIR/reads/${SAMPLE_ID}_extract_2.fq.gz"
+single="$OUTDIR/reads/${SAMPLE_ID}_extract_single.fq.gz"
+extract_bam="$OUTDIR/reads/${SAMPLE_ID}.tmp.extract.bam"
+set +e
+SPECHLA_MODE=extract "$ROOT/scripts/run_spechla_container.sh" \
+  -s "$SAMPLE_ID" -b "$BAM" -r hg38 -o "$OUTDIR/reads" 2>&1 | tee "$OUTDIR/extract.log"
+extract_rc=${PIPESTATUS[0]}
+set -e
+if [[ ! -s "$fq1" || ! -s "$fq2" ]]; then
+  [[ -s "$extract_bam" ]] || { echo "ERROR: SpecHLA extraction failed (exit=$extract_rc) and extracted BAM is missing" >&2; exit 5; }
+  echo "WARN: SpecHLA bamUtil FASTQ conversion failed; using samtools fallback" >&2
+  rm -f "$fq1" "$fq2" "$single"
+  SPECHLA_CMD="$ROOT/scripts/spechla_bam_to_fastq.sh" "$ROOT/scripts/run_spechla_container.sh" \
+    "$extract_bam" "$fq1" "$fq2" "$single" "$THREADS" 2>&1 | tee -a "$OUTDIR/extract.log"
+fi
 [[ -s "$fq1" && -s "$fq2" ]] || { echo "ERROR: SpecHLA extracted FASTQs missing" >&2; exit 5; }
 
 "$ROOT/scripts/run_spechla_container.sh" -n "$SAMPLE_ID" -1 "$fq1" -2 "$fq2" \

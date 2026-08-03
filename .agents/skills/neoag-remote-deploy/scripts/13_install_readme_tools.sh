@@ -473,7 +473,7 @@ register_spechla_if_requested() {
   if [[ "$EXECUTE" != "1" ]]; then
     log ""
     log "==> [DRY_RUN] register SpecHLA container wrappers and DB link"
-    log "+ install complete SpecHLA source, link $home/db to $db, load $image_tar if present"
+    log "+ install complete SpecHLA source, repair $home/db -> $db, load/build the dependency-complete image, and create missing novoalign indexes"
     return 0
   fi
   mkdir -p "$home" "$TOOLS_ROOT/bin"
@@ -484,7 +484,15 @@ register_spechla_if_requested() {
     }
     rsync -a --exclude '.git/' --exclude 'db/' --exclude 'spechla_env/' "$SPECHLA_SOURCE/" "$home/"
   fi
-  [[ -d "$db" && ! -e "$home/db" && ! -L "$home/db" ]] && ln -s "$db" "$home/db"
+  [[ -d "$db" ]] || { echo "SPECHLA_DB_MISSING: expected $db" >&2; return 1; }
+  if [[ -L "$home/db" ]]; then
+    ln -sfn "$db" "$home/db"
+  elif [[ ! -e "$home/db" ]]; then
+    ln -s "$db" "$home/db"
+  elif [[ "$(cd "$home/db" && pwd -P)" != "$(cd "$db" && pwd -P)" ]]; then
+    echo "SPECHLA_DB_CONFLICT: $home/db is a real directory and does not resolve to $db" >&2
+    return 1
+  fi
   [[ -f "$home/script/whole/SpecHLA.sh" && -f "$home/script/cal.hla.copy.pl" ]] || {
     echo "SPECHLA_SOURCE_REQUIRED: provide --spechla-source with a complete official SpecHLA checkout; a database and runtime-only image are insufficient" >&2
     return 1
@@ -499,6 +507,32 @@ EOF
     chmod +x "$TOOLS_ROOT/bin/SpecHLA"
   fi
   load_container_image_if_present "SpecHLA" "neoag-spechla:ubuntu22.04" "$image_tar"
+  if command -v docker >/dev/null 2>&1 && docker image inspect neoag-spechla:ubuntu22.04 >/dev/null 2>&1; then
+    if ! SPECHLA_HOME="$home" SPECHLA_DB="$db" SPECHLA_ENV="$CONDA_BASE/envs/neoag-tools" \
+      SPECHLA_CMD=python3 scripts/run_spechla_container.sh -c \
+      'import Bio, networkx, numpy, pandas, pulp, pyfaidx, pysam, scipy, vcf' >/dev/null 2>&1 || \
+      ! SPECHLA_HOME="$home" SPECHLA_DB="$db" SPECHLA_ENV="$CONDA_BASE/envs/neoag-tools" \
+      SPECHLA_CMD=freebayes scripts/run_spechla_container.sh --version >/dev/null 2>&1; then
+      need_download_ok "SpecHLA container runtime dependencies"
+      run "rebuild SpecHLA dependency-complete container" bash scripts/build_priority_tool_containers.sh spechla
+    fi
+  fi
+
+  local resolved_db
+  resolved_db=$(cd "$home/db" && pwd -P)
+  if [[ -x "$home/bin/novoalign" && -f "$home/bin/novoalign.lic" ]]; then
+    [[ -x "$home/bin/novoindex" ]] || { echo "SPECHLA_NOVOINDEX_MISSING: $home/bin/novoindex" >&2; return 1; }
+    local prefix fasta index tmp
+    for prefix in hla_gen.format.filter.extend.DRB.no26789 hla_gen.format.filter.extend.DRB.no26789.v2; do
+      fasta="$resolved_db/ref/$prefix.fasta"
+      index="$resolved_db/ref/$prefix.ndx"
+      if [[ -s "$fasta" && ! -s "$index" ]]; then
+        tmp="$index.tmp.$$"
+        "$home/bin/novoindex" "$tmp" "$fasta"
+        mv "$tmp" "$index"
+      fi
+    done
+  fi
 }
 
 register_hlala_if_requested() {
@@ -733,6 +767,8 @@ export DEEPIMMUNO_DIR="$TOOLS_ROOT/tools/DeepImmuno"
 export SHERPA_PRESENTATION_HOME="$TOOLS_ROOT/tools/SHERPA-Presentation"
 export SHERPA_PRESENTATION_BIN="$TOOLS_ROOT/bin/sherpa-presentation"
 export SPECHLA_HOME="$TOOLS_ROOT/tools/SpecHLA"
+export SPECHLA_DB="$REFERENCE_ROOT/data/hla/spechla/db"
+export SPECHLA_ENV="$CONDA_BASE/envs/neoag-tools"
 export NEOAG_BAM_MATCHER_ENV_PREFIX="$TOOLS_ROOT/conda_envs/neoag-bam-matcher"
 export BAM_MATCHER_HOME="$TOOLS_ROOT/tools/bam-matcher"
 export BAM_MATCHER_LOCI="$REFERENCE_ROOT/data/facets/reference/1000G_omni2.5.hg38.biallelic.vcf.gz"

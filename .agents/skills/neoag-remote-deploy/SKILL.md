@@ -154,7 +154,7 @@ The core environment installer must keep MHCflurry compatible with modern
 TensorFlow/Keras by installing the matching `tf-keras` shim and exporting
 `TF_USE_LEGACY_KERAS=1` in generated activation files.
 
-SpecHLA registration requires a complete official source tree, not only its database and a runtime-only container image. Pass `--spechla-source <dir>` when the staged image does not contain SpecHLA. Verification must require both `script/whole/SpecHLA.sh` and the LOH module `script/cal.hla.copy.pl`.
+SpecHLA registration requires a complete official source tree, not only its database and a runtime-only container image. Pass `--spechla-source <dir>` when the staged image does not contain SpecHLA. The installer repairs the DB symlink, exports the resolved `SPECHLA_DB`, rebuilds an old runtime-only image when required Python modules are absent, and creates both full-length and exon novoalign indexes when a licensed novoalign payload is present. Verification must require `script/whole/SpecHLA.sh`, `script/cal.hla.copy.pl`, `freebayes`, the Python runtime modules, the database marker, and any licensed novoalign indexes. `run_spechla_sample.sh` must retain its samtools FASTQ fallback because upstream bamUtil can fail after producing a valid extracted BAM.
 
 HLA-LA registration installs the pinned Bioconda package into the configured shared tool root and links the real `HLA-LA.pl` into the tool home. A runtime-only image plus PRG graph is not a complete installation. Verification must execute the real program and require prepared graph markers such as `serializedGRAPH` and `PRG/graph.txt`.
 
