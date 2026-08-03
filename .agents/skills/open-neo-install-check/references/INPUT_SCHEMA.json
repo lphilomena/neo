@@ -7,6 +7,10 @@
     "outdir": {"type": "string"},
     "project_root": {"type": "string"},
     "release_tarball": {"type": "string"},
+    "conda_base": {
+      "type": "string",
+      "description": "Existing Conda/Miniforge root, including NAS/site-managed installations"
+    },
     "sha256": {"type": "string"},
     "deployment_tier": {"enum": ["review", "core", "prediction", "full"]},
     "mode": {"enum": ["plan", "verify", "repair", "install", "resume"]},
