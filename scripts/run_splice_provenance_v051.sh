@@ -25,6 +25,7 @@ Core repeatable inputs:
   --mopepgen-gvf PATH         --mopepgen-provenance-map PATH
   --splice2neo PATH
   --normal-junctions PATH     --normal-coverage PATH
+  --junction-query-reference-fasta PATH [--junction-query-flank 31]
 
 Precomputed external outputs:
   --easyquant PATH
@@ -68,6 +69,7 @@ RUN_EASY=0; EASY_BAM=""; EASY_FQ1=""; EASY_FQ2=""; EASY_THREADS="4"
 RUN_K4=0; K4_DB=""; K4_INDEX=""; K4_ACCEPT=0; K4_PREFIX="neoag"
 RUN_PVS=0; PVS_JUNCTIONS=""; ANNOTATED_VCF=""; REF_FASTA=""; GTF=""; PVS_ALG="MHCflurry"; PVS_THREADS="4"
 HLA=""; HLA_FILE=""; PVB_ALG="MHCflurry"; PVB_THREADS="4"; REF_PROTEOME=""; SKIP_PVB=0
+QUERY_REF=""; QUERY_FLANK="31"
 while [[ $# -gt 0 ]]; do
  case "$1" in
   --sample-id) SAMPLE="$2"; shift 2;; --outdir) OUTDIR="$2"; shift 2;;
@@ -81,6 +83,7 @@ while [[ $# -gt 0 ]]; do
   --mopepgen-provenance-map) MO_MAP+=("$2"); shift 2;; --splice2neo) S2N+=("$2"); shift 2;;
   --normal-junctions) NORMAL_JUNC+=("$2"); shift 2;; --normal-coverage) NORMAL_COV+=("$2"); shift 2;;
   --normal-coordinate-system) NORMAL_COORD="$2"; shift 2;; --critical-tissue) CRITICAL+=("$2"); shift 2;;
+  --junction-query-reference-fasta) QUERY_REF="$2"; shift 2;; --junction-query-flank) QUERY_FLANK="$2"; shift 2;;
   --tool-version) VERSIONS+=("$2"); shift 2;;
   --easyquant) EASY+=("$2"); shift 2;; --run-easyquant) RUN_EASY=1; shift;;
   --easyquant-bam) EASY_BAM="$2"; shift 2;; --easyquant-fq1) EASY_FQ1="$2"; shift 2;; --easyquant-fq2) EASY_FQ2="$2"; shift 2;;
@@ -114,7 +117,15 @@ if [[ "$OVERWRITE" == 1 ]]; then rm -rf "$PHASE1" "$PRE" "$FINAL"; fi
 mkdir -p "$OUTDIR" "$EXT"
 
 make_build_args() {
- local target="$1"; BUILD_ARGS=(-m neoag.splice.cli build --sample-id "$SAMPLE" --outdir "$target" --genome-build "$BUILD" --disease-profile "$PROFILE" --junction-coordinate-system "$JUNCTION_COORD" --irfinder-coordinate-system "$IR_COORD" --normal-coordinate-system "$NORMAL_COORD")
+ local target="$1" base_layer="${2:-}"; BUILD_ARGS=(-m neoag.splice.cli build --sample-id "$SAMPLE" --outdir "$target" --genome-build "$BUILD" --disease-profile "$PROFILE" --junction-coordinate-system "$JUNCTION_COORD" --irfinder-coordinate-system "$IR_COORD" --normal-coordinate-system "$NORMAL_COORD")
+ [[ -n "$QUERY_REF" ]] && BUILD_ARGS+=(--junction-query-reference-fasta "$QUERY_REF" --junction-query-flank "$QUERY_FLANK")
+ if [[ -n "$base_layer" ]]; then
+  BUILD_ARGS+=(--base-layer "$base_layer")
+  local x
+  for x in "${VERSIONS[@]}"; do BUILD_ARGS+=(--tool-version "$x"); done
+  [[ "$STRICT" == 1 ]] && BUILD_ARGS+=(--strict)
+  return 0
+ fi
  [[ -n "$JUNCTIONS" ]] && BUILD_ARGS+=(--junctions "$JUNCTIONS")
  [[ -n "$STAR_JUNCTIONS" ]] && BUILD_ARGS+=(--star-junctions "$STAR_JUNCTIONS")
  local x
@@ -129,23 +140,43 @@ make_build_args() {
  for x in "${S2N[@]}"; do BUILD_ARGS+=(--splice2neo "$x"); done
  for x in "${NORMAL_JUNC[@]}"; do BUILD_ARGS+=(--normal-junctions "$x"); done
  for x in "${NORMAL_COV[@]}"; do BUILD_ARGS+=(--normal-coverage "$x"); done
- for x in "${CRITICAL[@]}"; do BUILD_ARGS+=(--critical-tissue "$x"); done
- for x in "${VERSIONS[@]}"; do BUILD_ARGS+=(--tool-version "$x"); done
- [[ "$STRICT" == 1 ]] && BUILD_ARGS+=(--strict)
+	for x in "${CRITICAL[@]}"; do BUILD_ARGS+=(--critical-tissue "$x"); done
+	for x in "${VERSIONS[@]}"; do BUILD_ARGS+=(--tool-version "$x"); done
+	[[ "$STRICT" == 1 ]] && BUILD_ARGS+=(--strict)
+	return 0
 }
 
 # Phase 1 establishes exact IDs and query maps. No externally generated result may precede this step.
-make_build_args "$PHASE1"
-"$PY" "${BUILD_ARGS[@]}" > "$OUTDIR/phase1.outputs.json"
+if [[ -s "$PHASE1/provenance_manifest.json" ]]; then
+ "$PY" -m neoag.splice.cli validate --layer-dir "$PHASE1" --report "$OUTDIR/phase1.resume.validation.json" >/dev/null
+ echo "Reusing validated phase-1 splice layer: $PHASE1" >&2
+else
+ make_build_args "$PHASE1"
+ "$PY" "${BUILD_ARGS[@]}" > "$OUTDIR/phase1.outputs.json"
+fi
+
+REGISTRY="$PHASE1"
+if [[ -n "$QUERY_REF" ]] && ! awk 'NR > 1 && NF { found=1; exit } END { exit !found }' "$PHASE1/splice_easyquant_input.tsv"; then
+ QUERY_REGISTRY="$OUTDIR/phase1_junction_queries"
+ if [[ ! -s "$QUERY_REGISTRY/provenance_manifest.json" ]]; then
+  make_build_args "$QUERY_REGISTRY" "$PHASE1"
+  "$PY" "${BUILD_ARGS[@]}" > "$OUTDIR/phase1_junction_queries.outputs.json"
+ fi
+ REGISTRY="$QUERY_REGISTRY"
+fi
 
 if [[ "$RUN_EASY" == 1 ]]; then
- eq=(bash "$ROOT/scripts/run_easyquant_sample.sh" --query-table "$PHASE1/splice_easyquant_input.tsv" --outdir "$EXT/easyquant" --threads "$EASY_THREADS")
- if [[ -n "$EASY_BAM" ]]; then eq+=(--bam "$EASY_BAM"); else eq+=(--fq1 "$EASY_FQ1" --fq2 "$EASY_FQ2"); fi
- eq_list="$("${eq[@]}")"
- while IFS= read -r x; do [[ -n "$x" ]] && EASY+=("$x"); done < "$eq_list"
+ if awk 'NR > 1 && NF { found=1; exit } END { exit !found }' "$REGISTRY/splice_easyquant_input.tsv"; then
+  eq=(bash "$ROOT/scripts/run_easyquant_sample.sh" --query-table "$REGISTRY/splice_easyquant_input.tsv" --outdir "$EXT/easyquant" --threads "$EASY_THREADS")
+  if [[ -n "$EASY_BAM" ]]; then eq+=(--bam "$EASY_BAM"); else eq+=(--fq1 "$EASY_FQ1" --fq2 "$EASY_FQ2"); fi
+  eq_list="$("${eq[@]}")"
+  while IFS= read -r x; do [[ -n "$x" ]] && EASY+=("$x"); done < "$eq_list"
+ else
+  echo "EasyQuant: NOT_APPLICABLE (phase-1 query table has no data rows); skipping BAM/FASTQ scan." >&2
+ fi
 fi
 if [[ "$RUN_K4" == 1 ]]; then
- k4=(bash "$ROOT/scripts/run_k4neo_sample.sh" --query-table "$PHASE1/splice_k4neo_input.tsv" --database "$K4_DB" --index "$K4_INDEX" --outdir "$EXT/k4neo" --prefix "$K4_PREFIX" --license-accepted)
+ k4=(bash "$ROOT/scripts/run_k4neo_sample.sh" --query-table "$REGISTRY/splice_k4neo_input.tsv" --database "$K4_DB" --index "$K4_INDEX" --outdir "$EXT/k4neo" --prefix "$K4_PREFIX" --license-accepted)
  mapfile -t k4_lists < <("${k4[@]}")
  [[ ${#k4_lists[@]} -ge 1 && -s "${k4_lists[0]}" ]] && while IFS= read -r x; do [[ -n "$x" ]] && K4_HEALTHY+=("$x"); done < "${k4_lists[0]}"
  [[ ${#k4_lists[@]} -ge 2 && -s "${k4_lists[1]}" ]] && while IFS= read -r x; do [[ -n "$x" ]] && K4_ANNOTATED+=("$x"); done < "${k4_lists[1]}"
@@ -160,15 +191,15 @@ if [[ "$RUN_PVS" == 1 ]]; then
 fi
 
 # Phase 2 imports external evidence strictly against the phase-1 maps.
-make_build_args "$PRE"
+make_build_args "$PRE" "$REGISTRY"
 for x in "${EASY[@]}"; do BUILD_ARGS+=(--easyquant "$x"); done
-[[ ${#EASY[@]} -gt 0 ]] && BUILD_ARGS+=(--easyquant-query-map "$PHASE1/splice_easyquant_query_map.tsv")
+[[ ${#EASY[@]} -gt 0 ]] && BUILD_ARGS+=(--easyquant-query-map "$REGISTRY/splice_easyquant_query_map.tsv")
 for x in "${PVS[@]}"; do BUILD_ARGS+=(--pvacsplice "$x"); done
 for x in "${K4_HEALTHY[@]}"; do BUILD_ARGS+=(--k4neo-healthy-sample-rate "$x"); done
 for x in "${K4_ANNOTATED[@]}"; do BUILD_ARGS+=(--k4neo-annotated "$x"); done
 for x in "${K4_UNIQUE[@]}"; do BUILD_ARGS+=(--k4neo-uniqueness "$x"); done
 if [[ ${#K4_HEALTHY[@]} -gt 0 || ${#K4_ANNOTATED[@]} -gt 0 || ${#K4_UNIQUE[@]} -gt 0 ]]; then
- BUILD_ARGS+=(--k4neo-query-map "$PHASE1/splice_k4neo_query_map.tsv" --k4neo-license-accepted)
+ BUILD_ARGS+=(--k4neo-query-map "$REGISTRY/splice_k4neo_query_map.tsv" --k4neo-license-accepted)
 fi
 "$PY" "${BUILD_ARGS[@]}" > "$OUTDIR/pre_pvacbind.outputs.json"
 
@@ -182,14 +213,7 @@ if [[ "$SKIP_PVB" != 1 && ${#PVB[@]} -eq 0 && ( -n "$HLA" || -n "$HLA_FILE" ) &&
 fi
 
 if [[ ${#PVB[@]} -gt 0 ]]; then
- make_build_args "$FINAL"
- for x in "${EASY[@]}"; do BUILD_ARGS+=(--easyquant "$x"); done
- [[ ${#EASY[@]} -gt 0 ]] && BUILD_ARGS+=(--easyquant-query-map "$PHASE1/splice_easyquant_query_map.tsv")
- for x in "${PVS[@]}"; do BUILD_ARGS+=(--pvacsplice "$x"); done
- for x in "${K4_HEALTHY[@]}"; do BUILD_ARGS+=(--k4neo-healthy-sample-rate "$x"); done
- for x in "${K4_ANNOTATED[@]}"; do BUILD_ARGS+=(--k4neo-annotated "$x"); done
- for x in "${K4_UNIQUE[@]}"; do BUILD_ARGS+=(--k4neo-uniqueness "$x"); done
- if [[ ${#K4_HEALTHY[@]} -gt 0 || ${#K4_ANNOTATED[@]} -gt 0 || ${#K4_UNIQUE[@]} -gt 0 ]]; then BUILD_ARGS+=(--k4neo-query-map "$PHASE1/splice_k4neo_query_map.tsv" --k4neo-license-accepted); fi
+ make_build_args "$FINAL" "$PRE"
  for x in "${PVB[@]}"; do BUILD_ARGS+=(--pvacbind "$x"); done
  BUILD_ARGS+=(--pvacbind-fasta-map "$PRE/splice_pvacbind_fasta_map.tsv")
  "$PY" "${BUILD_ARGS[@]}" > "$OUTDIR/final.outputs.json"

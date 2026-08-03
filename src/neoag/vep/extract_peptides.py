@@ -96,6 +96,9 @@ OUTPUT_FIELDS = [
     "vaf",
     "tumor_depth",
     "tumor_alt_count",
+    "normal_alt_vaf",
+    "normal_depth",
+    "normal_alt_count",
     "rna_vaf",
     "rna_alt_reads",
     "rna_depth",
@@ -198,6 +201,20 @@ def _resolve_tumor_sample_index(header: list[str], tumor_sample_name: str | None
     if len(header) > 10:
         return 10
     return 9
+
+
+def _resolve_normal_sample_index(
+    header: list[str],
+    normal_sample_name: str | None,
+    *,
+    tumor_sample_name: str | None = None,
+) -> int | None:
+    """Return the matched-normal sample column only when explicitly identified."""
+    if len(header) <= 9 or not normal_sample_name:
+        return None
+    if normal_sample_name in header and normal_sample_name != tumor_sample_name:
+        return header.index(normal_sample_name)
+    return None
 
 
 def _resolve_rna_sample_index(
@@ -766,6 +783,7 @@ def extract_variant_peptides_from_vcf(
     mhcflurry_csv: str | Path | None = None,
     annotate_netmhcpan: bool = False,
     tumor_sample_name: str | None = None,
+    normal_sample_name: str | None = None,
     rna_sample_name: str | None = None,
     consequence_filter: str | None = None,
 ) -> dict[str, Any]:
@@ -795,6 +813,7 @@ def extract_variant_peptides_from_vcf(
 
     csq_idx: dict[str, int] | None = None
     tumor_sample_idx: int | None = None
+    normal_sample_idx: int | None = None
     rna_sample_idx: int | None = None
     header_cols: list[str] = []
     rows: list[dict[str, Any]] = []
@@ -814,6 +833,11 @@ def extract_variant_peptides_from_vcf(
                 tumor_sample_idx = _resolve_tumor_sample_index(
                     header_cols,
                     tumor_sample_name or sample_id,
+                )
+                normal_sample_idx = _resolve_normal_sample_index(
+                    header_cols,
+                    normal_sample_name,
+                    tumor_sample_name=tumor_sample_name or sample_id,
                 )
                 rna_sample_idx = _resolve_rna_sample_index(
                     header_cols,
@@ -835,12 +859,19 @@ def extract_variant_peptides_from_vcf(
             vaf = ""
             tumor_depth = ""
             tumor_alt_count = ""
+            normal_alt_vaf = ""
+            normal_depth = ""
+            normal_alt_count = ""
             rna_vaf = ""
             rna_alt_reads = ""
             rna_depth = ""
             if tumor_sample_idx is not None and len(parts) > tumor_sample_idx:
                 vaf, tumor_depth, tumor_alt_count = _parse_allele_metrics_from_format(
                     parts[8], parts[tumor_sample_idx]
+                )
+            if normal_sample_idx is not None and len(parts) > normal_sample_idx:
+                normal_alt_vaf, normal_depth, normal_alt_count = _parse_allele_metrics_from_format(
+                    parts[8], parts[normal_sample_idx]
                 )
             if rna_sample_idx is not None and len(parts) > rna_sample_idx:
                 rna_vaf, rna_depth, rna_alt_reads = _parse_allele_metrics_from_format(
@@ -958,6 +989,9 @@ def extract_variant_peptides_from_vcf(
                     "vaf": vaf,
                     "tumor_depth": tumor_depth,
                     "tumor_alt_count": tumor_alt_count,
+                    "normal_alt_vaf": normal_alt_vaf,
+                    "normal_depth": normal_depth,
+                    "normal_alt_count": normal_alt_count,
                     "rna_vaf": rna_vaf,
                     "rna_alt_reads": rna_alt_reads,
                     "rna_depth": rna_depth,

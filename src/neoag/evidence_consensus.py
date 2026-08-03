@@ -11,6 +11,7 @@ import tomllib
 from typing import Any, Mapping
 
 from .evidence_states import DERIVERS, derive_all_states, event_track
+from .source_chain import derive_source_chain_confidence
 from .pareto import nondominated_fronts
 from .utils import read_tsv, write_tsv
 
@@ -49,6 +50,23 @@ DEFAULT_RULES: dict[str, Any] = {
     },
     "manual_review": {"genes": ["KRAS", "TP53"], "events": ["EWSR1::WT1"]},
     "output": {"peptide_id_tie_break": True, "event_deduplicate": True},
+    "source_chain": {
+        "enabled": False,
+        "rule_version": "source-chain-v1.0",
+        "integration_mode": "compatibility",
+        "include_in_pareto": False,
+        "include_in_tiebreak": False,
+        "c2_max_grade_research": "R1",
+        "c2_max_grade_translational": "R2",
+        "profile": "research",
+        "dna_min_depth": 20,
+        "dna_min_alt_reads": 3,
+        "rna_min_evaluable_depth": 10,
+        "fusion_min_split_reads": 3,
+        "fusion_strong_split_reads": 10,
+        "junction_min_reads": 3,
+        "junction_strong_reads": 10,
+    },
 }
 
 ALL_TOOL_RESULTS_SCHEMA_VERSION = "1.0"
@@ -81,6 +99,7 @@ PARETO_DERIVED_FIELDS = [
     "frame_evidence_grade",
     "normal_junction_safety_grade",
 ]
+SOURCE_CHAIN_DIMENSION = "source_chain_confidence_grade"
 PARETO_DIMENSIONS_BY_TRACK = {
     "MISSENSE": [
         "event_authenticity_grade", "rna_support_grade", "presentation_consensus_grade",
@@ -141,6 +160,17 @@ CONSENSUS_FIELDS = (
     "evidence_assessed_layers", "evidence_missing_layers", "evidence_conflict_layers",
     "evidence_layer_states", "evidence_reason_codes", "consensus_action",
     "recommended_next_steps", "consensus_trace",
+    "source_chain_track", "source_chain_confidence_tier", "source_chain_confidence_label",
+    "source_chain_confidence_grade", "source_chain_rule_version",
+    "source_chain_orthogonal_status", "source_chain_orthogonal_sources",
+    "source_chain_hard_failure", "source_chain_hard_failure_codes", "source_chain_reason_codes",
+    "source_chain_supported_requirements", "source_chain_missing_requirements",
+    "source_chain_low_power_requirements", "source_chain_negative_requirements",
+    "source_chain_conflict_requirements", "source_chain_not_applicable_requirements",
+    "source_chain_requirement_count", "source_chain_supported_count", "source_chain_unassessed_count",
+    "source_chain_low_power_count", "source_chain_negative_count", "source_chain_conflict_count",
+    "source_chain_not_applicable_count", "source_chain_requirement_statuses",
+    "source_chain_requirement_details", "source_chain_integration_mode",
 )
 CONFLICT_FIELDS = (
     "peptide_id", "event_id", "gene", "evidence_track", "layer", "state",
@@ -174,6 +204,49 @@ def _strictest_cap(row: Mapping[str, Any]) -> str:
     caps = [str(row.get(field, "")).strip().upper() for field in CAP_FIELDS]
     caps = [cap for cap in caps if cap in CAP_TO_GRADE]
     return max(caps, key=lambda cap: GRADE_ORDER[CAP_TO_GRADE[cap]], default="")
+
+
+def _source_chain_config(rules: Mapping[str, Any]) -> Mapping[str, Any]:
+    cfg = rules.get("source_chain", {}) if isinstance(rules, Mapping) else {}
+    return cfg if isinstance(cfg, Mapping) else {}
+
+
+def _source_chain_enabled(rules: Mapping[str, Any]) -> bool:
+    return bool(_source_chain_config(rules).get("enabled", True))
+
+
+def _source_chain_integration_mode(rules: Mapping[str, Any]) -> str:
+    mode = str(_source_chain_config(rules).get("integration_mode", "compatibility")).strip().lower()
+    return mode if mode in {"compatibility", "integrated"} else "compatibility"
+
+
+def _pareto_dimensions_for_track(track: str, rules: Mapping[str, Any]) -> list[str]:
+    dimensions = list(PARETO_DIMENSIONS_BY_TRACK.get(track, BASE_DIMENSIONS))
+    cfg = _source_chain_config(rules)
+    if _source_chain_enabled(rules) and bool(cfg.get("include_in_pareto", False)):
+        if SOURCE_CHAIN_DIMENSION not in dimensions:
+            dimensions.append(SOURCE_CHAIN_DIMENSION)
+    return dimensions
+
+
+def _source_chain_caps(source_chain: Mapping[str, str], rules: Mapping[str, Any]) -> list[tuple[str, str]]:
+    if not _source_chain_enabled(rules) or _source_chain_integration_mode(rules) != "integrated":
+        return []
+    tier = str(source_chain.get("source_chain_confidence_tier", "C3")).upper()
+    cfg = _source_chain_config(rules)
+    profile = str(cfg.get("profile", "research")).lower()
+    if tier == "C4":
+        return [("R4", "CAP_SOURCE_CHAIN_C4")]
+    if tier == "C3":
+        return [("R3", "CAP_SOURCE_CHAIN_C3")]
+    if tier == "C2":
+        configured = str(cfg.get(
+            "c2_max_grade_translational" if profile == "translational" else "c2_max_grade_research",
+            "R2" if profile == "translational" else "R1",
+        )).upper()
+        if configured in GRADE_ORDER and configured != "R1":
+            return [(configured, f"CAP_SOURCE_CHAIN_C2_{profile.upper()}")]
+    return []
 
 
 def _manual_review(row: Mapping[str, Any], rules: Mapping[str, Any]) -> tuple[bool, str]:
@@ -430,11 +503,19 @@ def _derived_grade_caps(
     source: Mapping[str, Any],
     states: Mapping[str, Mapping[str, Any]],
     track: str,
+    source_chain_tier: str = "",
 ) -> list[tuple[str, str]]:
     caps: list[tuple[str, str]] = []
     mutation_source = str(source.get("mutation_source", "")).upper()
     ccf_resolution = str(source.get("ccf_resolution", "")).upper()
-    if track == "FUSION" and ("RNA_ONLY" in mutation_source or "RNA_ONLY" in ccf_resolution or not states["clonality"]["assessed"]):
+    # RNA-only origin is not itself weak evidence. A fusion with a complete C1/C2
+    # breakpoint->transcript/ORF->peptide chain may proceed without a DNA-SV call.
+    # Keep the legacy cap only when the source chain is incomplete or unresolved.
+    if (
+        track == "FUSION"
+        and source_chain_tier not in {"C1", "C2"}
+        and ("RNA_ONLY" in mutation_source or "RNA_ONLY" in ccf_resolution or not states["clonality"]["assessed"])
+    ):
         caps.append(("R3", "CAP_RNA_ONLY_FUSION"))
     normal_junction = " ".join(str(source.get(field, "")).upper() for field in (
         "normal_junction_assessment_status", "event_normal_junction_assessment_status",
@@ -491,14 +572,20 @@ def _normalized_row(
     legacy_rank: int,
 ) -> tuple[dict[str, str], list[dict[str, str]]]:
     states = derive_all_states(source, rules)
+    source_chain_enabled = _source_chain_enabled(rules)
+    source_chain_mode = _source_chain_integration_mode(rules)
     biological_track = event_track(source)
+    source_chain_result = derive_source_chain_confidence(source, rules)
+    source_chain_fields = source_chain_result.as_row()
     review, review_reason = _manual_review(source, rules)
     pareto_track = "MANUAL_REVIEW" if review else biological_track
     row = {key: str(value or "") for key, value in source.items()}
     row["legacy_weighted_rank"] = str(legacy_rank)
     row["biological_event_track"] = biological_track
     row["evidence_track"] = pareto_track
-    row["pareto_dimensions"] = ",".join(PARETO_DIMENSIONS_BY_TRACK.get(pareto_track, BASE_DIMENSIONS))
+    row["pareto_dimensions"] = ",".join(_pareto_dimensions_for_track(pareto_track, rules))
+    row.update(source_chain_fields)
+    row["source_chain_integration_mode"] = source_chain_mode if source_chain_enabled else "disabled"
     assessed = [name for name, state in states.items() if state["assessed"]]
     missing = [name for name, state in states.items() if not state["assessed"]]
     conflicts = [name for name, state in states.items() if state["conflict"]]
@@ -513,6 +600,12 @@ def _normalized_row(
         str(state.get("hard_code") or state.get("reason_code") or "HARD_UNSPECIFIED")
         for state in states.values() if state["hard_fail"]
     ]
+    if source_chain_enabled and source_chain_mode == "integrated" and source_chain_result.hard_failure:
+        hard.extend(
+            f"{code}:source_chain:{source_chain_result.label}"
+            for code in source_chain_result.hard_failure_codes
+        )
+        hard_codes.extend(source_chain_result.hard_failure_codes)
     for name, state in states.items():
         row[f"{name}_state"] = str(state["state"])
         row[f"{name}_grade"] = str(state["grade"])
@@ -533,12 +626,33 @@ def _normalized_row(
     row["mhcflurry_tiebreak_score"] = _format_tiebreak_number(mhcflurry_score)
     cap = _strictest_cap(source)
     uncapped = _uncapped_grade(source, states, biological_track)
-    derived_caps = _derived_grade_caps(source, states, biological_track)
+    derived_caps = _derived_grade_caps(
+        source,
+        states,
+        biological_track,
+        source_chain_result.tier
+        if source_chain_enabled and source_chain_mode == "integrated" else "",
+    )
+    derived_caps.extend(_source_chain_caps(source_chain_fields, rules))
     if cap:
         derived_caps.append((CAP_TO_GRADE[cap], f"CAP_EXISTING_PRIORITY_{cap}"))
     grade_cap = max((value for value, _ in derived_caps), key=lambda value: GRADE_ORDER[value], default="R1")
     grade = _constrained_grade(uncapped, next((name for name, value in CAP_TO_GRADE.items() if value == grade_cap), ""), bool(hard))
     action, next_steps = _next_steps(grade, source, states)
+    source_chain_steps = []
+    if source_chain_result.tier == "C3":
+        if source_chain_result.missing_requirements:
+            source_chain_steps.append("complete source-chain requirements: " + ",".join(source_chain_result.missing_requirements))
+        if source_chain_result.low_power_requirements:
+            source_chain_steps.append("increase evidence power for: " + ",".join(source_chain_result.low_power_requirements))
+        if source_chain_result.negative_requirements:
+            source_chain_steps.append("review negative source-chain evidence: " + ",".join(source_chain_result.negative_requirements))
+    elif source_chain_result.tier == "C2" and source_chain_result.orthogonal_status != "SUPPORTED":
+        source_chain_steps.append("obtain independent/cross-modal orthogonal confirmation")
+    elif source_chain_result.tier == "C4":
+        source_chain_steps.append("do not advance until source-chain hard failures are resolved")
+    if source_chain_steps:
+        next_steps = "; ".join(filter(None, [next_steps, *source_chain_steps]))
     if source_conflict_fields:
         review = True
         source_reason = "source conflicts=" + ",".join(source_conflict_fields)
@@ -606,6 +720,13 @@ def _normalized_row(
         state_row[f"{name}_reason_code"] = str(state["reason_code"])
         state_row[f"{name}_reason"] = str(state["reason"])
     state_row.update({field: row[field] for field in (
+        "source_chain_track", "source_chain_confidence_tier", "source_chain_confidence_label",
+        "source_chain_confidence_grade", "source_chain_rule_version", "source_chain_orthogonal_status",
+        "source_chain_orthogonal_sources", "source_chain_hard_failure", "source_chain_hard_failure_codes",
+        "source_chain_reason_codes", "source_chain_supported_requirements", "source_chain_missing_requirements",
+        "source_chain_low_power_requirements", "source_chain_negative_requirements",
+        "source_chain_conflict_requirements", "source_chain_not_applicable_requirements",
+        "source_chain_requirement_statuses", "source_chain_requirement_details", "source_chain_integration_mode",
         "hard_failure", "hard_failure_codes", "hard_failure_reasons", "legacy_priority_cap", "consensus_priority_cap",
         "evidence_grade_cap", "evidence_grade_cap_reasons",
         "manual_review_required", "manual_review_reason", "evidence_grade_uncapped",
@@ -631,6 +752,27 @@ def _normalized_row(
         "reason": str(states[name]["reason"]),
         "recommended_action": "manual evidence reconciliation before candidate progression",
     } for name in conflicts if name != "source_precedence"]
+    for requirement in source_chain_result.requirements:
+        if requirement.status != "CONFLICT" or _source_chain_integration_mode(rules) != "integrated":
+            continue
+        conflict_rows.append({
+            "peptide_id": str(source.get("peptide_id", "")),
+            "event_id": str(source.get("event_id", "")),
+            "gene": str(source.get("gene", "")),
+            "evidence_track": row["evidence_track"],
+            "layer": "source_chain",
+            "state": "CONFLICT",
+            "field": requirement.name,
+            "selected_source": "",
+            "selected_value": "",
+            "other_source": "",
+            "other_value": "",
+            "precedence_version": str(source.get("evidence_source_precedence_version", "")),
+            "conflict_type": "SOURCE_CHAIN_REQUIREMENT_CONFLICT",
+            "reason_code": requirement.reason_code,
+            "reason": requirement.reason,
+            "recommended_action": "resolve source-chain conflict before candidate progression",
+        })
     try:
         source_details = json.loads(str(source.get("evidence_conflict_details", "[]")) or "[]")
     except json.JSONDecodeError:
@@ -664,13 +806,13 @@ def score_evidence_consensus(row: Mapping[str, Any], rules: Mapping[str, Any] | 
     return {field: normalized[field] for field in CONSENSUS_FIELDS if field in normalized}
 
 
-def _assign_pareto(rows: list[dict[str, str]]) -> None:
+def _assign_pareto(rows: list[dict[str, str]], rules: Mapping[str, Any]) -> None:
     groups: dict[tuple[str, str], list[dict[str, str]]] = defaultdict(list)
     for index, row in enumerate(rows):
         row["_pareto_id"] = str(index)
         groups[(row["evidence_track"], row["evidence_grade"])].append(row)
     for (track, _grade), group in groups.items():
-        dimensions = PARETO_DIMENSIONS_BY_TRACK.get(track, BASE_DIMENSIONS)
+        dimensions = _pareto_dimensions_for_track(track, rules)
         fronts = nondominated_fronts(group, dimensions)
         for row in group:
             row["pareto_front"] = str(fronts[row["_pareto_id"]])
@@ -685,6 +827,7 @@ def _build_evidence_rank_key(row: Mapping[str, Any]) -> str:
         str(row.get("evidence_grade", "R4")),
         str(row.get("evidence_track", "OTHER")),
         f"F{int(_number(row.get('pareto_front')) or 999999)}",
+        f"SOURCE_CHAIN={row.get('source_chain_confidence_tier', 'C3')}",
         f"{row.get('safety_state', 'UNASSESSED')}_COMPLETENESS_{int(_number(row.get('safety_completeness_grade')))}",
         str(row.get("event_authenticity_state", "EVENT_UNASSESSED")),
         str(row.get("rna_support_state", "RNA_UNASSESSED")),
@@ -707,6 +850,7 @@ def _rank_key(row: Mapping[str, Any], rules: Mapping[str, Any]) -> tuple[Any, ..
         GRADE_ORDER.get(str(row.get("evidence_grade", "R4")), 4),
         str(row.get("evidence_track", "")),
         int(_number(row.get("pareto_front")) or 999999),
+        -int(_number(row.get("source_chain_confidence_grade"))) if bool(_source_chain_config(rules).get("include_in_tiebreak", False)) else 0,
         -int(_number(row.get("safety_completeness_grade"))),
         -int(_number(row.get("event_authenticity_grade"))),
         -int(_number(row.get("rna_support_grade"))),
@@ -738,6 +882,8 @@ def _representative_fields(row: Mapping[str, Any], index: int) -> dict[str, str]
         f"{prefix}hla_allele": _row_text(row, "hla_allele", "hla", "allele", "restricting_hla"),
         f"{prefix}evidence_rank": _row_text(row, "evidence_rank"),
         f"{prefix}evidence_grade": _row_text(row, "evidence_grade"),
+        f"{prefix}source_chain_confidence_tier": _row_text(row, "source_chain_confidence_tier"),
+        f"{prefix}source_chain_confidence_label": _row_text(row, "source_chain_confidence_label"),
         f"{prefix}pareto_front": _row_text(row, "pareto_front"),
         f"{prefix}redundancy_group": _row_text(row, "redundancy_group", "peptide_redundancy_group", "overlap_group"),
         f"{prefix}evidence_rank_key": _row_text(row, "evidence_rank_key"),
@@ -800,6 +946,14 @@ def _event_output(peptides: list[dict[str, str]], deduplicate: bool) -> list[dic
             "best_hla_allele": _row_text(best, "hla_allele", "hla", "allele", "restricting_hla"),
             "best_peptide_evidence_rank": best["evidence_rank"],
             "best_evidence_grade": best["evidence_grade"],
+            "source_chain_track": _row_text(best, "source_chain_track"),
+            "source_chain_confidence_tier": _row_text(best, "source_chain_confidence_tier"),
+            "source_chain_confidence_label": _row_text(best, "source_chain_confidence_label"),
+            "source_chain_orthogonal_status": _row_text(best, "source_chain_orthogonal_status"),
+            "source_chain_reason_codes": _row_text(best, "source_chain_reason_codes"),
+            "source_chain_missing_requirements": _row_text(best, "source_chain_missing_requirements"),
+            "source_chain_hard_failure": _row_text(best, "source_chain_hard_failure"),
+            "source_chain_hard_failure_codes": _row_text(best, "source_chain_hard_failure_codes"),
             "best_pareto_front": best["pareto_front"],
             "best_evidence_rank_key": best["evidence_rank_key"],
             "peptide_count": str(len(group)),
@@ -848,6 +1002,9 @@ def _comparison_rows(rows: list[dict[str, str]]) -> list[dict[str, str]]:
             "rank_shift_weighted_minus_consensus": str(shift),
             "rank_shift_direction": direction,
             "evidence_grade": row["evidence_grade"],
+            "source_chain_confidence_tier": row.get("source_chain_confidence_tier", "C3"),
+            "source_chain_track": row.get("source_chain_track", ""),
+            "source_chain_reason_codes": row.get("source_chain_reason_codes", ""),
             "pareto_front": row["pareto_front"],
             "evidence_rank_key": row["evidence_rank_key"],
             "consensus_action": row["consensus_action"],
@@ -867,7 +1024,7 @@ def _write_provenance(path: str | Path, rules: Mapping[str, Any], result: Mappin
             payload = {}
     rules_json = json.dumps(rules, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
     payload["evidence_consensus"] = {
-        "algorithm": "discrete_state_grade_track_pareto_v2",
+        "algorithm": "discrete_state_grade_track_pareto_source_chain_v3" if _source_chain_integration_mode(rules) == "integrated" else "discrete_state_grade_track_pareto_v2_source_chain_annotation",
         "status": rules.get("metadata", {}).get("status", "PROVISIONAL_RESEARCH_ONLY"),
         "rules_name": rules.get("metadata", {}).get("name", ""),
         "rules_version": rules.get("metadata", {}).get("version", ""),
@@ -997,6 +1154,60 @@ def _write_canonical_all_tool_results(
     return str(target), str(manifest_path)
 
 
+def _write_source_chain_outputs(
+    output_dir: str | Path,
+    rows: list[dict[str, str]],
+) -> tuple[str, str]:
+    output_path = Path(output_dir) / "source_chain_confidence.tsv"
+    requirements_path = Path(output_dir) / "source_chain_requirements.long.tsv"
+    compact_fields = [
+        "sample_id", "event_id", "peptide_id", "gene", "event_type", "peptide", "hla_allele",
+        "source_chain_track", "source_chain_confidence_tier", "source_chain_confidence_label",
+        "source_chain_confidence_grade", "source_chain_rule_version", "source_chain_integration_mode",
+        "source_chain_orthogonal_status", "source_chain_orthogonal_sources",
+        "source_chain_hard_failure", "source_chain_hard_failure_codes", "source_chain_reason_codes",
+        "source_chain_supported_requirements", "source_chain_missing_requirements",
+        "source_chain_low_power_requirements", "source_chain_negative_requirements",
+        "source_chain_conflict_requirements", "source_chain_not_applicable_requirements",
+        "source_chain_requirement_count", "source_chain_supported_count", "source_chain_unassessed_count",
+        "source_chain_low_power_count", "source_chain_negative_count", "source_chain_conflict_count",
+        "source_chain_not_applicable_count", "source_chain_requirement_statuses",
+    ]
+    compact_rows = [{field: str(row.get(field, "")) for field in compact_fields} for row in rows]
+    write_tsv(output_path, compact_rows, compact_fields)
+    requirement_rows: list[dict[str, str]] = []
+    for row in rows:
+        try:
+            details = json.loads(str(row.get("source_chain_requirement_details", "{}")) or "{}")
+        except json.JSONDecodeError:
+            details = {}
+        if not isinstance(details, Mapping):
+            continue
+        for name, detail in details.items():
+            if not isinstance(detail, Mapping):
+                continue
+            requirement_rows.append({
+                "sample_id": str(row.get("sample_id", "")),
+                "event_id": str(row.get("event_id", "")),
+                "peptide_id": str(row.get("peptide_id", "")),
+                "gene": str(row.get("gene", "")),
+                "source_chain_track": str(row.get("source_chain_track", "")),
+                "source_chain_confidence_tier": str(row.get("source_chain_confidence_tier", "")),
+                "requirement_name": str(name),
+                "requirement_label": str(detail.get("label", "")),
+                "requirement_status": str(detail.get("status", "")),
+                "requirement_core": "yes" if bool(detail.get("core", True)) else "no",
+                "fatal_if_negative": "yes" if bool(detail.get("fatal_if_negative", False)) else "no",
+                "fatal_if_conflict": "yes" if bool(detail.get("fatal_if_conflict", True)) else "no",
+                "reason_code": str(detail.get("reason_code", "")),
+                "reason": str(detail.get("reason", "")),
+                "source_fields": ",".join(str(value) for value in detail.get("source_fields", []) if str(value)),
+                "rule_version": str(row.get("source_chain_rule_version", "")),
+            })
+    write_tsv(requirements_path, requirement_rows)
+    return str(output_path), str(requirements_path)
+
+
 def _write_consensus_summary(
     path: str | Path,
     rows: list[dict[str, str]],
@@ -1005,6 +1216,8 @@ def _write_consensus_summary(
 ) -> None:
     grade_counts = Counter(row["evidence_grade"] for row in rows)
     track_counts = Counter(row["evidence_track"] for row in rows)
+    source_chain_counts = Counter(row.get("source_chain_confidence_tier", "C3") for row in rows)
+    source_chain_track_counts = Counter(row.get("source_chain_track", "OTHER") for row in rows)
     summary = [
         {"metric": "peptide_hla_rows", "category": "overall", "value": str(len(rows))},
         {"metric": "event_rows", "category": "overall", "value": str(len(event_rows))},
@@ -1014,6 +1227,8 @@ def _write_consensus_summary(
     ]
     summary.extend({"metric": grade, "category": "evidence_grade", "value": str(count)} for grade, count in sorted(grade_counts.items()))
     summary.extend({"metric": track, "category": "evidence_track", "value": str(count)} for track, count in sorted(track_counts.items()))
+    summary.extend({"metric": tier, "category": "source_chain_tier", "value": str(count)} for tier, count in sorted(source_chain_counts.items()))
+    summary.extend({"metric": track, "category": "source_chain_track", "value": str(count)} for track, count in sorted(source_chain_track_counts.items()))
     write_tsv(path, summary, ["metric", "category", "value"])
 
 
@@ -1036,6 +1251,7 @@ def _write_comparison_markdown(
         overlaps.append((top_n, len(left & right), len(left), len(right)))
     hla_count = len({row.get("hla_allele", "") for row in comparison_rows if row.get("hla_allele")})
     event_types = Counter(row.get("event_type", "UNASSESSED") or "UNASSESSED" for row in comparison_rows)
+    source_chain_counts = Counter(row.get("source_chain_confidence_tier", "C3") or "C3" for row in comparison_rows)
     rna_supported = sum("CONFIRMED" in row.get("rna_support_state", "") or "SUPPORTED" in row.get("rna_support_state", "") for row in comparison_rows)
     safety_complete = sum(row.get("safety_state") == "SAFETY_PASS" for row in comparison_rows)
     hard_fail_top = sum(row.get("hard_failure") == "yes" and int(row["evidence_rank"]) <= 50 for row in comparison_rows)
@@ -1063,6 +1279,7 @@ def _write_comparison_markdown(
         *[f"| Top{top_n} overlap | {overlap} (weighted={left_n}, consensus={right_n}) |" for top_n, overlap, left_n, right_n in overlaps],
         *[f"| Rank shift: {key} | {value} |" for key, value in sorted(direction_counts.items())],
         *[f"| Evidence grade {key} | {value} |" for key, value in sorted(grade_counts.items())],
+        *[f"| Source-chain tier {key} | {value} |" for key, value in sorted(source_chain_counts.items())],
         *[f"| Track {key} | {value} |" for key, value in sorted(track_counts.items())],
         *[f"| Event type {key} | {value} |" for key, value in sorted(event_types.items())],
         "",
@@ -1097,7 +1314,7 @@ def _write_run_manifest(
     payload = {
         "schema_version": "1.0",
         "generated_at": datetime.datetime.now(datetime.UTC).isoformat().replace("+00:00", "Z"),
-        "algorithm": "discrete_state_grade_track_pareto_v2",
+        "algorithm": "discrete_state_grade_track_pareto_source_chain_v3" if _source_chain_integration_mode(rules) == "integrated" else "discrete_state_grade_track_pareto_v2_source_chain_annotation",
         "status": rules.get("metadata", {}).get("status", "PROVISIONAL_RESEARCH_ONLY"),
         "rules_name": rules.get("metadata", {}).get("name", ""),
         "rules_version": rules.get("metadata", {}).get("version", ""),
@@ -1113,6 +1330,14 @@ def _write_run_manifest(
             "conflict_rows": result["conflicts"],
             "evidence_grades": result["grade_counts"],
             "tracks": result["track_counts"],
+            "source_chain_tiers": result.get("source_chain_counts", {}),
+            "source_chain_tracks": result.get("source_chain_track_counts", {}),
+        },
+        "source_chain": {
+            "enabled": _source_chain_enabled(rules),
+            "integration_mode": _source_chain_integration_mode(rules),
+            "rule_version": _source_chain_config(rules).get("rule_version", "source-chain-v1.0"),
+            "include_in_pareto": bool(_source_chain_config(rules).get("include_in_pareto", False)),
         },
         "legacy_ranking_modified": False,
         "outputs": outputs,
@@ -1141,7 +1366,7 @@ def rank_evidence_consensus(
         rows.append(normalized)
         states.append(records[0])
         conflicts.extend(records[1:])
-    _assign_pareto(rows)
+    _assign_pareto(rows, rules)
     for row in rows:
         row["evidence_rank_key"] = _build_evidence_rank_key(row)
     rows.sort(key=lambda row: _rank_key(row, rules))
@@ -1158,6 +1383,7 @@ def rank_evidence_consensus(
     event_rows = _event_output(rows, bool(rules.get("output", {}).get("event_deduplicate", True)))
     write_tsv(output_events_tsv, event_rows)
     output_dir = Path(output_peptides_tsv).parent
+    source_chain_path, source_chain_requirements_path = _write_source_chain_outputs(output_dir, rows)
     comparison_rows = _comparison_rows(rows)
     comparison_path = output_dir / "ranking_compare_weighted_vs_consensus.tsv"
     comparison_legacy_path = output_dir / "weighted_vs_consensus_comparison.tsv"
@@ -1169,6 +1395,8 @@ def rank_evidence_consensus(
     _materialize_alias(comparison_path, comparison_legacy_path)
     grade_counts = dict(sorted(Counter(row["evidence_grade"] for row in rows).items()))
     track_counts = dict(sorted(Counter(row["evidence_track"] for row in rows).items()))
+    source_chain_counts = dict(sorted(Counter(row.get("source_chain_confidence_tier", "C3") for row in rows).items()))
+    source_chain_track_counts = dict(sorted(Counter(row.get("source_chain_track", "OTHER") for row in rows).items()))
     _write_consensus_summary(summary_path, rows, event_rows, conflicts)
     _write_comparison_markdown(comparison_md_path, comparison_rows, grade_counts, track_counts)
     all_tool_results, all_tool_results_manifest = _write_canonical_all_tool_results(
@@ -1189,8 +1417,12 @@ def rank_evidence_consensus(
         "output_run_manifest": str(run_manifest_path),
         "output_all_tool_results": all_tool_results,
         "output_all_tool_results_manifest": all_tool_results_manifest,
+        "output_source_chain": source_chain_path,
+        "output_source_chain_requirements": source_chain_requirements_path,
         "grade_counts": grade_counts,
         "track_counts": track_counts,
+        "source_chain_counts": source_chain_counts,
+        "source_chain_track_counts": source_chain_track_counts,
         "legacy_ranking_modified": False,
     }
     _write_run_manifest(run_manifest_path, comprehensive_tsv, rules, result)
@@ -1249,6 +1481,10 @@ def build_evidence_consensus(
         "run_manifest": result["output_run_manifest"],
         "all_tool_results": result["output_all_tool_results"],
         "all_tool_results_manifest": result["output_all_tool_results_manifest"],
+        "source_chain_confidence": result["output_source_chain"],
+        "source_chain_requirements": result["output_source_chain_requirements"],
+        "source_chain_counts": result["source_chain_counts"],
+        "source_chain_track_counts": result["source_chain_track_counts"],
         "ranked_peptides_compat": result.get("output_ranked_peptides_compat", str(output_dir / "ranked_peptides.tsv")),
         "weighted_baseline": result.get("output_weighted_baseline", ""),
         "grade_counts": result["grade_counts"],

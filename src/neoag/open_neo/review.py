@@ -78,11 +78,16 @@ def _priority(grade: str, row: dict[str, str]) -> tuple[str, str, str]:
     presentation = _get(row, "presentation_consensus_state", "presentation_state", default="PRESENTATION_UNASSESSED").upper()
     phase = _get(row, "phase_status", "haplotype_status", "phase_confidence").upper()
     fusion = _get(row, "fusion_consensus_status", "event_authenticity_state", "tools_detected").upper()
+    source_chain_tier = _get(row, "source_chain_confidence_tier").upper()
 
+    if source_chain_tier == "C4":
+        return "EXCLUDE_HARD_FAIL", "NOT_FOR_EXPERIMENT", "REVIEW_SOURCE_CHAIN_C4"
     if hard:
         return "EXCLUDE_HARD_FAIL", "NOT_FOR_EXPERIMENT", "REVIEW_HARD_FAIL"
     if grade == "R4":
         return ("MANUAL_REVIEW", "MANUAL_REVIEW_ONLY", "REVIEW_DRIVER_OR_MECHANISM") if manual else ("HOLD", "HOLD", "REVIEW_R4_HOLD")
+    if source_chain_tier == "C3":
+        return "COMPLETE_EVIDENCE", "SOURCE_CHAIN_COMPLETION_FIRST", "REVIEW_SOURCE_CHAIN_C3_INCOMPLETE"
     if "PHAS" in phase and any(token in phase for token in ("REQUIRED", "UNRESOLVED", "LOW")):
         return "COMPLETE_EVIDENCE", "PHASING_FIRST", "REVIEW_PHASING_REQUIRED"
     if kind == "FUSION" and ("SINGLE" in fusion or "ONE_CALLER" in fusion):
@@ -136,6 +141,16 @@ def build_review_rows(events: list[dict[str, str]], peptides: list[dict[str, str
             "gene": _get(event, "gene", default=_get(rep1, "gene")),
             "event_type": event_type,
             "event_kind": kind,
+            "source_chain_track": _get(event, "source_chain_track", default=_get(rep1, "source_chain_track")),
+            "source_chain_confidence_tier": _get(event, "source_chain_confidence_tier", default=_get(rep1, "source_chain_confidence_tier")),
+            "source_chain_confidence_label": _get(event, "source_chain_confidence_label", default=_get(rep1, "source_chain_confidence_label")),
+            "source_chain_orthogonal_status": _get(event, "source_chain_orthogonal_status", default=_get(rep1, "source_chain_orthogonal_status")),
+            "source_chain_orthogonal_sources": _get(event, "source_chain_orthogonal_sources", default=_get(rep1, "source_chain_orthogonal_sources")),
+            "source_chain_reason_codes": _get(event, "source_chain_reason_codes", default=_get(rep1, "source_chain_reason_codes")),
+            "source_chain_missing_requirements": _get(event, "source_chain_missing_requirements", default=_get(rep1, "source_chain_missing_requirements")),
+            "source_chain_low_power_requirements": _get(event, "source_chain_low_power_requirements", default=_get(rep1, "source_chain_low_power_requirements")),
+            "source_chain_negative_requirements": _get(event, "source_chain_negative_requirements", default=_get(rep1, "source_chain_negative_requirements")),
+            "source_chain_hard_failure_codes": _get(event, "source_chain_hard_failure_codes", default=_get(rep1, "source_chain_hard_failure_codes")),
             "pareto_front": _get(event, "best_pareto_front", default=_get(rep1, "pareto_front")),
             "representative_1_peptide_id": _get(rep1, "peptide_id"),
             "representative_1_peptide": _get(rep1, "peptide"),
@@ -179,7 +194,8 @@ def select_first_batch(rows: list[dict[str, str]], top_n: int) -> list[dict[str,
         "FUSION_CONFIRMATION_FIRST": 2,
         "TARGETED_RNA_FIRST": 3,
         "PHASING_FIRST": 4,
-        "EVIDENCE_COMPLETION_FIRST": 5,
+        "SOURCE_CHAIN_COMPLETION_FIRST": 5,
+        "EVIDENCE_COMPLETION_FIRST": 6,
     }
     clonality_order = {"CLONAL_LIKE": 0, "CLONAL": 0, "SUBCLONAL_LIKE": 1, "SUBCLONAL": 1, "UNRESOLVED": 2, "": 3}
     eligible = [row for row in rows if row["experiment_priority"] in priority_order]

@@ -28,6 +28,9 @@ def build_parser() -> argparse.ArgumentParser:
     build.add_argument("--outdir", required=True)
     build.add_argument("--genome-build", default="GRCh38")
     build.add_argument("--disease-profile", default="default")
+    build.add_argument("--base-layer", help="Reuse an existing formal splice layer and import only new evidence")
+    build.add_argument("--junction-query-reference-fasta", help="Indexed FASTA used to build exact peptide-bearing junction contexts")
+    build.add_argument("--junction-query-flank", type=int, default=31)
     build.add_argument("--junctions")
     build.add_argument("--junction-coordinate-system", default="auto")
     build.add_argument("--junction-source-assay-id", default="")
@@ -120,7 +123,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "build":
         outputs = build_splice_provenance_layer(
             sample_id=args.sample_id, outdir=args.outdir, genome_build=args.genome_build,
-            disease_profile=args.disease_profile, junctions=args.junctions,
+            disease_profile=args.disease_profile, base_layer_dir=args.base_layer,
+            junction_query_reference_fasta=args.junction_query_reference_fasta,
+            junction_query_flank=args.junction_query_flank, junctions=args.junctions,
             junction_coordinate_system=args.junction_coordinate_system,
             junction_source_assay_id=args.junction_source_assay_id,
             star_junctions=args.star_junctions,

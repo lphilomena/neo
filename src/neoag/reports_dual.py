@@ -107,6 +107,9 @@ FIELD_GLOSSARY = {
     "recommended_assay": "推荐的体外验证实验类型。",
     "cross_platform_status": "WES/WGS 共同检出、低水平支持、检出能力不足或样本特异性等跨平台证据状态。",
     "cross_platform_multiplier": "跨平台 DNA 证据对排序分数的保守调整系数。",
+    "source_chain_confidence_tier": "候选来源链置信度 C1–C4：评估事件、转录本/ORF、肽段与HLA结果能否形成可追溯链路；不同于R1–R4实验推荐等级。",
+    "source_chain_orthogonal_status": "独立或跨模态确认状态；同一BAM上的多个caller仅算计算一致性，不等同正交确认。",
+    "source_chain_requirement_statuses": "SNV、InDel、Fusion或Splice赛道专属要求的逐项状态，区分NOT_APPLICABLE、UNASSESSED、LOW_POWER、NEGATIVE与CONFLICT。",
 }
 
 
@@ -547,7 +550,7 @@ def make_patient_report(path: str | Path, bundle: ReportBundle) -> None:
 
     out.append("<div class='section'><h2>10. 优先候选肽段（按事件去重 Top 10）</h2>")
     out.append("<p class='small'>下表为计算排序靠前的候选，不代表已证实可诱导抗肿瘤免疫反应。</p>")
-    headers = ["rank", "gene", "cancer_context", "variant_type", "hla", "priority", "rna_evidence", "dna_evidence", "meaning", "next_step"]
+    headers = ["rank", "gene", "cancer_context", "variant_type", "hla", "source_chain", "priority", "rna_evidence", "dna_evidence", "meaning", "next_step"]
     rows = []
     for i, ppt in enumerate(top, 1):
         pid = str(ppt.get("peptide_id") or "")
@@ -564,6 +567,7 @@ def make_patient_report(path: str | Path, bundle: ReportBundle) -> None:
             "cancer_context": _patient_cancer_context(ppt),
             "variant_type": _patient_consequence_label(ppt),
             "hla": ppt.get("hla_allele", ""),
+            "source_chain": ppt.get("source_chain_confidence_tier", "未评估"),
             "priority": _patient_priority_label(str(ppt.get("final_priority") or "")),
             "rna_evidence": _patient_rna_label(ppt),
             "dna_evidence": _patient_platform_label(str(ppt.get("cross_platform_status") or "")),
@@ -804,6 +808,13 @@ def make_technical_report(path: str | Path, bundle: ReportBundle) -> None:
     out.append("<div class='section'><h2>Ranked Events (full)</h2>")
     out.append(_table(bundle.events, [
         "event_id", "event_name", "event_type", "mutation_source", "peptide_consequence", "gene",
+        "source_chain_track", "source_chain_confidence_tier", "source_chain_confidence_label",
+        "source_chain_orthogonal_status", "source_chain_orthogonal_sources",
+        "source_chain_hard_failure", "source_chain_hard_failure_codes",
+        "source_chain_reason_codes", "source_chain_missing_requirements",
+        "source_chain_low_power_requirements", "source_chain_negative_requirements",
+        "source_chain_conflict_requirements",
+        "evidence_grade", "pipeline_r_grade", "review_status", "experiment_priority",
         "cancer_gene_list_status", "cancer_gene_symbols", "cancer_gene_types", "cancer_driver_context",
         "oncokb_annotated", "cosmic_cgc_flag", "cancer_gene_source_count", "cancer_gene_sources", "cancer_gene_context",
         "event_score", "raw_ccf", "ccf_estimate", "ccf_status", "ccf_confidence",
@@ -822,7 +833,12 @@ def make_technical_report(path: str | Path, bundle: ReportBundle) -> None:
 
     out.append("<div class='section'><h2>Ranked Peptides (full)</h2>")
     pep_headers = [
-        "peptide_id", "event_id", "gene", "cancer_gene_types", "cancer_driver_context", "cancer_gene_context", "peptide", "wildtype_peptide", "peptide_consequence",
+        "peptide_id", "event_id", "gene", "cancer_gene_types", "cancer_driver_context", "cancer_gene_context",
+        "source_chain_track", "source_chain_confidence_tier", "source_chain_confidence_label",
+        "source_chain_orthogonal_status", "source_chain_orthogonal_sources",
+        "source_chain_requirement_statuses", "source_chain_reason_codes",
+        "source_chain_hard_failure", "source_chain_hard_failure_codes",
+        "peptide", "wildtype_peptide", "peptide_consequence",
         "hla_allele", "mhc_class", "presentation_evidence_grade", "binding_evidence_score",
         "presentation_evidence_score", "netmhcpan_ba_rank", "netmhcpan_el_rank",
         "netmhcpan_wt_rank_el", "agretopicity_el", "mt_wt_el_rank_difference",
@@ -883,6 +899,26 @@ def make_technical_report(path: str | Path, bundle: ReportBundle) -> None:
             f"<p><b>Layers:</b> mutation_source={esc(ppt.get('mutation_source'))}; "
             f"peptide_consequence={esc(ppt.get('peptide_consequence'))}; source_tool={esc(ppt.get('source_tool'))}</p>"
         )
+        if ppt.get("source_chain_confidence_tier"):
+            out.append(
+                f"<p><b>Source-chain confidence:</b> {_badge(ppt.get('source_chain_confidence_tier'))}; "
+                f"track={esc(ppt.get('source_chain_track'))}; "
+                f"orthogonal={esc(ppt.get('source_chain_orthogonal_status'))}; "
+                f"sources={esc(ppt.get('source_chain_orthogonal_sources'))}; "
+                f"missing=<span class='mono'>{esc(ppt.get('source_chain_missing_requirements'))}</span>; "
+                f"low-power=<span class='mono'>{esc(ppt.get('source_chain_low_power_requirements'))}</span>; "
+                f"negative=<span class='mono'>{esc(ppt.get('source_chain_negative_requirements'))}</span>; "
+                f"conflict=<span class='mono'>{esc(ppt.get('source_chain_conflict_requirements'))}</span></p>"
+            )
+        final_grade = ppt.get("evidence_grade") or ppt.get("pipeline_r_grade") or ppt.get("priority")
+        if final_grade:
+            out.append(
+                f"<p><b>Final recommendation tier:</b> {_badge(final_grade)}; "
+                f"review={esc(ppt.get('review_status'))}; "
+                f"experiment_priority={esc(ppt.get('experiment_priority'))}. "
+                "Source-chain confidence and final recommendation answer different questions: "
+                "event authenticity alone does not establish neoantigen priority.</p>"
+            )
         out.append(
             f"<p><b>Presentation:</b> grade={esc(ppt.get('presentation_evidence_grade'))}; "
             f"BA={esc(ppt.get('netmhcpan_ba_rank'))}; EL={esc(ppt.get('netmhcpan_el_rank'))}; "

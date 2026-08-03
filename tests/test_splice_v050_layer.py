@@ -1,26 +1,82 @@
 from __future__ import annotations
 
+import gzip
 from pathlib import Path
 
 import pytest
 
-from neoag.splice.adapters.immunopepper import parse_immunopepper_meta
+from neoag.splice.adapters.immunopepper import parse_immunopepper_kmers, parse_immunopepper_meta
 from neoag.splice.adapters.high_order import parse_high_order_evidence
 from neoag.splice.adapters.irfinder import parse_irfinder
 from neoag.splice.adapters.pvacbind import parse_pvacbind
 from neoag.splice.adapters.regtools import parse_junction_source
 from neoag.splice.adapters.spladder import infer_event_type, parse_spladder_gff3, parse_spladder_txt
-from neoag.splice.coordinates import JunctionNormalizationError
+from neoag.splice.coordinates import JunctionNormalizationError, read_source_rows
 from neoag.splice.identifiers import sequence_sha256, splice_event_id
 from neoag.splice.pipeline import build_splice_provenance_layer
 from neoag.splice.consensus import build_consensus, consensus_reason_conflicts
-from neoag.splice.normal_background import parse_normal_coverage
+from neoag.splice.normal_background import parse_normal_coverage, parse_normal_junctions
+from neoag.splice.junction_queries import build_canonical_junction_queries
 from neoag.utils import read_tsv, write_tsv
 
 
 def _write(path: Path, text: str) -> Path:
     path.write_text(text, encoding="utf-8")
     return path
+
+
+def test_gzip_junction_rows_are_streamed(tmp_path: Path):
+    source = tmp_path / "normal.tsv.gz"
+    with gzip.open(source, "wt", encoding="utf-8") as handle:
+        handle.write("junction_id\tchromosome\tstart\tend\tstrand\tnormal_reads\n")
+        handle.write("chr1:151-200:+\tchr1\t151\t200\t+\t7\n")
+        handle.write("chr2:301-400:-\tchr2\t301\t400\t-\t2\n")
+    rows = read_source_rows(source)
+    assert not isinstance(rows, list)
+    assert [row["junction_id"] for row in rows] == ["chr1:151-200:+", "chr2:301-400:-"]
+
+
+def test_normal_junction_panel_keeps_only_exact_targets(tmp_path: Path):
+    source = tmp_path / "normal.tsv.gz"
+    with gzip.open(source, "wt", encoding="utf-8") as handle:
+        handle.write("junction_id\tchromosome\tstart\tend\tstrand\tnormal_reads\n")
+        handle.write("chr1:151-200:+\tchr1\t151\t200\t+\t7\n")
+        handle.write("chr2:301-400:-\tchr2\t301\t400\t-\t2\n")
+    parsed = parse_normal_junctions(
+        source,
+        sample_id="S1",
+        allowed_junction_ids={"SJ|GRCh38|chr1|151|200|+"},
+    )
+    assert [row["junction_id"] for row in parsed["normal_background"]] == ["SJ|GRCh38|chr1|151|200|+"]
+    assert parsed["manifest"][0]["rows_scanned"] == "2"
+    assert parsed["manifest"][0]["rows_retained"] == "1"
+
+
+def test_canonical_junction_queries_use_exact_peptide_origins_and_strand(tmp_path: Path):
+    sequence = ("ACGT" * 30)[:120]
+    fasta = tmp_path / "ref.fa"
+    fasta.write_text(f">1\n{sequence}\n", encoding="ascii")
+    (tmp_path / "ref.fa.fai").write_text(f"1\t120\t3\t120\t121\n", encoding="ascii")
+    junctions = [
+        {"junction_id": "SJ|GRCh38|chr1|41|60|+", "chrom": "chr1", "intron_start_1based": "41", "intron_end_1based": "60", "strand": "+"},
+        {"junction_id": "SJ|GRCh38|chr1|41|60|-", "chrom": "chr1", "intron_start_1based": "41", "intron_end_1based": "60", "strand": "-"},
+        {"junction_id": "SJ|GRCh38|chr1|70|80|+", "chrom": "chr1", "intron_start_1based": "70", "intron_end_1based": "80", "strand": "+"},
+    ]
+    origins = [
+        {"splice_event_id": "SEV|plus", "crosses_junction": "true", "junction_ids": junctions[0]["junction_id"]},
+        {"splice_event_id": "SEV|minus", "crosses_junction": "true", "junction_ids": junctions[1]["junction_id"]},
+    ]
+    parsed = build_canonical_junction_queries(
+        {"junctions": junctions, "peptide_origins": origins},
+        sample_id="S1", reference_fasta=fasta, flank_bases=10,
+    )
+    queries = {row["splice_event_id"]: row for row in parsed["sequence_queries"]}
+    assert set(queries) == {"SEV|plus", "SEV|minus"}
+    assert queries["SEV|plus"]["nucleotide_sequence"] == sequence[30:40] + sequence[60:70]
+    expected_minus = (sequence[60:70].translate(str.maketrans("ACGT", "TGCA"))[::-1]
+                      + sequence[30:40].translate(str.maketrans("ACGT", "TGCA"))[::-1])
+    assert queries["SEV|minus"]["nucleotide_sequence"] == expected_minus
+    assert all(row["position_1based"] == "10" for row in queries.values())
 
 
 def _inputs(tmp_path: Path) -> dict[str, Path]:
@@ -118,6 +174,43 @@ def test_immunopepper_registers_partial_transcript_orf_and_origin(tmp_path: Path
     assert bundle["peptide_origins"][0]["crosses_junction"] == "true"
 
 
+def test_immunopepper_stream_filter_keeps_only_exact_target_junction(tmp_path: Path):
+    meta = _write(
+        tmp_path / "meta.tsv",
+        "peptide\tid\tgeneName\tgeneChr\tgeneStrand\tmutationMode\tmodifiedExonsCoord\n"
+        "MARNDCEQGHILK\tTX1\tG1\tchr1\t+\tsplice\tchr1:100-150;chr1:201-250\n"
+        "ACDEFGHIKLMNP\tTX2\tG2\tchr2\t+\tsplice\tchr2:300-350;chr2:401-450\n",
+    )
+    bundle = parse_immunopepper_meta(
+        meta, sample_id="S1",
+        allowed_junction_ids={"SJ|GRCh38|chr1|151|200|+"},
+    )
+    assert len(bundle["events"]) == 1
+    assert bundle["events"][0]["gene"] == "G1"
+    assert bundle["manifest"][0]["rows_scanned"] == "2"
+    assert bundle["manifest"][0]["rows_retained"] == "1"
+    assert bundle["manifest"][0]["filter_policy"] == "EXACT_CANONICAL_JUNCTION_INTERSECTION"
+
+
+def test_immunopepper_kmer_uses_exact_retained_orf_index(tmp_path: Path):
+    meta_bundle = parse_immunopepper_meta(_inputs(tmp_path)["meta"], sample_id="S1")
+    kmers = _write(
+        tmp_path / "kmers.tsv",
+        "kmer\tcoord\tisCrossJunction\tjunctionAnnotated\n"
+        "NDCEQGHI\t1:2:3:4\tTrue\tTrue\n"
+        "AAAAAAAA\t1:2:3:4\tTrue\tTrue\n",
+    )
+    bundle = parse_immunopepper_kmers(
+        kmers, sample_id="S1", meta_bundle=meta_bundle,
+        record_unmapped_conflicts=False,
+    )
+    assert len(bundle["peptide_origins"]) == 1
+    assert bundle["manifest"][0]["rows_scanned"] == "2"
+    assert bundle["manifest"][0]["rows_mapped"] == "1"
+    assert bundle["manifest"][0]["rows_unmapped"] == "1"
+    assert not bundle["conflicts"]
+
+
 def test_pvacbind_requires_exact_fasta_index(tmp_path: Path):
     protein = "MARNDCEQGHILK"
     mapping = tmp_path / "map.tsv"
@@ -163,10 +256,8 @@ def test_full_layer_has_five_level_referential_integrity_and_no_gene_read_leakag
     )
     out2 = tmp_path / "layer2"
     outputs = build_splice_provenance_layer(
-        sample_id="S1", outdir=out2, junctions=inputs["reg"],
-        spladder_gff3=[inputs["gff"]], immunopepper_meta=[inputs["meta"]],
-        pvacbind=[pvac], normal_coverage=[inputs["normal_cov"]],
-        tool_versions={"RegTools": "fixture", "SplAdder": "fixture", "ImmunoPepper": "fixture", "pVACbind": "fixture"},
+        sample_id="S1", outdir=out2, base_layer_dir=out1,
+        pvacbind=[pvac], tool_versions={"pVACbind": "fixture"},
         strict=True,
     )
     junctions = {row["junction_id"]: row for row in read_tsv(outputs["junctions"])}

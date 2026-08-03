@@ -12,6 +12,7 @@ __pycache__/
 *.tmp
 *.log
 *.log.*
+Log.out
 
 # Local run outputs and workflow caches
 work/

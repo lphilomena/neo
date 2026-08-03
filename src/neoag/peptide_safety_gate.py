@@ -358,12 +358,17 @@ def build_peptide_safety_gate(
     target_junction_keys: set[str] = set()
     for peptide_row in peptides:
         event_row = events.get(peptide_row.get('event_id', ''), {})
+        if _normal_junction_kind(peptide_row, event_row) == 'not_applicable':
+            continue
         target_junction_keys.update(_candidate_junction_keys(peptide_row, event_row))
         gene_pair = str(event_row.get('gene') or '').strip()
         if gene_pair:
             target_junction_keys.add(gene_pair)
-    junctions = _normal_junctions(normal_junctions, target_keys=target_junction_keys)
-    junction_scopes = _normal_junction_scopes(normal_junctions)
+    junctions = (
+        _normal_junctions(normal_junctions, target_keys=target_junction_keys)
+        if target_junction_keys else {}
+    )
+    junction_scopes = _normal_junction_scopes(normal_junctions) if target_junction_keys else set()
     ref_assessed = bool(reference_proteome and Path(reference_proteome).is_file())
     ligand_assessed = bool(normal_hla_ligands and Path(normal_hla_ligands).is_file())
     safety_cfg = (profile or {}).get('safety', {})

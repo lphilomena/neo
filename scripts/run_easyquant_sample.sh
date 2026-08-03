@@ -29,6 +29,8 @@ Options:
   --no-stringent              Do not pass --stringent_params
   --keep-all                  Pass EasyQuant --keep_all
   --bp-quant-bin PATH         Override bp_quant executable
+  --samtools-bin PATH         Override samtools used internally by bp_quant
+  --mapper-bin PATH           Override STAR or bowtie2 executable
   --dry-run                   Print the command and exit
 
 Outputs:
@@ -41,6 +43,8 @@ QUERY=""; BAM=""; FQ1=""; FQ2=""; OUTDIR=""
 DISTANCE="10"; MAPPER="star"; THREADS="4"; STRINGENT=1; DRY=0
 ALLOW=0; INTERVAL=0; SKIP_SINGLETON=0; KEEP_ALL=0
 BP_BIN="${NEOAG_BP_QUANT_BIN:-$(command -v bp_quant || true)}"
+SAMTOOLS_BIN="${NEOAG_SAMTOOLS_BIN:-$(command -v samtools || true)}"
+MAPPER_BIN=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --query-table) QUERY="$2"; shift 2 ;;
@@ -57,6 +61,8 @@ while [[ $# -gt 0 ]]; do
     --no-stringent) STRINGENT=0; shift ;;
     --keep-all) KEEP_ALL=1; shift ;;
     --bp-quant-bin) BP_BIN="$2"; shift 2 ;;
+    --samtools-bin) SAMTOOLS_BIN="$2"; shift 2 ;;
+    --mapper-bin) MAPPER_BIN="$2"; shift 2 ;;
     --dry-run) DRY=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "ERROR: unknown argument: $1" >&2; usage >&2; exit 2 ;;
@@ -73,12 +79,46 @@ else
   [[ -n "$FQ1" && -n "$FQ2" && -s "$FQ1" && -s "$FQ2" ]] || { echo "ERROR: provide --bam or paired --fq1/--fq2" >&2; exit 2; }
 fi
 [[ -n "$BP_BIN" ]] || { echo "ERROR: bp_quant not found" >&2; exit 3; }
+if [[ -z "$SAMTOOLS_BIN" ]]; then
+  for candidate in \
+    "${CONDA_PREFIX:-}/bin/samtools" \
+    "$HOME/miniforge3/envs/neoag-fusion/bin/samtools" \
+    "$HOME/miniconda3/envs/neoag-fusion/bin/samtools" \
+    "$HOME/miniforge3/envs/neoag-tools/bin/samtools" \
+    "$HOME/miniconda3/envs/neoag-tools/bin/samtools"; do
+    if [[ -x "$candidate" ]]; then SAMTOOLS_BIN="$candidate"; break; fi
+  done
+fi
+[[ -n "$SAMTOOLS_BIN" && -x "$SAMTOOLS_BIN" ]] || { echo "ERROR: samtools not found; set NEOAG_SAMTOOLS_BIN or use --samtools-bin" >&2; exit 3; }
+export PATH="$(dirname "$SAMTOOLS_BIN"):$PATH"
+if [[ -z "$MAPPER_BIN" ]]; then
+  if [[ "$MAPPER" == "star" ]]; then
+    MAPPER_BIN="${NEOAG_STAR_BIN:-$(command -v STAR || true)}"
+    for candidate in \
+      "${CONDA_PREFIX:-}/bin/STAR" \
+      "$HOME/miniforge3/envs/neoag-fusion/bin/STAR" \
+      "$HOME/miniconda3/envs/neoag-fusion/bin/STAR"; do
+      if [[ -z "$MAPPER_BIN" && -x "$candidate" ]]; then MAPPER_BIN="$candidate"; fi
+    done
+  else
+    MAPPER_BIN="${NEOAG_BOWTIE2_BIN:-$(command -v bowtie2 || true)}"
+  fi
+fi
+[[ -n "$MAPPER_BIN" && -x "$MAPPER_BIN" ]] || { echo "ERROR: $MAPPER executable not found; set NEOAG_STAR_BIN/NEOAG_BOWTIE2_BIN or use --mapper-bin" >&2; exit 3; }
+export PATH="$(dirname "$MAPPER_BIN"):$PATH"
 if [[ "$DRY" != 1 ]]; then [[ -x "$BP_BIN" || "$(command -v "$BP_BIN" 2>/dev/null || true)" ]] || { echo "ERROR: bp_quant executable not usable: $BP_BIN" >&2; exit 3; }; fi
 mkdir -p "$OUTDIR"
 
 cmd=("$BP_BIN" pipeline -s "$QUERY" -o "$OUTDIR" -d "$DISTANCE" -m "$MAPPER" -t "$THREADS")
 if [[ -n "$BAM" ]]; then cmd+=(-b "$BAM"); else cmd+=(-1 "$FQ1" -2 "$FQ2"); fi
-[[ "$STRINGENT" == 1 ]] && cmd+=(--stringent_params)
+PIPELINE_HELP="$($BP_BIN pipeline -h 2>&1 || true)"
+if [[ "$STRINGENT" == 1 ]]; then
+  if grep -q -- '--stringent_params' <<<"$PIPELINE_HELP"; then
+    cmd+=(--stringent_params)
+  else
+    echo "EasyQuant compatibility: --stringent_params is not supported by this bp_quant version; using its default alignment policy." >&2
+  fi
+fi
 [[ "$ALLOW" == 1 ]] && cmd+=(--allow_mismatches)
 [[ "$INTERVAL" == 1 ]] && cmd+=(--interval_mode)
 [[ "$SKIP_SINGLETON" == 1 ]] && cmd+=(--skip_singleton)

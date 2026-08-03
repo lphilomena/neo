@@ -116,6 +116,7 @@ def parse_immunopepper_meta(
     sample_id: str,
     genome_build: str = "GRCh38",
     source_tool_version: str = "UNASSESSED",
+    allowed_junction_ids: set[str] | None = None,
 ) -> dict[str, list[dict[str, str]]]:
     p = Path(path)
     build = normalize_genome_build(genome_build)
@@ -124,7 +125,10 @@ def parse_immunopepper_meta(
         "orfs": [], "peptide_origins": [], "peptide_origin_links": [],
         "tool_evidence": [], "conflicts": [],
     }
+    rows_scanned = 0
+    rows_retained = 0
     for row_no, row in enumerate(read_delimited(p), start=2):
+        rows_scanned += 1
         record_id = source_record_id("ImmunoPepper", p, row_no, row)
         gene = get(row, "geneName", "gene", "gene_name")
         gene_id = get(row, "geneId", "gene_id")
@@ -133,6 +137,9 @@ def parse_immunopepper_meta(
         exons = _parse_exons(get(row, "modifiedExonsCoord", "exon_chain", "modified_exons_coord"), chrom)
         junctions = _junctions_from_exons(build, strand, exons)
         junction_ids = [j.junction_id for j in junctions]
+        if allowed_junction_ids is not None and not (set(junction_ids) & allowed_junction_ids):
+            continue
+        rows_retained += 1
         source_id = get(row, "id", "transcript_id", "index", default=f"row_{row_no}")
         mutation_mode = get(row, "mutationMode", "mutation_mode", "kmerType", default="SPLICE")
         event_type = _event_type_from_mutation_mode(mutation_mode)
@@ -287,6 +294,17 @@ def parse_immunopepper_meta(
             ),
             "raw_payload_sha256": row_hash(row),
         })
+    result["manifest"] = [{
+        "adapter": "ImmunoPepper",
+        "input_path": str(p),
+        "rows_scanned": str(rows_scanned),
+        "rows_retained": str(rows_retained),
+        "filter_policy": (
+            "EXACT_CANONICAL_JUNCTION_INTERSECTION"
+            if allowed_junction_ids is not None else "ALL_ROWS"
+        ),
+        "target_junction_count": str(len(allowed_junction_ids or set())),
+    }]
     return result
 
 
@@ -296,31 +314,61 @@ def parse_immunopepper_kmers(
     sample_id: str,
     source_tool_version: str = "UNASSESSED",
     meta_bundle: dict[str, list[dict[str, str]]] | None = None,
+    record_unmapped_conflicts: bool = True,
 ) -> dict[str, list[dict[str, str]]]:
     """Register ImmunoPepper k-mers and map them only when the ORF link is unique."""
     p = Path(path)
     result = {"peptide_origins": [], "peptide_origin_links": [], "tool_evidence": [], "conflicts": []}
     orfs = (meta_bundle or {}).get("orfs", [])
     transcripts = {r["transcript_hypothesis_id"]: r for r in (meta_bundle or {}).get("transcripts", [])}
-    by_sequence: dict[str, list[dict[str, str]]] = defaultdict(list)
-    for orf in orfs:
-        by_sequence[orf.get("protein_sequence", "")].append(orf)
+    # Build exact substring indexes lazily by peptide length. This changes the
+    # former O(n_kmers * n_orfs) scan into O(total retained ORF sequence + n_kmers).
+    by_length: dict[int, dict[str, list[dict[str, str]]]] = {}
+
+    def candidates_for(kmer: str) -> list[dict[str, str]]:
+        length = len(kmer)
+        if length not in by_length:
+            index: dict[str, list[dict[str, str]]] = defaultdict(list)
+            for orf in orfs:
+                protein = orf.get("protein_sequence", "")
+                if len(protein) < length:
+                    continue
+                seen: set[str] = set()
+                for pos in range(0, len(protein) - length + 1):
+                    token = protein[pos:pos + length]
+                    if token not in seen:
+                        index[token].append(orf)
+                        seen.add(token)
+            by_length[length] = index
+        return by_length[length].get(kmer, [])
+
+    rows_scanned = 0
+    rows_mapped = 0
+    rows_unmapped = 0
+    rows_ambiguous = 0
     for row_no, row in enumerate(read_delimited(p), start=2):
+        rows_scanned += 1
         record_id = source_record_id("ImmunoPepper", p, row_no, row)
         kmer = _valid_aa(get(row, "kmer", "peptide", "sequence"))
         if not kmer:
             continue
-        candidates = [orf for protein, rows in by_sequence.items() if kmer in protein for orf in rows]
+        candidates = candidates_for(kmer)
         if len(candidates) != 1:
-            result["conflicts"].append({
-                "entity_type": "PEPTIDE", "entity_id": peptide_id(kmer), "sample_id": sample_id,
-                "conflict_type": "IMMUNOPEPPER_KMER_ORF_MAPPING_AMBIGUOUS" if candidates else "IMMUNOPEPPER_KMER_ORF_UNRESOLVED",
-                "field_name": "kmer", "observed_values": kmer, "source_tools": "ImmunoPepper",
-                "source_record_ids": record_id, "severity": "WARNING", "resolution_status": "UNRESOLVED",
-                "resolution_reason": f"Candidate ORF count={len(candidates)}; no approximate mapping was used.",
-            })
+            if candidates:
+                rows_ambiguous += 1
+            else:
+                rows_unmapped += 1
+            if candidates or record_unmapped_conflicts:
+                result["conflicts"].append({
+                    "entity_type": "PEPTIDE", "entity_id": peptide_id(kmer), "sample_id": sample_id,
+                    "conflict_type": "IMMUNOPEPPER_KMER_ORF_MAPPING_AMBIGUOUS" if candidates else "IMMUNOPEPPER_KMER_ORF_UNRESOLVED",
+                    "field_name": "kmer", "observed_values": kmer, "source_tools": "ImmunoPepper",
+                    "source_record_ids": record_id, "severity": "WARNING", "resolution_status": "UNRESOLVED",
+                    "resolution_reason": f"Candidate ORF count={len(candidates)}; no approximate mapping was used.",
+                })
             continue
         orf = candidates[0]
+        rows_mapped += 1
         protein = orf["protein_sequence"]
         start = protein.index(kmer) + 1
         end = start + len(kmer) - 1
@@ -361,4 +409,14 @@ def parse_immunopepper_kmers(
             "provided_value": kmer, "verified_value": kmer, "resolution_status": "MAPPED_UNIQUE_ORF",
             "resolution_reason": f"cross_junction={crosses}; junction_annotated={junction_annotated}", "raw_payload_sha256": row_hash(row),
         })
+    result["manifest"] = [{
+        "adapter": "ImmunoPepper-kmer",
+        "input_path": str(p),
+        "rows_scanned": str(rows_scanned),
+        "rows_mapped": str(rows_mapped),
+        "rows_unmapped": str(rows_unmapped),
+        "rows_ambiguous": str(rows_ambiguous),
+        "mapping_policy": "EXACT_KMER_TO_UNIQUE_RETAINED_ORF",
+        "retained_orf_count": str(len(orfs)),
+    }]
     return result

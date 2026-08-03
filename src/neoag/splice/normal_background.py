@@ -57,16 +57,24 @@ def parse_normal_junctions(
     tissue: str = "",
     critical_tissue: bool = False,
     strict: bool = False,
+    allowed_junction_ids: set[str] | None = None,
 ) -> dict[str, list[dict[str, str]]]:
     p = Path(path)
     rows: list[dict[str, str]] = []
     conflicts: list[dict[str, str]] = []
     evidence: list[dict[str, str]] = []
+    scanned = 0
+    retained = 0
     for record in iter_junction_records(
         p, sample_id=sample_id, source_tool=source_name,
         genome_build=genome_build, coordinate_system=coordinate_system, strict=strict,
     ):
+        scanned += 1
         if record.junction is None:
+            # In targeted mode, unresolved background records cannot match an
+            # exact candidate and need not create millions of conflicts.
+            if allowed_junction_ids is not None:
+                continue
             conflicts.append({
                 "entity_type": "NORMAL_BACKGROUND", "entity_id": record.source_record_id,
                 "sample_id": sample_id, "conflict_type": "NORMAL_JUNCTION_UNRESOLVED",
@@ -77,6 +85,9 @@ def parse_normal_junctions(
             })
             continue
         jid = record.junction.junction_id
+        if allowed_junction_ids is not None and jid not in allowed_junction_ids:
+            continue
+        retained += 1
         detected = record.total_split_reads > 0
         detection = "DETECTED" if detected else "NOT_DETECTED"
         coverage = "LOCUS_COVERAGE_UNASSESSED"
@@ -106,7 +117,19 @@ def parse_normal_junctions(
             "resolution_status": "RESOLVED_EXACT", "resolution_reason": rows[-1]["assessment_reason"],
             "raw_payload_sha256": record.record_sha256,
         })
-    return {"normal_background": rows, "tool_evidence": evidence, "conflicts": conflicts}
+    return {
+        "normal_background": rows,
+        "tool_evidence": evidence,
+        "conflicts": conflicts,
+        "manifest": [{
+            "adapter": "normal_junctions",
+            "input_path": str(p),
+            "rows_scanned": str(scanned),
+            "rows_retained": str(retained),
+            "filter_policy": "EXACT_CANONICAL_JUNCTION" if allowed_junction_ids is not None else "UNFILTERED",
+            "target_junction_count": str(len(allowed_junction_ids or set())),
+        }],
+    }
 
 
 def parse_normal_coverage(

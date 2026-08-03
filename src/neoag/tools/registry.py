@@ -289,6 +289,9 @@ class RunContext:
                 or TOOL_REGISTRY[tool].executable
             )
         if tool == "netmhcpan":
+            configured = self.executables.get(tool)
+            if configured:
+                return configured
             for override in (os.environ.get("NEOAG_NETMHCPAN_BIN"), os.environ.get("NETMHCPAN_BIN")):
                 if override and Path(override).is_file():
                     return str(Path(override))

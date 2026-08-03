@@ -60,6 +60,8 @@ from .evidence_consensus import (
     rank_by_evidence_consensus,
     score_evidence_consensus,
 )
+from .source_chain import build_source_chain_table
+from .report_dimensions import audit_report_dimensions
 
 ROOT = Path(__file__).resolve().parents[2]
 def fixture(x): return ROOT/"data"/"fixtures"/x
@@ -75,7 +77,7 @@ def cmd_run_demo(args):
         normal_expression=resource("normal_expression.example.tsv"), normal_hla_ligands=resource("normal_hla_ligands.example.tsv"),
         immunogenicity_stub=True,
     )
-    print("NeoAg v0.4.4 demo completed. Outputs retain .tsv names for schema compatibility.")
+    print("NeoAg v0.5.2 demo completed. Outputs retain .tsv names for schema compatibility.")
     for k,v in out.items(): print(f"  {k}: {v}")
 
 def cmd_run(args):
@@ -850,6 +852,16 @@ def cmd_run_full(args):
     normal_junctions = inputs.get("normal_junctions") or os.environ.get("NEOAG_NORMAL_JUNCTIONS")
     if normal_junctions and not Path(normal_junctions).is_absolute():
         normal_junctions = str(ROOT / normal_junctions)
+    reference_proteome = (
+        inputs.get("reference_proteome")
+        or inputs.get("normal_proteome_fasta")
+        or os.environ.get("NEOAG_NORMAL_PROTEOME_FASTA")
+    )
+    if reference_proteome and not Path(reference_proteome).is_absolute():
+        reference_proteome = str(ROOT / reference_proteome)
+    evidence_consensus_rules = inputs.get("evidence_consensus_rules")
+    if evidence_consensus_rules and not Path(evidence_consensus_rules).is_absolute():
+        evidence_consensus_rules = str(ROOT / evidence_consensus_rules)
     for p in inputs.get("pvac_files") or []:
         path = ROOT / p if not Path(p).is_absolute() else Path(p)
         if path.is_file():
@@ -887,6 +899,8 @@ def cmd_run_full(args):
         "normal_expression": upstream.get("normal_expression"),
         "normal_hla_ligands": upstream.get("normal_hla_ligands"),
         "normal_junctions": normal_junctions,
+        "reference_proteome": reference_proteome,
+        "evidence_consensus_rules": evidence_consensus_rules,
         "immunogenicity_stub": bool(tools_cfg.get("immunogenicity_stub", False)),
         "tool_executables": tools_cfg.get("executables") or {},
         "rna_junction": inputs.get("rna_junction_tsv") or inputs.get("rna_junction"),
@@ -950,6 +964,30 @@ def cmd_annotate_cancer_genes(args):
         ]
         write_tsv(args.out_peptides, peptides)
     print(f"Annotated cancer-gene context for {len(events)} events without changing scores.")
+
+
+def cmd_source_chain(args):
+    rules = load_consensus_rules(args.rules)
+    result = build_source_chain_table(
+        args.input,
+        args.output,
+        requirements_tsv=args.requirements_out,
+        rules=rules,
+    )
+    print(f"Wrote source-chain confidence table: {result['output']} ({result['rows']} rows)")
+    if result.get("requirements_output"):
+        print(f"  requirements: {result['requirements_output']} ({result['requirements']} rows)")
+    print(f"  tiers: {result['tier_counts']}")
+    print(f"  tracks: {result['track_counts']}")
+    print(f"  rule_version: {result['rule_version']}")
+
+
+def cmd_report_dimension_audit(args):
+    result = audit_report_dimensions(args.input, args.output, args.map)
+    print(f"Wrote report-dimension audit: {result['output']}")
+    print(f"  dimensions: {result['dimensions']}")
+    print(f"  blocking_dimensions: {result['blocking_dimensions']}")
+    print(f"  status: {result['status']}")
 
 
 def cmd_evidence_consensus(args):
@@ -1044,6 +1082,19 @@ def build_parser():
     cg.add_argument("--out-events", required=True)
     cg.add_argument("--out-peptides")
     cg.set_defaults(func=cmd_annotate_cancer_genes)
+
+    sch = sub.add_parser("source-chain", help="Build event-specific SNV/InDel/Fusion/Splice C1-C4 source-chain confidence")
+    sch.add_argument("--input", required=True, help="Comprehensive peptide/event evidence TSV")
+    sch.add_argument("--output", required=True, help="Output TSV with C1-C4 source-chain fields")
+    sch.add_argument("--requirements-out", help="Optional long-format requirement audit TSV")
+    sch.add_argument("--rules", help="Evidence-consensus TOML containing [source_chain] rules")
+    sch.set_defaults(func=cmd_source_chain)
+
+    rda = sub.add_parser("report-dimension-audit", help="Audit report-declared evidence dimensions against a result TSV")
+    rda.add_argument("--input", required=True, help="Evidence/ranked TSV to audit")
+    rda.add_argument("--output", required=True, help="Dimension audit TSV")
+    rda.add_argument("--map", help="Optional report dimension TOML; defaults to configs/report/report_dimension_map_v1.toml")
+    rda.set_defaults(func=cmd_report_dimension_audit)
 
     ec = sub.add_parser("evidence-consensus-rank", help="Build a parallel evidence-consensus peptide ranking")
     ec.add_argument("--input", required=True, help="Comprehensive peptide evidence TSV")

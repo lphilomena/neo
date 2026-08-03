@@ -15,6 +15,7 @@ The module intentionally refuses gene-level or variant-locus fallback matching.
 from __future__ import annotations
 
 import csv
+import gzip
 import hashlib
 import json
 import re
@@ -628,53 +629,61 @@ def _looks_like_header(cells: list[str]) -> bool:
     return bool(folded & known)
 
 
-def read_source_rows(path: str | Path) -> list[dict[str, str]]:
-    """Read TSV/CSV or headerless RegTools BED/BED12 rows."""
+def read_source_rows(path: str | Path) -> Iterable[dict[str, str]]:
+    """Stream TSV/CSV or headerless RegTools BED/BED12 rows.
+
+    Normal-junction panels can exceed several gigabytes when decompressed.  The
+    parser therefore opens gzip inputs transparently and never materializes the
+    complete source file or parsed row set.
+    """
 
     source = Path(path)
     if not source.is_file() or source.stat().st_size == 0:
-        return []
-    lines = [
-        line
-        for line in source.read_text(encoding="utf-8", errors="replace").splitlines()
-        if line.strip() and not line.startswith("#")
-    ]
-    if not lines:
-        return []
-    delimiter = "\t" if "\t" in lines[0] else ","
-    first_cells = next(csv.reader([lines[0]], delimiter=delimiter))
-    if _looks_like_header(first_cells):
-        return [
-            {str(key): "" if value is None else str(value) for key, value in row.items()}
-            for row in csv.DictReader(lines, delimiter=delimiter)
-        ]
+        return
 
-    parsed: list[dict[str, str]] = []
-    for line in lines:
-        cells = next(csv.reader([line], delimiter=delimiter))
-        if len(cells) >= 12:
-            keys = [
-                "chrom",
-                "start",
-                "end",
-                "name",
-                "score",
-                "strand",
-                "thickStart",
-                "thickEnd",
-                "itemRgb",
-                "blockCount",
-                "blockSizes",
-                "blockStarts",
-            ]
-        elif len(cells) >= 6:
-            keys = ["chrom", "start", "end", "name", "score", "strand"]
-        elif len(cells) >= 5:
-            keys = ["chrom", "start", "end", "name", "score"]
-        else:
-            continue
-        parsed.append({key: cells[index] if index < len(cells) else "" for index, key in enumerate(keys)})
-    return parsed
+    kwargs = {"mode": "rt", "encoding": "utf-8", "errors": "replace", "newline": ""}
+    stream = gzip.open(source, **kwargs) if source.suffix.casefold() == ".gz" else source.open(**kwargs)
+    with stream as handle:
+        lines = (line for line in handle if line.strip() and not line.startswith("#"))
+        first_line = next(lines, None)
+        if first_line is None:
+            return
+        delimiter = "\t" if "\t" in first_line else ","
+        first_cells = next(csv.reader([first_line], delimiter=delimiter))
+        if _looks_like_header(first_cells):
+            reader = csv.DictReader(lines, delimiter=delimiter, fieldnames=first_cells)
+            for row in reader:
+                yield {str(key): "" if value is None else str(value) for key, value in row.items()}
+            return
+
+        def parsed_lines() -> Iterable[list[str]]:
+            yield first_cells
+            for line in lines:
+                yield next(csv.reader([line], delimiter=delimiter))
+
+        for cells in parsed_lines():
+            if len(cells) >= 12:
+                keys = [
+                    "chrom",
+                    "start",
+                    "end",
+                    "name",
+                    "score",
+                    "strand",
+                    "thickStart",
+                    "thickEnd",
+                    "itemRgb",
+                    "blockCount",
+                    "blockSizes",
+                    "blockStarts",
+                ]
+            elif len(cells) >= 6:
+                keys = ["chrom", "start", "end", "name", "score", "strand"]
+            elif len(cells) >= 5:
+                keys = ["chrom", "start", "end", "name", "score"]
+            else:
+                continue
+            yield {key: cells[index] if index < len(cells) else "" for index, key in enumerate(keys)}
 
 
 def iter_junction_records(

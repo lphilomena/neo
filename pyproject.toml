@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "neoag-event-pipeline"
-version = "0.5.1"
+version = "0.5.2"
 description = "Neoantigen event prioritization pipeline with formal splice provenance and RNA-driven, DNA-causal, and normal-background evidence chains"
 readme = "README.md"
 requires-python = ">=3.11"

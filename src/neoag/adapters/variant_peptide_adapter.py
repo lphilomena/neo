@@ -61,6 +61,9 @@ def event_from_variant_row(row: dict[str, str], sample_id: str, profile_name: st
         "tumor_vaf": row.get("vaf") or "0.0",
         "tumor_depth": row.get("tumor_depth") or "",
         "tumor_alt_count": row.get("tumor_alt_count") or "",
+        "normal_depth": row.get("normal_depth") or "",
+        "normal_alt_count": row.get("normal_alt_count") or "",
+        "normal_alt_vaf": row.get("normal_alt_vaf") or "",
         "rna_vaf": row.get("rna_vaf") or "",
         "rna_alt_reads": row.get("rna_alt_reads") or "",
         "rna_depth": row.get("rna_depth") or "",
@@ -280,6 +283,7 @@ def run_variant_peptide_upstream(
     opts = resolve_variant_peptide_options(cfg)
     inputs = cfg.get("inputs") or {}
     tumor_sample_name = inputs.get("tumor_sample_name") or sample_id
+    normal_sample_name = inputs.get("normal_sample_name") or ""
     rna_sample_name = inputs.get("rna_sample_name") or ""
     variant_tsv = tools_dir / "variant_peptides.tsv"
     easyfuse_path = inputs.get("easyfuse_tsv") or inputs.get("easyfuse_pass_csv")
@@ -303,6 +307,7 @@ def run_variant_peptide_upstream(
             filter_normal_proteome=opts["filter_normal_proteome"],
             hla_alleles=hla_alleles,
             tumor_sample_name=str(tumor_sample_name) if tumor_sample_name else None,
+            normal_sample_name=str(normal_sample_name) if normal_sample_name else None,
             rna_sample_name=str(rna_sample_name) if rna_sample_name else None,
         )
         vcf_rows = read_tsv(variant_tsv)

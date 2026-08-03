@@ -1,6 +1,7 @@
 """Formal v0.5.1 Splice Provenance Layer orchestration."""
 from __future__ import annotations
 
+import json
 from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -9,7 +10,7 @@ from typing import Any, Iterable
 from neoag.schemas import EVENT_FIELDS as LEGACY_EVENT_FIELDS, PEPTIDE_FIELDS as LEGACY_PEPTIDE_FIELDS, RNA_JUNCTION_EVIDENCE_FIELDS
 from neoag.splice.coordinates import file_sha256
 from neoag.splice.identifiers import link_id, splice_event_id, stable_digest, stable_id
-from neoag.utils import write_json, write_tsv
+from neoag.utils import read_tsv, write_json, write_tsv
 
 from .adapters.easyquant import parse_easyquant
 from .adapters.immunopepper import parse_immunopepper_kmers, parse_immunopepper_meta
@@ -25,6 +26,7 @@ from .adapters.spladder import parse_spladder_gff3, parse_spladder_txt
 from .consensus import build_consensus, consensus_reason_conflicts
 from .evidence_chains import build_evidence_chains
 from .normal_background import parse_normal_coverage, parse_normal_junctions
+from .junction_queries import build_canonical_junction_queries
 from .projection import project_legacy
 from .schemas import OUTPUT_FILENAMES, PVACBIND_FASTA_MAP_FIELDS, SPLICE_PROVENANCE_SCHEMA_VERSION, TABLE_FIELDS
 from .sequence_queries import write_external_query_files
@@ -397,6 +399,9 @@ def build_splice_provenance_layer(
     outdir: str | Path,
     genome_build: str = "GRCh38",
     disease_profile: str = "default",
+    base_layer_dir: str | Path | None = None,
+    junction_query_reference_fasta: str | Path | None = None,
+    junction_query_flank: int = 31,
     junctions: str | Path | None = None,
     junction_coordinate_system: str = "auto",
     junction_source_assay_id: str = "",
@@ -457,6 +462,23 @@ def build_splice_provenance_layer(
     out = Path(outdir)
     out.mkdir(parents=True, exist_ok=True)
     layer = SpliceLayer(sample_id=sample_id, genome_build=genome_build, disease_profile=disease_profile)
+    if base_layer_dir:
+        base = Path(base_layer_dir)
+        manifest_path = base / OUTPUT_FILENAMES["manifest"]
+        if not manifest_path.is_file():
+            raise ValueError(f"base splice layer manifest is missing: {manifest_path}")
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if str(manifest.get("sample_id", "")) != sample_id:
+            raise ValueError("base splice layer sample_id does not match the requested sample")
+        if str(manifest.get("genome_build", "")) != genome_build:
+            raise ValueError("base splice layer genome_build does not match the requested build")
+        derived = {"manifest", "raw_events", "raw_peptides", "rna_junction_evidence", "qc", "evidence_chains", "consensus"}
+        for table, filename in OUTPUT_FILENAMES.items():
+            path = base / filename
+            if table not in derived and path.is_file() and path.stat().st_size:
+                layer.tables[table] = read_tsv(path)
+        layer.input_files.extend(dict(item) for item in manifest.get("inputs", []) if isinstance(item, dict))
+        layer.register_input(manifest_path, role="base_splice_provenance_layer", tool="NeoAg-SpliceLayer", version="0.5.1")
 
     if junctions:
         layer.register_input(junctions, role="primary_rna_junctions", tool="RegTools", version=versions.get("RegTools", "UNASSESSED"))
@@ -485,16 +507,47 @@ def build_splice_provenance_layer(
             coordinate_system=irfinder_coordinate_system, source_tool_version=versions.get("IRFinder-S", "UNASSESSED"), strict=strict,
         ))
 
-    meta_bundle: dict[str, list[dict[str, str]]] = defaultdict(list)
+    # ImmunoPepper reference metadata may contain millions of translated paths.
+    # Restrict it, in a streaming pass, to exact canonical junctions emitted by
+    # the independent SplAdder event model. This preserves relevant provenance
+    # without materializing the complete reference graph in memory.
+    immunopepper_target_junctions = {
+        row.get("junction_id", "")
+        for row in layer.tables.get("junctions", [])
+        if "SplAdder" in _tokens(row.get("source_tools", "")) and row.get("junction_id")
+    }
+    use_target_filter = bool(immunopepper_target_junctions)
     for path in _as_paths(immunopepper_meta):
         layer.register_input(path, role="rna_driven_translation", tool="ImmunoPepper", version=versions.get("ImmunoPepper", "UNASSESSED"))
-        bundle = parse_immunopepper_meta(path, sample_id=sample_id, genome_build=genome_build, source_tool_version=versions.get("ImmunoPepper", "UNASSESSED"))
+        bundle = parse_immunopepper_meta(
+            path, sample_id=sample_id, genome_build=genome_build,
+            source_tool_version=versions.get("ImmunoPepper", "UNASSESSED"),
+            allowed_junction_ids=immunopepper_target_junctions if use_target_filter else None,
+        )
+        stats = bundle.pop("manifest", [])
+        if stats:
+            layer.input_files[-1].update({f"import_{key}": value for key, value in stats[0].items() if key not in {"input_path", "adapter"}})
         layer.extend(bundle)
-        for key, rows in bundle.items():
-            meta_bundle[key].extend(rows)
+    # Consolidate retained translated paths before k-mer import and reference the
+    # canonical layer directly instead of keeping a second full meta_bundle copy.
+    layer.consolidate()
+    meta_bundle = {
+        "orfs": layer.tables.get("orfs", []),
+        "transcripts": layer.tables.get("transcripts", []),
+    }
     for path in _as_paths(immunopepper_kmers):
         layer.register_input(path, role="rna_driven_translation_kmers", tool="ImmunoPepper", version=versions.get("ImmunoPepper", "UNASSESSED"))
-        layer.extend(parse_immunopepper_kmers(path, sample_id=sample_id, source_tool_version=versions.get("ImmunoPepper", "UNASSESSED"), meta_bundle=dict(meta_bundle)))
+        bundle = parse_immunopepper_kmers(
+            path, sample_id=sample_id,
+            source_tool_version=versions.get("ImmunoPepper", "UNASSESSED"),
+            meta_bundle=meta_bundle,
+            record_unmapped_conflicts=not use_target_filter,
+        )
+        stats = bundle.pop("manifest", [])
+        if stats:
+            layer.input_files[-1].update({f"import_{key}": value for key, value in stats[0].items() if key not in {"input_path", "adapter"}})
+        layer.extend(bundle)
+        layer.consolidate()
 
     # Establish canonical events before exact downstream linking.
     layer.consolidate()
@@ -519,10 +572,24 @@ def build_splice_provenance_layer(
 
     for path in _as_paths(normal_junctions):
         layer.register_input(path, role="normal_junction_background", tool="NormalPanel")
-        layer.extend(parse_normal_junctions(
+        normal_target_junctions = {
+            str(row.get("junction_id", ""))
+            for row in layer.tables.get("junctions", [])
+            if str(row.get("junction_id", ""))
+        }
+        bundle = parse_normal_junctions(
             path, sample_id=sample_id, genome_build=genome_build,
             coordinate_system=normal_coordinate_system, strict=strict,
-        ))
+            allowed_junction_ids=normal_target_junctions,
+        )
+        stats = bundle.pop("manifest", [])
+        if stats:
+            layer.input_files[-1].update({
+                f"import_{key}": value
+                for key, value in stats[0].items()
+                if key not in {"input_path", "adapter"}
+            })
+        layer.extend(bundle)
     for path in _as_paths(normal_coverage):
         layer.register_input(path, role="normal_coverage_background", tool="NormalCoverage")
         layer.extend(parse_normal_coverage(path, sample_id=sample_id))
@@ -533,6 +600,27 @@ def build_splice_provenance_layer(
         layer.extend(parse_high_order_evidence(
             path, sample_id=sample_id, entity_bundle=layer.tables, strict=strict,
         ))
+    if junction_query_reference_fasta:
+        layer.register_input(
+            junction_query_reference_fasta,
+            role="canonical_junction_query_reference",
+            tool="NeoAgCanonicalJunctionContext",
+            version="0.5.2",
+        )
+        bundle = build_canonical_junction_queries(
+            layer.tables,
+            sample_id=sample_id,
+            reference_fasta=junction_query_reference_fasta,
+            flank_bases=junction_query_flank,
+        )
+        stats = bundle.pop("manifest", [])
+        if stats:
+            layer.input_files[-1].update({
+                f"import_{key}": value
+                for key, value in stats[0].items()
+                if key not in {"input_path", "adapter"}
+            })
+        layer.extend(bundle)
     layer.consolidate()
     generated_queries = layer.write_external_queries(out)
     eq_map = Path(easyquant_query_map) if easyquant_query_map else generated_queries["easyquant_query_map"]

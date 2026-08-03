@@ -136,6 +136,12 @@ def _non_stub_evidence_rows(rows: list[dict[str, str]]) -> list[dict[str, str]]:
 
 
 def _immunogenicity_tool_available(name: str, ctx: Any) -> bool:
+    if name == "bigmhc_im":
+        import os
+        from pathlib import Path
+
+        bigmhc_dir = Path(ctx.executables.get("bigmhc_dir") or os.environ.get("BIGMHC_DIR", ""))
+        return bool(str(bigmhc_dir)) and (bigmhc_dir / "src" / "predict.py").is_file()
     from .tools.runner import check_tool
 
     try:

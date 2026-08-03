@@ -1211,3 +1211,25 @@ Missing optional tools or normal-background references remain `UNASSESSED` or
 ## v0.5.1 three evidence chains
 
 The formal splice layer now supports an RNA-driven ImmunoPepper + moPepGen branch, a DNA-causal splice2neo + EasyQuant + pVACsplice branch, and a separately audited normal-background + k4neo branch. See `README_v0.5.1.md` and `docs/V051_THREE_EVIDENCE_CHAINS.md`.
+
+## Candidate source-chain confidence C1–C4 (v0.5.2)
+
+NeoAg now emits an event-specific candidate source-chain confidence tier for SNV, InDel, Fusion and Splice candidates. C1–C4 are separate from R1–R4:
+
+```text
+C1: complete chain + independent/cross-modal confirmation
+C2: complete strong computational/read chain, no orthogonal confirmation
+C3: plausible but incomplete/low-power chain
+C4: refuted or invalid event/ORF/peptide chain
+```
+
+Use compatibility mode first to preserve the existing EC rank while auditing source-chain completeness:
+
+```bash
+neoag source-chain --input all_tool_results.tsv \
+  --output source_chain_confidence.tsv \
+  --requirements-out source_chain_requirements.long.tsv \
+  --rules configs/ranking/sarcoma_evidence_consensus_v2_1_source_chain.toml
+```
+
+See `docs/SOURCE_CHAIN_CONFIDENCE_C1_C4.md` for event-specific rules and the integrated research profile.

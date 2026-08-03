@@ -52,6 +52,7 @@ def run(
     reference_proteome=None,
     normal_junctions=None,
     cancer_gene_list=None,
+    evidence_consensus_rules=None,
 ):
     outdir = Path(outdir)
     outdir.mkdir(parents=True, exist_ok=True)
@@ -223,7 +224,12 @@ def run(
         validation_plan=val_path,
         conflicts_tsv=scoring / "evidence_source_conflicts.tsv",
     )
-    consensus_rules_path = Path(__file__).resolve().parents[2] / "configs/ranking/sarcoma_evidence_consensus_v1.toml"
+    ranking_config_dir = Path(__file__).resolve().parents[2] / "configs/ranking"
+    consensus_rules_path = Path(evidence_consensus_rules) if evidence_consensus_rules else (
+        ranking_config_dir / "sarcoma_evidence_consensus_v2_1_source_chain.toml"
+    )
+    if not consensus_rules_path.is_file() and not evidence_consensus_rules:
+        consensus_rules_path = ranking_config_dir / "sarcoma_evidence_consensus_v1.toml"
     consensus_rules = load_consensus_rules(consensus_rules_path if consensus_rules_path.is_file() else None)
     evidence_consensus_summary = build_evidence_consensus(
         comprehensive_path,
