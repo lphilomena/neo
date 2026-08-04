@@ -104,23 +104,10 @@ fi
 
 if wants 3; then
   if [[ "$EXECUTE" == 1 ]]; then
-    purity="$(awk -F '\t' 'NR==2 {print $2}' "$CNV/recommended_purity.tsv")"
-    ploidy="$(awk -F '\t' 'NR==2 {print $3}' "$CNV/recommended_purity.tsv")"
-    [[ "$purity" =~ ^[0-9]+([.][0-9]+)?$ && "$ploidy" =~ ^[0-9]+([.][0-9]+)?$ ]] || { echo "ERROR: invalid recommended purity/ploidy" >&2; exit 4; }
-    mkdir -p "$LOH/lohhla"
-    { printf '\ttumorPurity\ttumorPloidy\n'; printf '%s\t%s\t%s\n' "$TUMOR_ID" "$purity" "$ploidy"; } > "$LOH/lohhla/lohhla_copy_number_input.tsv"
-    PATIENT_ID="$SAMPLE_ID" TUMOR_SAMPLE_ID="$TUMOR_ID" NORMAL_SAMPLE_ID="$NORMAL_ID" TUMOR_BAM="$TUMOR_BAM" NORMAL_BAM="$NORMAL_BAM" \
-      HLA_FILE="$HLA/recommended_hla.txt" OUTDIR="$LOH/lohhla" LOHHLA_NAS_ROOT="$LOH/lohhla/work" COPYNUM_LOC="$LOH/lohhla/lohhla_copy_number_input.tsv" \
-      POLYSOLVER_THREADS="$THREADS" bash "$ROOT/scripts/run_lohhla_sample.sh"
-    prediction="$(find "$LOH/lohhla" -type f -name '*HLAlossPrediction_CI*' -size +0c -print -quit)"
-    "$ROOT/bin/neoag" convert-lohhla -i "$prediction" -o "$LOH/lohhla/hla_loh.tsv"
-    bash "$ROOT/scripts/run_spechla_sample.sh" --bam "$TUMOR_BAM" --sample-id "$TUMOR_ID" --threads "$THREADS" --outdir "$LOH/spechla_typing"
-    typing_result="$(find "$LOH/spechla_typing/typing" -type f -name 'hla.result.txt' -size +0c -print -quit)"
-    typing_dir="$(dirname "$typing_result")"
-    bash "$ROOT/scripts/run_spechla_loh.sh" --sample-id "$SAMPLE_ID" --typing-dir "$typing_dir" --purity "$purity" --ploidy "$ploidy" \
-      --lohhla-hla-loh "$LOH/lohhla/hla_loh.tsv" --outdir "$LOH/spechla"
-    "$PYTHON" "$ROOT/scripts/build_hla_loh_consensus.py" --sample-id "$SAMPLE_ID" --lohhla "$LOH/lohhla/hla_loh.tsv" \
-      --spechla "$LOH/spechla/hla_loh.tsv" --outdir "$LOH"
+    PYTHON="$PYTHON" bash "$ROOT/scripts/run_hla_loh_multi_tool.sh" --sample-id "$SAMPLE_ID" \
+      --tumor-id "$TUMOR_ID" --normal-id "$NORMAL_ID" --tumor-bam "$TUMOR_BAM" --normal-bam "$NORMAL_BAM" \
+      --hla-file "$HLA/recommended_hla.txt" --purity-tsv "$CNV/recommended_purity.tsv" \
+      --tools lohhla,spechla --threads "$THREADS" --outdir "$LOH"
   else
     echo "+ LOHHLA with recommended HLA and purity/ploidy -> $LOH/lohhla"
     echo "+ tumor SpecHLA typing + SpecHLA LOH -> $LOH/spechla"

@@ -30,6 +30,7 @@ from neoag.open_neo.cli import build_parser
 from neoag.open_neo.review import build_review_rows, run_review, select_first_batch
 from neoag.open_neo.routing import inspect_manifest
 from neoag.open_neo.run import run_open_neo
+from neoag.controlled_execution.pipeline_runner import _manifest_file_hashes
 from neoag.open_neo.state import RunLayout, load_run_state, resume_step_decision
 from neoag.open_neo.rna_preprocessing import prepare_rna_evidence
 from neoag.open_neo.rna_fusion_splice_profile import (
@@ -764,21 +765,40 @@ def _automatic_plan_inputs(tmp_path: Path) -> tuple[dict[str, object], Path, Pat
     hla = tmp_path / "hla.txt"; hla.write_text("HLA-A*02:01\nHLA-B*07:02\n", encoding="utf-8")
     fasta = tmp_path / "GRCh38.fa"; fasta.write_text(">chr1\nA\n", encoding="utf-8")
     facets = tmp_path / "common.vcf.gz"; facets.write_bytes(b"fixture")
+    sequenza_gc = tmp_path / "gc50.wig.gz"; sequenza_gc.write_bytes(b"fixture")
+    spechla_db = tmp_path / "spechla_db"; spechla_db.mkdir()
+    hla_la_graph = tmp_path / "hla_la_graph"; hla_la_graph.mkdir()
+    purple_ref = tmp_path / "purple_reference"; purple_ref.mkdir()
     tools = tmp_path / "tools.json"
     tools.write_text(json.dumps({"tools": {
         "samtools": {"executable": "/bin/true"},
         "facets": {"executable": "/bin/true"}, "sequenza": {"executable": "/bin/true"},
+        "spechla": {"executable": "/bin/true"}, "purple": {"executable": "/bin/true"},
+        "optitype": {"executable": "/bin/true"}, "hla_la": {"executable": "/bin/true"},
         "lohhla": {"executable": "/bin/true"}, "netmhcpan": {"executable": "/bin/true"},
         "mhcflurry": {"executable": "/bin/true"},
     }}), encoding="utf-8")
     refs = tmp_path / "refs.json"
     refs.write_text(json.dumps({"references": {
         "reference_fasta": {"path": str(fasta)}, "facets_snp_vcf": {"path": str(facets)},
+        "sequenza_gc_wiggle": {"path": str(sequenza_gc)},
+        "spechla_db": {"path": str(spechla_db)}, "purple_reference": {"path": str(purple_ref)},
+        "hla_la_graph": {"path": str(hla_la_graph)},
     }}), encoding="utf-8")
     return {
         "sample_id": "AUTO1", "tumor_dna_bam": str(tumor), "normal_dna_bam": str(normal),
         "somatic_vcf": str(vcf), "hla_file": str(hla),
     }, tools, refs
+
+
+def test_pipeline_plan_does_not_hash_large_bam_contents(tmp_path: Path):
+    bam = tmp_path / "large.bam"
+    with bam.open("wb") as handle:
+        handle.truncate(60 * 1024 * 1024)
+    rows = _manifest_file_hashes({"inputs": {"tumor_dna_bam": str(bam)}})
+    assert rows[0]["sha256"] == "not_computed_large_file"
+    assert rows[0]["size_bytes"] == str(60 * 1024 * 1024)
+    assert rows[0]["mtime_ns"]
 
 
 def test_capability_planner_builds_dna_hla_purity_loh_and_ranking_dag(tmp_path: Path):
@@ -789,13 +809,30 @@ def test_capability_planner_builds_dna_hla_purity_loh_and_ranking_dag(tmp_path: 
     )
     assert plan.status in {"READY", "PARTIAL"}
     text = Path(plan.manifest).read_text(encoding="utf-8")
-    for stage in ("snv_indel_candidates", "purity_facets", "purity_sequenza", "purity_consensus", "hla_loh_lohhla"):
+    for stage in ("snv_indel_candidates", "purity_facets", "purity_sequenza", "purity_purple", "purity_consensus", "hla_loh_multi_tool"):
         assert f"[stages.{stage}]" in text
-    assert "convert-lohhla" in text
-    assert 'hla_loh = "{outdir}/evidence/hla_loh.tsv"' in text
-    assert set(["facets", "sequenza", "lohhla", "netmhcpan", "mhcflurry"]) <= set(plan.selected_tools)
+    assert "run_hla_loh_multi_tool.sh" in text
+    assert "FACETS_CVAL_PRE=50" in text
+    assert "FACETS_CVAL_PROC=300" in text
+    assert 'hla_loh = "{outdir}/hla_loh/recommended_hla_loh.tsv"' in text
+    assert set(["facets", "sequenza", "purple", "lohhla", "spechla", "netmhcpan", "mhcflurry"]) <= set(plan.selected_tools)
     rows = list(csv.DictReader(Path(plan.outputs["capability_decisions"]).open(), delimiter="\t"))
     assert any(row["domain"] == "purity_cnv" and row["status"] == "SELECTED" for row in rows)
+
+
+def test_capability_planner_runs_three_hla_callers_from_normal_bam(tmp_path: Path):
+    inputs, tools, refs = _automatic_plan_inputs(tmp_path)
+    inputs["hla_file"] = str(tmp_path / "missing_hla.txt")
+    plan = build_automatic_production_plan(
+        inputs, tmp_path / "three-hla.toml", project_root=Path.cwd(), outdir=tmp_path / "run",
+        tools_manifest=tools, reference_manifest=refs,
+    )
+    config = load_production_manifest(plan.manifest)
+    assert {"hla_optitype", "hla_hla_la", "hla_spechla", "hla_consensus"} <= set(config["stages"])
+    assert "run_optitype_sample.sh" in config["stages"]["hla_optitype"]["command"]
+    assert "run_hla_la_sample.sh" in config["stages"]["hla_hla_la"]["command"]
+    assert "run_spechla_sample.sh" in config["stages"]["hla_spechla"]["command"]
+    assert any(row.tool == "provided_hla" and row.status == "INVALID" for row in plan.decisions)
 
 
 def test_bam_matcher_parser_normalizes_match_mismatch_and_inconclusive(tmp_path: Path):
@@ -822,7 +859,7 @@ def test_capability_planner_gates_paired_analyses_on_bam_matcher(tmp_path: Path)
     plan = build_automatic_production_plan(inputs, tmp_path / "auto.toml", project_root=Path.cwd(), outdir=tmp_path / "run", tools_manifest=tools, reference_manifest=refs)
     config = load_production_manifest(plan.manifest)
     assert "sample_identity_bam_matcher" in config["stages"]
-    for stage in ("purity_facets", "purity_sequenza", "hla_loh_lohhla"):
+    for stage in ("purity_facets", "purity_sequenza", "purity_purple", "hla_loh_multi_tool"):
         assert "sample_identity_bam_matcher" in config["stages"][stage]["depends_on"]
     assert any(row.domain == "sample_identity" and row.status == "SELECTED" for row in plan.decisions)
 
@@ -847,6 +884,19 @@ def test_open_neo_run_raw_bam_plan_uses_capability_aware_manifest(tmp_path: Path
     assert manifest.is_file()
     assert "[stages.purity_consensus]" in manifest.read_text(encoding="utf-8")
     assert Path(result["outputs"]["capability_plan"]).is_file()
+
+
+def test_open_neo_run_clears_hla_missing_when_auto_typing_is_selected(tmp_path: Path):
+    inputs, tools, refs = _automatic_plan_inputs(tmp_path)
+    inputs["hla_file"] = str(tmp_path / "missing_hla.txt")
+    result = run_open_neo({
+        **inputs, "tools_manifest": str(tools), "reference_manifest": str(refs),
+        "project_root": str(Path.cwd()), "doctor": False, "mode": "plan",
+        "outdir": str(tmp_path / "openneo-auto-hla"),
+    })
+    assert result["status"] == "PASS"
+    assert "hla_file" not in result["missing_evidence"]
+    assert "hla_alleles_or_hla_file" not in result["missing_evidence"]
 
 
 def test_capability_planner_combines_dna_and_rna_fastq_routes(tmp_path: Path):

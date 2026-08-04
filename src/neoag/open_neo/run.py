@@ -62,6 +62,7 @@ def _result_from_args(args: dict[str, Any], layout: RunLayout) -> RoutingResult:
     }
     keys = [
         "tumor_dna_bam", "normal_dna_bam", "tumor_rna_bam", "tumor_dna_fastq", "normal_dna_fastq", "tumor_rna_fastq",
+        "tumor_sample_id", "normal_sample_id",
         "somatic_vcf", "fusion_tsv", "splice_junction_tsv", "sv_vcf", "capture_bed",
         "peptide_csv", "raw_events", "raw_peptides", "sv_raw_events", "sv_raw_peptides",
         "hla_file", "hla_alleles", "expression_tsv", "transcript_expression_tsv",
@@ -247,6 +248,7 @@ def _register_production_tool_outputs(inputs: dict[str, Any], production_result:
         "hla_hla_la": ("hla_typing", "hla-la"),
         "hla_spechla": ("hla_typing", "spechla"),
         "hla_loh_lohhla": ("hla_loh", "lohhla"),
+        "hla_loh_multi_tool": ("hla_loh", "multi-tool"),
         "purity_facets": ("purity_cnv", "facets"),
         "purity_sequenza": ("purity_cnv", "sequenza"),
         "purity_purple": ("purity_cnv", "purple"),
@@ -265,6 +267,14 @@ def _register_production_tool_outputs(inputs: dict[str, Any], production_result:
         values = [str(value) for value in stage.outputs.values() if isinstance(value, str) and Path(value).exists()]
         if values:
             tool_results.setdefault(domain, {})[tool] = values[0]
+        if stage.name == "hla_loh_multi_tool":
+            for tool, key in (("lohhla", "lohhla_hla_loh"), ("spechla", "spechla_hla_loh")):
+                path = str(stage.outputs.get(key) or "")
+                if path and Path(path).is_file():
+                    tool_results.setdefault("hla_loh", {})[tool] = path
+            consensus = str(stage.outputs.get("hla_loh_consensus") or "")
+            if consensus and Path(consensus).is_file():
+                tool_results.setdefault("hla_loh", {})["provided_consensus"] = consensus
 
 
 def run_open_neo(args: dict[str, Any]) -> dict[str, Any]:
@@ -336,6 +346,7 @@ def run_open_neo(args: dict[str, Any]) -> dict[str, Any]:
     if mode == "resume" and not (
         routing.inputs.get("production_manifest")
         or routing.inputs.get("result_dir")
+        or automatic_candidate
         or is_rna_fastq_profile_candidate(routing.inputs)
     ):
         result.steps.append(MacroStep("02", "resume-input-check", "BLOCKED", "Resume requires a production manifest or an existing result directory", failure_code=FailureCode.RESUME_INPUT_REQUIRED.value))
@@ -357,6 +368,17 @@ def run_open_neo(args: dict[str, Any]) -> dict[str, Any]:
         )
         routing.inputs["production_manifest"] = automatic_plan.manifest
         result.outputs.update(automatic_plan.outputs)
+        generated_domains = {
+            decision.domain for decision in automatic_plan.decisions
+            if decision.status == "SELECTED"
+        }
+        if "hla_typing" in generated_domains:
+            result.missing_evidence = [
+                item for item in result.missing_evidence
+                if item not in {"hla_file", "hla_alleles_or_hla_file"}
+            ]
+        if "somatic_variant" in generated_domains:
+            result.missing_evidence = [item for item in result.missing_evidence if item != "somatic_vcf"]
         if routing.inputs.get("tumor_rna_fastq"):
             result.outputs["generated_production_manifest"] = automatic_plan.manifest
             result.outputs["rna_fusion_splice_requirements"] = automatic_plan.outputs["capability_decisions"]

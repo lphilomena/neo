@@ -66,6 +66,8 @@ def test_purity_review_writes_recommended_outputs(tmp_path):
     assert segments[0]["major_cn"] == "1"
     assert segments[0]["minor_cn"] == "1"
     assert segments[0]["loh_status"] == "RETAINED"
+    assert (out / "hla_6p21_cnv_tool_evidence.tsv").is_file()
+    assert (out / "hla_6p21_cnv_consensus.tsv").is_file()
 
 
 def test_hla_loh_consensus_preserves_all_four_states(tmp_path):
@@ -79,7 +81,7 @@ def test_hla_loh_consensus_preserves_all_four_states(tmp_path):
         "--lohhla", str(lohhla), "--spechla", str(spechla), "--outdir", str(out),
     ], check=True)
     states = {row["hla_allele"]: row["consensus_status"] for row in read_tsv(out / "hla_loh_consensus.tsv")}
-    assert states == {"HLA-A*02:06": "LOST", "HLA-B*13:02": "RETAINED", "HLA-C*06:02": "CONFLICT"}
+    assert states == {"HLA-A*02:06": "CONSENSUS_LOST", "HLA-B*13:02": "CONSENSUS_RETAINED", "HLA-C*06:02": "DISCORDANT"}
     assert "DRB1" not in (out / "hla_loh_consensus.tsv").read_text()
 
 
@@ -112,8 +114,7 @@ def test_recommended_driver_covers_all_steps_and_dna_only_semantics():
         "FACETS_TARGET_ROWS=1000000",
         "run_sequenza_sample_by_chrom.sh",
         "run_purple_sample.sh",
-        "run_lohhla_sample.sh",
-        "run_spechla_loh.sh",
+        "run_hla_loh_multi_tool.sh",
         "generate_recommended_run_config.py",
         "neoag.cli run-full",
     ):

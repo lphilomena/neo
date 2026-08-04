@@ -20,14 +20,7 @@ def write_tsv(path: Path, rows: list[dict[str, str]], columns: list[str]) -> Non
 
 
 def display_status(row: dict[str, str]) -> str:
-    status = row.get("consensus_loh_status", "unassessed")
-    if status == "loh":
-        return "LOST"
-    if status == "no":
-        return "RETAINED"
-    if status == "discordant":
-        return "CONFLICT"
-    return "UNASSESSED"
+    return row.get("consensus_status", "UNASSESSED")
 
 
 def main() -> int:
@@ -57,8 +50,14 @@ def main() -> int:
             "crosscheck_status": row.get("crosscheck_status", "UNASSESSED"),
             "source_tools": row.get("source_tools", ""),
             "reason": row.get("reason", ""),
+            **{key: value for key, value in row.items() if key.startswith("lohhla_") or key.startswith("spechla_")},
         })
-    columns = ["sample_id", "hla_allele", "locus", "consensus_status", "lohhla_status", "spechla_status", "crosscheck_status", "source_tools", "reason"]
+    base_columns = ["sample_id", "hla_allele", "locus", "consensus_status", "lohhla_status", "spechla_status", "crosscheck_status", "source_tools", "reason"]
+    evidence_columns = sorted({
+        key for row in standardized for key in row
+        if (key.startswith("lohhla_") or key.startswith("spechla_")) and key not in base_columns
+    })
+    columns = [*base_columns, *evidence_columns]
     write_tsv(outdir / "hla_loh.standardized.tsv", standardized, columns)
     write_tsv(outdir / "hla_loh_consensus.tsv", standardized, columns)
 
@@ -68,18 +67,19 @@ def main() -> int:
         "method": "lohhla_spechla_consensus",
         "confidence": row["crosscheck_status"],
         "source": row["source_tools"],
-    } for row in standardized if row["consensus_status"] == "LOST"]
+    } for row in standardized if row["consensus_status"] == "CONSENSUS_LOST"]
     write_tsv(outdir / "recommended_hla_loh.tsv", recommended, ["hla_allele", "loh_status", "method", "confidence", "source"])
 
-    counts = {status: sum(row["consensus_status"] == status for row in standardized) for status in ("LOST", "RETAINED", "CONFLICT", "UNASSESSED")}
+    status_names = ("CONSENSUS_LOST", "CONSENSUS_RETAINED", "DISCORDANT", "UNASSESSED")
+    counts = {status: sum(row["consensus_status"] == status for row in standardized) for status in status_names}
     (outdir / "hla_loh_summary.json").write_text(json.dumps({"sample_id": args.sample_id, "counts": counts}, indent=2) + "\n", encoding="utf-8")
     review = [
         "# HLA-I LOH consensus review",
         "",
         f"- sample: `{args.sample_id}`",
-        f"- LOST: {counts['LOST']}",
-        f"- RETAINED: {counts['RETAINED']}",
-        f"- CONFLICT: {counts['CONFLICT']}",
+        f"- CONSENSUS_LOST: {counts['CONSENSUS_LOST']}",
+        f"- CONSENSUS_RETAINED: {counts['CONSENSUS_RETAINED']}",
+        f"- DISCORDANT: {counts['DISCORDANT']}",
         f"- UNASSESSED: {counts['UNASSESSED']}",
         "",
         "Only HLA-A/B/C are included. HLA-II calls are intentionally excluded from the MHC-I LOH consensus.",

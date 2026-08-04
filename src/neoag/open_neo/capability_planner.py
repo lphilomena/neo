@@ -142,6 +142,12 @@ def _resolve_references(inputs: dict[str, Any], manifest: str | Path | None) -> 
     result = {key: str(inputs.get(key) or "") for key in INPUT_REFERENCE_KEYS if inputs.get(key)}
     data = load_limited_yaml(manifest) if manifest and Path(manifest).is_file() else {}
     flattened = _flatten_paths(data)
+    reference_root = os.environ.get("OPEN_NEO_REFERENCE_ROOT") or os.environ.get("NEOAG_REF_BUNDLE") or ""
+    if reference_root:
+        flattened = {
+            key: value.replace("${OPEN_NEO_REFERENCE_ROOT}", reference_root).replace("$OPEN_NEO_REFERENCE_ROOT", reference_root)
+            for key, value in flattened.items()
+        }
     for name, aliases in REFERENCE_ALIASES.items():
         if result.get(name):
             continue
@@ -229,6 +235,8 @@ def build_automatic_production_plan(
     missing_required: list[str] = []
     routes: list[str] = []
     sample_id = str(inputs.get("sample_id") or inputs.get("case_id") or "SAMPLE001")
+    tumor_id = str(inputs.get("tumor_sample_id") or inputs.get("tumor_id") or f"{sample_id}_T")
+    normal_id = str(inputs.get("normal_sample_id") or inputs.get("normal_id") or f"{sample_id}_N")
     threads = int(inputs.get("threads") or inputs.get("rna_threads") or 16)
 
     minimal_tools = {"bwa", "samtools", "gatk", "bam_matcher", "optitype", "facets", "netmhcpan", "mhcflurry", "star", "salmon", "easyfuse", "regtools"}
@@ -266,6 +274,9 @@ def build_automatic_production_plan(
     somatic_vcf = str(inputs.get("somatic_vcf") or "")
     hla_file = str(inputs.get("hla_file") or "")
     hla_alleles = [str(value) for value in inputs.get("hla_alleles") or []]
+    invalid_hla_file = hla_file if hla_file and not Path(hla_file).is_file() else ""
+    if invalid_hla_file:
+        hla_file = ""
 
     if not tumor_bam and tumor_dna_fastq:
         available, executable, _ = _tool_info("bwa", tools)
@@ -361,6 +372,8 @@ def build_automatic_production_plan(
             )
     typing_input_bam = normal_bam or tumor_bam
 
+    if invalid_hla_file:
+        decide("hla_typing", "provided_hla", "INVALID", f"provided HLA file is missing: {invalid_hla_file}", required=True)
     if hla_alleles and not hla_file:
         hla_file = _write_hla_file(manifest.with_name("provided_hla.txt"), hla_alleles)
     if hla_file:
@@ -380,18 +393,45 @@ def build_automatic_production_plan(
             else:
                 decide("hla_typing", "optitype", "UNAVAILABLE", "paired DNA FASTQ is present but OptiType is unavailable")
         if typing_input_bam:
+            optitype_available, optitype_executable, optitype_template = _tool_info("optitype", tools)
+            if "hla_optitype" not in stages and permitted("optitype"):
+                optitype_command = _template_command(optitype_template, {
+                    "bam": typing_input_bam, "sample_id": normal_id if normal_bam else tumor_id,
+                    "outdir": "{outdir}/hla/optitype", "threads": threads,
+                })
+                if optitype_available and not optitype_command:
+                    optitype_command = (
+                        f"bash {root / 'scripts/run_optitype_sample.sh'} --bam {typing_input_bam} "
+                        f"--sample-id {normal_id if normal_bam else tumor_id} --threads {threads} "
+                        "--outdir {outdir}/hla/optitype"
+                    )
+                if optitype_available and optitype_command:
+                    add_stage("hla_optitype", command=optitype_command, outputs={"result_dir": "{outdir}/hla/optitype"}, depends=alignment_deps)
+                    hla_results.append("{outdir}/hla/optitype")
+                    decide("hla_typing", "optitype", "SELECTED", "repository-owned BAM-to-HLA-read runner is available", stage="hla_optitype", executable=optitype_executable)
+                else:
+                    decide("hla_typing", "optitype", "UNAVAILABLE", "OptiType is unavailable for BAM typing", executable=optitype_executable)
             for tool, graph_ref in (("hla_la", "hla_la_graph"), ("spechla", "spechla_db")):
                 available, executable, template = _tool_info(tool, tools)
+                if tool == "spechla" and tools.get("spechla") and (root / "scripts/run_spechla_sample.sh").is_file():
+                    available = True
                 if not permitted(tool):
                     decide("hla_typing", tool, "POLICY_SKIPPED", f"excluded by {policy} policy", executable=executable)
                     continue
                 values = {"bam": typing_input_bam, "sample_id": sample_id, "outdir": f"{{outdir}}/hla/{tool}", "threads": threads, **refs}
                 command = _template_command(template, values)
+                if available and not command and refs.get(graph_ref):
+                    runner = "run_hla_la_sample.sh" if tool == "hla_la" else "run_spechla_sample.sh"
+                    command = (
+                        f"bash {root / 'scripts' / runner} --bam {typing_input_bam} "
+                        f"--sample-id {normal_id if normal_bam else tumor_id} --threads {threads} "
+                        f"--outdir {{outdir}}/hla/{tool}"
+                    )
                 if available and command and (not graph_ref or refs.get(graph_ref)):
                     stage = f"hla_{tool}"
                     add_stage(stage, command=command, outputs={"result_dir": f"{{outdir}}/hla/{tool}"}, depends=alignment_deps)
                     hla_results.append(f"{{outdir}}/hla/{tool}")
-                    decide("hla_typing", tool, "SELECTED", "BAM input and a validated command_template are available", stage=stage, executable=executable, references=[graph_ref])
+                    decide("hla_typing", tool, "SELECTED", "BAM input and a validated template or repository-owned runner are available", stage=stage, executable=executable, references=[graph_ref])
                 elif available and not command:
                     decide("hla_typing", tool, "TEMPLATE_REQUIRED", "tool exists but no validated sample-level command_template is declared", executable=executable, references=[graph_ref])
                 else:
@@ -445,18 +485,28 @@ def build_automatic_production_plan(
         facets_available, facets_exe, _ = _tool_info("facets", tools)
         facets_ref = refs.get("facets_snp_vcf")
         if facets_available and facets_ref:
-            command = f"FACETS_MODE=common_snp FACETS_SNP_VCF={facets_ref} PATIENT_ID={sample_id} TUMOR_BAM={tumor_bam} NORMAL_BAM={normal_bam} OUTDIR={{outdir}}/purity/facets bash {root / 'scripts/run_facets_sample.sh'}"
-            add_stage("purity_facets", command=command, outputs={"purity": "{outdir}/purity/facets/purity.tsv"}, depends=paired_analysis_deps)
+            command = (
+                f"FACETS_MODE=omni2p5 FACETS_SNP_VCF={facets_ref} FACETS_CVAL_PRE=50 "
+                f"FACETS_CVAL_PROC=300 FACETS_MIN_NHET=10 FACETS_TARGET_ROWS=1000000 "
+                f"PATIENT_ID={sample_id} TUMOR_BAM={tumor_bam} NORMAL_BAM={normal_bam} "
+                f"OUTDIR={{outdir}}/purity/facets bash {root / 'scripts/run_facets_sample.sh'}"
+            )
+            add_stage(
+                "purity_facets",
+                command=command,
+                outputs={"result_dir": "{outdir}/purity/facets"},
+                depends=paired_analysis_deps,
+            )
             purity_dirs.append("{outdir}/purity/facets")
-            decide("purity_cnv", "facets", "SELECTED", "BAM pair and common SNP reference are available", stage="purity_facets", executable=facets_exe, references=["facets_snp_vcf"])
+            decide("purity_cnv", "facets", "SELECTED", "BAM pair and omni2p5 reference are available; robust parameters 50/300/10/1000000 are fixed", stage="purity_facets", executable=facets_exe, references=["facets_snp_vcf"])
         else:
             decide("purity_cnv", "facets", "UNAVAILABLE", "FACETS executable or SNP reference is missing", references=["facets_snp_vcf"])
 
         seq_available, seq_exe, _ = _tool_info("sequenza", tools)
         if not permitted("sequenza"):
             decide("purity_cnv", "sequenza", "POLICY_SKIPPED", f"excluded by {policy} policy", executable=seq_exe)
-        elif seq_available and refs.get("reference_fasta"):
-            gc = refs.get("sequenza_gc_wiggle") or "{outdir}/purity/sequenza/reference.gc50.wig.gz"
+        elif seq_available and refs.get("reference_fasta") and refs.get("sequenza_gc_wiggle"):
+            gc = refs["sequenza_gc_wiggle"]
             command = f"SAMPLE_ID={sample_id} TUMOR_BAM={tumor_bam} NORMAL_BAM={normal_bam} REF_FASTA={refs['reference_fasta']} GC_WIGGLE={gc} OUTDIR={{outdir}}/purity/sequenza bash {root / 'scripts/run_sequenza_sample_by_chrom.sh'}"
             summary = f"{{outdir}}/purity/sequenza/sequenza_fit/{sample_id}.sequenza_summary.tsv"
             add_stage("purity_sequenza", command=command, outputs={"purity": summary}, depends=paired_analysis_deps)
@@ -470,12 +520,24 @@ def build_automatic_production_plan(
             if not permitted(tool):
                 decide("purity_cnv", tool, "POLICY_SKIPPED", f"excluded by {policy} policy", executable=executable)
                 continue
-            command = _template_command(template, {"tumor_bam": tumor_bam, "normal_bam": normal_bam, "sample_id": sample_id, "outdir": f"{{outdir}}/purity/{tool}", **refs})
+            command = _template_command(template, {
+                "tumor_bam": tumor_bam, "normal_bam": normal_bam,
+                "sample_id": sample_id, "tumor_id": tumor_id, "normal_id": normal_id,
+                "outdir": f"{{outdir}}/purity/{tool}", **refs,
+            })
+            if tool == "purple" and available and refs.get("purple_reference") and not command:
+                command = (
+                    f"HMFTOOLS_REFERENCE_ROOT={refs['purple_reference']} "
+                    f"HMFTOOLS_REFERENCE_FASTA={refs.get('reference_fasta', '')} "
+                    f"bash {root / 'scripts/run_purple_sample.sh'} --sample-id {sample_id} "
+                    f"--tumor-id {tumor_id} --normal-id {normal_id} --tumor-bam {tumor_bam} "
+                    f"--normal-bam {normal_bam} --threads {threads} --outdir {{outdir}}/purity/purple"
+                )
             if available and command:
                 stage = f"purity_{tool}"
                 add_stage(stage, command=command, outputs={"result_dir": f"{{outdir}}/purity/{tool}"}, depends=paired_analysis_deps)
                 purity_dirs.append(f"{{outdir}}/purity/{tool}")
-                decide("purity_cnv", tool, "SELECTED", "validated command_template is available", stage=stage, executable=executable)
+                decide("purity_cnv", tool, "SELECTED", "validated command_template or repository-owned runner is available", stage=stage, executable=executable, references=["purple_reference"] if tool == "purple" else [])
             elif available:
                 decide("purity_cnv", tool, "TEMPLATE_REQUIRED", "installed tool has no validated sample-level command_template", executable=executable)
             else:
@@ -485,38 +547,69 @@ def build_automatic_production_plan(
             args_dirs = " ".join(f"--result-dir {value}" for value in purity_dirs)
             dependencies = [name for name in stages if name.startswith("purity_")]
             add_stage(
-                "purity_consensus", command=f"PYTHONPATH={root / 'src'} python {root / 'scripts/write_purity_consensus_tsv.py'} {args_dirs} --sample-id {sample_id} --output {{outdir}}/evidence/purity.tsv --details {{outdir}}/evidence/purity_tool_results.tsv",
-                outputs={"purity": "{outdir}/evidence/purity.tsv", "purity_tool_results": "{outdir}/evidence/purity_tool_results.tsv"}, depends=dependencies,
+                "purity_consensus",
+                command=f"PYTHONPATH={root / 'src'} python -m neoag.agent_skills.purity_cnv_review {args_dirs} --sample-id {sample_id} --outdir {{outdir}}/purity/consensus",
+                outputs={
+                    "result_dir": "{outdir}/purity/consensus",
+                    "purity": "{outdir}/purity/consensus/recommended_purity.tsv",
+                    "cnv": "{outdir}/purity/consensus/recommended_cnv_segments.tsv",
+                    "purity_consensus": "{outdir}/purity/consensus/purity_cnv_consensus.tsv",
+                    "purity_tool_results": "{outdir}/purity/consensus/purity_cnv_tool_summary.tsv",
+                    "hla_6p21_consensus": "{outdir}/purity/consensus/hla_6p21_cnv_consensus.tsv",
+                },
+                depends=dependencies,
             )
-            evidence["purity"] = "{outdir}/evidence/purity.tsv"
+            evidence["purity"] = "{outdir}/purity/consensus/recommended_purity.tsv"
+            evidence["cnv"] = "{outdir}/purity/consensus/recommended_cnv_segments.tsv"
 
         loh_available, loh_exe, _ = _tool_info("lohhla", tools)
-        if not permitted("lohhla"):
+        spechla_available, spechla_exe, _ = _tool_info("spechla", tools)
+        if tools.get("spechla") and (root / "scripts/run_spechla_sample.sh").is_file():
+            spechla_available = True
+        selected_loh_tools: list[str] = []
+        if permitted("lohhla") and loh_available:
+            selected_loh_tools.append("lohhla")
+        elif not permitted("lohhla"):
             decide("hla_loh", "lohhla", "POLICY_SKIPPED", f"excluded by {policy} policy", executable=loh_exe)
-        elif loh_available and hla_file:
-            deps = paired_analysis_deps + hla_dependency
-            command = (
-                f"PATIENT_ID={sample_id} TUMOR_BAM={tumor_bam} NORMAL_BAM={normal_bam} "
-                f"HLA_FILE={hla_file} OUTDIR={{outdir}}/hla_loh/lohhla "
-                f"bash {root / 'scripts/run_lohhla_sample.sh'} && "
-                "PRED=$(find {outdir}/hla_loh/lohhla -type f -name '*HLAlossPrediction_CI*' -print -quit) && "
-                "test -n \"$PRED\" && "
-                f"PYTHONPATH={root / 'src'} python -m neoag.cli convert-lohhla "
-                "-i \"$PRED\" -o {outdir}/evidence/hla_loh.tsv"
-            )
-            add_stage(
-                "hla_loh_lohhla",
-                command=command,
-                outputs={
-                    "result_dir": "{outdir}/hla_loh/lohhla",
-                    "hla_loh": "{outdir}/evidence/hla_loh.tsv",
-                },
-                depends=deps,
-            )
-            evidence["hla_loh"] = "{outdir}/evidence/hla_loh.tsv"
-            decide("hla_loh", "lohhla", "SELECTED", "tumor-normal BAM and HLA are available", stage="hla_loh_lohhla", executable=loh_exe, references=["lohhla_reference"])
         else:
-            decide("hla_loh", "lohhla", "UNAVAILABLE", "LOHHLA, BAM pair or HLA is missing")
+            decide("hla_loh", "lohhla", "UNAVAILABLE", "LOHHLA is unavailable", executable=loh_exe)
+        if permitted("spechla") and spechla_available and refs.get("spechla_db"):
+            selected_loh_tools.append("spechla")
+        elif not permitted("spechla"):
+            decide("hla_loh", "spechla", "POLICY_SKIPPED", f"excluded by {policy} policy", executable=spechla_exe)
+        else:
+            decide("hla_loh", "spechla", "UNAVAILABLE", "SpecHLA or spechla_db is unavailable", executable=spechla_exe, references=["spechla_db"])
+
+        if selected_loh_tools and hla_file and purity_dirs:
+            stage = "hla_loh_multi_tool"
+            deps = list(dict.fromkeys(paired_analysis_deps + hla_dependency + ["purity_consensus"]))
+            command = (
+                f"PYTHONPATH={root / 'src'} bash {root / 'scripts/run_hla_loh_multi_tool.sh'} "
+                f"--sample-id {sample_id} --tumor-id {tumor_id} --normal-id {normal_id} "
+                f"--tumor-bam {tumor_bam} --normal-bam {normal_bam} --hla-file {hla_file} "
+                f"--purity-tsv {{outdir}}/purity/consensus/recommended_purity.tsv "
+                f"--tools {','.join(selected_loh_tools)} --threads {threads} --outdir {{outdir}}/hla_loh"
+            )
+            outputs = {
+                "result_dir": "{outdir}/hla_loh",
+                "hla_loh": "{outdir}/hla_loh/recommended_hla_loh.tsv",
+                "hla_loh_consensus": "{outdir}/hla_loh/hla_loh_consensus.tsv",
+            }
+            if "lohhla" in selected_loh_tools:
+                outputs["lohhla_hla_loh"] = "{outdir}/hla_loh/lohhla/hla_loh.tsv"
+            if "spechla" in selected_loh_tools:
+                outputs["spechla_hla_loh"] = "{outdir}/hla_loh/spechla/hla_loh.tsv"
+            add_stage(stage, command=command, outputs=outputs, depends=deps)
+            evidence["hla_loh"] = "{outdir}/hla_loh/recommended_hla_loh.tsv"
+            for tool in selected_loh_tools:
+                decide(
+                    "hla_loh", tool, "SELECTED",
+                    "scheduled with recommended cross-tool purity/ploidy and allele-level consensus",
+                    stage=stage, executable=loh_exe if tool == "lohhla" else spechla_exe,
+                    references=["lohhla_reference"] if tool == "lohhla" else ["spechla_db"],
+                )
+        elif selected_loh_tools:
+            decide("hla_loh", "consensus", "BLOCKED", "HLA file or recommended purity/CNV stage is unavailable")
 
     if tumor_rna_fastq:
         routes.extend(["rna_expression", "fusion", "splice"])
