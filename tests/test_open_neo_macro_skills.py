@@ -492,6 +492,37 @@ def test_install_skill_propagates_explicit_conda_base(tmp_path):
     assert command[command.index("--conda-base") + 1] == "/nas/apps/miniforge3"
 
 
+def test_install_skill_propagates_claude_code_bootstrap(tmp_path):
+    project = tmp_path / "project"
+    script = project / ".agents/skills/neoag-remote-deploy/scripts/16_install_new_machine.sh"
+    script.parent.mkdir(parents=True)
+    script.write_text("#!/bin/sh\n", encoding="utf-8")
+    layout = RunLayout.create(tmp_path / "run")
+    command = _deployment_command(
+        {
+            "deployment_tier": "core",
+            "install_claude_code": True,
+            "claude_code_channel": "2.1.170",
+            "allow_download": True,
+        },
+        project,
+        layout,
+        execute=True,
+    )
+    assert "--claude-code" in command
+    assert command[command.index("--claude-code-channel") + 1] == "2.1.170"
+    assert "--allow-download" in command
+
+
+def test_install_cli_accepts_claude_code_options():
+    args = build_parser().parse_args([
+        "install-check", "--project-root", ".", "--outdir", "work/install",
+        "--install-claude-code", "--claude-code-channel", "stable",
+    ])
+    assert args.install_claude_code is True
+    assert args.claude_code_channel == "stable"
+
+
 def test_install_skill_asset_server_defaults_can_be_overridden_by_environment(monkeypatch):
     monkeypatch.setenv("OPEN_NEO_ASSET_SOURCE_HOST", "asset-user@asset-host")
     monkeypatch.setenv("OPEN_NEO_ASSET_SOURCE_ROOT", "/data/neoag-assets")

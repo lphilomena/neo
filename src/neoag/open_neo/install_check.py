@@ -593,6 +593,8 @@ def _deployment_command(args: dict[str, Any], project_root: Path, layout: RunLay
         command += ["--asset-source-host", str(args["asset_source_host"])]
     if bool(args.get("allow_download", False)):
         command.append("--allow-download")
+    if bool(args.get("install_claude_code", False)):
+        command += ["--claude-code", "--claude-code-channel", str(args.get("claude_code_channel") or "stable")]
     if bool(args.get("no_sync_assets", False)):
         command.append("--no-sync-assets")
     if execute:
@@ -753,6 +755,16 @@ def run_install_check(args: dict[str, Any]) -> dict[str, Any]:
     if mode in EXECUTION_MODES and not result.approved:
         result.blocking_issues.append(FailureCode.APPROVAL_REQUIRED.value)
         result.steps.append(MacroStep("04", "approval-gate", "APPROVAL_REQUIRED", "Installation, repair or resume requires explicit approval", failure_code=FailureCode.APPROVAL_REQUIRED.value))
+        result.finish("APPROVAL_REQUIRED").write(layout.skill_result)
+        return result.to_dict()
+
+    if mode in EXECUTION_MODES and bool(args.get("install_claude_code", False)) and not bool(args.get("allow_download", False)):
+        result.blocking_issues.append(FailureCode.APPROVAL_REQUIRED.value)
+        result.steps.append(MacroStep(
+            "04", "claude-code-download-approval", "APPROVAL_REQUIRED",
+            "Claude Code installation requires explicit --allow-download approval",
+            failure_code=FailureCode.APPROVAL_REQUIRED.value,
+        ))
         result.finish("APPROVAL_REQUIRED").write(layout.skill_result)
         return result.to_dict()
 

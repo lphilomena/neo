@@ -30,6 +30,11 @@ description: Public macro Skill1 for Open-Neo installation, new-machine migratio
   site-managed Conda or Miniforge root, including a NAS path. When supplied,
   the Skill uses that installation and does not search for or install another
   Miniconda/Miniforge.
+- Optional `--install-claude-code`: install Claude Code with Anthropic's
+  official native installer. The default release channel is `stable`; use
+  `--claude-code-channel latest` or an exact `X.Y.Z` version when required.
+  Actual installation requires `--approved --allow-download` and never performs
+  authentication or stores an API key.
 
 ## Procedure
 
@@ -67,6 +72,23 @@ open-neo install-check \
 
 The selected path is propagated to the portable installer as `--conda-base`
 and recorded in `manifests/paths.env`.
+
+To include Claude Code in an approved new-machine installation:
+
+```bash
+open-neo install-check \
+  --project-root . \
+  --mode install \
+  --install-claude-code \
+  --claude-code-channel stable \
+  --approved \
+  --allow-download \
+  --outdir work/install-check
+```
+
+In `plan` mode these options are recorded in `deployment_command.json` without
+downloading anything. Installation verifies `claude --version`; login remains a
+separate interactive or enterprise-managed step.
 
 ## Reproducible derived assets
 

@@ -42,6 +42,14 @@
     "deployment_reference_manifest": {"type": "string"},
     "install_timeout": {"type": "integer", "minimum": 60},
     "allow_download": {"type": "boolean"},
+    "install_claude_code": {
+      "type": "boolean",
+      "description": "Install Claude Code through the approved Anthropic native installer"
+    },
+    "claude_code_channel": {
+      "type": "string",
+      "description": "Claude Code release channel (stable/latest) or exact X.Y.Z version"
+    },
     "installer_profile": {"enum": ["minimal", "standard", "all-open", "all"]},
     "no_sync_assets": {"type": "boolean"}
   },
