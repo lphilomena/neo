@@ -121,7 +121,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.novoindex:
         nix = args.out_fasta.with_suffix(".nix")
-        subprocess.run([args.novoindex, str(args.out_fasta)], check=True)
+        subprocess.run([args.novoindex, str(nix), str(args.out_fasta)], check=True)
         if nix.is_file() or args.out_fasta.with_name(args.out_fasta.name + ".nix").is_file():
             print(f"Built Novoalign index for {args.out_fasta}")
         else:

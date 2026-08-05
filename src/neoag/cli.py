@@ -448,7 +448,7 @@ def cmd_convert_lohhla(args):
 
 
 def cmd_convert_spechla(args):
-    spechla_to_hla_loh_tsv(args.input, args.output)
+    spechla_to_hla_loh_tsv(args.input, args.output, min_het=args.min_het)
     print(f"Wrote hla_loh.tsv: {args.output}")
 
 
@@ -1617,6 +1617,7 @@ def build_parser():
     )
     cs.add_argument("-i", "--input", required=True, help="SpecHLA merge.hla.copy.txt")
     cs.add_argument("-o", "--output", required=True, help="Output hla_loh.tsv path")
+    cs.add_argument("--min-het", type=float, default=5, help="Minimum informative heterozygous SNP count (default: 5)")
     cs.set_defaults(func=cmd_convert_spechla)
 
     hx = sub.add_parser(

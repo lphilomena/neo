@@ -10,7 +10,12 @@ from .utils import first, read_tsv, write_tsv
 
 HLA_LOH_CROSSCHECK_FIELDS = [
     "hla_allele", "lohhla_status", "lohhla_confidence", "spechla_status", "spechla_confidence",
-    "consensus_loh_status", "crosscheck_status", "source_tools", "reason",
+    "consensus_loh_status", "consensus_status", "crosscheck_status", "source_tools", "reason",
+    "lohhla_pval", "lohhla_unpaired_pval", "lohhla_pval_unique", "lohhla_unpaired_pval_unique",
+    "lohhla_copy_number_with_baf", "lohhla_cn_lower", "lohhla_cn_upper", "lohhla_mismatch_sites",
+    "lohhla_prop_supportive_sites", "lohhla_loss_allele_raw", "lohhla_kept_allele_raw", "lohhla_call_qc",
+    "spechla_loh_raw", "spechla_copyratio", "spechla_allele_frequency", "spechla_purity",
+    "spechla_ploidy", "spechla_het_num", "spechla_loss_hla_raw", "spechla_kept_hla_raw", "spechla_call_qc",
 ]
 
 HLA_LOH_CONSENSUS_FIELDS = ["hla_allele", "loh_status", "method", "confidence", "source"]
@@ -37,8 +42,9 @@ def _load_tool(path: str | Path | None) -> dict[str, dict[str, str]]:
         if not allele:
             continue
         out[allele] = {
+            **row,
             "status": _norm_status(first(row, ["loh_status", "status", "LOH", "loss", "Loss"], "")),
-            "confidence": first(row, ["confidence", "loh_confidence", "Pval_unique", "pval", "evidence_level"], ""),
+            "confidence": first(row, ["confidence", "loh_confidence", "lohhla_pval", "lohhla_pval_unique", "Pval_unique", "pval", "evidence_level"], ""),
         }
     return out
 
@@ -85,9 +91,35 @@ def crosscheck_hla_loh(
             "spechla_status": s["status"],
             "spechla_confidence": s["confidence"],
             "consensus_loh_status": consensus,
+            "consensus_status": {
+                "loh": "CONSENSUS_LOST" if crosscheck == "CONSENSUS_LOH" else "UNASSESSED",
+                "no": "CONSENSUS_RETAINED" if crosscheck == "CONSENSUS_NO_LOH" else "UNASSESSED",
+                "discordant": "DISCORDANT",
+            }.get(consensus, "UNASSESSED"),
             "crosscheck_status": crosscheck,
             "source_tools": ";".join(tools),
             "reason": reason,
+            "lohhla_pval": l.get("lohhla_pval", ""),
+            "lohhla_unpaired_pval": l.get("lohhla_unpaired_pval", ""),
+            "lohhla_pval_unique": l.get("lohhla_pval_unique", ""),
+            "lohhla_unpaired_pval_unique": l.get("lohhla_unpaired_pval_unique", ""),
+            "lohhla_copy_number_with_baf": l.get("lohhla_copy_number_with_baf", ""),
+            "lohhla_cn_lower": l.get("lohhla_cn_lower", ""),
+            "lohhla_cn_upper": l.get("lohhla_cn_upper", ""),
+            "lohhla_mismatch_sites": l.get("lohhla_mismatch_sites", ""),
+            "lohhla_prop_supportive_sites": l.get("lohhla_prop_supportive_sites", ""),
+            "lohhla_loss_allele_raw": l.get("lohhla_loss_allele_raw", ""),
+            "lohhla_kept_allele_raw": l.get("lohhla_kept_allele_raw", ""),
+            "lohhla_call_qc": l.get("call_qc", ""),
+            "spechla_loh_raw": s.get("spechla_loh_raw", ""),
+            "spechla_copyratio": s.get("spechla_copyratio", ""),
+            "spechla_allele_frequency": s.get("spechla_allele_frequency", ""),
+            "spechla_purity": s.get("spechla_purity", ""),
+            "spechla_ploidy": s.get("spechla_ploidy", ""),
+            "spechla_het_num": s.get("spechla_het_num", ""),
+            "spechla_loss_hla_raw": s.get("spechla_loss_hla_raw", ""),
+            "spechla_kept_hla_raw": s.get("spechla_kept_hla_raw", ""),
+            "spechla_call_qc": s.get("call_qc", ""),
         })
     return rows
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +34,12 @@ def _tool_result(value: str) -> tuple[str, str, str]:
     left, path = value.split("=", 1)
     domain, tool = left.split(":", 1)
     return domain.strip(), tool.strip(), path.strip()
+
+
+def _claude_code_channel(value: str) -> str:
+    if value in {"stable", "latest"} or re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", value):
+        return value
+    raise argparse.ArgumentTypeError("Claude Code channel must be stable, latest, or X.Y.Z")
 
 
 def _validate_public_input(command: str, args: dict[str, Any]) -> list[str]:
@@ -86,6 +93,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     install.add_argument("--install-timeout", type=int, default=7200)
     install.add_argument("--allow-download", action="store_true")
+    install.add_argument(
+        "--install-claude-code", action="store_true",
+        help="Install Claude Code; requires approved mutating mode and --allow-download",
+    )
+    install.add_argument(
+        "--claude-code-channel", type=_claude_code_channel, default="stable",
+        help="Claude Code release channel or exact version (default: stable)",
+    )
     install.add_argument(
         "--installer-profile", choices=["minimal", "standard", "all-open", "all"], default=None,
         help="Installer scope; defaults to minimal for review/core and standard for prediction/full",

@@ -30,6 +30,11 @@ description: Public macro Skill1 for Open-Neo installation, new-machine migratio
   site-managed Conda or Miniforge root, including a NAS path. When supplied,
   the Skill uses that installation and does not search for or install another
   Miniconda/Miniforge.
+- Optional `--install-claude-code`: install Claude Code with Anthropic's
+  official native installer. The default release channel is `stable`; use
+  `--claude-code-channel latest` or an exact `X.Y.Z` version when required.
+  Actual installation requires `--approved --allow-download` and never performs
+  authentication or stores an API key.
 
 ## Procedure
 
@@ -71,6 +76,23 @@ open-neo install-check \
 The selected path is propagated to the portable installer as `--conda-base`
 and recorded in `manifests/paths.env`.
 
+To include Claude Code in an approved new-machine installation:
+
+```bash
+open-neo install-check \
+  --project-root . \
+  --mode install \
+  --install-claude-code \
+  --claude-code-channel stable \
+  --approved \
+  --allow-download \
+  --outdir work/install-check
+```
+
+In `plan` mode these options are recorded in `deployment_command.json` without
+downloading anything. Installation verifies `claude --version`; login remains a
+separate interactive or enterprise-managed step.
+
 ## Reproducible derived assets
 
 - Java is installed in the dedicated `neoag-runtime` environment; discover it through the configured tools manifest instead of assuming it is on the login-shell PATH.
@@ -83,6 +105,8 @@ and recorded in `manifests/paths.env`.
 - `environment_inventory.tsv`
 - `doctor/doctor_status.json`
 - `deployment_status.tsv`
+- `claude_code_status.tsv` and `claude_code_status.json`, including requested
+  state, readiness, version, binary path, and the nested install report path
 - `tier_requirements.tsv`, `deployment_delta.tsv`
 - `deployment_checkpoint.json` for mutating modes
 - `deployment_report.md`
@@ -108,3 +132,6 @@ Do not install or redistribute licensed tools, download large references, overwr
 - Emit the stable result contract described by `references/OUTPUT_SCHEMA.json`.
 - Use the canonical failure codes and remediation in `references/FAILURE_CODES.md`.
 - Every invocation writes `skill_result.json` and a sibling `run_state.json`; install and repair actions remain approval gated.
+- The launcher must resolve Python 3.11+ with `tomllib` from `NEOAG_PYTHON`,
+  configured Conda/deployment roots, the project virtual environment, or PATH;
+  it must fail clearly instead of starting the macro with an older interpreter.

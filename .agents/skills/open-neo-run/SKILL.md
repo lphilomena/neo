@@ -37,6 +37,21 @@ a GRCh38-compatible identity SNP panel are declared. `MISMATCH` is a hard
 paired-analysis failure; low comparable-site coverage is `INSUFFICIENT_DATA`
 and requires review rather than being treated as a mismatch.
 
+With the default `all-available` policy, paired GRCh38 DNA automatically uses
+the robust FACETS omni2p5 profile (`CVAL_PRE=50`, `CVAL_PROC=300`,
+`MIN_NHET=10`, `TARGET_ROWS=1000000`), Sequenza, and the repository-owned
+PURPLE runner when their validated assets are present. The purity/CNV review
+emits recommended purity/ploidy and normalized CNV segments, plus a per-tool
+6p21 MHC-region CNV/LOH cross-check. ASCAT remains conditional on a validated
+sample-level command template.
+
+When LOHHLA and SpecHLA are available, both HLA LOH methods are run with the
+same recommended purity/ploidy. LOHHLA calls require both BAF-informed copy
+number `<0.5` and paired P value `<0.01`; the raw P values, copy numbers,
+confidence intervals, coverage support, and SpecHLA call evidence are retained
+in the two-field allele-level cross-check. Consensus states are
+`CONSENSUS_LOST`, `CONSENSUS_RETAINED`, `DISCORDANT`, and `UNASSESSED`.
+
 ## Modes
 
 - `plan`: inspect and write a route/run plan.
@@ -58,7 +73,7 @@ and requires review rather than being treated as a mismatch.
    EasyFuse reference, CTAT library, Salmon index, and tx2gene before execute.
    SNAF and SpliceMutr remain optional cohort/workflow stages; when their
    reviewed workflow files are absent they are `UNASSESSED`, not negative.
-8. Cross-check HLA typing, HLA LOH, fusion, splice, presentation and purity/CNV/CCF evidence by domain; missing evidence remains `UNASSESSED`.
+8. Cross-check HLA typing, LOHHLA/SpecHLA HLA LOH, fusion, splice, presentation and FACETS/Sequenza/PURPLE/ASCAT purity/CNV/CCF evidence by domain; missing evidence remains `UNASSESSED`.
 9. Build `all_tool_results.tsv`, long-form tool evidence and explicit consensus/conflict outputs.
 10. Preserve the weighted baseline, generate independent Evidence consensus rankings, compare both rankings, and write run/audit manifests.
 

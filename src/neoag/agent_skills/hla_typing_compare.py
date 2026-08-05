@@ -35,6 +35,11 @@ def lowres(allele: str, fields: int = 2) -> str:
     return gene + "*" + ":".join(parts)
 
 
+def highres(allele: str) -> str:
+    """Keep all reported fields while removing terminal expression/group suffixes."""
+    return re.sub(r"(?<=[0-9])[NLSQGAP]+$", "", norm_allele(allele))
+
+
 def infer_tool(path: Path) -> str:
     s = str(path).lower()
     if "optitype" in s:
@@ -117,6 +122,8 @@ def collect_typing(paths: list[Path], sample_id: str | None = None) -> list[dict
                 "allele2": vals[1] if len(vals) > 1 else "",
                 "lowres1": lowres(vals[0]) if vals else "",
                 "lowres2": lowres(vals[1]) if len(vals) > 1 else "",
+                "highres1": highres(vals[0]) if vals else "",
+                "highres2": highres(vals[1]) if len(vals) > 1 else "",
                 "source_file": str(path),
             })
     # Prefer known tools and recent files; keep first per tool/locus/source.
@@ -138,14 +145,29 @@ def consensus(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     for loc in LOCUS_ORDER:
         locus_rows = by_locus.get(loc, [])
         if not locus_rows:
-            out.append({"locus": DISPLAY.get(loc, loc), "consensus_lowres": "", "support": "0", "status": "MISSING", "details": "no tool result"})
+            out.append({
+                "locus": DISPLAY.get(loc, loc),
+                "consensus_lowres": "",
+                "consensus_2field": "",
+                "consensus_high_resolution": "",
+                "support": "0",
+                "high_resolution_support": "0",
+                "status": "MISSING",
+                "high_resolution_status": "MISSING",
+                "details": "no tool result",
+            })
             continue
         pairs = []
+        high_pairs = []
         for row in locus_rows:
             vals = sorted([x for x in [row.get("lowres1"), row.get("lowres2")] if x])
             pairs.append(" / ".join(vals))
+            high_vals = sorted([x for x in [row.get("highres1"), row.get("highres2")] if x])
+            high_pairs.append(" / ".join(high_vals))
         counts = Counter(pairs)
         best, support = counts.most_common(1)[0]
+        high_counts = Counter(high_pairs)
+        high_best, high_support = high_counts.most_common(1)[0]
         n_tools = len({r["tool"] for r in locus_rows})
         if support >= 2:
             status = "CONSENSUS"
@@ -156,8 +178,12 @@ def consensus(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         out.append({
             "locus": DISPLAY.get(loc, loc),
             "consensus_lowres": best,
+            "consensus_2field": best,
+            "consensus_high_resolution": high_best,
             "support": f"{support}/{len(pairs)}",
+            "high_resolution_support": f"{high_support}/{len(high_pairs)}",
             "status": status,
+            "high_resolution_status": "CONSENSUS" if high_support >= 2 else "SINGLE_TOOL" if n_tools == 1 else "DISCORDANT",
             "details": "; ".join(f"{r['tool']}={r.get('lowres1','')}/{r.get('lowres2','')}" for r in locus_rows),
         })
     return out
@@ -199,10 +225,18 @@ def main(argv: list[str] | None = None) -> int:
     cons = consensus(rows)
     run_suggestions = suggestions(args.bam, args.fastq1, args.fastq2)
 
-    write_tsv(outdir / "hla_typing_tool_summary.tsv", rows, ["tool", "locus", "allele1", "allele2", "lowres1", "lowres2", "source_file"])
-    write_tsv(outdir / "hla_typing_consensus.tsv", cons, ["locus", "consensus_lowres", "support", "status", "details"])
+    standardized_columns = ["tool", "locus", "allele1", "allele2", "lowres1", "lowres2", "highres1", "highres2", "source_file"]
+    write_tsv(outdir / "hla_typing_tool_summary.tsv", rows, standardized_columns)
+    write_tsv(outdir / "hla_typing.standardized.tsv", rows, standardized_columns)
+    consensus_columns = ["locus", "consensus_lowres", "consensus_2field", "consensus_high_resolution", "support", "high_resolution_support", "status", "high_resolution_status", "details"]
+    write_tsv(outdir / "hla_typing_consensus.tsv", cons, consensus_columns)
     write_tsv(outdir / "hla_typing_run_suggestions.tsv", run_suggestions, ["tool", "command"])
     write_json(outdir / "hla_typing_recommendation.json", {"sample_id": args.sample_id or "", "n_tool_locus_calls": len(rows), "consensus": cons})
+    recommended: list[str] = []
+    for row in cons:
+        if row["locus"] in {"A", "B", "C"} and row["consensus_2field"]:
+            recommended.extend(x.strip() for x in str(row["consensus_2field"]).split("/") if x.strip())
+    (outdir / "recommended_hla.txt").write_text("\n".join(dict.fromkeys(recommended)) + ("\n" if recommended else ""), encoding="utf-8")
 
     md = [
         "# HLA typing cross-tool comparison",
@@ -210,11 +244,11 @@ def main(argv: list[str] | None = None) -> int:
         f"Sample filter: `{args.sample_id}`" if args.sample_id else "Sample filter: not set",
         "",
         "## Consensus by locus",
-        "| Locus | Consensus low-res | Support | Status | Details |",
-        "| --- | --- | --- | --- | --- |",
+        "| Locus | 2-field consensus | High-resolution consensus | Support | Status | Details |",
+        "| --- | --- | --- | --- | --- | --- |",
     ]
     for row in cons:
-        md.append(f"| {row['locus']} | {row['consensus_lowres']} | {row['support']} | {row['status']} | {row['details']} |")
+        md.append(f"| {row['locus']} | {row['consensus_2field']} | {row['consensus_high_resolution']} | {row['support']} | {row['status']} | {row['details']} |")
     md += [
         "",
         "## Tool-level calls",
@@ -249,6 +283,7 @@ def main(argv: list[str] | None = None) -> int:
         f"- run suggestions: `{outdir / 'hla_typing_run_suggestions.tsv'}`",
     ]
     (outdir / "hla_typing_compare.md").write_text("\n".join(md) + "\n", encoding="utf-8")
+    (outdir / "hla_typing_review.md").write_text("\n".join(md) + "\n", encoding="utf-8")
     print("\n".join(md))
     return 0
 

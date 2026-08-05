@@ -203,6 +203,22 @@ Fix:
 - use real marker files, such as `ref/hla.ref.extend.fa` for SpecHLA DB, rather
   than a bare directory marker.
 
+### SpecHLA Starts But Fails During A Real Sample
+
+Observed failures include bamUtil failing after `*.tmp.extract.bam` was created,
+`ModuleNotFoundError: pysam`, `freebayes: command not found`, and licensed novoalign selecting a missing `.ndx`
+database because a source-tree symlink resolved differently inside the container.
+
+Fix:
+
+- build the SpecHLA image with all Python modules listed in its runtime smoke;
+- pass the host-resolved `SPECHLA_DB` into the container and mount that real path;
+- when licensed novoalign is present, build both
+  `hla_gen.format.filter.extend.DRB.no26789.ndx` and its `.v2.ndx` companion;
+- if bamUtil fails but the extracted BAM is valid, use the containerized
+  `samtools collate | samtools fastq` fallback;
+- do not report SpecHLA production-ready from a Python-version-only smoke test.
+
 ### VEP Plugin Directory Present But Plugin Files Missing
 
 Observed error:

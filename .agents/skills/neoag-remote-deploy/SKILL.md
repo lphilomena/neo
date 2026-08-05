@@ -89,10 +89,19 @@ extension before running real data:
     creating `/mnt`, `/home`, or old-machine symlinks:
     `scripts/12_install_local_licensed_tools.sh --licensed-root <target-licensed-root> --netmhcpan-tar <netMHCpan.tar.gz> --mixmhcpred-dir <MixMHCpred_install> --execute`.
 13. Rewrite local activation and wrappers so the new machine uses portable
-    paths, not old `/home`, `/mnt`, or stale conda prefixes:
+paths, not old `/home`, `/mnt`, or stale conda prefixes:
     `scripts/10_rewrite_production_activation.sh --project-root <root> --tools-root <target-env_tool> --reference-root <target-reference-root> --licensed-root <target-licensed-root> --write`.
 14. Validate the production runtime before real data:
     `scripts/11_validate_production_runtime.sh --project-root <root> --tools-root <target-env_tool> --outdir <outdir>/production_runtime --mini-prime`.
+
+Claude Code is an optional agent-side dependency, not a bioinformatics runtime
+dependency. Install it only when requested, with explicit download approval:
+`scripts/17_install_claude_code.sh --channel stable --allow-download --execute`.
+The installer uses Anthropic's official native installer, verifies
+`claude --version`, and never performs login or stores credentials. The same
+step is available through `13_install_readme_tools.sh --claude-code` and
+`16_install_new_machine.sh --claude-code`. Use `--claude-code-channel latest`
+or an exact `X.Y.Z` version only when explicitly requested.
 
 Do not run `run-full`, `pipeline-full --execute`, or any patient workflow until
 step 14 shows that VEP, reference FASTA, NetMHCpan, PRIME/MixMHCpred, and the
@@ -154,6 +163,10 @@ The core environment installer must keep MHCflurry compatible with modern
 TensorFlow/Keras by installing the matching `tf-keras` shim and exporting
 `TF_USE_LEGACY_KERAS=1` in generated activation files.
 
+SpecHLA registration requires a complete official source tree, not only its database and a runtime-only container image. Pass `--spechla-source <dir>` when the staged image does not contain SpecHLA. The installer repairs the DB symlink, exports the resolved `SPECHLA_DB`, rebuilds an old runtime-only image when required Python modules are absent, and creates both full-length and exon novoalign indexes when a licensed novoalign payload is present. Verification must require `script/whole/SpecHLA.sh`, `script/cal.hla.copy.pl`, `freebayes`, the Python runtime modules, the database marker, and any licensed novoalign indexes. `run_spechla_sample.sh` must retain its samtools FASTQ fallback because upstream bamUtil can fail after producing a valid extracted BAM.
+
+HLA-LA registration installs the pinned Bioconda package into the configured shared tool root and links the real `HLA-LA.pl` into the tool home. A runtime-only image plus PRG graph is not a complete installation. Verification must execute the real program and require prepared graph markers such as `serializedGRAPH` and `PRG/graph.txt`.
+
 NetMHCpan repair must rewrite any copied frontend that still defaults to an old
 conda prefix from another host; after repair, `netMHCpan -h` must
 work with `CONDA_BASE=<target-env_tool>/miniforge3`. When the asset manifest
@@ -196,6 +209,17 @@ asset locations so a new machine can prepare itself reproducibly:
   `--netmhcpan-dir`, `--netmhcpan-url`, `--mixmhcpred-dir`,
   `--mixmhcpred-archive`, and `--mixmhcpred-url`; do not bundle or download
   them unless the user has rights and approves the source.
+- Install OptiType and BAM-matcher with `13_install_readme_tools.sh --optitype
+  --bam-matcher`. On capacity-constrained hosts, point their environment
+  prefixes at the shared tool tree and expose them below the deployment root
+  with symlinks. BAM-matcher requires its pinned Python 2.7 stack; install
+  `Cheetah3==3.2.6.post2` with pip after creating the Conda environment because
+  the current Conda package is not compatible with Python 2. Always regenerate
+  the production activation and local overrides after moving either environment.
+  BAM-matcher must use a `chr`-named GRCh38 FASTA and a compact primary-contig
+  identity panel; keep the full omni2p5 VCF under `FACETS_SNP_VCF` instead of
+  reusing it for fingerprints. Stage a separate AF-annotated common-SNP panel
+  for GATK contamination estimates.
 
 Production asset fast path after explicit approval:
 

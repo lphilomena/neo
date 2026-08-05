@@ -600,11 +600,56 @@ def _deployment_command(args: dict[str, Any], project_root: Path, layout: RunLay
         command += ["--asset-ssh-key", str(args["asset_ssh_key"])]
     if bool(args.get("allow_download", False)):
         command.append("--allow-download")
+    if bool(args.get("install_claude_code", False)):
+        command += ["--claude-code", "--claude-code-channel", str(args.get("claude_code_channel") or "stable")]
     if bool(args.get("no_sync_assets", False)):
         command.append("--no-sync-assets")
     if execute:
         command.append("--execute")
     return command
+
+
+def _collect_claude_code_status(
+    layout: RunLayout, *, requested: bool, executed: bool,
+) -> tuple[dict[str, str], dict[str, str]]:
+    report = layout.root / "deployment/readme_tools/claude_code/claude_code_install_report.md"
+    row = {
+        "requested": "true" if requested else "false",
+        "status": "NOT_REQUESTED",
+        "version": "",
+        "binary": "",
+        "report": "",
+    }
+    if requested and not executed:
+        row["status"] = "PLANNED"
+    elif requested and not report.is_file():
+        row["status"] = "MISSING_REPORT"
+    elif requested:
+        text = report.read_text(encoding="utf-8", errors="replace")
+        values: dict[str, str] = {}
+        for line in text.splitlines():
+            for label, key in (("Binary", "binary"), ("Version", "version")):
+                prefix = f"{label}: `"
+                if line.startswith(prefix) and line.endswith("`"):
+                    values[key] = line[len(prefix):-1]
+        row.update(values)
+        row["report"] = str(report)
+        if row["binary"] and row["version"] and row["version"] != "UNASSESSED":
+            row["status"] = "READY"
+        else:
+            row["status"] = "UNVERIFIED"
+
+    status_tsv = layout.root / "claude_code_status.tsv"
+    status_json = layout.root / "claude_code_status.json"
+    write_tsv(status_tsv, [row])
+    write_json(status_json, row)
+    outputs = {
+        "claude_code_status": str(status_tsv),
+        "claude_code_status_json": str(status_json),
+    }
+    if row["report"]:
+        outputs["claude_code_install_report"] = row["report"]
+    return row, outputs
 
 
 def _command_hash(command: list[str]) -> str:
@@ -763,6 +808,16 @@ def run_install_check(args: dict[str, Any]) -> dict[str, Any]:
         result.finish("APPROVAL_REQUIRED").write(layout.skill_result)
         return result.to_dict()
 
+    if mode in EXECUTION_MODES and bool(args.get("install_claude_code", False)) and not bool(args.get("allow_download", False)):
+        result.blocking_issues.append(FailureCode.APPROVAL_REQUIRED.value)
+        result.steps.append(MacroStep(
+            "04", "claude-code-download-approval", "APPROVAL_REQUIRED",
+            "Claude Code installation requires explicit --allow-download approval",
+            failure_code=FailureCode.APPROVAL_REQUIRED.value,
+        ))
+        result.finish("APPROVAL_REQUIRED").write(layout.skill_result)
+        return result.to_dict()
+
     if mode in EXECUTION_MODES and not bool(args.get("no_sync_assets", False)):
         if not args.get("asset_manifest"):
             result.blocking_issues.append(FailureCode.ASSET_SOURCE_UNCONFIGURED.value)
@@ -804,6 +859,24 @@ def run_install_check(args: dict[str, Any]) -> dict[str, Any]:
             result.outputs.update({"deployment_log": deploy_log, "deployment_checkpoint": str(layout.root / "deployment_checkpoint.json")})
     else:
         result.steps.append(MacroStep("05", "portable-deployment", "PLANNED", "No installation command executed", outputs={"command": str(layout.root / "deployment_command.json")}))
+
+    claude_requested = bool(args.get("install_claude_code", False))
+    claude_status, claude_outputs = _collect_claude_code_status(
+        layout, requested=claude_requested, executed=mode in EXECUTION_MODES,
+    )
+    result.outputs.update(claude_outputs)
+    if claude_requested:
+        claude_step_status = {
+            "READY": "PASS", "PLANNED": "PLANNED", "UNVERIFIED": "FAILED", "MISSING_REPORT": "FAILED",
+        }[claude_status["status"]]
+        result.steps.append(MacroStep(
+            "05c", "claude-code-readiness", claude_step_status,
+            f"status={claude_status['status']}; version={claude_status['version'] or 'unknown'}",
+            outputs=claude_outputs,
+            failure_code=FailureCode.CORE_INSTALL_FAILED.value if claude_step_status == "FAILED" else "",
+        ))
+        if mode in EXECUTION_MODES and claude_status["status"] != "READY" and not deployment_failure:
+            deployment_failure = f"Claude Code verification failed: {claude_status['status']}"
 
     if mode in EXECUTION_MODES and not deployment_failure:
         auto_final = configure_machine(
@@ -852,6 +925,11 @@ def run_install_check(args: dict[str, Any]) -> dict[str, Any]:
         "deployment_tier": tier, "tier_status": final_status,
         "doctor_status": doctor.status, "missing_required_count": len(missing),
         "project_root": str(project_root), "release_sha256": archive_hash,
+        "claude_code_requested": claude_status["requested"],
+        "claude_code_status": claude_status["status"],
+        "claude_code_version": claude_status["version"],
+        "claude_code_binary": claude_status["binary"],
+        "claude_code_report": claude_status["report"],
     }]
     write_tsv(layout.root / "deployment_status.tsv", report_rows)
     md = [
@@ -864,6 +942,8 @@ def run_install_check(args: dict[str, Any]) -> dict[str, Any]:
         "## Tier requirements", "", markdown_table(requirement_rows, max_rows=120), "",
         "## Environment inventory", "", markdown_table(inventory, max_rows=30), "",
         "## Installation delta", "", f"See `{delta_path}`.", "",
+        "## Claude Code", "",
+        markdown_table([claude_status]), "",
         "## Boundary", "",
         "READY means all required tools, capability groups and reference assets for the requested tier were observed. Licensed tools remain machine-local and are never redistributed.",
     ]

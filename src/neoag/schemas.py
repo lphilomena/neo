@@ -385,7 +385,31 @@ PURITY_EVIDENCE_FIELDS = ["sample_id", "purity"] + EVIDENCE_PROVENANCE_FIELDS
 
 CNV_SEGMENT_FIELDS = ["chrom", "start", "end", "total_cn"] + EVIDENCE_PROVENANCE_FIELDS
 
-HLA_LOH_EVIDENCE_FIELDS = ["hla_allele", "loh_status"] + EVIDENCE_PROVENANCE_FIELDS
+HLA_LOH_EVIDENCE_FIELDS = [
+    "hla_allele",
+    "loh_status",
+    "call_rule",
+    "call_qc",
+    "lohhla_pval",
+    "lohhla_unpaired_pval",
+    "lohhla_pval_unique",
+    "lohhla_unpaired_pval_unique",
+    "lohhla_copy_number_with_baf",
+    "lohhla_cn_lower",
+    "lohhla_cn_upper",
+    "lohhla_mismatch_sites",
+    "lohhla_prop_supportive_sites",
+    "lohhla_loss_allele_raw",
+    "lohhla_kept_allele_raw",
+    "spechla_loh_raw",
+    "spechla_copyratio",
+    "spechla_allele_frequency",
+    "spechla_purity",
+    "spechla_ploidy",
+    "spechla_het_num",
+    "spechla_loss_hla_raw",
+    "spechla_kept_hla_raw",
+] + EVIDENCE_PROVENANCE_FIELDS
 
 CCF_LITE_FIELDS = [
     "event_id", "gene", "chrom", "pos", "tumor_vaf", "tumor_depth", "tumor_alt_count",

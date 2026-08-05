@@ -28,7 +28,7 @@ FREEBAYES_BIN="${BAM_MATCHER_FREEBAYES:-$(command -v freebayes 2>/dev/null || tr
 [[ -x "$SAMTOOLS_BIN" ]] || { echo "ERROR: samtools unavailable" >&2; exit 127; }
 [[ -x "$FREEBAYES_BIN" ]] || { echo "ERROR: freebayes unavailable" >&2; exit 127; }
 [[ -s "$REF.fai" ]] || { echo "ERROR: reference FASTA index missing: $REF.fai" >&2; exit 2; }
-mkdir -p "$OUTDIR/cache"
+mkdir -p "$OUTDIR/cache" "$OUTDIR/scratch"
 CONFIG="$OUTDIR/bam-matcher.conf"
 RAW="$OUTDIR/bam_matcher.short.tsv"
 cat > "$CONFIG" <<EOF
@@ -56,6 +56,7 @@ CHROM_MAP:
 CACHE_DIR: $OUTDIR/cache
 [Miscellaneous]
 EOF
-bam-matcher --bam1 "$BAM1" --bam2 "$BAM2" --config "$CONFIG" --output "$RAW" --short-output
+bam-matcher --bam1 "$BAM1" --bam2 "$BAM2" --config "$CONFIG" --output "$RAW" \
+  --scratch-dir "$OUTDIR/scratch" --debug --short-output
 PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}" python "$ROOT/scripts/parse_bam_matcher.py" \
   --input "$RAW" --output "$OUTDIR/sample_identity.tsv" --fail-on-mismatch

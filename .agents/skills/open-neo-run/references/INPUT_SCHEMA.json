@@ -12,6 +12,8 @@
     "input_dir": {"type": "string"},
     "tumor_dna_bam": {"type": "string"},
     "normal_dna_bam": {"type": "string"},
+    "tumor_sample_id": {"type": "string"},
+    "normal_sample_id": {"type": "string"},
     "tumor_rna_bam": {"type": "string"},
     "tumor_dna_fastq": {"type": "array", "minItems": 2, "items": {"type": "string"}},
     "normal_dna_fastq": {"type": "array", "minItems": 2, "items": {"type": "string"}},

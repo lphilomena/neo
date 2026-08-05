@@ -44,15 +44,20 @@ class PipelineRun:
     finished_at: str = ""
 
 
-def _manifest_file_hashes(data: dict[str, Any]) -> list[dict[str, str]]:
+def _manifest_file_hashes(data: dict[str, Any], *, max_hash_bytes: int = 50 * 1024 * 1024) -> list[dict[str, str]]:
     rows: list[dict[str, str]] = []
     for key, val in manifest_paths(data):
         p = Path(os.path.expandvars(os.path.expanduser(val)))
         if p.is_file():
             try:
-                rows.append({"key": key, "path": str(p), "sha256": sha256_file(p), "size_bytes": str(p.stat().st_size)})
+                stat = p.stat()
+                digest = sha256_file(p) if stat.st_size < max_hash_bytes else "not_computed_large_file"
+                rows.append({
+                    "key": key, "path": str(p), "sha256": digest,
+                    "size_bytes": str(stat.st_size), "mtime_ns": str(stat.st_mtime_ns),
+                })
             except Exception as exc:
-                rows.append({"key": key, "path": str(p), "sha256": "", "size_bytes": "", "error": str(exc)})
+                rows.append({"key": key, "path": str(p), "sha256": "", "size_bytes": "", "mtime_ns": "", "error": str(exc)})
     return rows
 
 
@@ -217,8 +222,9 @@ def run_pipeline_full(
     tool_versions = _tool_versions(tools_data)
     container_digests = tool_container_digests(tools_data)
     manifest_validation = validate_manifests(sample_data, reference_data, tools_data)
-    write_tsv(od / "input_file_hashes.tsv", file_hashes, ["key", "path", "sha256", "size_bytes", "error"])
-    write_tsv(od / "reference_hashes.tsv", reference_hashes, ["key", "path", "sha256", "size_bytes", "error"])
+    hash_fields = ["key", "path", "sha256", "size_bytes", "mtime_ns", "error"]
+    write_tsv(od / "input_file_hashes.tsv", file_hashes, hash_fields)
+    write_tsv(od / "reference_hashes.tsv", reference_hashes, hash_fields)
     write_tsv(od / "tool_versions.tsv", tool_versions, ["tool", "mode", "executable", "version", "version_command"])
     write_tsv(od / "container_digests.tsv", container_digests, ["tool", "mode", "image", "container_digest", "executable"])
     write_tsv(od / "manifest_validation.tsv", manifest_validation, ["manifest", "field", "status", "message"])

@@ -44,8 +44,13 @@ def lohhla_to_hla_loh_tsv(lohhla_path: str | Path, out_path: str | Path) -> None
     write_hla_loh_evidence(out_path, rows)
 
 
-def spechla_to_hla_loh_tsv(spechla_path: str | Path, out_path: str | Path) -> None:
-    rows = parse_spechla_loh_merge(spechla_path)
+def spechla_to_hla_loh_tsv(
+    spechla_path: str | Path,
+    out_path: str | Path,
+    *,
+    min_het: float = 5,
+) -> None:
+    rows = parse_spechla_loh_merge(spechla_path, min_het=min_het)
     if not rows:
         raise ValueError(f"No HLA LOH rows parsed from SpecHLA output: {spechla_path}")
     write_spechla_hla_loh_evidence(out_path, rows, source_path=spechla_path)

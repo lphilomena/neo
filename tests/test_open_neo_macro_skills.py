@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+import os
 import subprocess
 import sys
 import tarfile
@@ -18,6 +19,7 @@ from neoag.open_neo.install_check import (
     _apply_default_asset_source,
     _assess_tier,
     _deployment_command,
+    _collect_claude_code_status,
     _required_asset_sources_missing,
     _rewrite_asset_manifest,
     _run_deployment,
@@ -30,6 +32,7 @@ from neoag.open_neo.cli import build_parser
 from neoag.open_neo.review import build_review_rows, run_review, select_first_batch
 from neoag.open_neo.routing import inspect_manifest
 from neoag.open_neo.run import run_open_neo
+from neoag.controlled_execution.pipeline_runner import _manifest_file_hashes
 from neoag.open_neo.state import RunLayout, load_run_state, resume_step_decision
 from neoag.open_neo.rna_preprocessing import prepare_rna_evidence
 from neoag.open_neo.rna_fusion_splice_profile import (
@@ -491,6 +494,70 @@ def test_install_skill_propagates_explicit_conda_base(tmp_path):
     assert command[command.index("--conda-base") + 1] == "/nas/apps/miniforge3"
 
 
+def test_install_skill_propagates_claude_code_bootstrap(tmp_path):
+    project = tmp_path / "project"
+    script = project / ".agents/skills/neoag-remote-deploy/scripts/16_install_new_machine.sh"
+    script.parent.mkdir(parents=True)
+    script.write_text("#!/bin/sh\n", encoding="utf-8")
+    layout = RunLayout.create(tmp_path / "run")
+    command = _deployment_command(
+        {
+            "deployment_tier": "core",
+            "install_claude_code": True,
+            "claude_code_channel": "2.1.170",
+            "allow_download": True,
+        },
+        project,
+        layout,
+        execute=True,
+    )
+    assert "--claude-code" in command
+    assert command[command.index("--claude-code-channel") + 1] == "2.1.170"
+    assert "--allow-download" in command
+
+
+def test_install_cli_accepts_claude_code_options():
+    args = build_parser().parse_args([
+        "install-check", "--project-root", ".", "--outdir", "work/install",
+        "--install-claude-code", "--claude-code-channel", "stable",
+    ])
+    assert args.install_claude_code is True
+    assert args.claude_code_channel == "stable"
+
+
+def test_install_skill_collects_claude_code_status(tmp_path):
+    layout = RunLayout.create(tmp_path / "run")
+    report = layout.root / "deployment/readme_tools/claude_code/claude_code_install_report.md"
+    report.parent.mkdir(parents=True)
+    report.write_text(
+        "# Claude Code install report\n\nBinary: `/opt/user/.local/bin/claude`\n"
+        "Version: `2.1.170 (Claude Code)`\n",
+        encoding="utf-8",
+    )
+    status, outputs = _collect_claude_code_status(layout, requested=True, executed=True)
+    assert status["status"] == "READY"
+    assert status["version"] == "2.1.170 (Claude Code)"
+    assert Path(outputs["claude_code_status"]).is_file()
+    assert outputs["claude_code_install_report"] == str(report)
+
+
+def test_install_skill_launcher_rejects_explicit_old_python(tmp_path):
+    launcher = Path.cwd() / ".agents/skills/open-neo-install-check/scripts/run.sh"
+    fake_python = tmp_path / "python"
+    fake_python.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+    fake_python.chmod(0o755)
+    proc = subprocess.run(
+        ["bash", str(launcher), "--help"],
+        cwd=Path.cwd(),
+        env={"PATH": os.environ.get("PATH", ""), "NEOAG_PYTHON": str(fake_python)},
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert proc.returncode == 31
+    assert "OPEN_NEO_PYTHON_UNSUPPORTED" in proc.stderr
+
+
 def test_install_skill_asset_server_defaults_can_be_overridden_by_environment(monkeypatch):
     monkeypatch.setenv("OPEN_NEO_ASSET_SOURCE_HOST", "asset-user@asset-host")
     monkeypatch.setenv("OPEN_NEO_ASSET_SOURCE_ROOT", "/data/neoag-assets")
@@ -764,21 +831,40 @@ def _automatic_plan_inputs(tmp_path: Path) -> tuple[dict[str, object], Path, Pat
     hla = tmp_path / "hla.txt"; hla.write_text("HLA-A*02:01\nHLA-B*07:02\n", encoding="utf-8")
     fasta = tmp_path / "GRCh38.fa"; fasta.write_text(">chr1\nA\n", encoding="utf-8")
     facets = tmp_path / "common.vcf.gz"; facets.write_bytes(b"fixture")
+    sequenza_gc = tmp_path / "gc50.wig.gz"; sequenza_gc.write_bytes(b"fixture")
+    spechla_db = tmp_path / "spechla_db"; spechla_db.mkdir()
+    hla_la_graph = tmp_path / "hla_la_graph"; hla_la_graph.mkdir()
+    purple_ref = tmp_path / "purple_reference"; purple_ref.mkdir()
     tools = tmp_path / "tools.json"
     tools.write_text(json.dumps({"tools": {
         "samtools": {"executable": "/bin/true"},
         "facets": {"executable": "/bin/true"}, "sequenza": {"executable": "/bin/true"},
+        "spechla": {"executable": "/bin/true"}, "purple": {"executable": "/bin/true"},
+        "optitype": {"executable": "/bin/true"}, "hla_la": {"executable": "/bin/true"},
         "lohhla": {"executable": "/bin/true"}, "netmhcpan": {"executable": "/bin/true"},
         "mhcflurry": {"executable": "/bin/true"},
     }}), encoding="utf-8")
     refs = tmp_path / "refs.json"
     refs.write_text(json.dumps({"references": {
         "reference_fasta": {"path": str(fasta)}, "facets_snp_vcf": {"path": str(facets)},
+        "sequenza_gc_wiggle": {"path": str(sequenza_gc)},
+        "spechla_db": {"path": str(spechla_db)}, "purple_reference": {"path": str(purple_ref)},
+        "hla_la_graph": {"path": str(hla_la_graph)},
     }}), encoding="utf-8")
     return {
         "sample_id": "AUTO1", "tumor_dna_bam": str(tumor), "normal_dna_bam": str(normal),
         "somatic_vcf": str(vcf), "hla_file": str(hla),
     }, tools, refs
+
+
+def test_pipeline_plan_does_not_hash_large_bam_contents(tmp_path: Path):
+    bam = tmp_path / "large.bam"
+    with bam.open("wb") as handle:
+        handle.truncate(60 * 1024 * 1024)
+    rows = _manifest_file_hashes({"inputs": {"tumor_dna_bam": str(bam)}})
+    assert rows[0]["sha256"] == "not_computed_large_file"
+    assert rows[0]["size_bytes"] == str(60 * 1024 * 1024)
+    assert rows[0]["mtime_ns"]
 
 
 def test_capability_planner_builds_dna_hla_purity_loh_and_ranking_dag(tmp_path: Path):
@@ -789,13 +875,30 @@ def test_capability_planner_builds_dna_hla_purity_loh_and_ranking_dag(tmp_path: 
     )
     assert plan.status in {"READY", "PARTIAL"}
     text = Path(plan.manifest).read_text(encoding="utf-8")
-    for stage in ("snv_indel_candidates", "purity_facets", "purity_sequenza", "purity_consensus", "hla_loh_lohhla"):
+    for stage in ("snv_indel_candidates", "purity_facets", "purity_sequenza", "purity_purple", "purity_consensus", "hla_loh_multi_tool"):
         assert f"[stages.{stage}]" in text
-    assert "convert-lohhla" in text
-    assert 'hla_loh = "{outdir}/evidence/hla_loh.tsv"' in text
-    assert set(["facets", "sequenza", "lohhla", "netmhcpan", "mhcflurry"]) <= set(plan.selected_tools)
+    assert "run_hla_loh_multi_tool.sh" in text
+    assert "FACETS_CVAL_PRE=50" in text
+    assert "FACETS_CVAL_PROC=300" in text
+    assert 'hla_loh = "{outdir}/hla_loh/recommended_hla_loh.tsv"' in text
+    assert set(["facets", "sequenza", "purple", "lohhla", "spechla", "netmhcpan", "mhcflurry"]) <= set(plan.selected_tools)
     rows = list(csv.DictReader(Path(plan.outputs["capability_decisions"]).open(), delimiter="\t"))
     assert any(row["domain"] == "purity_cnv" and row["status"] == "SELECTED" for row in rows)
+
+
+def test_capability_planner_runs_three_hla_callers_from_normal_bam(tmp_path: Path):
+    inputs, tools, refs = _automatic_plan_inputs(tmp_path)
+    inputs["hla_file"] = str(tmp_path / "missing_hla.txt")
+    plan = build_automatic_production_plan(
+        inputs, tmp_path / "three-hla.toml", project_root=Path.cwd(), outdir=tmp_path / "run",
+        tools_manifest=tools, reference_manifest=refs,
+    )
+    config = load_production_manifest(plan.manifest)
+    assert {"hla_optitype", "hla_hla_la", "hla_spechla", "hla_consensus"} <= set(config["stages"])
+    assert "run_optitype_sample.sh" in config["stages"]["hla_optitype"]["command"]
+    assert "run_hla_la_sample.sh" in config["stages"]["hla_hla_la"]["command"]
+    assert "run_spechla_sample.sh" in config["stages"]["hla_spechla"]["command"]
+    assert any(row.tool == "provided_hla" and row.status == "INVALID" for row in plan.decisions)
 
 
 def test_bam_matcher_parser_normalizes_match_mismatch_and_inconclusive(tmp_path: Path):
@@ -822,7 +925,7 @@ def test_capability_planner_gates_paired_analyses_on_bam_matcher(tmp_path: Path)
     plan = build_automatic_production_plan(inputs, tmp_path / "auto.toml", project_root=Path.cwd(), outdir=tmp_path / "run", tools_manifest=tools, reference_manifest=refs)
     config = load_production_manifest(plan.manifest)
     assert "sample_identity_bam_matcher" in config["stages"]
-    for stage in ("purity_facets", "purity_sequenza", "hla_loh_lohhla"):
+    for stage in ("purity_facets", "purity_sequenza", "purity_purple", "hla_loh_multi_tool"):
         assert "sample_identity_bam_matcher" in config["stages"][stage]["depends_on"]
     assert any(row.domain == "sample_identity" and row.status == "SELECTED" for row in plan.decisions)
 
@@ -847,6 +950,19 @@ def test_open_neo_run_raw_bam_plan_uses_capability_aware_manifest(tmp_path: Path
     assert manifest.is_file()
     assert "[stages.purity_consensus]" in manifest.read_text(encoding="utf-8")
     assert Path(result["outputs"]["capability_plan"]).is_file()
+
+
+def test_open_neo_run_clears_hla_missing_when_auto_typing_is_selected(tmp_path: Path):
+    inputs, tools, refs = _automatic_plan_inputs(tmp_path)
+    inputs["hla_file"] = str(tmp_path / "missing_hla.txt")
+    result = run_open_neo({
+        **inputs, "tools_manifest": str(tools), "reference_manifest": str(refs),
+        "project_root": str(Path.cwd()), "doctor": False, "mode": "plan",
+        "outdir": str(tmp_path / "openneo-auto-hla"),
+    })
+    assert result["status"] == "PASS"
+    assert "hla_file" not in result["missing_evidence"]
+    assert "hla_alleles_or_hla_file" not in result["missing_evidence"]
 
 
 def test_capability_planner_combines_dna_and_rna_fastq_routes(tmp_path: Path):

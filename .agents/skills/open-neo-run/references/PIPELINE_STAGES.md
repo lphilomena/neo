@@ -4,11 +4,16 @@ Skill2 is an orchestration layer. Production algorithms remain in their
 existing modules and fine-grained Skills.
 
 1. Input inventory, schema validation and deterministic routing.
+   Plan/dry-run records size and nanosecond mtime instead of hashing files at
+   least 50 MiB, so WGS BAMs and large references are never fully read merely
+   to construct a plan.
 2. Approval/Gateway boundary for execute or resume.
 3. Optional automatic `rna_fusion_splice_v1` production manifest generation.
 4. Doctor and tool/reference preflight.
 5. RNA preprocessing or reuse: gene TPM, transcript TPM and RNA alt/VAF.
-6. Production DAG planning and execution with per-stage checkpoints.
+6. Production DAG planning and execution with per-stage checkpoints. Raw DNA
+   resume regenerates the same capability-aware manifest and reuses only
+   signature-matching completed stages.
 7. Candidate normalization for VCF, fusion, splice, SV or peptide entries.
 8. Presentation, expression, RNA, HLA/APPM, CCF and safety evidence assembly.
 9. Canonical `all_tool_results.tsv` and explicit conflicts/consensus tables.

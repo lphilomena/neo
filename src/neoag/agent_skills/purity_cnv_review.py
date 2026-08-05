@@ -19,6 +19,7 @@ TOOL_PATTERNS = {
 
 PURITY_KEYS = ["purity", "cellularity", "tumour_content", "tumor_content", "tumour_purity", "tumor_purity"]
 PLOIDY_KEYS = ["ploidy", "psi"]
+HLA_REGION_GRCH38 = (28_510_120, 33_480_577)
 
 
 def _file_matches_sample(path: Path, sample_id: str | None) -> bool:
@@ -154,7 +155,9 @@ def collect_tool_results(paths: list[Path], sample_id: str | None = None) -> lis
             "notes": "",
         }
         current = best.get(tool)
-        if current is None or (current.get("purity") == "" and purity is not None):
+        current_score = sum(current.get(key) not in {None, ""} for key in ("purity", "ploidy")) if current else -1
+        candidate_score = int(purity is not None) + int(ploidy is not None)
+        if current is None or candidate_score > current_score:
             best[tool] = row
     rows = [best[t] for t in ["FACETS", "PURPLE", "Sequenza", "ASCAT"] if t in best]
     for tool in ["FACETS", "PURPLE", "Sequenza", "ASCAT"]:
@@ -196,6 +199,147 @@ def consensus(rows: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def select_recommended_tool(rows: list[dict[str, Any]], recommended_purity: Any) -> dict[str, Any] | None:
+    target = safe_float(recommended_purity, None)
+    candidates = [row for row in rows if safe_float(row.get("purity"), None) is not None]
+    if target is None or not candidates:
+        return None
+    with_ploidy = [row for row in candidates if safe_float(row.get("ploidy"), None) is not None]
+    if with_ploidy:
+        candidates = with_ploidy
+    # Prefer a completed robust FACETS result on ties, then the estimate nearest the consensus median.
+    return min(
+        candidates,
+        key=lambda row: (
+            abs(float(row["purity"]) - target),
+            0 if row.get("tool") == "FACETS" and "robust" in str(row.get("source_file", "")).lower() else 1,
+        ),
+    )
+
+
+def find_segment_file(source_file: str) -> Path | None:
+    source = Path(source_file)
+    roots = [source.parent, source.parent.parent]
+    patterns = ["*.purple.cnv.somatic.tsv", "*cncf*.tsv", "*segments*.txt", "*segments*.tsv", "cnv_segments.tsv"]
+    for root in roots:
+        if not root.is_dir():
+            continue
+        for pattern in patterns:
+            hit = next((p for p in sorted(root.glob(pattern)) if p.is_file() and p.stat().st_size > 0), None)
+            if hit:
+                return hit
+    for pattern in patterns:
+        hit = next((p for p in sorted(source.parent.rglob(pattern)) if p.is_file() and p.stat().st_size > 0), None)
+        if hit:
+            return hit
+    return None
+
+
+def normalized_segment_rows(source: Path) -> list[dict[str, str]]:
+    aliases = {
+        "chromosome": ("chromosome", "chrom", "chr"),
+        "start": ("start", "start.pos", "loc.start"),
+        "end": ("end", "end.pos", "loc.end"),
+        "total_cn": ("total_cn", "copyNumber", "CNt", "tcn.em"),
+        "major_cn": ("major_cn", "majorAlleleCopyNumber", "A"),
+        "minor_cn": ("minor_cn", "minorAlleleCopyNumber", "B", "lcn.em"),
+        "loh_status": ("loh_status", "LOH", "status"),
+    }
+
+    def value(row: dict[str, str], field: str) -> str:
+        return next((row[key] for key in aliases[field] if key in row and row[key] not in (None, "")), "")
+
+    rows: list[dict[str, str]] = []
+    with source.open(encoding="utf-8", errors="replace", newline="") as handle:
+        for row in csv.DictReader(handle, delimiter="\t"):
+            chromosome = value(row, "chromosome")
+            start, end = value(row, "start"), value(row, "end")
+            if not chromosome or not start or not end:
+                continue
+            minor = value(row, "minor_cn")
+            loh = value(row, "loh_status")
+            if not loh:
+                minor_value = safe_float(minor)
+                loh = "LOH" if minor_value is not None and minor_value <= 0.25 else "RETAINED" if minor_value is not None else "UNASSESSED"
+            total = value(row, "total_cn")
+            major = value(row, "major_cn")
+            if not major:
+                total_value = safe_float(total)
+                minor_value = safe_float(minor)
+                if total_value is not None and minor_value is not None:
+                    major = f"{max(total_value - minor_value, 0):.4f}"
+            rows.append({
+                "chromosome": chromosome,
+                "start": start,
+                "end": end,
+                "total_cn": total,
+                "major_cn": major,
+                "minor_cn": minor,
+                "loh_status": loh,
+                "source_file": str(source),
+            })
+    return rows
+
+
+def normalize_segment_file(source: Path, output: Path) -> int:
+    rows = normalized_segment_rows(source)
+    write_tsv(output, rows, ["chromosome", "start", "end", "total_cn", "major_cn", "minor_cn", "loh_status", "source_file"])
+    return len(rows)
+
+
+def write_hla_region_consensus(tool_rows: list[dict[str, Any]], outdir: Path) -> str:
+    evidence: list[dict[str, Any]] = []
+    start_hla, end_hla = HLA_REGION_GRCH38
+    tool_states: dict[str, set[str]] = {}
+    for tool_row in tool_rows:
+        if tool_row.get("status") != "FOUND":
+            continue
+        source = find_segment_file(str(tool_row.get("source_file") or ""))
+        if not source:
+            continue
+        tool = str(tool_row.get("tool") or "")
+        for segment in normalized_segment_rows(source):
+            chrom = str(segment.get("chromosome") or "").lower().removeprefix("chr")
+            try:
+                seg_start = int(float(segment.get("start") or 0))
+                seg_end = int(float(segment.get("end") or 0))
+            except ValueError:
+                continue
+            if chrom != "6" or seg_end < start_hla or seg_start > end_hla:
+                continue
+            status = str(segment.get("loh_status") or "UNASSESSED").upper()
+            tool_states.setdefault(tool, set()).add(status)
+            evidence.append({"tool": tool, "region": f"chr6:{start_hla}-{end_hla}", **segment})
+    fields = ["tool", "region", "chromosome", "start", "end", "total_cn", "major_cn", "minor_cn", "loh_status", "source_file"]
+    write_tsv(outdir / "hla_6p21_cnv_tool_evidence.tsv", evidence, fields)
+    assessed_tools = {tool for tool, states in tool_states.items() if states & {"LOH", "RETAINED"}}
+    # A tool is LOH-positive when any segment overlapping the broad MHC region
+    # has allele-specific loss; retained applies only when no overlapping LOH
+    # segment is present for that tool.
+    loh_tools = {tool for tool, states in tool_states.items() if "LOH" in states}
+    retained_tools = {tool for tool, states in tool_states.items() if "RETAINED" in states and "LOH" not in states}
+    if len(loh_tools) >= 2 and not retained_tools:
+        status = "CONSENSUS_LOH"
+    elif len(retained_tools) >= 2 and not loh_tools:
+        status = "CONSENSUS_RETAINED"
+    elif loh_tools and retained_tools:
+        status = "DISCORDANT"
+    elif assessed_tools:
+        status = "SINGLE_TOOL_ONLY"
+    else:
+        status = "UNASSESSED"
+    row = {
+        "region": f"chr6:{start_hla}-{end_hla}",
+        "consensus_status": status,
+        "assessed_tools": ";".join(sorted(assessed_tools)),
+        "loh_tools": ";".join(sorted(loh_tools)),
+        "retained_tools": ";".join(sorted(retained_tools)),
+        "segment_count": len(evidence),
+    }
+    write_tsv(outdir / "hla_6p21_cnv_consensus.tsv", [row], list(row))
+    return status
+
+
 def command_suggestions(tumor_bam: str | None, normal_bam: str | None) -> list[dict[str, str]]:
     if not tumor_bam or not normal_bam:
         return []
@@ -219,15 +363,51 @@ def main(argv: list[str] | None = None) -> int:
 
     project_root = Path(args.project_root).resolve()
     outdir = ensure_dir(args.outdir)
+    explicit_search_paths = bool(args.result_dir or args.file)
     search_paths = [Path(x) for x in args.result_dir if x]
     search_paths += [Path(x) for x in args.file if x]
-    search_paths += [outdir.parent, project_root / "results"]
+    if not search_paths:
+        search_paths = [outdir.parent, project_root / "results"]
 
-    rows = collect_tool_results(search_paths, sample_id=args.sample_id)
+    # Explicit result directories are treated as the sample boundary. Some
+    # valid tool summaries (for example FACETS facets_purity.txt) do not repeat
+    # the sample identifier, so filtering their contents would discard ploidy.
+    rows = collect_tool_results(search_paths, sample_id=None if explicit_search_paths else args.sample_id)
     cons = consensus(rows)
+    selected = select_recommended_tool(rows, cons.get("recommended_purity"))
+    hla_region_status = write_hla_region_consensus(rows, outdir)
     suggestions = command_suggestions(args.tumor_bam, args.normal_bam)
 
     write_tsv(outdir / "purity_cnv_tool_summary.tsv", rows, ["tool", "status", "purity", "ploidy", "source_file", "parse_method", "notes"])
+    write_tsv(outdir / "purity_cnv_consensus.tsv", [{
+        "sample_id": args.sample_id or "",
+        "status": cons.get("status", ""),
+        "recommended_purity": cons.get("recommended_purity", ""),
+        "purity_range": cons.get("range", ""),
+        "n_tools": cons.get("n_tools", 0),
+        "interpretation": cons.get("interpretation", ""),
+    }], ["sample_id", "status", "recommended_purity", "purity_range", "n_tools", "interpretation"])
+    recommended_row = {
+        "sample_id": args.sample_id or "",
+        "purity": selected.get("purity", "") if selected else "",
+        "ploidy": selected.get("ploidy", "") if selected else "",
+        "evidence_tool": selected.get("tool", "UNASSESSED") if selected else "UNASSESSED",
+        "evidence_file": selected.get("source_file", "") if selected else "",
+        "consensus_status": cons.get("status", "NO_PURITY"),
+    }
+    write_tsv(outdir / "recommended_purity.tsv", [recommended_row], list(recommended_row))
+    segment_source = find_segment_file(str(selected.get("source_file", ""))) if selected else None
+    if segment_source:
+        normalized_segment_count = normalize_segment_file(segment_source, outdir / "recommended_cnv_segments.tsv")
+    else:
+        normalized_segment_count = 0
+        write_tsv(outdir / "recommended_cnv_segments.tsv", [], ["chromosome", "start", "end", "total_cn", "major_cn", "minor_cn", "loh_status", "source_file"])
+    write_json(outdir / "recommended_cnv_segments.provenance.json", {
+        "selected_tool": selected.get("tool", "UNASSESSED") if selected else "UNASSESSED",
+        "source_file": str(segment_source or ""),
+        "normalized_segment_count": normalized_segment_count,
+        "selection_rule": "purity estimate nearest cross-tool median; robust FACETS preferred on ties",
+    })
     write_tsv(outdir / "purity_cnv_run_suggestions.tsv", suggestions, ["tool", "command"])
     write_json(outdir / "purity_recommendation.json", cons)
 
@@ -241,6 +421,7 @@ def main(argv: list[str] | None = None) -> int:
         f"- recommended purity: {cons.get('recommended_purity') or 'NA'}",
         f"- purity range: {cons.get('range') or 'NA'}",
         f"- interpretation: {cons.get('interpretation')}",
+        f"- HLA 6p21 CNV/LOH cross-check: {hla_region_status}",
         "",
         "## Tool summary",
         "| Tool | Status | Purity | Ploidy | Source |",
@@ -269,6 +450,8 @@ def main(argv: list[str] | None = None) -> int:
         f"- tool summary: `{outdir / 'purity_cnv_tool_summary.tsv'}`",
         f"- recommendation: `{outdir / 'purity_recommendation.json'}`",
         f"- run suggestions: `{outdir / 'purity_cnv_run_suggestions.tsv'}`",
+        f"- HLA 6p21 evidence: `{outdir / 'hla_6p21_cnv_tool_evidence.tsv'}`",
+        f"- HLA 6p21 consensus: `{outdir / 'hla_6p21_cnv_consensus.tsv'}`",
     ]
     (outdir / "purity_cnv_review.md").write_text("\n".join(md) + "\n", encoding="utf-8")
     print("\n".join(md))

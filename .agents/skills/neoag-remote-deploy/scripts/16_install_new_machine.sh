@@ -16,6 +16,9 @@ SHARED_ASSET_ROOT="${NEOAG_SHARED_ASSET_ROOT:-}"
 VEP_VERSION="105"
 EXECUTE=0
 ALLOW_DOWNLOAD=0
+INSTALL_CLAUDE_CODE=0
+CLAUDE_CODE_CHANNEL="stable"
+CLAUDE_CODE_INSTALLER_URL="https://claude.ai/install.sh"
 
 INSTALL_TOOL_GROUPS=(--core-env --immunogenicity)
 SYNC_ASSETS=1
@@ -61,6 +64,12 @@ Common options:
   --allow-download            Permit official/user-approved network downloads
   --vep-version VERSION       Ensembl VEP/cache release to install/use (default: 105)
   --execute                   Actually run installation/sync/rewrite
+
+Agent tooling:
+  --claude-code               Install Claude Code using Anthropic's native installer
+  --claude-code-channel V     stable, latest, or exact X.Y.Z version (default: stable)
+  --claude-code-installer-url URL
+                              Override only with an explicitly approved official URL
 
 Tool group shortcuts:
   --minimal                   Install core env + immunogenicity only (default)
@@ -122,6 +131,9 @@ while [[ $# -gt 0 ]]; do
     --allow-download) ALLOW_DOWNLOAD=1; shift ;;
     --vep-version) VEP_VERSION="$2"; shift 2 ;;
     --execute) EXECUTE=1; shift ;;
+    --claude-code) INSTALL_CLAUDE_CODE=1; shift ;;
+    --claude-code-channel) CLAUDE_CODE_CHANNEL="$2"; INSTALL_CLAUDE_CODE=1; shift 2 ;;
+    --claude-code-installer-url) CLAUDE_CODE_INSTALLER_URL="$2"; INSTALL_CLAUDE_CODE=1; shift 2 ;;
     --minimal) INSTALL_TOOL_GROUPS=(--core-env --immunogenicity); shift ;;
     --standard) INSTALL_TOOL_GROUPS=(--core-env --vep --gatk --immunogenicity --optitype --facets --ascat-pyclone --splice --lohhla); shift ;;
     --all-open) INSTALL_TOOL_GROUPS=(--all-open); shift ;;
@@ -179,6 +191,9 @@ install_args=(
 )
 [[ "$ALLOW_DOWNLOAD" == "1" ]] && install_args+=(--allow-download)
 [[ "$EXECUTE" == "1" ]] && install_args+=(--execute)
+if [[ "$INSTALL_CLAUDE_CODE" == "1" ]]; then
+  install_args+=(--claude-code --claude-code-channel "$CLAUDE_CODE_CHANNEL" --claude-code-installer-url "$CLAUDE_CODE_INSTALLER_URL")
+fi
 if [[ "$SYNC_ASSETS" == "1" ]]; then
   install_args+=(--asset-manifest "$ASSET_MANIFEST" --reference-manifest "$REFERENCE_MANIFEST" --sync-assets)
   [[ -n "$ASSET_SOURCE_HOST" ]] && install_args+=(--asset-source-host "$ASSET_SOURCE_HOST")
@@ -238,6 +253,8 @@ fi
   echo "Reference manifest: \`$REFERENCE_MANIFEST\`"
   echo "Asset source host: \`${ASSET_SOURCE_HOST:-none}\`"
   echo "Shared asset root: \`${SHARED_ASSET_ROOT:-none}\`"
+  echo "Claude Code: \`$INSTALL_CLAUDE_CODE\`"
+  [[ "$INSTALL_CLAUDE_CODE" == "1" ]] && echo "Claude Code channel/version: \`$CLAUDE_CODE_CHANNEL\`"
   echo "Log: \`$LOG\`"
   echo
   echo "Next step: review logs under \`$OUTDIR\`."
