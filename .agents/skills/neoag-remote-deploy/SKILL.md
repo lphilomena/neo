@@ -89,10 +89,19 @@ extension before running real data:
     creating `/mnt`, `/home`, or old-machine symlinks:
     `scripts/12_install_local_licensed_tools.sh --licensed-root <target-licensed-root> --netmhcpan-tar <netMHCpan.tar.gz> --mixmhcpred-dir <MixMHCpred_install> --execute`.
 13. Rewrite local activation and wrappers so the new machine uses portable
-    paths, not old `/home`, `/mnt`, or stale conda prefixes:
+paths, not old `/home`, `/mnt`, or stale conda prefixes:
     `scripts/10_rewrite_production_activation.sh --project-root <root> --tools-root <target-env_tool> --reference-root <target-reference-root> --licensed-root <target-licensed-root> --write`.
 14. Validate the production runtime before real data:
     `scripts/11_validate_production_runtime.sh --project-root <root> --tools-root <target-env_tool> --outdir <outdir>/production_runtime --mini-prime`.
+
+Claude Code is an optional agent-side dependency, not a bioinformatics runtime
+dependency. Install it only when requested, with explicit download approval:
+`scripts/17_install_claude_code.sh --channel stable --allow-download --execute`.
+The installer uses Anthropic's official native installer, verifies
+`claude --version`, and never performs login or stores credentials. The same
+step is available through `13_install_readme_tools.sh --claude-code` and
+`16_install_new_machine.sh --claude-code`. Use `--claude-code-channel latest`
+or an exact `X.Y.Z` version only when explicitly requested.
 
 Do not run `run-full`, `pipeline-full --execute`, or any patient workflow until
 step 14 shows that VEP, reference FASTA, NetMHCpan, PRIME/MixMHCpred, and the

@@ -38,6 +38,9 @@ INSTALL_HLALA=0
 HLALA_VERSION="1.0.4"
 INSTALL_SEQUENZA=0
 INSTALL_HMF_PURPLE=0
+INSTALL_CLAUDE_CODE=0
+CLAUDE_CODE_CHANNEL="stable"
+CLAUDE_CODE_INSTALLER_URL="https://claude.ai/install.sh"
 RUN_VERIFY=0
 STRICT_VERIFY=0
 RUN_REAL_VCF_SMOKE=0
@@ -132,6 +135,10 @@ Tool groups:
   --hla-la-version VERSION   Bioconda HLA-LA version (default: 1.0.4)
   --sequenza                 Install Sequenza conda env and reference hooks
   --hmf-purple               Register/load HMF PURPLE/AMBER/COBALT container assets and references
+  --claude-code              Install Claude Code with Anthropic's official native installer
+  --claude-code-channel V    stable, latest, or exact X.Y.Z version (default: stable)
+  --claude-code-installer-url URL
+                              Override only with an explicitly approved official URL
   --all-open                 Install open/conda/git tools except very large VEP cache, licensed packages, and NetMHCstabpan
   --all                      Install supported default groups, including VEP cache; NetMHCstabpan remains explicit opt-in
   --verify                   Run scripts/verify_all_tools_and_refs.sh after installs
@@ -233,6 +240,9 @@ while [[ $# -gt 0 ]]; do
     --hla-la-version) HLALA_VERSION="$2"; INSTALL_HLALA=1; shift 2 ;;
     --sequenza) INSTALL_SEQUENZA=1; shift ;;
     --hmf-purple) INSTALL_HMF_PURPLE=1; shift ;;
+    --claude-code) INSTALL_CLAUDE_CODE=1; shift ;;
+    --claude-code-channel) CLAUDE_CODE_CHANNEL="$2"; INSTALL_CLAUDE_CODE=1; shift 2 ;;
+    --claude-code-installer-url) CLAUDE_CODE_INSTALLER_URL="$2"; INSTALL_CLAUDE_CODE=1; shift 2 ;;
     --all-open)
       INSTALL_CORE_ENV=1; INSTALL_VEP=1; INSTALL_GATK=1; INSTALL_RNA_EXPRESSION=1; INSTALL_IMMUNOGENICITY=1
       INSTALL_DEEPIMMUNO=1; INSTALL_LOHHLA=1
@@ -790,6 +800,13 @@ export SEQUENZA_GC_WIG="$REFERENCE_ROOT/data/sequenza/reference/gc.wig.gz"
 
 sync_assets_if_requested
 
+if [[ "$INSTALL_CLAUDE_CODE" == "1" ]]; then
+  claude_args=(--outdir "$OUTDIR/claude_code" --channel "$CLAUDE_CODE_CHANNEL" --installer-url "$CLAUDE_CODE_INSTALLER_URL")
+  [[ "$ALLOW_DOWNLOAD" == "1" ]] && claude_args+=(--allow-download)
+  [[ "$EXECUTE" == "1" ]] && claude_args+=(--execute)
+  run "install Claude Code" bash .agents/skills/neoag-remote-deploy/scripts/17_install_claude_code.sh "${claude_args[@]}"
+fi
+
 if [[ -n "$NETMHCPAN_TAR$NETMHCPAN_DIR$NETMHCPAN_URL$MIXMHCPRED_DIR$MIXMHCPRED_ARCHIVE$MIXMHCPRED_URL$NETMHCSTABPAN_DIR$NETMHCSTABPAN_ARCHIVE$NETMHCSTABPAN_URL" ]]; then
   args=(--licensed-root "$LICENSED_ROOT" --outdir "$OUTDIR")
   [[ -n "$NETMHCPAN_TAR" ]] && args+=(--netmhcpan-tar "$NETMHCPAN_TAR")
@@ -908,6 +925,7 @@ fi
     "lohhla:$INSTALL_LOHHLA" "polysolver:$INSTALL_POLYSOLVER" "optitype:$INSTALL_OPTITYPE" "bam-matcher:$INSTALL_BAM_MATCHER" \
     "facets:$INSTALL_FACETS" "ascat-pyclone:$INSTALL_ASCAT_PYCLONE" "fusion:$INSTALL_FUSION" "splice:$INSTALL_SPLICE" \
     "spechla:$INSTALL_SPECHLA" "hla-la:$INSTALL_HLALA" "sequenza:$INSTALL_SEQUENZA" "hmf-purple:$INSTALL_HMF_PURPLE" \
+    "claude-code:$INSTALL_CLAUDE_CODE" \
     "verify:$RUN_VERIFY" "real-vcf-smoke:$RUN_REAL_VCF_SMOKE" "sync-assets:$SYNC_ASSETS" "reference-manifest:${REFERENCE_MANIFEST:+1}" "bigmhc-models:${BIGMHC_MODELS_DIR:+1}"; do
     name="${item%%:*}"; enabled="${item##*:}"
     [[ "$enabled" == "1" ]] && echo "- $name"
