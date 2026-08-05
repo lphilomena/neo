@@ -11,6 +11,7 @@ OUTDIR="work/agent_deploy/new_machine_install"
 ASSET_MANIFEST="configs/assets/production_assets.tsv"
 REFERENCE_MANIFEST="configs/references/reference_manifest.yaml"
 ASSET_SOURCE_HOST="${NEOAG_ASSET_SOURCE_HOST:-}"
+ASSET_SSH_KEY="${NEOAG_ASSET_SSH_KEY:-}"
 SHARED_ASSET_ROOT="${NEOAG_SHARED_ASSET_ROOT:-}"
 VEP_VERSION="105"
 EXECUTE=0
@@ -55,6 +56,7 @@ Common options:
   --asset-manifest FILE       Large asset manifest (default: configs/assets/production_assets.tsv)
   --reference-manifest FILE   YAML reference manifest verified after asset sync
   --asset-source-host HOST    Optional source host for remote asset paths (no default)
+  --asset-ssh-key FILE        SSH private key used by rsync for remote assets
   --shared-asset-root DIR     Link assets from a locally mounted shared root to save disk space
   --allow-download            Permit official/user-approved network downloads
   --vep-version VERSION       Ensembl VEP/cache release to install/use (default: 105)
@@ -115,6 +117,7 @@ while [[ $# -gt 0 ]]; do
     --asset-manifest) ASSET_MANIFEST="$2"; shift 2 ;;
     --reference-manifest) REFERENCE_MANIFEST="$2"; shift 2 ;;
     --asset-source-host) ASSET_SOURCE_HOST="$2"; shift 2 ;;
+    --asset-ssh-key) ASSET_SSH_KEY="$2"; shift 2 ;;
     --shared-asset-root) SHARED_ASSET_ROOT="$2"; shift 2 ;;
     --allow-download) ALLOW_DOWNLOAD=1; shift ;;
     --vep-version) VEP_VERSION="$2"; shift 2 ;;
@@ -179,6 +182,7 @@ install_args=(
 if [[ "$SYNC_ASSETS" == "1" ]]; then
   install_args+=(--asset-manifest "$ASSET_MANIFEST" --reference-manifest "$REFERENCE_MANIFEST" --sync-assets)
   [[ -n "$ASSET_SOURCE_HOST" ]] && install_args+=(--asset-source-host "$ASSET_SOURCE_HOST")
+  [[ -n "$ASSET_SSH_KEY" ]] && install_args+=(--asset-ssh-key "$ASSET_SSH_KEY")
   [[ -n "$SHARED_ASSET_ROOT" ]] && install_args+=(--shared-asset-root "$SHARED_ASSET_ROOT")
 fi
 if [[ "$RUN_VERIFY" == "1" ]]; then

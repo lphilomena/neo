@@ -4,6 +4,7 @@ set -euo pipefail
 PROJECT_ROOT="$(pwd)"
 MANIFEST="configs/assets/production_assets.tsv"
 SOURCE_HOST=""
+SSH_KEY="${NEOAG_ASSET_SSH_KEY:-}"
 SHARED_ASSET_ROOT="${NEOAG_SHARED_ASSET_ROOT:-}"
 TOOLS_ROOT="${NEOAG_TOOLS_ROOT:-/opt/neoag/env_tool}"
 REFERENCE_ROOT="${NEOAG_REFERENCE_ROOT:-/opt/neoag/refs}"
@@ -24,6 +25,7 @@ Options:
   --project-root DIR       Project checkout (default: current directory)
   --asset-manifest FILE    TSV manifest (default: configs/assets/production_assets.tsv)
   --asset-source-host HOST Default source host for relative/local source paths
+  --asset-ssh-key FILE    SSH private key used by rsync for remote asset paths
   --shared-asset-root DIR  Link assets from a locally mounted shared root
   --tools-root DIR         Resolve /srv/neoag-tools targets below this root
   --reference-root DIR     Resolve reference targets below this root
@@ -51,6 +53,7 @@ while [[ $# -gt 0 ]]; do
     --project-root) PROJECT_ROOT="$2"; shift 2 ;;
     --asset-manifest) MANIFEST="$2"; shift 2 ;;
     --asset-source-host) SOURCE_HOST="$2"; shift 2 ;;
+    --asset-ssh-key) SSH_KEY="$2"; shift 2 ;;
     --shared-asset-root) SHARED_ASSET_ROOT="$2"; shift 2 ;;
     --tools-root) TOOLS_ROOT="$2"; shift 2 ;;
     --reference-root) REFERENCE_ROOT="$2"; shift 2 ;;
@@ -127,6 +130,16 @@ target_has_marker() {
     [[ -d "$dst" ]]
   fi
 }
+rsync_transport() {
+  if [[ -n "$SSH_KEY" ]]; then
+    printf '%s' "-e 'ssh -i $(printf '%q' "$SSH_KEY") -o BatchMode=yes -o ConnectTimeout=15'"
+  else
+    printf '%s' "-e 'ssh -o BatchMode=yes -o ConnectTimeout=15'"
+  fi
+}
+
+RSYNC_TRANSPORT="$(rsync_transport)"
+
 verify_sha256() {
   local kind="$1" dst="$2" sha="$3"
   [[ -n "$sha" && "$sha" != "-" ]] || return 0
@@ -202,9 +215,9 @@ while IFS= read -r line || [[ -n "$line" ]]; do
     fi
     cmd="mkdir -p '$(dirname "$dst")' && ln -s '$src' '$dst'"
   elif [[ "$kind" == "file" ]]; then
-    cmd="mkdir -p '$(dirname "$dst")' && rsync -aL '$spec' '$dst'"
+    cmd="mkdir -p '$(dirname "$dst")' && rsync -aL $RSYNC_TRANSPORT '$spec' '$dst'"
   else
-    cmd="mkdir -p '$dst' && rsync -aL '$spec/' '$dst/'"
+    cmd="mkdir -p '$dst' && rsync -aL $RSYNC_TRANSPORT '$spec/' '$dst/'"
   fi
   log ""
   log "==> [$MODE] sync asset $name"

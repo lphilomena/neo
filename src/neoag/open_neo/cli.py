@@ -80,6 +80,10 @@ def build_parser() -> argparse.ArgumentParser:
     install.add_argument("--asset-source-root")
     install.add_argument("--asset-manifest")
     install.add_argument("--deployment-reference-manifest")
+    install.add_argument(
+        "--asset-ssh-key",
+        help="SSH private key used by rsync for remote asset synchronization",
+    )
     install.add_argument("--install-timeout", type=int, default=7200)
     install.add_argument("--allow-download", action="store_true")
     install.add_argument(

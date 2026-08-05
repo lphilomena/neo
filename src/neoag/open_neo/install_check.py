@@ -43,6 +43,8 @@ def _apply_default_asset_source(args: dict[str, Any]) -> dict[str, Any]:
         configured["asset_source_root"] = os.environ.get(
             "OPEN_NEO_ASSET_SOURCE_ROOT", DEFAULT_ASSET_SOURCE_ROOT,
         )
+    if not configured.get("asset_ssh_key"):
+        configured["asset_ssh_key"] = os.environ.get("OPEN_NEO_ASSET_SSH_KEY", "")
     return configured
 
 
@@ -436,6 +438,9 @@ references:
             f"export OPEN_NEO_TOOLS_ROOT={shlex.quote(str(tools_root))}",
             f"export OPEN_NEO_REFERENCE_ROOT={shlex.quote(str(reference_root))}",
             f"export OPEN_NEO_LICENSED_ROOT={shlex.quote(str(licensed_root))}",
+            f"export OPEN_NEO_ASSET_SOURCE_HOST={shlex.quote(str(args.get('asset_source_host') or ''))}",
+            f"export OPEN_NEO_ASSET_SOURCE_ROOT={shlex.quote(str(args.get('asset_source_root') or ''))}",
+            *([f"export OPEN_NEO_ASSET_SSH_KEY={shlex.quote(str(args['asset_ssh_key']))}"] if args.get("asset_ssh_key") else []),
             *([f"export NEOAG_CONDA_BASE={shlex.quote(str(args['conda_base']))}"] if args.get("conda_base") else []),
             "",
         ]),
@@ -591,6 +596,8 @@ def _deployment_command(args: dict[str, Any], project_root: Path, layout: RunLay
         command += ["--reference-manifest", str(deployment_reference_manifest)]
     if args.get("asset_source_host"):
         command += ["--asset-source-host", str(args["asset_source_host"])]
+    if args.get("asset_ssh_key"):
+        command += ["--asset-ssh-key", str(args["asset_ssh_key"])]
     if bool(args.get("allow_download", False)):
         command.append("--allow-download")
     if bool(args.get("no_sync_assets", False)):

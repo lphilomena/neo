@@ -48,6 +48,9 @@ For asset synchronization, set `--asset-source-root /mounted/assets` for a
 local/mounted asset tree or `--asset-source-host user@host` for remote source
 paths. Approved execution stops before installation when required sources are
 not reachable.
+Use `--asset-ssh-key ~/.ssh/id_ed25519` or `OPEN_NEO_ASSET_SSH_KEY` when the
+asset host requires a specific key. The key is passed only to the rsync asset
+sync step and is recorded in `manifests/paths.env` without copying the key.
 
 When neither option is supplied, the project defaults to
 `na@10.200.50.134:/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git`. The default

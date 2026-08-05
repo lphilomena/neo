@@ -52,6 +52,7 @@ ASSET_MANIFEST="configs/assets/production_assets.tsv"
 REFERENCE_MANIFEST="configs/references/reference_manifest.yaml"
 SYNC_ASSETS=0
 ASSET_SOURCE_HOST=""
+ASSET_SSH_KEY="${NEOAG_ASSET_SSH_KEY:-}"
 SHARED_ASSET_ROOT="${NEOAG_SHARED_ASSET_ROOT:-}"
 CORE_ENV_LITE=1
 SKIP_TORCH_INSTALL=1
@@ -145,6 +146,7 @@ Tool groups:
                           YAML reference manifest verified after asset sync
   --sync-assets            Sync large assets from manifest (dry-run unless --execute)
   --asset-source-host HOST Default source host for manifest source_path values
+  --asset-ssh-key FILE    SSH private key used by rsync for remote assets
   --shared-asset-root DIR Link assets from a locally mounted shared root
 
 Licensed/restricted source options:
@@ -254,6 +256,7 @@ while [[ $# -gt 0 ]]; do
     --reference-manifest) REFERENCE_MANIFEST="$2"; shift 2 ;;
     --sync-assets) SYNC_ASSETS=1; shift ;;
     --asset-source-host) ASSET_SOURCE_HOST="$2"; shift 2 ;;
+    --asset-ssh-key) ASSET_SSH_KEY="$2"; shift 2 ;;
     --shared-asset-root) SHARED_ASSET_ROOT="$2"; shift 2 ;;
     --netmhcpan-tar) NETMHCPAN_TAR="$2"; shift 2 ;;
     --netmhcpan-dir) NETMHCPAN_DIR="$2"; shift 2 ;;
@@ -381,6 +384,7 @@ sync_assets_if_requested() {
   args=(--project-root "$PROJECT_ROOT" --asset-manifest "$ASSET_MANIFEST" --outdir "$OUTDIR/assets"
     --tools-root "$TOOLS_ROOT" --reference-root "$REFERENCE_ROOT" --licensed-root "$LICENSED_ROOT")
   [[ -n "$ASSET_SOURCE_HOST" ]] && args+=(--asset-source-host "$ASSET_SOURCE_HOST")
+  [[ -n "$ASSET_SSH_KEY" ]] && args+=(--asset-ssh-key "$ASSET_SSH_KEY")
   [[ -n "$SHARED_ASSET_ROOT" ]] && args+=(--shared-asset-root "$SHARED_ASSET_ROOT")
   [[ "$EXECUTE" == "1" ]] && args+=(--execute)
   run "sync large assets from manifest" bash .agents/skills/neoag-remote-deploy/scripts/15_sync_asset_manifest.sh "${args[@]}"
