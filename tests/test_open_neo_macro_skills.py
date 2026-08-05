@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+import os
 import subprocess
 import sys
 import tarfile
@@ -18,6 +19,7 @@ from neoag.open_neo.install_check import (
     _apply_default_asset_source,
     _assess_tier,
     _deployment_command,
+    _collect_claude_code_status,
     _required_asset_sources_missing,
     _rewrite_asset_manifest,
     _run_deployment,
@@ -521,6 +523,39 @@ def test_install_cli_accepts_claude_code_options():
     ])
     assert args.install_claude_code is True
     assert args.claude_code_channel == "stable"
+
+
+def test_install_skill_collects_claude_code_status(tmp_path):
+    layout = RunLayout.create(tmp_path / "run")
+    report = layout.root / "deployment/readme_tools/claude_code/claude_code_install_report.md"
+    report.parent.mkdir(parents=True)
+    report.write_text(
+        "# Claude Code install report\n\nBinary: `/opt/user/.local/bin/claude`\n"
+        "Version: `2.1.170 (Claude Code)`\n",
+        encoding="utf-8",
+    )
+    status, outputs = _collect_claude_code_status(layout, requested=True, executed=True)
+    assert status["status"] == "READY"
+    assert status["version"] == "2.1.170 (Claude Code)"
+    assert Path(outputs["claude_code_status"]).is_file()
+    assert outputs["claude_code_install_report"] == str(report)
+
+
+def test_install_skill_launcher_rejects_explicit_old_python(tmp_path):
+    launcher = Path.cwd() / ".agents/skills/open-neo-install-check/scripts/run.sh"
+    fake_python = tmp_path / "python"
+    fake_python.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+    fake_python.chmod(0o755)
+    proc = subprocess.run(
+        ["bash", str(launcher), "--help"],
+        cwd=Path.cwd(),
+        env={"PATH": os.environ.get("PATH", ""), "NEOAG_PYTHON": str(fake_python)},
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert proc.returncode == 31
+    assert "OPEN_NEO_PYTHON_UNSUPPORTED" in proc.stderr
 
 
 def test_install_skill_asset_server_defaults_can_be_overridden_by_environment(monkeypatch):

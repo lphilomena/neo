@@ -102,6 +102,8 @@ separate interactive or enterprise-managed step.
 - `environment_inventory.tsv`
 - `doctor/doctor_status.json`
 - `deployment_status.tsv`
+- `claude_code_status.tsv` and `claude_code_status.json`, including requested
+  state, readiness, version, binary path, and the nested install report path
 - `tier_requirements.tsv`, `deployment_delta.tsv`
 - `deployment_checkpoint.json` for mutating modes
 - `deployment_report.md`
@@ -127,3 +129,6 @@ Do not install or redistribute licensed tools, download large references, overwr
 - Emit the stable result contract described by `references/OUTPUT_SCHEMA.json`.
 - Use the canonical failure codes and remediation in `references/FAILURE_CODES.md`.
 - Every invocation writes `skill_result.json` and a sibling `run_state.json`; install and repair actions remain approval gated.
+- The launcher must resolve Python 3.11+ with `tomllib` from `NEOAG_PYTHON`,
+  configured Conda/deployment roots, the project virtual environment, or PATH;
+  it must fail clearly instead of starting the macro with an older interpreter.
