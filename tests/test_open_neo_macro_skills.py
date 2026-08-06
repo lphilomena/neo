@@ -243,6 +243,10 @@ def test_install_check_writes_comprehensive_local_manifests(tmp_path: Path):
     assert "/data/hla/spechla/db" in refs
     assert "marker: versionInfo.json" in refs
     assert "salmon_tx2gene:" in refs
+    assert "G1000_loci_hg38.txt" not in refs
+    assert "G1000_alleles_hg38.txt" not in refs
+    assert "snaf.workflow.yaml" not in refs
+    assert "splicemutr.workflow.yaml" not in refs
     asset_manifest = Path(outputs["asset_manifest_local"])
     target_paths = [line.split("\t")[2] for line in asset_manifest.read_text(encoding="utf-8").splitlines() if "\t" in line and not line.startswith("#")]
     assert all(not path.startswith("/srv/") for path in target_paths[1:])

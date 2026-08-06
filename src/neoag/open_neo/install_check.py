@@ -420,14 +420,6 @@ references:
     path: '${OPEN_NEO_REFERENCE_ROOT}/data/hmf/purple_reference'
   bam_matcher_loci:
     path: '${OPEN_NEO_REFERENCE_ROOT}/data/sample_identity/bam_matcher.common_snps.hg38.vcf'
-  ascat_loci:
-    path: '${OPEN_NEO_REFERENCE_ROOT}/data/ascat/G1000_loci_hg38.txt'
-  ascat_alleles:
-    path: '${OPEN_NEO_REFERENCE_ROOT}/data/ascat/G1000_alleles_hg38.txt'
-  snaf_workflow:
-    path: '${OPEN_NEO_REFERENCE_ROOT}/workflows/snaf.workflow.yaml'
-  splicemutr_workflow:
-    path: '${OPEN_NEO_REFERENCE_ROOT}/workflows/splicemutr.workflow.yaml'
 """
     refs_text = refs_text.replace("${OPEN_NEO_REFERENCE_ROOT}", str(reference_root))
     refs_text = refs_text.replace("${OPEN_NEO_TOOLS_ROOT}", str(tools_root))
