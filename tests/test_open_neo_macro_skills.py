@@ -248,7 +248,10 @@ def test_install_check_writes_comprehensive_local_manifests(tmp_path: Path):
     assert "snaf.workflow.yaml" not in refs
     assert "splicemutr.workflow.yaml" not in refs
     asset_manifest = Path(outputs["asset_manifest_local"])
-    target_paths = [line.split("\t")[2] for line in asset_manifest.read_text(encoding="utf-8").splitlines() if "\t" in line and not line.startswith("#")]
+    asset_text = asset_manifest.read_text(encoding="utf-8")
+    assert "reference_fasta_fai" in asset_text
+    assert "1e74081a49ceb9739cc14c812fbb8b3db978eb80ba8e5350beb80d8ad8dfef3b" in asset_text
+    target_paths = [line.split("\t")[2] for line in asset_text.splitlines() if "\t" in line and not line.startswith("#")]
     assert all(not path.startswith("/srv/") for path in target_paths[1:])
 
 

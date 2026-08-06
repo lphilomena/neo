@@ -343,8 +343,16 @@ set_local_conda_pkg_cache() {
 ensure_reference_indexes_after_asset_sync() {
   local fasta="$REFERENCE_ROOT/data/ref/hg38/Homo_sapiens_assembly38.fasta"
   if [[ -s "$fasta" && ! -s "$fasta.fai" ]]; then
-    if command -v samtools >/dev/null 2>&1; then
-      run "index reference FASTA" samtools faidx "$fasta"
+    local samtools_bin=""
+    samtools_bin="$(command -v samtools 2>/dev/null || true)"
+    if [[ -z "$samtools_bin" && -n "$CONDA_BASE" && -x "$CONDA_BASE/envs/neoag-tools/bin/samtools" ]]; then
+      samtools_bin="$CONDA_BASE/envs/neoag-tools/bin/samtools"
+    fi
+    if [[ -z "$samtools_bin" && -x "$TOOLS_ROOT/miniforge3/envs/neoag-tools/bin/samtools" ]]; then
+      samtools_bin="$TOOLS_ROOT/miniforge3/envs/neoag-tools/bin/samtools"
+    fi
+    if [[ -n "$samtools_bin" ]]; then
+      run "index reference FASTA" "$samtools_bin" faidx "$fasta"
     else
       log "WARN: samtools not found; cannot create FASTA index: $fasta.fai"
     fi
