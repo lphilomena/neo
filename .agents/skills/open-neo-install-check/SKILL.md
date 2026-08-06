@@ -40,10 +40,10 @@ description: Public macro Skill1 for Open-Neo installation, new-machine migratio
 
 1. Require and verify the checksum for a release archive, reject traversal/link/device members, safely stage it under the output directory, and identify one project root.
 2. Record Python, Java, Docker/Apptainer, Nextflow, disk, and platform information.
-3. Generate comprehensive machine-local `tools_manifest`, `reference_manifest`, `paths.env`, and `production_assets.local.tsv`. Generic `/srv` targets are rewritten to the selected machine roots.
+3. Generate comprehensive machine-local tools_manifest, reference_manifest, paths.env, and production_assets.local.tsv. The repository's configs/references/reference_manifest.yaml is authoritative; the local copy preserves its required, marker, sha256, version, and optional/required semantics while only remapping machine roots. Generic /srv targets are rewritten to the selected machine roots.
 4. Automatically discover existing executables and references from the input manifests, documented environment variables, PATH, conda-style roots, and the standard portable data layout. Verify build-sensitive references conservatively; for example, a GRCh37 BAM-matcher SNP panel is rejected for GRCh38.
 5. Generate configured manifests and validated command templates. A tool is `PARTIAL` when its executable exists but a required reference or confirmed sample-level invocation is missing; the Skill never invents cohort-specific SNAF/SpliceMutr workflows.
-6. For approved `repair`/`install`, delegate to the portable `neoag-remote-deploy` new-machine installer; downloads remain opt-in and licensed assets remain external.
+6. For approved repair/install, delegate to the portable neoag-remote-deploy new-machine installer; downloads remain opt-in and licensed assets remain external. Directory references are not accepted merely because the directory exists: their declared marker (for example versionInfo.json, Genome, ref_genome.fa.star.idx, or a SpecHLA database marker) must also exist.
 7. Re-run discovery after installation, execute minimal smoke checks, and publish generated machine-local manifests under `configs/local/`. Licensed tools are configured only when the user has supplied a legal local installation.
 8. Run Doctor and evaluate required tools, alternative capability groups, critical references and sidecars against the requested tier. Missing required references can never produce READY.
 9. Write timeout-protected deployment checkpoints, configuration fixes, and an installation status delta for safe resume/review.
@@ -51,8 +51,7 @@ description: Public macro Skill1 for Open-Neo installation, new-machine migratio
 
 For asset synchronization, set `--asset-source-root /mounted/assets` for a
 local/mounted asset tree or `--asset-source-host user@host` for remote source
-paths. Approved execution stops before installation when required sources are
-not reachable.
+paths. Approved execution records source reachability and stops before installation when a required asset source cannot be read. Optional assets are reported as MISSING_OPTIONAL and do not masquerade as installed references.
 Use `--asset-ssh-key ~/.ssh/id_ed25519` or `OPEN_NEO_ASSET_SSH_KEY` when the
 asset host requires a specific key. The key is passed only to the rsync asset
 sync step and is recorded in `manifests/paths.env` without copying the key.
@@ -96,7 +95,7 @@ separate interactive or enterprise-managed step.
 ## Reproducible derived assets
 
 - Java is installed in the dedicated `neoag-runtime` environment; discover it through the configured tools manifest instead of assuming it is on the login-shell PATH.
-- Salmon index and `tx2gene.tsv` must come from the same GENCODE release. The portable v49 layout is `data/rna/gencode_v49/{salmon_index,tx2gene.tsv}` and its `SHA256SUMS` must pass before use.
+- Salmon index and tx2gene.tsv must come from the same GENCODE release. The portable v49 layout is data/rna/gencode_v49/{salmon_index,tx2gene.tsv}; salmon_index/versionInfo.json is mandatory and the local manifest uses the canonical key salmon_tx2gene.
 - Install BAM-matcher with `scripts/install_bam_matcher.sh`. It pins the upstream revision and retains its isolated Python 2 environment; do not merge these legacy dependencies into the main project environment.
 - Never use BAM-matcher's bundled GRCh37 loci with GRCh38 data. Build the portable panel with `scripts/build_bam_matcher_grch38_loci.sh`; the script requires exact dbSNP-ID mapping, biallelic SNVs, GRCh38 FASTA REF agreement, and emits a metadata manifest plus checksums.
 

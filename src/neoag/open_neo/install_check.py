@@ -85,7 +85,7 @@ TIER_REQUIRED_REFERENCES = {
         "reference_fasta", "reference_fasta_fai", "reference_fasta_dict",
         "gencode_gtf", "vep_cache", "normal_proteome", "normal_ligandome",
         "normal_junctions", "star_index", "ctat_genome_lib", "salmon_index",
-        "tx2gene",
+        "salmon_tx2gene",
     ],
 }
 
@@ -108,12 +108,12 @@ REFERENCE_ALIASES = {
     "star_index": ["star_index"],
     "ctat_genome_lib": ["ctat_genome_lib", "ctat"],
     "salmon_index": ["salmon_index"],
-    "tx2gene": ["tx2gene"],
+    "salmon_tx2gene": ["salmon_tx2gene", "tx2gene"],
     "hla_reference": ["hla_reference"],
     "spechla_db": ["spechla_db", "spechla.db"],
     "hla_la_graph": ["hla_la_graph", "hla-la.graph", "prg_mhc"],
     "lohhla_reference": ["lohhla_reference"],
-    "facets_snp_vcf": ["facets_snp_vcf", "facets.vcf", "common_snp"],
+    "facets_snp_vcf": ["facets_snp_vcf", "facets_common_snp_vcf", "facets.vcf", "common_snp"],
     "sequenza_gc_wiggle": ["sequenza_gc_wiggle", "gc_wiggle"],
     "purple_reference": ["purple_reference"],
     "bam_matcher_loci": ["bam_matcher_loci", "sample_identity_vcf"],
@@ -394,19 +394,20 @@ references:
   normal_ligandome:
     path: '${OPEN_NEO_REFERENCE_ROOT}/data/normal/ligandome/normal_ms_ligands.tsv'
   normal_junctions:
-    path: '${OPEN_NEO_REFERENCE_ROOT}/data/normal/junctions/normal_junctions.tsv'
+    path: '${OPEN_NEO_REFERENCE_ROOT}/data/normal/junctions/normal_junctions.GRCh38.tsv.gz'
   star_index:
-    path: '${OPEN_NEO_REFERENCE_ROOT}/data/rna/star_index'
+    path: '${OPEN_NEO_REFERENCE_ROOT}/data/ref/ctat/current/ctat_genome_lib_build_dir/ref_genome.fa.star.idx'
   ctat_genome_lib:
-    path: '${OPEN_NEO_REFERENCE_ROOT}/data/ctat/current'
+    path: '${OPEN_NEO_REFERENCE_ROOT}/data/ref/ctat/current/ctat_genome_lib_build_dir'
   salmon_index:
-    path: '${OPEN_NEO_REFERENCE_ROOT}/data/rna/salmon_index'
-  tx2gene:
-    path: '${OPEN_NEO_REFERENCE_ROOT}/data/rna/tx2gene.tsv'
+    path: '${OPEN_NEO_REFERENCE_ROOT}/data/rna/gencode_v49/salmon_index'
+  salmon_tx2gene:
+    path: '${OPEN_NEO_REFERENCE_ROOT}/data/rna/gencode_v49/tx2gene.tsv'
+    marker: tx2gene.tsv
   hla_reference:
     path: '${OPEN_NEO_REFERENCE_ROOT}/data/hla'
   spechla_db:
-    path: '${OPEN_NEO_REFERENCE_ROOT}/data/hla/spechla_db'
+    path: '${OPEN_NEO_REFERENCE_ROOT}/data/hla/spechla/db'
   hla_la_graph:
     path: '${OPEN_NEO_REFERENCE_ROOT}/data/hla/PRG_MHC_GRCh38_withIMGT'
   lohhla_reference:
@@ -430,6 +431,17 @@ references:
 """
     refs_text = refs_text.replace("${OPEN_NEO_REFERENCE_ROOT}", str(reference_root))
     refs_text = refs_text.replace("${OPEN_NEO_TOOLS_ROOT}", str(tools_root))
+    root_token = "$" + "{OPEN_NEO_REFERENCE_ROOT}"
+    tools_token = "$" + "{OPEN_NEO_TOOLS_ROOT}"
+    licensed_token = "$" + "{OPEN_NEO_LICENSED_ROOT}"
+    # The repository reference manifest is authoritative. Keep its required,
+    # marker, checksum, and version metadata instead of creating a stale copy.
+    formal_reference_manifest = project_root / "configs/references/reference_manifest.yaml"
+    if formal_reference_manifest.is_file():
+        refs_text = formal_reference_manifest.read_text(encoding="utf-8")
+        refs_text = refs_text.replace(root_token, str(reference_root))
+        refs_text = refs_text.replace(tools_token, str(tools_root))
+        refs_text = refs_text.replace(licensed_token, str(licensed_root))
     refs.write_text(refs_text, encoding="utf-8")
     paths = layout.manifests / "paths.env"
     paths.write_text(

@@ -11,7 +11,7 @@ gencode_gtf: /data/refs/gencode/gencode.v44.annotation.gtf
 vep_cache: /data/refs/vep_cache/homo_sapiens/115_GRCh38
 normal_proteome: /data/refs/neoag/normal_proteome.fa
 normal_ligandome: /data/refs/neoag/normal_ligandome.tsv
-normal_junctions: /data/refs/neoag/normal_junctions.tsv
+normal_junctions: /data/refs/neoag/normal_junctions.GRCh38.tsv.gz
 facets_snp_vcf: /data/refs/facets/common_snp.hg38.vcf.gz
 hla_reference: /data/refs/hla/
 ```

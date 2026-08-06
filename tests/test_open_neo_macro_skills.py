@@ -237,6 +237,12 @@ def test_install_check_writes_comprehensive_local_manifests(tmp_path: Path):
     assert all(name in tools for name in ["netmhcpan", "spechla", "purple", "easyfuse", "splicemutr", "bam_matcher"])
     assert all(name in refs for name in ["normal_ligandome", "normal_junctions", "ctat_genome_lib", "sequenza_gc_wiggle", "bam_matcher_loci"])
     assert str(tmp_path / "neoag/refs/data/ref/hg38") in refs
+    # The local template must inherit the formal manifest's canonical paths
+    # and directory markers rather than the legacy fallback paths.
+    assert "normal_junctions.GRCh38.tsv.gz" in refs
+    assert "/data/hla/spechla/db" in refs
+    assert "marker: versionInfo.json" in refs
+    assert "salmon_tx2gene:" in refs
     asset_manifest = Path(outputs["asset_manifest_local"])
     target_paths = [line.split("\t")[2] for line in asset_manifest.read_text(encoding="utf-8").splitlines() if "\t" in line and not line.startswith("#")]
     assert all(not path.startswith("/srv/") for path in target_paths[1:])
