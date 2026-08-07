@@ -51,6 +51,18 @@ def test_convert_flexible_csv(tmp_path):
     assert ("SIINFEKL", "HLA-A*11:01") in pairs
 
 
+def test_tsv_detection_uses_header_when_data_contains_many_commas(tmp_path):
+    inp = tmp_path / "evidence.tsv"
+    inp.write_text(
+        "peptide\thla\tevidence\n"
+        "SIINFEKL\tHLA-A*02:01\t(a,b,c,d,e,f,g,h,i,j)\n",
+        encoding="utf-8",
+    )
+    summary = convert_peptide_input(inp, tmp_path / "out", sample_id="S1")
+    assert summary.delimiter == "\t"
+    assert summary.pair_rows == 1
+
+
 def test_peptide_predict_stub_cli(tmp_path):
     inp = tmp_path / "pairs.tsv"
     inp.write_text(

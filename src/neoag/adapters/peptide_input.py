@@ -74,8 +74,9 @@ class PeptideInputSummary:
 
 def sniff_delimiter(path: str | Path, sample_bytes: int = 8192) -> str:
     text = Path(path).read_text(encoding="utf-8")[:sample_bytes]
-    tab_count = text.count("\t")
-    comma_count = text.count(",")
+    header = next((line for line in text.splitlines() if line.strip()), "")
+    tab_count = header.count("\t")
+    comma_count = header.count(",")
     return "\t" if tab_count > comma_count else ","
 
 

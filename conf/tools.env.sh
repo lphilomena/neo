@@ -14,7 +14,9 @@ export LD_LIBRARY_PATH="${NEOAG_CONDA_BASE}/envs/neoag-tools/lib:${LD_LIBRARY_PA
 
 # TensorFlow GPU: pip nvidia-*-cu12 libs (see scripts/install_cuda_pip_libs.sh)
 NEOAG_NVIDIA_SITE="${NEOAG_CONDA_BASE}/envs/${NEOAG_CONDA_ENV}/lib/python3.11/site-packages/nvidia"
-if [[ -d "${NEOAG_NVIDIA_SITE}" ]]; then
+if [[ "${NEOAG_FORCE_CPU:-}" == "1" ]]; then
+  export CUDA_VISIBLE_DEVICES="-1"
+elif [[ -d "${NEOAG_NVIDIA_SITE}" ]]; then
   for _neoag_nv_lib in "${NEOAG_NVIDIA_SITE}"/*/lib; do
     if [[ -d "${_neoag_nv_lib}" ]]; then
       export LD_LIBRARY_PATH="${_neoag_nv_lib}:${LD_LIBRARY_PATH}"
@@ -26,9 +28,7 @@ fi
 # MHCflurry + TensorFlow 2.21: legacy tf.keras via tf_keras (pip install tf_keras)
 export TF_USE_LEGACY_KERAS=1
 # GPU default on when nvidia libs present; force CPU: export NEOAG_FORCE_CPU=1
-if [[ "${NEOAG_FORCE_CPU:-}" == "1" ]]; then
-  export CUDA_VISIBLE_DEVICES=""
-elif [[ -z "${CUDA_VISIBLE_DEVICES+x}" ]] && [[ ! -d "${NEOAG_NVIDIA_SITE}" ]]; then
+if [[ "${NEOAG_FORCE_CPU:-}" != "1" && -z "${CUDA_VISIBLE_DEVICES+x}" ]] && [[ ! -d "${NEOAG_NVIDIA_SITE}" ]]; then
   export CUDA_VISIBLE_DEVICES=""
 fi
 

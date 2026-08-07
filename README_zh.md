@@ -905,3 +905,27 @@ RegTools、可选且经审核的 SNAF/SpliceMutr workflow、融合/剪接交叉�
 `SAFETY_PARTIAL`，不会解释为阴性证据。
 
 `plan`、`verify` 和结果审阅不改动生产结果；安装、修复、执行和续跑必须显式批准。详见 [docs/OPEN_NEO_MACRO_SKILLS.md](docs/OPEN_NEO_MACRO_SKILLS.md)。
+## 长读长 RNA splice 标准流程
+
+长读长 RNA 的转录本重建、结构注释、ORF/蛋白翻译、SNAF/SpliceMutr 交叉验证、junction 肽生成和 MHC 预测统一使用机器可读配置 `configs/workflows/longrna_splice_profile.yaml`。大型参考数据和模型不提交到 Git，必须通过 reference/tools manifest 和资产同步流程解析。
+
+初始化样本工作目录并检查流程计划：
+
+```bash
+bash scripts/run_longrna_splice.sh --dry-run \
+  --sample-id SAMPLE \
+  --input-dir /path/to/longrna_fastq \
+  --workdir /path/to/work/SAMPLE/longrna_splice
+```
+
+正式阶段使用同一入口初始化标准目录，完成各阶段后运行验证：
+
+```bash
+bash scripts/run_longrna_splice.sh \
+  --sample-id SAMPLE \
+  --input-dir /path/to/longrna_fastq \
+  --workdir /path/to/work/SAMPLE/longrna_splice
+bash scripts/verify_longrna_splice.sh /path/to/work/SAMPLE/longrna_splice
+```
+
+最终证据必须区分“完整 ORF/蛋白已确认”和“仅有异常 junction 肽”。只有同时具备转录本 ID、SQANTI3/IsoQuant 结构、CDS 起止、frame、完整蛋白序列且蛋白序列跨越 junction，才允许标记为完整 ORF/蛋白确认。
