@@ -40,7 +40,9 @@ def test_splicemutr_is_pinned_and_installed_by_default():
     assert "FertigLab/splicemutr/archive/${REF}.tar.gz" in installer
     assert "splicemutr-neoag" in installer
     assert "doctor" in installer
-    assert "retry-all-errors" in installer
+    assert "curl_supports_retry_all_errors" in installer
+    assert "curl_args+=(--retry-all-errors)" in installer
+    assert "curl lacks --retry-all-errors" in installer
     assert "continue-at = -" in installer
     assert "GenomeInfoDbData_1.2.11.tar.gz" in installer
     assert "md5sum -c" in installer
@@ -56,3 +58,22 @@ def test_remote_install_skill_has_explicit_splicemutr_opt_out():
     assert "INSTALL_SPLICEMUTR=1" in script
     assert "--skip-splicemutr" in script
     assert 'NEOAG_INSTALL_SPLICEMUTR="$INSTALL_SPLICEMUTR"' in script
+
+
+def test_install_downloaders_support_curl_768():
+    scripts = [
+        ROOT / ".agents/skills/neoag-remote-deploy/scripts/with_bioc_data_cache.sh",
+        ROOT / "scripts/install_lohhla.sh",
+        ROOT / "scripts/build_gtex_normal_junction_assets.sh",
+    ]
+    for path in scripts:
+        content = path.read_text(encoding="utf-8")
+        assert "curl_supports_retry_all_errors" in content, path
+        assert "curl lacks --retry-all-errors" in content, path
+
+        direct_invocations = [
+            line
+            for line in content.splitlines()
+            if line.lstrip().startswith("curl ") and "--retry-all-errors" in line
+        ]
+        assert direct_invocations == [], (path, direct_invocations)

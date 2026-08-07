@@ -38,6 +38,22 @@ PKG_CACHE="$CACHE_ROOT/conda_pkgs_bioc"
 DATA_CACHE="$CACHE_ROOT/bioconductor"
 mkdir -p "$PKG_CACHE" "$DATA_CACHE"
 
+curl_supports_retry_all_errors() {
+  command -v curl >/dev/null 2>&1 || return 1
+  { curl --help all 2>/dev/null || curl --help 2>/dev/null; } | grep -q -- '--retry-all-errors'
+}
+
+download_file() {
+  local url="$1" destination="$2"
+  local -a curl_args=(-fL --retry 5 --connect-timeout 30)
+  if curl_supports_retry_all_errors; then
+    curl_args+=(--retry-all-errors)
+  else
+    echo "INFO: curl lacks --retry-all-errors; using portable retry options." >&2
+  fi
+  curl "${curl_args[@]}" -o "$destination" "$url"
+}
+
 META_DIR="$(find "$PKG_CACHE" -maxdepth 1 -type d -name 'bioconductor-data-packages-*' | sort | tail -1)"
 if [[ -z "$META_DIR" ]]; then
   echo "==> Populate isolated Bioconductor metadata cache"
@@ -51,8 +67,7 @@ print(record.get("url") or record["channel"].rstrip("/") + "/" + record["fn"])
 ')
   META_PACKAGE="$PKG_CACHE/${CONDA_META[0]}"
   if [[ ! -s "$META_PACKAGE" ]]; then
-    curl -fL --retry 5 --retry-all-errors --connect-timeout 30 \
-      -o "$META_PACKAGE" "${CONDA_META[1]}"
+    download_file "${CONDA_META[1]}" "$META_PACKAGE"
   fi
   META_DIR="$PKG_CACHE/${CONDA_META[0]%.conda}"
   rm -rf "$META_DIR"
@@ -96,8 +111,7 @@ if ! echo "$MD5  $TARBALL" | md5sum -c - >/dev/null 2>&1; then
       aria2c -x 1 -s 1 --file-allocation=none --allow-overwrite=true \
         --dir "$DATA_CACHE" --out "$FN" "$url" || true
     else
-      curl -fL --retry 5 --retry-all-errors --connect-timeout 30 \
-        -o "$TARBALL" "$url" || true
+      download_file "$url" "$TARBALL" || true
     fi
     echo "$MD5  $TARBALL" | md5sum -c - >/dev/null 2>&1 && break
     rm -f "$TARBALL"

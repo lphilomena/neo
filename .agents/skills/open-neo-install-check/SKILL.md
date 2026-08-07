@@ -55,8 +55,14 @@ source tree and model files as deployment assets. It first synchronizes
 source and verifies tool-specific markers plus the pinned Git revision when
 revision metadata is present. These directories remain outside GitHub. A
 network snapshot download is only a fallback when the asset is unavailable;
-the downloader detects old curl builds that lack `--retry-all-errors` and can
-fall back to `wget`.
+downloaders detect old curl builds that lack `--retry-all-errors` and retain
+portable retry/timeout behavior instead of failing on the unknown option.
+This compatibility policy also applies to the Bioconductor data-cache helper
+used by ASCAT/Sequenza, LOHHLA source retrieval, SpliceMutr assets, and normal
+junction asset construction. Ubuntu 20.04's curl 7.68 is therefore supported;
+an unavailable `--retry-all-errors` capability is not a machine-configuration
+failure. The immunogenicity source downloader can additionally fall back to
+`wget`.
 
 For asset synchronization, set `--asset-source-root /mounted/assets` for a
 local/mounted asset tree or `--asset-source-host user@host` for remote source

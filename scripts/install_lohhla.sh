@@ -31,13 +31,29 @@ REF="${NEOAG_LOHHLA_REF:-b38c4770995b24628a4e038fccb1a9cd57c4f305}"
 GITHUB_PROXY_PREFIX="${NEOAG_GITHUB_PROXY_PREFIX:-https://ghproxy.net/}"
 mkdir -p "$(dirname "${TARGET}")" "${BIN_DIR}"
 
+curl_supports_retry_all_errors() {
+  command -v curl >/dev/null 2>&1 || return 1
+  { curl --help all 2>/dev/null || curl --help 2>/dev/null; } | grep -q -- '--retry-all-errors'
+}
+
+download_file() {
+  local url="$1" destination="$2"
+  local -a curl_args=(-fL --retry 5 --connect-timeout 30)
+  if curl_supports_retry_all_errors; then
+    curl_args+=(--retry-all-errors)
+  else
+    echo "INFO: curl lacks --retry-all-errors; using portable retry options." >&2
+  fi
+  curl "${curl_args[@]}" -o "$destination" "$url"
+}
+
 if [[ ! -f "${TARGET}/LOHHLAscript.R" ]]; then
   tmp="$(mktemp -d)"
   archive="$tmp/source.tar.gz"
   direct="https://github.com/slagtermaarten/LOHHLA/archive/${REF}.tar.gz"
   if [[ "$REPO" == "https://github.com/slagtermaarten/LOHHLA.git" ]]; then
     for url in "${GITHUB_PROXY_PREFIX}${direct}" "$direct"; do
-      curl -fL --retry 5 --retry-all-errors --connect-timeout 30 -o "$archive" "$url" && break
+      download_file "$url" "$archive" && break
       rm -f "$archive"
     done
   fi

@@ -18,6 +18,11 @@ BIN_DIR="${ROOT}/bin"
 TOOLS_ENV="${ROOT}/conf/tools.env.sh"
 export CONDA_CHANNEL_ALIAS="${NEOAG_CONDA_CHANNEL_ALIAS:-${CONDA_CHANNEL_ALIAS:-https://conda.anaconda.org}}"
 
+curl_supports_retry_all_errors() {
+  command -v curl >/dev/null 2>&1 || return 1
+  { curl --help all 2>/dev/null || curl --help 2>/dev/null; } | grep -q -- '--retry-all-errors'
+}
+
 # Bioconda annotation packages download their payloads in post-link scripts.
 # Resume interrupted transfers instead of restarting large files from zero.
 CURL_RETRY_HOME="$(mktemp -d)"
@@ -29,18 +34,26 @@ cleanup() {
 trap cleanup EXIT
 cat > "${CURL_RETRY_HOME}/.curlrc" <<'EOF'
 retry = 10
-retry-all-errors
 retry-delay = 2
 connect-timeout = 30
 continue-at = -
 EOF
+if curl_supports_retry_all_errors; then
+  printf '%s\n' 'retry-all-errors' >> "${CURL_RETRY_HOME}/.curlrc"
+else
+  echo "INFO: curl lacks --retry-all-errors; using portable retry options." >&2
+fi
 export CURL_HOME="${CURL_RETRY_HOME}"
 
 # Bioconda's post-link helper streams this payload through stdout and cannot
 # resume safely. Cache and verify it first, then serve it locally to that helper.
 mkdir -p "$(dirname "${GENOMEINFO_ARCHIVE}")"
 if [[ ! -s "${GENOMEINFO_ARCHIVE}" ]] || ! echo "${GENOMEINFO_MD5}  ${GENOMEINFO_ARCHIVE}" | md5sum -c - >/dev/null 2>&1; then
-  curl -fL --retry 10 --retry-all-errors -C - -o "${GENOMEINFO_ARCHIVE}" "${GENOMEINFO_URL}"
+  curl_args=(-fL --retry 10 -C -)
+  if curl_supports_retry_all_errors; then
+    curl_args+=(--retry-all-errors)
+  fi
+  curl "${curl_args[@]}" -o "${GENOMEINFO_ARCHIVE}" "${GENOMEINFO_URL}"
 fi
 echo "${GENOMEINFO_MD5}  ${GENOMEINFO_ARCHIVE}" | md5sum -c -
 export NEOAG_GENOMEINFODBDATA_ARCHIVE="${GENOMEINFO_ARCHIVE}"

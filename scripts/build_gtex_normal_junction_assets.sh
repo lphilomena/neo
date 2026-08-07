@@ -11,12 +11,23 @@ METADATA="$RAW_ROOT/gtex.recount_project.MD.gz"
 STATUS="$ASSET_ROOT/recount3_gtex_v8/build_status.tsv"
 
 mkdir -p "$RAW_ROOT" "$TISSUE_ROOT"
+curl_supports_retry_all_errors() {
+  command -v curl >/dev/null 2>&1 || return 1
+  { curl --help all 2>/dev/null || curl --help 2>/dev/null; } | grep -q -- '--retry-all-errors'
+}
+
 download_gzip() {
   local url="$1" destination="$2"
+  local -a curl_args=(-fsSL --retry 30 --retry-delay 5 --connect-timeout 30 -C -)
   if [[ -s "$destination" ]] && gzip -t "$destination" 2>/dev/null; then
     return 0
   fi
-  curl -fsSL --retry 30 --retry-all-errors --retry-delay 5 --connect-timeout 30 -C - -o "$destination" "$url"
+  if curl_supports_retry_all_errors; then
+    curl_args+=(--retry-all-errors)
+  else
+    echo "INFO: curl lacks --retry-all-errors; using portable retry options." >&2
+  fi
+  curl "${curl_args[@]}" -o "$destination" "$url"
   gzip -t "$destination"
 }
 
