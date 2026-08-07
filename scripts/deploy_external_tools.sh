@@ -221,7 +221,13 @@ arriba_installed() {
 
 prime_installed() {
   local prime_bin="${NEOAG_PRIME_BIN:-${NEOAG_TOOLS_ROOT:-${ROOT}}/tools/prime/PRIME}"
-  [[ -x "${prime_bin}" ]]
+  local tools_root="${NEOAG_TOOLS_ROOT:-${ROOT}}"
+  [[ -x "${prime_bin}" ]] &&
+    [[ -x "${ROOT}/bin/MixMHCpred" ]] &&
+    [[ -x "${ROOT}/bin/bigmhc_predict" ]] &&
+    [[ -x "${tools_root}/tools/mixMHCpred_install/MixMHCpred" ]] &&
+    [[ -f "${tools_root}/tools/bigmhc/src/predict.py" ]] &&
+    [[ -d "${tools_root}/tools/bigmhc/models" ]]
 }
 
 optitype_installed() {

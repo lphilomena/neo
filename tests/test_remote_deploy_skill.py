@@ -102,6 +102,10 @@ def test_production_asset_manifest_keeps_pinned_reference_assets() -> None:
     assert all("/mnt/zjl-bgi-zzb" not in row["source_path"] for row in rows)
     assert {"netmhcpan_container_image", "netmhcstabpan_container_image"} <= by_name.keys()
     assert by_name["spechla_db"]["marker"] == "HLA/hla.ref.extend.fa"
+    assert {"prime_source", "mixmhcpred_source", "bigmhc_source"} <= by_name.keys()
+    assert by_name["prime_source"]["marker"] == "lib/run_PRIME.pl"
+    assert by_name["mixmhcpred_source"]["marker"] == "MixMHCpred"
+    assert by_name["bigmhc_source"]["marker"] == "src/predict.py"
 
 
 def test_shared_asset_mode_creates_links_without_replacing_targets(tmp_path: Path) -> None:

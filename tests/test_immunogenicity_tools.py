@@ -68,3 +68,22 @@ def test_prime_install_and_repair_use_real_runtime_temp():
     assert 'test -s /tmp/prime_fix_smoke.tsv' in repair
     assert 'PRIME runtime temp missing or not writable' in verify
     assert 'check prime_temp test -w "${PRIME_HOME:-$TOOLS_ROOT/tools/prime}/temp"' in deploy_verify
+
+
+def test_immunogenicity_installer_supports_assets_and_old_curl():
+    installer = (ROOT / "scripts/install_immunogenicity_tools.sh").read_text(encoding="utf-8")
+    assert "curl_supports_retry_all_errors" in installer
+    assert "curl_args+=(--retry-all-errors)" in installer
+    assert "wget --tries=5" in installer
+    assert "verify_pinned_source" in installer
+    assert "NEOAG_ALLOW_UNPINNED_IMMUNO_ASSETS" in installer
+    assert "https://raw.githubusercontent.com/GfellerLab/PRIME/${PRIME_REF}/PRIME" in installer
+
+
+def test_deployer_requires_the_complete_immunogenicity_toolchain():
+    deployer = (ROOT / "scripts/deploy_external_tools.sh").read_text(encoding="utf-8")
+    assert '${ROOT}/bin/MixMHCpred' in deployer
+    assert '${ROOT}/bin/bigmhc_predict' in deployer
+    assert 'tools/mixMHCpred_install/MixMHCpred' in deployer
+    assert 'tools/bigmhc/src/predict.py' in deployer
+    assert 'tools/bigmhc/models' in deployer

@@ -27,6 +27,54 @@ BIGMHC_REF="${NEOAG_BIGMHC_REF:-c7e37a249317704bf96a1e3881a7ece3c3c977a6}"
 
 mkdir -p "${TOOLS}" "${BIN_DIR}"
 
+curl_supports_retry_all_errors() {
+  command -v curl >/dev/null 2>&1 || return 1
+  { curl --help all 2>/dev/null || curl --help 2>/dev/null; } | grep -q -- '--retry-all-errors'
+}
+
+download_file() {
+  local url="$1" destination="$2"
+  local -a curl_args=(-fL --retry 5 --connect-timeout 30)
+  rm -f "$destination"
+  if command -v curl >/dev/null 2>&1; then
+    if curl_supports_retry_all_errors; then
+      curl_args+=(--retry-all-errors)
+    else
+      echo "INFO: curl lacks --retry-all-errors; using portable retry options." >&2
+    fi
+    curl "${curl_args[@]}" -o "$destination" "$url" && return 0
+    rm -f "$destination"
+  fi
+  if command -v wget >/dev/null 2>&1; then
+    wget --tries=5 --timeout=30 -O "$destination" "$url" && return 0
+    rm -f "$destination"
+  fi
+  return 1
+}
+
+verify_pinned_source() {
+  local target="$1" expected_ref="$2" marker="$3" label="$4"
+  local observed=""
+  [[ -e "${target}/${marker}" ]] || {
+    echo "ERROR: ${label} asset is incomplete; missing ${target}/${marker}" >&2
+    return 1
+  }
+  if [[ -d "${target}/.git" ]] && command -v git >/dev/null 2>&1; then
+    observed="$(git -C "$target" rev-parse HEAD 2>/dev/null || true)"
+  elif [[ -s "${target}/.neoag_source_revision" ]]; then
+    observed="$(head -1 "${target}/.neoag_source_revision" | tr -d '[:space:]')"
+  fi
+  if [[ -n "$observed" && "$observed" != "$expected_ref" ]]; then
+    echo "ERROR: ${label} asset revision mismatch: expected ${expected_ref}, observed ${observed}" >&2
+    echo "Set NEOAG_ALLOW_UNPINNED_IMMUNO_ASSETS=1 only for an explicitly reviewed local build." >&2
+    [[ "${NEOAG_ALLOW_UNPINNED_IMMUNO_ASSETS:-0}" == "1" ]] || return 1
+  elif [[ -z "$observed" ]]; then
+    echo "WARN: ${label} has no .git or .neoag_source_revision; marker verified but revision is unconfirmed." >&2
+  else
+    echo "Verified ${label} pinned revision: ${observed}"
+  fi
+}
+
 install_github_snapshot() {
   local repo="$1" ref="$2" target="$3"
   local archive_url="https://github.com/${repo}/archive/${ref}.tar.gz"
@@ -35,7 +83,7 @@ install_github_snapshot() {
   archive="$tmp/source.tar.gz"
   for url in "${GITHUB_PROXY_PREFIX}${archive_url}" "$archive_url"; do
     echo "Downloading pinned ${repo}@${ref} from ${url}"
-    curl -fL --retry 5 --retry-all-errors --connect-timeout 30 -o "$archive" "$url" && break
+    download_file "$url" "$archive" && break
     rm -f "$archive"
   done
   [[ -s "$archive" ]] || { rm -rf "$tmp"; echo "ERROR: failed to download ${repo}@${ref}" >&2; return 1; }
@@ -44,6 +92,7 @@ install_github_snapshot() {
   [[ -n "$extracted" ]] || { rm -rf "$tmp"; echo "ERROR: invalid snapshot for ${repo}" >&2; return 1; }
   mkdir -p "$target"
   cp -a "$extracted/." "$target/"
+  printf '%s\n' "$ref" > "${target}/.neoag_source_revision"
   rm -rf "$tmp"
 }
 
@@ -62,8 +111,12 @@ if [[ ! -f "${PRIME_DIR}/lib/run_PRIME.pl" ]]; then
   install_github_snapshot GfellerLab/PRIME "$PRIME_REF" "$PRIME_DIR"
 fi
 if [[ ! -x "${PRIME_DIR}/PRIME" ]]; then
-  curl -fsSL https://raw.githubusercontent.com/GfellerLab/PRIME/master/PRIME -o "${PRIME_DIR}/PRIME"
+  download_file "https://raw.githubusercontent.com/GfellerLab/PRIME/${PRIME_REF}/PRIME" "${PRIME_DIR}/PRIME" || {
+    echo "ERROR: failed to download the pinned PRIME wrapper." >&2
+    exit 1
+  }
 fi
+verify_pinned_source "$PRIME_DIR" "$PRIME_REF" "lib/run_PRIME.pl" "PRIME"
 chmod +x "${PRIME_DIR}/PRIME"
 PRIME_TEMP_DIR="${PRIME_DIR}/temp"
 mkdir -p "${PRIME_TEMP_DIR}"
@@ -83,6 +136,7 @@ echo "[2/4] MixMHCpred"
 if [[ ! -x "${MIX_DIR}/MixMHCpred" ]]; then
   install_github_snapshot GfellerLab/MixMHCpred "$MIX_REF" "$MIX_DIR"
 fi
+verify_pinned_source "$MIX_DIR" "$MIX_REF" "MixMHCpred" "MixMHCpred"
 chmod +x "${MIX_DIR}/MixMHCpred" 2>/dev/null || true
 
 # MixMHCpred invokes `python3` internally. Keep it on the same Python runtime
@@ -101,6 +155,11 @@ if [[ ! -f "${BIGMHC_DIR}/src/predict.py" ]]; then
   # Merge source into an existing asset directory so pre-staged model weights survive.
   install_github_snapshot KarchinLab/bigmhc "$BIGMHC_REF" "$BIGMHC_DIR"
 fi
+verify_pinned_source "$BIGMHC_DIR" "$BIGMHC_REF" "src/predict.py" "BigMHC"
+[[ -d "${BIGMHC_DIR}/models" ]] || {
+  echo "ERROR: BigMHC asset is missing model weights: ${BIGMHC_DIR}/models" >&2
+  exit 1
+}
 
 cat > "${BIN_DIR}/bigmhc_predict" <<EOF
 #!/usr/bin/env bash

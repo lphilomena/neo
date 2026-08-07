@@ -49,6 +49,15 @@ description: Public macro Skill1 for Open-Neo installation, new-machine migratio
 9. Write timeout-protected deployment checkpoints, configuration fixes, and an installation status delta for safe resume/review.
 10. Write `deployment_report.md`, machine-readable status files, and an audit log.
 
+For PRIME, MixMHCpred and BigMHC, the approved installer treats the pinned
+source tree and model files as deployment assets. It first synchronizes
+`data/predictors/{prime,mixMHCpred_install,bigmhc}` from the selected asset
+source and verifies tool-specific markers plus the pinned Git revision when
+revision metadata is present. These directories remain outside GitHub. A
+network snapshot download is only a fallback when the asset is unavailable;
+the downloader detects old curl builds that lack `--retry-all-errors` and can
+fall back to `wget`.
+
 For asset synchronization, set `--asset-source-root /mounted/assets` for a
 local/mounted asset tree or `--asset-source-host user@host` for remote source
 paths. Approved execution records source reachability and stops before installation when a required asset source cannot be read. Optional assets are reported as MISSING_OPTIONAL and do not masquerade as installed references.
@@ -98,6 +107,7 @@ separate interactive or enterprise-managed step.
 - Salmon index and tx2gene.tsv must come from the same GENCODE release. The portable v49 layout is data/rna/gencode_v49/{salmon_index,tx2gene.tsv}; salmon_index/versionInfo.json is mandatory and the local manifest uses the canonical key salmon_tx2gene.
 - Install BAM-matcher with `scripts/install_bam_matcher.sh`. It pins the upstream revision and retains its isolated Python 2 environment; do not merge these legacy dependencies into the main project environment.
 - Never use BAM-matcher's bundled GRCh37 loci with GRCh38 data. Build the portable panel with `scripts/build_bam_matcher_grch38_loci.sh`; the script requires exact dbSNP-ID mapping, biallelic SNVs, GRCh38 FASTA REF agreement, and emits a metadata manifest plus checksums.
+- PRIME, MixMHCpred and BigMHC use pinned complete source assets, not model-only or wrapper-only copies. Required markers are `lib/run_PRIME.pl`, `MixMHCpred`, and `src/predict.py`; BigMHC must also contain `models/`. Resume reuses these synchronized directories instead of downloading them again.
 
 ## Outputs
 
