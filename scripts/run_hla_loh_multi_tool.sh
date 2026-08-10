@@ -102,7 +102,14 @@ wants() { [[ ",${TOOLS}," == *",$1,"* ]]; }
 mkdir -p "$OUTDIR"
 LOHHLA_TSV=""; SPECHLA_TSV=""
 
-if wants lohhla; then
+if [[ "${ALLOW_SINGLE_HLA_LOH_TOOL:-0}" != "1" ]]; then
+  wants lohhla && wants spechla || {
+    echo "ERROR: HLA LOH requires both LOHHLA and SpecHLA before downstream stages" >&2
+    exit 6
+  }
+fi
+
+run_lohhla() {
   LOHHLA_DIR="$OUTDIR/lohhla"
   mkdir -p "$LOHHLA_DIR"
   COPYNUM="$LOHHLA_DIR/lohhla_copy_number_input.tsv"
@@ -118,9 +125,9 @@ if wants lohhla; then
   [[ -n "$prediction" ]] || { echo "ERROR: LOHHLA prediction output missing" >&2; exit 5; }
   LOHHLA_TSV="$LOHHLA_DIR/hla_loh.tsv"
   "$ROOT/bin/neoag" convert-lohhla -i "$prediction" -o "$LOHHLA_TSV"
-fi
+}
 
-if wants spechla; then
+run_spechla() {
   TYPING_DIR="$OUTDIR/spechla_typing"
   bash "$ROOT/scripts/run_spechla_sample.sh" --bam "$TUMOR_BAM" --sample-id "$TUMOR_ID" \
     --threads "$THREADS" --outdir "$TYPING_DIR"
@@ -128,15 +135,81 @@ if wants spechla; then
   [[ -n "$typing_result" ]] || { echo "ERROR: tumor SpecHLA typing output missing" >&2; exit 5; }
   spechla_args=(--sample-id "$SAMPLE_ID" --typing-dir "$(dirname "$typing_result")" \
     --purity "$PURITY" --ploidy "$PLOIDY" --outdir "$OUTDIR/spechla" --force)
-  [[ -n "$LOHHLA_TSV" ]] && spechla_args+=(--lohhla-hla-loh "$LOHHLA_TSV")
   bash "$ROOT/scripts/run_spechla_loh.sh" "${spechla_args[@]}"
   SPECHLA_TSV="$OUTDIR/spechla/hla_loh.tsv"
+}
+
+LOG_DIR="$OUTDIR/logs"
+mkdir -p "$LOG_DIR"
+LOHHLA_PID=""; SPECHLA_PID=""
+LOHHLA_STATUS=0; SPECHLA_STATUS=0
+
+if wants lohhla; then
+  (
+    run_lohhla
+  ) > "$LOG_DIR/lohhla.log" 2>&1 & LOHHLA_PID=$!
+  echo "$LOHHLA_PID" > "$OUTDIR/lohhla.pid"
+fi
+
+if wants spechla; then
+  (
+    run_spechla
+  ) > "$LOG_DIR/spechla.log" 2>&1 & SPECHLA_PID=$!
+  echo "$SPECHLA_PID" > "$OUTDIR/spechla.pid"
+fi
+
+if [[ -n "$LOHHLA_PID" ]]; then
+  wait "$LOHHLA_PID" || LOHHLA_STATUS=$?
+  LOHHLA_TSV="$OUTDIR/lohhla/hla_loh.tsv"
+fi
+if [[ -n "$SPECHLA_PID" ]]; then
+  wait "$SPECHLA_PID" || SPECHLA_STATUS=$?
+  SPECHLA_TSV="$OUTDIR/spechla/hla_loh.tsv"
+fi
+
+if [[ "$LOHHLA_STATUS" -ne 0 || "$SPECHLA_STATUS" -ne 0 ]]; then
+  echo "ERROR: HLA LOH tool failure: LOHHLA=$LOHHLA_STATUS SpecHLA=$SPECHLA_STATUS" >&2
+  exit 6
+fi
+
+if [[ "${ALLOW_SINGLE_HLA_LOH_TOOL:-0}" != "1" ]]; then
+  [[ -s "$LOHHLA_TSV" ]] || {
+    echo "ERROR: LOHHLA output is required before building HLA LOH consensus" >&2
+    exit 6
+  }
+  [[ -s "$SPECHLA_TSV" ]] || {
+    echo "ERROR: SpecHLA LOH output is required before building HLA LOH consensus" >&2
+    exit 6
+  }
 fi
 
 consensus_args=(--sample-id "$SAMPLE_ID" --outdir "$OUTDIR")
 [[ -n "$LOHHLA_TSV" ]] && consensus_args+=(--lohhla "$LOHHLA_TSV")
 [[ -n "$SPECHLA_TSV" ]] && consensus_args+=(--spechla "$SPECHLA_TSV")
 "${PYTHON:-python3}" "$ROOT/scripts/build_hla_loh_consensus.py" "${consensus_args[@]}"
+
+if [[ "${ALLOW_SINGLE_HLA_LOH_TOOL:-0}" != "1" ]]; then
+  [[ -s "$OUTDIR/hla_loh_consensus.tsv" ]] || {
+    echo "ERROR: HLA LOH consensus was not created" >&2
+    exit 6
+  }
+  awk -F '\t' '
+    NR == 1 {
+      for (i=1; i<=NF; i++) h[$i]=i
+      next
+    }
+    NR > 1 {
+      rows++
+      if ($(h["source_tools"]) == "lohhla;spechla") both++
+    }
+    END {
+      exit !(rows > 0 && both > 0)
+    }
+  ' "$OUTDIR/hla_loh_consensus.tsv" || {
+    echo "ERROR: HLA LOH consensus requires evidence from both LOHHLA and SpecHLA" >&2
+    exit 6
+  }
+fi
 
 {
   printf 'key\tvalue\n'
