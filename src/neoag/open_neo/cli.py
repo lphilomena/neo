@@ -83,6 +83,10 @@ def build_parser() -> argparse.ArgumentParser:
     install.add_argument("--tools-root")
     install.add_argument("--reference-root")
     install.add_argument("--licensed-root")
+    install.add_argument(
+        "--gateway-url",
+        help="Optional NeoAg Gateway URL to validate before full execute runs",
+    )
     install.add_argument("--asset-source-host")
     install.add_argument("--asset-source-root")
     install.add_argument("--asset-manifest")
@@ -91,7 +95,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--asset-ssh-key",
         help="SSH private key used by rsync for remote asset synchronization",
     )
-    install.add_argument("--install-timeout", type=int, default=7200)
+    install.add_argument(
+        "--install-timeout", type=int, default=0,
+        help="Installer timeout in seconds; 0 disables the timeout (default)",
+    )
     install.add_argument("--allow-download", action="store_true")
     install.add_argument(
         "--install-claude-code", action="store_true",
@@ -102,8 +109,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="Claude Code release channel or exact version (default: stable)",
     )
     install.add_argument(
-        "--installer-profile", choices=["minimal", "standard", "all-open", "all"], default=None,
-        help="Installer scope; defaults to minimal for review/core and standard for prediction/full",
+        "--installer-profile", choices=["minimal", "standard", "all-open"], default=None,
+        help="Installer scope; defaults to minimal for review/core and all-open for prediction/full",
     )
     install.add_argument("--no-sync-assets", action="store_true")
 

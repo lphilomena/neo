@@ -28,6 +28,10 @@
     "tools_root": {"type": "string"},
     "reference_root": {"type": "string"},
     "licensed_root": {"type": "string"},
+    "gateway_url": {
+      "type": "string",
+      "description": "Optional NeoAg Gateway URL; install-check validates /health for full-tier execution readiness"
+    },
     "asset_source_host": {
       "type": "string",
       "default": "na@10.200.50.134",
@@ -40,7 +44,11 @@
     },
     "asset_manifest": {"type": "string"},
     "deployment_reference_manifest": {"type": "string"},
-    "install_timeout": {"type": "integer", "minimum": 60},
+    "install_timeout": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Installer timeout in seconds; 0 disables the timeout"
+    },
     "allow_download": {"type": "boolean"},
     "install_claude_code": {
       "type": "boolean",
@@ -50,7 +58,7 @@
       "type": "string",
       "description": "Claude Code release channel (stable/latest) or exact X.Y.Z version"
     },
-    "installer_profile": {"enum": ["minimal", "standard", "all-open", "all"]},
+    "installer_profile": {"enum": ["minimal", "standard", "all-open"]},
     "no_sync_assets": {"type": "boolean"}
   },
   "anyOf": [{"required": ["project_root"]}, {"required": ["release_tarball"]}]
