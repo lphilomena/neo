@@ -123,6 +123,9 @@ separate interactive or enterprise-managed step.
 - `claude_code_status.tsv` and `claude_code_status.json`, including requested
   state, readiness, version, binary path, and the nested install report path
 - `tier_requirements.tsv`, `deployment_delta.tsv`
+- `production_run_readiness.tsv`, covering full-run smoke compatibility for
+  Sequenza, PURPLE/HMFTOOLS, FACETS, STAR/EasyFuse, BAM-matcher, HLA-LA, and
+  optional NeoAg Gateway health
 - `deployment_checkpoint.json` for mutating modes
 - `deployment_report.md`
 - `manifests/tools_manifest.local.yaml`

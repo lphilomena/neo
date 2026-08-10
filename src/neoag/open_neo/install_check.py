@@ -10,6 +10,8 @@ import shutil
 import subprocess
 import sys
 import tarfile
+import urllib.error
+import urllib.request
 from pathlib import Path
 from typing import Any
 
@@ -577,6 +579,255 @@ def _assess_tier(tier: str, doctor_rows: list[CheckRow], reference_manifest: str
     return ("BLOCKED" if core_missing else "PARTIAL" if missing else "READY"), rows
 
 
+def _short_probe_output(text: str, limit: int = 400) -> str:
+    compact = " ".join((text or "").replace("\t", " ").split())
+    return compact[:limit]
+
+
+def _manifest_tool_executable(name: str, tools_manifest: str | Path | None) -> str:
+    if not tools_manifest:
+        return ""
+    try:
+        data = load_limited_yaml(tools_manifest)
+    except Exception:
+        return ""
+    tools = data.get("tools", {}) if isinstance(data, dict) else {}
+    item = tools.get(name) if isinstance(tools, dict) else None
+    if isinstance(item, dict):
+        executable = item.get("executable") or item.get("path")
+        return str(executable or "")
+    if isinstance(item, str):
+        return item
+    return ""
+
+
+def _resolve_executable(command: str) -> str:
+    if not command:
+        return ""
+    expanded = os.path.expandvars(os.path.expanduser(command))
+    if "/" in expanded:
+        return expanded if _safe_path_is_file(Path(expanded)) else ""
+    return shutil.which(expanded) or ""
+
+
+def _candidate_conda_executables(executable: str, args: dict[str, Any], env_names: list[str]) -> list[Path]:
+    bases = []
+    for value in (args.get("conda_base"), os.environ.get("NEOAG_CONDA_BASE")):
+        if value:
+            bases.append(Path(str(value)).expanduser())
+    neoag_python = os.environ.get("NEOAG_PYTHON")
+    if neoag_python:
+        py = Path(neoag_python).expanduser()
+        if py.name == "python" and py.parent.name == "bin":
+            bases.append(py.parent.parent.parent.parent)
+    candidates = []
+    for base in bases:
+        for env_name in env_names:
+            candidates.append(base / "envs" / env_name / "bin" / executable)
+        candidates.append(base / "bin" / executable)
+    return candidates
+
+
+def _resolve_tool_executable(name: str, default: str, args: dict[str, Any], *, env_names: list[str] | None = None) -> str:
+    command = _manifest_tool_executable(name, args.get("tools_manifest")) or default
+    resolved = _resolve_executable(command)
+    if resolved:
+        return resolved
+    executable = Path(command).name if command else default
+    for path in _candidate_conda_executables(executable, args, env_names or ["neoag-tools"]):
+        if _safe_path_is_file(path):
+            return str(path)
+    return ""
+
+
+def _probe_command(command: list[str], *, timeout: int = 20, ok_codes: set[int] | None = None) -> tuple[str, str]:
+    ok_codes = ok_codes or {0}
+    try:
+        proc = subprocess.run(
+            command, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            check=False, timeout=timeout,
+        )
+    except FileNotFoundError:
+        return "MISSING", f"not found: {command[0]}"
+    except subprocess.TimeoutExpired:
+        return "WARN", f"timed out after {timeout}s: {shlex.join(command)}"
+    output = proc.stdout or ""
+    if "conflicting subparser" in output or "SyntaxError" in output or "Traceback" in output:
+        return "BLOCKED", _short_probe_output(output)
+    if proc.returncode in ok_codes:
+        return "OK", _short_probe_output(output) or f"exit={proc.returncode}"
+    return "WARN", f"exit={proc.returncode}; {_short_probe_output(output)}"
+
+
+def _read_text_if_small(path: Path, *, max_bytes: int = 2_000_000) -> str:
+    try:
+        if path.is_file() and path.stat().st_size <= max_bytes:
+            return path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+    return ""
+
+
+def _production_row(area: str, check: str, status: str, severity: str, evidence: str, recommendation: str = "") -> dict[str, str]:
+    return {
+        "area": area,
+        "check": check,
+        "status": status,
+        "severity": severity,
+        "evidence": evidence,
+        "recommendation": recommendation,
+    }
+
+
+def _reference_paths(reference_manifest: str | Path | None) -> dict[str, str]:
+    if not reference_manifest:
+        return {}
+    try:
+        data = load_limited_yaml(reference_manifest)
+    except Exception:
+        return {}
+    return _flatten_manifest_paths(data)
+
+
+def _production_run_readiness(args: dict[str, Any], project_root: Path, tier: str) -> tuple[str, list[dict[str, str]]]:
+    """Run install-time checks that catch common full-pipeline execution failures."""
+    rows: list[dict[str, str]] = []
+    if tier != "full":
+        rows.append(_production_row("production", "full_pipeline_readiness", "SKIPPED", "INFO", f"deployment_tier={tier}"))
+        return "SKIPPED", rows
+
+    refs = _reference_paths(args.get("reference_manifest"))
+
+    sequenza_cmd = _resolve_tool_executable("sequenza", "sequenza-utils", args, env_names=[str(os.environ.get("SEQUENZA_ENV") or "neoag-tools"), "neoag-tools", "neoag-sequenza"])
+    if sequenza_cmd:
+        for subcommand in ("bam2seqz", "seqz_binning"):
+            status, evidence = _probe_command([sequenza_cmd, subcommand, "--help"], ok_codes={0, 1, 2})
+            rows.append(_production_row(
+                "purity_cnv", f"sequenza_{subcommand}_entrypoint", status,
+                "BLOCKER" if status == "BLOCKED" else "WARN" if status == "WARN" else "INFO",
+                evidence,
+                "Repair sequenza.commands duplicate subparser handling or install a compatible sequenza-utils build.",
+            ))
+    else:
+        rows.append(_production_row("purity_cnv", "sequenza_utils_available", "WARN", "WARN", "sequenza-utils not resolved"))
+
+    purple_script = project_root / "scripts/run_purple_sample.sh"
+    purple_text = _read_text_if_small(purple_script)
+    bad_hmf_args = any(token in purple_text for token in (
+        '"$HMF_ENV/bin/cobalt" -Xms',
+        '"$HMF_ENV/bin/purple" -Xms',
+        "bin/cobalt -Xms",
+        "bin/purple -Xms",
+    ))
+    rows.append(_production_row(
+        "purity_cnv", "purple_hmftools_wrapper_arguments",
+        "BLOCKED" if bad_hmf_args else "OK",
+        "BLOCKER" if bad_hmf_args else "INFO",
+        str(purple_script) if purple_text else "script not found",
+        "Remove JVM memory flags from cobalt/purple application arguments; keep memory flags inside the Java wrapper.",
+    ))
+
+    purple_root = _declared_reference("purple_reference", refs)
+    if purple_root:
+        root = Path(os.path.expandvars(os.path.expanduser(purple_root)))
+        required = [
+            root / "cobalt/GC_profile.1000bp.38.cnp",
+            root / "ensembl_data_cache_38",
+        ]
+        missing = [str(path) for path in required if not _safe_path_exists(path)]
+        rows.append(_production_row(
+            "purity_cnv", "purple_reference_payload",
+            "OK" if not missing else "BLOCKED",
+            "INFO" if not missing else "BLOCKER",
+            "ok" if not missing else ";".join(missing),
+            "Install the HMF PURPLE reference bundle including Cobalt GC profile and Ensembl cache.",
+        ))
+
+    for ref_name in ("facets_snp_vcf", "sequenza_gc_wiggle"):
+        status, evidence = _reference_status(ref_name, refs)
+        rows.append(_production_row(
+            "purity_cnv", f"{ref_name}_readable",
+            "OK" if status == "OK" else "BLOCKED",
+            "INFO" if status == "OK" else "BLOCKER",
+            evidence,
+            f"Configure {ref_name} in the reference manifest.",
+        ))
+
+    star_script = project_root / "scripts/run_star_rna_fastq.sh"
+    star_text = _read_text_if_small(star_script)
+    has_legacy_chim = "SeparateSAMold" in star_text
+    rows.append(_production_row(
+        "rna_fusion", "star_chimouttype_compatible",
+        "BLOCKED" if has_legacy_chim else "OK",
+        "BLOCKER" if has_legacy_chim else "INFO",
+        str(star_script) if star_text else "script not found",
+        "Remove SeparateSAMold for STAR builds that use chimMultimapNmax > 0.",
+    ))
+
+    easyfuse_home = os.environ.get("NEOAG_EASYFUSE_HOME") or os.environ.get("EASYFUSE_HOME")
+    easyfuse_exec = _manifest_tool_executable("easyfuse", args.get("tools_manifest"))
+    easyfuse_candidates = [Path(easyfuse_home)] if easyfuse_home else []
+    if easyfuse_exec and "/" in easyfuse_exec:
+        easyfuse_candidates.append(Path(os.path.expandvars(os.path.expanduser(easyfuse_exec))).parent)
+    easyfuse_candidates += [project_root / "tools/EasyFuse", project_root.parent / "open-neo-deploy/env_tool/tools/EasyFuse"]
+    easyfuse_root = next((path for path in easyfuse_candidates if _safe_path_exists(path / "main.nf")), None)
+    rows.append(_production_row(
+        "rna_fusion", "easyfuse_v2_nextflow_layout",
+        "OK" if easyfuse_root else "WARN",
+        "INFO" if easyfuse_root else "WARN",
+        str(easyfuse_root or "main.nf not found"),
+        "Install EasyFuse v2 layout or patch the runner to call the available Nextflow entrypoint.",
+    ))
+
+    bam_matcher_script = project_root / "scripts/run_bam_matcher_pair.sh"
+    bam_text = _read_text_if_small(bam_matcher_script)
+    python2_risk = "python2" in bam_text or ("python -" in bam_text and "NEOAG_PYTHON" not in bam_text)
+    rows.append(_production_row(
+        "sample_identity", "bam_matcher_python3_parser",
+        "BLOCKED" if python2_risk else "OK",
+        "BLOCKER" if python2_risk else "INFO",
+        str(bam_matcher_script) if bam_text else "script not found",
+        "Use NEOAG_PYTHON or python3 for bam-matcher result parsing.",
+    ))
+
+    hla_la_cmd = _resolve_tool_executable("hla_la", "HLA-LA.pl", args)
+    rows.append(_production_row(
+        "hla_typing", "hla_la_real_executable",
+        "OK" if hla_la_cmd else "WARN",
+        "INFO" if hla_la_cmd else "WARN",
+        hla_la_cmd or "HLA-LA.pl not resolved",
+        "Install HLA-LA and point the tools manifest to the real HLA-LA.pl executable.",
+    ))
+
+    gateway_url = str(args.get("gateway_url") or args.get("gateway-url") or "").rstrip("/")
+    if gateway_url:
+        try:
+            with urllib.request.urlopen(f"{gateway_url}/health", timeout=5) as response:
+                body = response.read(2048).decode("utf-8", errors="replace")
+            looks_like_gateway = "<html" not in body.lower() and any(token in body.lower() for token in ("ok", "healthy", "status"))
+            rows.append(_production_row(
+                "controlled_execution", "neoag_gateway_health",
+                "OK" if looks_like_gateway else "BLOCKED",
+                "INFO" if looks_like_gateway else "BLOCKER",
+                _short_probe_output(body),
+                "Start neoag.controlled_execution.gateway and pass its URL, not the web UI URL.",
+            ))
+        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            rows.append(_production_row(
+                "controlled_execution", "neoag_gateway_health", "BLOCKED", "BLOCKER",
+                str(exc), "Start NeoAg Gateway locally and use --gateway-url http://127.0.0.1:8000.",
+            ))
+    else:
+        rows.append(_production_row(
+            "controlled_execution", "neoag_gateway_health", "SKIPPED", "INFO",
+            "gateway_url not provided", "For execute mode, pass --gateway-url to a running NeoAg Gateway.",
+        ))
+
+    blockers = [row for row in rows if row["severity"] == "BLOCKER" and row["status"] == "BLOCKED"]
+    warnings = [row for row in rows if row["severity"] == "WARN" and row["status"] in {"WARN", "BLOCKED"}]
+    return ("BLOCKED" if blockers else "WARN" if warnings else "READY"), rows
+
+
 def _deployment_command(args: dict[str, Any], project_root: Path, layout: RunLayout, *, execute: bool) -> list[str]:
     deploy_root = Path(str(args.get("deploy_root") or "/opt/neoag"))
     script = project_root / ".agents/skills/neoag-remote-deploy/scripts/16_install_new_machine.sh"
@@ -953,6 +1204,16 @@ def run_install_check(args: dict[str, Any]) -> dict[str, Any]:
     result.outputs["tier_requirements"] = str(layout.root / "tier_requirements.tsv")
     missing = [row for row in requirement_rows if row["required"] == "true" and row["status"] != "OK"]
 
+    readiness_status, readiness_rows = _production_run_readiness(args, project_root, tier)
+    write_tsv(layout.root / "production_run_readiness.tsv", readiness_rows)
+    result.outputs["production_run_readiness"] = str(layout.root / "production_run_readiness.tsv")
+    result.steps.append(MacroStep(
+        "06b", "production-run-readiness", readiness_status,
+        outputs={"production_run_readiness": str(layout.root / "production_run_readiness.tsv")},
+    ))
+    readiness_blockers = [row for row in readiness_rows if row["severity"] == "BLOCKER" and row["status"] == "BLOCKED"]
+    readiness_warnings = [row for row in readiness_rows if row["severity"] == "WARN" and row["status"] in {"WARN", "BLOCKED"}]
+
     final_status = tier_status
     if deployment_failure:
         final_status = "FAILED"
@@ -963,11 +1224,17 @@ def run_install_check(args: dict[str, Any]) -> dict[str, Any]:
         final_status = "BLOCKED"
     elif doctor.status in {"PARTIAL", "BLOCKED"} and tier_status == "READY":
         result.warnings.append(f"doctor_status={doctor.status}; optional tools or references outside tier are incomplete")
+    if readiness_blockers and final_status in {"READY", "PARTIAL"}:
+        final_status = "BLOCKED"
     result.warnings.extend(f"tier_missing:{row['kind']}:{row['requirement']}" for row in missing)
+    result.warnings.extend(f"readiness_warn:{row['area']}:{row['check']}" for row in readiness_warnings)
+    result.blocking_issues.extend(f"READINESS_BLOCKED:{row['area']}:{row['check']}" for row in readiness_blockers)
 
     report_rows = [{
         "deployment_tier": tier, "tier_status": final_status,
+        "production_readiness_status": readiness_status,
         "doctor_status": doctor.status, "missing_required_count": len(missing),
+        "readiness_blocker_count": len(readiness_blockers),
         "project_root": str(project_root), "release_sha256": archive_hash,
         "claude_code_requested": claude_status["requested"],
         "claude_code_status": claude_status["status"],
@@ -981,9 +1248,11 @@ def run_install_check(args: dict[str, Any]) -> dict[str, Any]:
         f"- Deployment tier: **{tier}**",
         f"- Tier status: **{final_status}**",
         f"- Doctor status: **{doctor.status}**",
+        f"- Production readiness: **{readiness_status}**",
         f"- Project root: `{project_root}`",
         f"- Release SHA256: `{archive_hash or 'source-checkout'}`", "",
         "## Tier requirements", "", markdown_table(requirement_rows, max_rows=120), "",
+        "## Production run readiness", "", markdown_table(readiness_rows, max_rows=120), "",
         "## Environment inventory", "", markdown_table(inventory, max_rows=30), "",
         "## Installation delta", "", f"See `{delta_path}`.", "",
         "## Claude Code", "",

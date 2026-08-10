@@ -83,6 +83,10 @@ def build_parser() -> argparse.ArgumentParser:
     install.add_argument("--tools-root")
     install.add_argument("--reference-root")
     install.add_argument("--licensed-root")
+    install.add_argument(
+        "--gateway-url",
+        help="Optional NeoAg Gateway URL to validate before full execute runs",
+    )
     install.add_argument("--asset-source-host")
     install.add_argument("--asset-source-root")
     install.add_argument("--asset-manifest")

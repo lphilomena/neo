@@ -28,6 +28,10 @@
     "tools_root": {"type": "string"},
     "reference_root": {"type": "string"},
     "licensed_root": {"type": "string"},
+    "gateway_url": {
+      "type": "string",
+      "description": "Optional NeoAg Gateway URL; install-check validates /health for full-tier execution readiness"
+    },
     "asset_source_host": {
       "type": "string",
       "default": "na@10.200.50.134",
