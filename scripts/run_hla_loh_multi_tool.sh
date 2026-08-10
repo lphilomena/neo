@@ -48,6 +48,56 @@ awk -v p="$PURITY" -v q="$PLOIDY" 'BEGIN { exit !(p > 0 && p <= 1 && q > 0) }' |
   exit 4
 }
 
+require_multi_tool_purity_consensus() {
+  local purity_dir
+  local consensus_tsv
+  local tool_summary_tsv
+
+  purity_dir="$(cd "$(dirname "$PURITY_TSV")" && pwd)"
+  consensus_tsv="$purity_dir/purity_cnv_consensus.tsv"
+  tool_summary_tsv="$purity_dir/purity_cnv_tool_summary.tsv"
+
+  if [[ "${ALLOW_SINGLE_TOOL_PURITY_FOR_HLA_LOH:-0}" == "1" ]]; then
+    return 0
+  fi
+
+  [[ -s "$consensus_tsv" && -s "$tool_summary_tsv" ]] || {
+    echo "ERROR: HLA LOH requires purity_cnv_consensus.tsv and purity_cnv_tool_summary.tsv next to the purity TSV" >&2
+    return 1
+  }
+
+  awk -F '\t' '
+    NR == 1 {
+      for (i=1; i<=NF; i++) h[$i]=i
+      next
+    }
+    NR == 2 {
+      status = $(h["consensus_status"])
+      exit !(status != "" && status != "SINGLE_TOOL")
+    }
+  ' "$consensus_tsv" || {
+    echo "ERROR: HLA LOH requires non-SINGLE_TOOL purity consensus" >&2
+    return 1
+  }
+
+  awk -F '\t' '
+    NR == 1 {
+      for (i=1; i<=NF; i++) h[$i]=i
+      next
+    }
+    NR > 1 {
+      if ($(h["status"]) == "FOUND") found++
+    }
+    END {
+      exit !(found >= 2)
+    }
+  ' "$tool_summary_tsv" || {
+    echo "ERROR: HLA LOH requires at least 2 purity tools with FOUND results" >&2
+    return 1
+  }
+}
+require_multi_tool_purity_consensus || exit 4
+
 wants() { [[ ",${TOOLS}," == *",$1,"* ]]; }
 mkdir -p "$OUTDIR"
 LOHHLA_TSV=""; SPECHLA_TSV=""
