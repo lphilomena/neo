@@ -58,7 +58,7 @@
       "type": "string",
       "description": "Claude Code release channel (stable/latest) or exact X.Y.Z version"
     },
-    "installer_profile": {"enum": ["minimal", "standard", "all-open", "all"]},
+    "installer_profile": {"enum": ["minimal", "standard", "all-open"]},
     "no_sync_assets": {"type": "boolean"}
   },
   "anyOf": [{"required": ["project_root"]}, {"required": ["release_tarball"]}]

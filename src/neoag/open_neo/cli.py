@@ -109,8 +109,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="Claude Code release channel or exact version (default: stable)",
     )
     install.add_argument(
-        "--installer-profile", choices=["minimal", "standard", "all-open", "all"], default=None,
-        help="Installer scope; defaults to minimal for review/core and standard for prediction/full",
+        "--installer-profile", choices=["minimal", "standard", "all-open"], default=None,
+        help="Installer scope; defaults to minimal for review/core and all-open for prediction/full",
     )
     install.add_argument("--no-sync-assets", action="store_true")
 
