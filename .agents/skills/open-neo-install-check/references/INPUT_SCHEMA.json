@@ -44,7 +44,11 @@
     },
     "asset_manifest": {"type": "string"},
     "deployment_reference_manifest": {"type": "string"},
-    "install_timeout": {"type": "integer", "minimum": 60},
+    "install_timeout": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Installer timeout in seconds; 0 disables the timeout"
+    },
     "allow_download": {"type": "boolean"},
     "install_claude_code": {
       "type": "boolean",

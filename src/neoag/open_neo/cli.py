@@ -95,7 +95,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--asset-ssh-key",
         help="SSH private key used by rsync for remote asset synchronization",
     )
-    install.add_argument("--install-timeout", type=int, default=7200)
+    install.add_argument(
+        "--install-timeout", type=int, default=0,
+        help="Installer timeout in seconds; 0 disables the timeout (default)",
+    )
     install.add_argument("--allow-download", action="store_true")
     install.add_argument(
         "--install-claude-code", action="store_true",

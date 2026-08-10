@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import platform
+import signal
 import shlex
 import shutil
 import subprocess
@@ -914,7 +915,36 @@ def _command_hash(command: list[str]) -> str:
     return hashlib.sha256(json.dumps(command, ensure_ascii=True).encode("utf-8")).hexdigest()
 
 
-def _run_deployment(command: list[str], project_root: Path, log_path: Path, checkpoint_path: Path, *, timeout: int, resume: bool) -> tuple[str, str, str]:
+def _terminate_process_group(proc: subprocess.Popen[str], *, grace_seconds: int = 10) -> None:
+    if proc.poll() is not None:
+        return
+    try:
+        pgid = os.getpgid(proc.pid)
+    except OSError:
+        pgid = 0
+    try:
+        if pgid:
+            os.killpg(pgid, signal.SIGTERM)
+        else:
+            proc.terminate()
+    except ProcessLookupError:
+        return
+    except OSError:
+        proc.terminate()
+    try:
+        proc.wait(timeout=grace_seconds)
+    except subprocess.TimeoutExpired:
+        try:
+            if pgid:
+                os.killpg(pgid, signal.SIGKILL)
+            else:
+                proc.kill()
+        except ProcessLookupError:
+            return
+        proc.wait()
+
+
+def _run_deployment(command: list[str], project_root: Path, log_path: Path, checkpoint_path: Path, *, timeout: int | None, resume: bool) -> tuple[str, str, str]:
     command_hash = _command_hash(command)
     if resume and checkpoint_path.is_file():
         try:
@@ -926,18 +956,65 @@ def _run_deployment(command: list[str], project_root: Path, log_path: Path, chec
     log_path.parent.mkdir(parents=True, exist_ok=True)
     started = now_iso()
     write_json(checkpoint_path, {"status": "RUNNING", "command_hash": command_hash, "started_at": started, "command": command})
+    proc: subprocess.Popen[str] | None = None
+    previous_handlers: dict[int, Any] = {}
+
+    def _interrupt(signum: int, _frame: Any) -> None:
+        if proc is not None:
+            _terminate_process_group(proc)
+        output = ""
+        if log_path.is_file():
+            output = log_path.read_text(encoding="utf-8", errors="replace")
+        write_json(checkpoint_path, {
+            "status": "INTERRUPTED", "command_hash": command_hash,
+            "started_at": started, "finished_at": now_iso(),
+            "failure_reason": f"installation interrupted by signal {signum}",
+            "log": str(log_path), "command": command,
+            "resume_hint": "rerun open-neo install-check with --mode resume --approved",
+        })
+        raise KeyboardInterrupt(f"installation interrupted by signal {signum}; child process group terminated")
+
+    handled_signals = [signal.SIGINT, signal.SIGTERM]
+    if hasattr(signal, "SIGHUP"):
+        handled_signals.append(signal.SIGHUP)
+    for sig in handled_signals:
+        try:
+            previous_handlers[sig] = signal.getsignal(sig)
+            signal.signal(sig, _interrupt)
+        except (OSError, ValueError):
+            pass
     try:
-        proc = subprocess.run(
+        proc = subprocess.Popen(
             command, cwd=project_root, text=True, stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT, check=False, timeout=timeout,
+            stderr=subprocess.STDOUT, start_new_session=True,
         )
-        output = proc.stdout or ""
+        try:
+            output, _ = proc.communicate(timeout=timeout if timeout and timeout > 0 else None)
+        except subprocess.TimeoutExpired:
+            _terminate_process_group(proc)
+            output, _ = proc.communicate()
+            status = "FAILED"
+            failure = f"installation timed out after {timeout} seconds; child process group terminated"
+            log_path.write_text(output or "", encoding="utf-8")
+            write_json(checkpoint_path, {
+                "status": "TIMEOUT", "command_hash": command_hash, "started_at": started,
+                "finished_at": now_iso(), "failure_reason": failure, "log": str(log_path),
+                "command": command, "resume_hint": "rerun open-neo install-check with --mode resume --approved",
+            })
+            return status, str(log_path), failure
+        output = output or ""
         status = "PASS" if proc.returncode == 0 else "FAILED"
         failure = "" if proc.returncode == 0 else f"installer exit code {proc.returncode}"
-    except subprocess.TimeoutExpired as exc:
-        output = (exc.stdout or "") if isinstance(exc.stdout, str) else (exc.stdout or b"").decode("utf-8", errors="replace")
-        status = "FAILED"
-        failure = f"installation timed out after {timeout} seconds"
+    except BaseException:
+        if proc is not None:
+            _terminate_process_group(proc)
+        raise
+    finally:
+        for sig, handler in previous_handlers.items():
+            try:
+                signal.signal(sig, handler)
+            except (OSError, ValueError):
+                pass
     log_path.write_text(output, encoding="utf-8")
     write_json(checkpoint_path, {
         "status": status, "command_hash": command_hash, "started_at": started,
@@ -1145,7 +1222,7 @@ def run_install_check(args: dict[str, Any]) -> dict[str, Any]:
             status, deploy_log, deployment_failure = _run_deployment(
                 deploy_command, project_root, layout.logs / "portable_deployment.log",
                 layout.root / "deployment_checkpoint.json",
-                timeout=int(args.get("install_timeout") or 7200), resume=mode == "resume",
+                timeout=int(args.get("install_timeout") or 0), resume=mode == "resume",
             )
             failure_code = ""
             if deployment_failure:
