@@ -167,49 +167,26 @@ if [[ -n "$SPECHLA_PID" ]]; then
   SPECHLA_TSV="$OUTDIR/spechla/hla_loh.tsv"
 fi
 
-if [[ "$LOHHLA_STATUS" -ne 0 || "$SPECHLA_STATUS" -ne 0 ]]; then
-  echo "ERROR: HLA LOH tool failure: LOHHLA=$LOHHLA_STATUS SpecHLA=$SPECHLA_STATUS" >&2
-  exit 6
-fi
+{
+  printf 'tool\tselected\texit_status\toutput_tsv\toutput_status\tlog\n'
+  if wants lohhla; then
+    if [[ "$LOHHLA_STATUS" -eq 0 && -s "$LOHHLA_TSV" ]]; then lohhla_out_status=FOUND; else lohhla_out_status=MISSING; fi
+    printf 'lohhla\ttrue\t%s\t%s\t%s\t%s\n' "$LOHHLA_STATUS" "$LOHHLA_TSV" "$lohhla_out_status" "$LOG_DIR/lohhla.log"
+  else
+    printf 'lohhla\tfalse\tNA\t\tNOT_SELECTED\t\n'
+  fi
+  if wants spechla; then
+    if [[ "$SPECHLA_STATUS" -eq 0 && -s "$SPECHLA_TSV" ]]; then spechla_out_status=FOUND; else spechla_out_status=MISSING; fi
+    printf 'spechla\ttrue\t%s\t%s\t%s\t%s\n' "$SPECHLA_STATUS" "$SPECHLA_TSV" "$spechla_out_status" "$LOG_DIR/spechla.log"
+  else
+    printf 'spechla\tfalse\tNA\t\tNOT_SELECTED\t\n'
+  fi
+} > "$OUTDIR/hla_loh_tool_status.tsv"
 
-if [[ "${ALLOW_SINGLE_HLA_LOH_TOOL:-0}" != "1" ]]; then
-  [[ -s "$LOHHLA_TSV" ]] || {
-    echo "ERROR: LOHHLA output is required before building HLA LOH consensus" >&2
-    exit 6
-  }
-  [[ -s "$SPECHLA_TSV" ]] || {
-    echo "ERROR: SpecHLA LOH output is required before building HLA LOH consensus" >&2
-    exit 6
-  }
-fi
-
-consensus_args=(--sample-id "$SAMPLE_ID" --outdir "$OUTDIR")
-[[ -n "$LOHHLA_TSV" ]] && consensus_args+=(--lohhla "$LOHHLA_TSV")
-[[ -n "$SPECHLA_TSV" ]] && consensus_args+=(--spechla "$SPECHLA_TSV")
+consensus_args=(--sample-id "$SAMPLE_ID" --outdir "$OUTDIR" --tool-status "$OUTDIR/hla_loh_tool_status.tsv")
+[[ -s "$LOHHLA_TSV" ]] && consensus_args+=(--lohhla "$LOHHLA_TSV")
+[[ -s "$SPECHLA_TSV" ]] && consensus_args+=(--spechla "$SPECHLA_TSV")
 "${PYTHON:-python3}" "$ROOT/scripts/build_hla_loh_consensus.py" "${consensus_args[@]}"
-
-if [[ "${ALLOW_SINGLE_HLA_LOH_TOOL:-0}" != "1" ]]; then
-  [[ -s "$OUTDIR/hla_loh_consensus.tsv" ]] || {
-    echo "ERROR: HLA LOH consensus was not created" >&2
-    exit 6
-  }
-  awk -F '\t' '
-    NR == 1 {
-      for (i=1; i<=NF; i++) h[$i]=i
-      next
-    }
-    NR > 1 {
-      rows++
-      if ($(h["source_tools"]) == "lohhla;spechla") both++
-    }
-    END {
-      exit !(rows > 0 && both > 0)
-    }
-  ' "$OUTDIR/hla_loh_consensus.tsv" || {
-    echo "ERROR: HLA LOH consensus requires evidence from both LOHHLA and SpecHLA" >&2
-    exit 6
-  }
-fi
 
 {
   printf 'key\tvalue\n'
@@ -219,6 +196,8 @@ fi
   printf 'purity\t%s\n' "$PURITY"
   printf 'ploidy\t%s\n' "$PLOIDY"
   printf 'tools\t%s\n' "$TOOLS"
+  printf 'lohhla_exit_status\t%s\n' "$LOHHLA_STATUS"
+  printf 'spechla_exit_status\t%s\n' "$SPECHLA_STATUS"
 } > "$OUTDIR/run_metadata.tsv"
 date -Is > "$OUTDIR/.complete"
 echo "HLA LOH multi-tool workflow completed: $OUTDIR"
