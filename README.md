@@ -64,111 +64,171 @@ bash .agents/skills/neoag-remote-deploy/scripts/16_install_new_machine.sh \
 
 Add `--standard` for a broader common tool set, and add `--run-real-vcf-smoke --real-vcf-smoke-top-n 1` when a post-install real VCF smoke test is approved. The default installer pins VEP to Ensembl release 105 (`--vep-version 105`) to match the `homo_sapiens/105_GRCh38` cache.
 
-## New Machine Migration
+## New Machine Install And Run: Three Macro Skills
 
-Use the machine-readable manifests as the source of truth. README is only the
-human navigation layer:
+Use the three public Open-Neo macro Skills for new-machine deployment and case
+execution. The machine-readable manifests remain the source of truth:
 
-- `configs/assets/production_assets.tsv`: large assets to synchronize, including
-  references, VEP cache, BigMHC/DeepImmuno models, EasyFuse references, LOHHLA,
-  licensed-tool assets, and the prebuilt IEDB human MHC ligand tables.
-- `configs/references/reference_manifest.yaml`: reference paths, genome build,
-  required markers, and VEP cache version checks.
-  IEDB deployment uses generated TSV files, manifest, and checksums as assets;
-  new machines do not rebuild the 9.1 GB source export.
-- `configs/tools/tools_manifest.yaml`: tools, environments, containers,
-  license/distribution flags, and smoke commands.
+- `.agents/skills/open-neo-install-check/SKILL.md`: Skill1, machine setup,
+  reference/tool discovery, approved install/repair, Doctor, smoke tests and
+  production-readiness checks.
+- `.agents/skills/open-neo-run/SKILL.md`: Skill2, input QC, route selection,
+  Gateway-controlled execution/resume, multi-tool evidence generation and
+  weighted plus evidence-consensus ranking.
+- `.agents/skills/open-neo-review/SKILL.md`: Skill3, read-only result review,
+  experiment-priority tables and patient/technical reports.
 
-For a fresh target machine, clone this branch and run the consolidated installer
-from the checkout:
+### Skill1: install and verify the machine
+
+Clone the release branch on the target machine:
 
 ```bash
-mkdir -p /root/neo/src
-
+mkdir -p /home/na/project
 git clone --branch na0707_upload_release \
   https://github.com/lphilomena/neo.git \
-  /root/neo/src/na0707_upload_release
-
-cd /root/neo/src/na0707_upload_release
+  /home/na/project/neo
+cd /home/na/project/neo
 ```
 
-Recommended production-like install:
+If the console script is not yet on `PATH`, use the module entrypoint from the
+project environment:
 
 ```bash
-bash .agents/skills/neoag-remote-deploy/scripts/13_install_readme_tools.sh \
-  --project-root /root/neo/src/na0707_upload_release \
-  --tools-root /root/neo/env_tool \
-  --licensed-root /root/neo/licensed_tools \
-  --reference-root /root/neo/neodata4git \
-  --conda-base /root/neo/env_tool/miniforge3 \
-  --asset-manifest configs/assets/production_assets.tsv \
-  --reference-manifest configs/references/reference_manifest.yaml \
-  --sync-assets \
+export PYTHONPATH="$PWD/src"
+alias open-neo='/home/na/miniforge3/envs/neoag-tools/bin/python -m neoag.open_neo.cli'
+```
+
+Run the install-check macro. For production use, the default installer profile
+is `all-open`; it installs the open production tool set where licenses permit,
+synchronizes full production reference assets, and writes configured manifests
+under `configs/local/`.
+
+```bash
+open-neo install-check \
+  --project-root "$PWD" \
+  --deployment-tier full \
+  --mode install \
+  --installer-profile all-open \
   --asset-source-host na@10.200.50.134 \
-  --all-open \
-  --verify \
+  --asset-source-root /mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git \
+  --tools-root /home/na/project/open-neo-deploy/env_tool \
+  --reference-root /home/na/project/open-neo-deploy/refs \
+  --conda-base /home/na/miniforge3 \
   --allow-download \
-  --execute
+  --approved \
+  --outdir work/install-check-full
 ```
 
-To run the default real VCF smoke test after installation, add
-`--run-real-vcf-smoke`:
+Use `--installer-profile minimal` for review/core use and
+`--installer-profile standard` for the lighter production main path. Re-running
+Skill1 is safe: installed tools, synchronized assets and PASS checkpoints are
+reused when signatures still match. If installation was interrupted, resume it
+instead of starting from scratch:
 
 ```bash
-bash .agents/skills/neoag-remote-deploy/scripts/13_install_readme_tools.sh \
-  --project-root /root/neo/src/na0707_upload_release \
-  --tools-root /root/neo/env_tool \
-  --licensed-root /root/neo/licensed_tools \
-  --reference-root /root/neo/neodata4git \
-  --conda-base /root/neo/env_tool/miniforge3 \
-  --asset-manifest configs/assets/production_assets.tsv \
-  --reference-manifest configs/references/reference_manifest.yaml \
-  --sync-assets \
-  --asset-source-host na@10.200.50.134 \
-  --all-open \
-  --verify \
-  --run-real-vcf-smoke \
-  --allow-download \
-  --execute
+open-neo install-check \
+  --project-root "$PWD" \
+  --deployment-tier full \
+  --mode resume \
+  --installer-profile all-open \
+  --approved \
+  --outdir work/install-check-full
 ```
 
-The default asset source is:
+Full installs default to no wall-clock timeout. If an operator supplies
+`--install-timeout SECONDS`, interruption or timeout terminates the whole
+installer process group before writing a controlled checkpoint.
+
+### Skill2: run a case through Gateway
+
+Start a local NeoAg Gateway on the target machine. Keep it bound to
+`127.0.0.1` unless there is a reviewed reason to expose it.
 
 ```bash
-<asset-source-root>
+cd /home/na/project/neo
+source /home/na/miniforge3/bin/activate neoag-tools
+
+mkdir -p work/neoag_gateway
+nohup env PYTHONPATH="$PWD/src" \
+  python -m neoag.controlled_execution.gateway \
+  --host 127.0.0.1 \
+  --port 8000 \
+  --project-root "$PWD" \
+  --outdir "$PWD/work/neoag_gateway" \
+  --allowed-root "$PWD/work" \
+  --allowed-root /mnt/zzbnew/Public/neoag_results \
+  > work/neoag_gateway/gateway.log 2>&1 &
+
+curl -s http://127.0.0.1:8000/health
 ```
 
-The installer defaults to Miniforge3 and pins VEP to Ensembl release 105 to
-match `homo_sapiens/105_GRCh38` in the VEP cache. Licensed tools such as
-NetMHCpan, NetMHCstabpan, Polysolver, and Novoalign are represented in the asset
-and tools manifests, but the operator must confirm the license permits use on
-the new machine.
-
-After installation, verify the machine explicitly:
+Submit a full run from a sample manifest:
 
 ```bash
-source /root/neo/src/na0707_upload_release/conf/tools.env.sh
-
-neoag check-tools
-
-python3 scripts/verify_reference_manifest.py \
-  configs/references/reference_manifest.yaml \
-  --vep-version 105
+open-neo run \
+  --sample-manifest configs/local/sample.yaml \
+  --tools-manifest configs/local/tools_manifest.configured.yaml \
+  --reference-manifest configs/local/reference_manifest.configured.yaml \
+  --outdir /mnt/zzbnew/Public/neoag_results/CASE001 \
+  --mode execute \
+  --approved \
+  --gateway-url http://127.0.0.1:8000 \
+  --gateway-wait
 ```
 
-The older wrapper remains available for short-form installs:
+Direct BAM/VCF/RNA FASTQ inputs are also supported when a manifest is not yet
+available:
 
 ```bash
-bash .agents/skills/neoag-remote-deploy/scripts/16_install_new_machine.sh \
-  --standard \
-  --asset-source-host na@10.200.50.134 \
-  --allow-download \
-  --execute
+open-neo run \
+  --sample-id CASE001 \
+  --tumor-dna-bam /path/to/tumor.bam \
+  --normal-dna-bam /path/to/normal.bam \
+  --somatic-vcf /path/to/somatic.pass.vcf.gz \
+  --tumor-rna-fastq /path/to/R1.fq.gz /path/to/R2.fq.gz \
+  --rna-threads 12 \
+  --outdir /mnt/zzbnew/Public/neoag_results/CASE001 \
+  --mode execute \
+  --approved \
+  --gateway-url http://127.0.0.1:8000 \
+  --gateway-wait
 ```
 
-Prefer the explicit `13_install_readme_tools.sh` command above when recording a
-production migration, because it names the tool root, licensed-tool root,
-reference root, and manifest files directly.
+Skill2 runs domain tools concurrently where safe. For paired GRCh38 DNA, the
+purity/CNV evidence stage can run FACETS, Sequenza and PURPLE and then build a
+cross-tool purity/ploidy recommendation. HLA LOH waits for a non-single-tool
+purity consensus before launching LOHHLA and SpecHLA in parallel. If both HLA
+LOH tools produce usable output the report is labelled `dual_tool_consensus`;
+if one fails or has no output, the run continues with `single_tool_result`
+evidence explicitly recorded in `hla_loh_tool_status.tsv`,
+`hla_loh_summary.json`, `hla_loh_review.md` and `recommended_hla_loh.tsv`.
+
+Resume an interrupted case with:
+
+```bash
+open-neo run \
+  --result-dir /mnt/zzbnew/Public/neoag_results/CASE001 \
+  --mode resume \
+  --approved \
+  --gateway-url http://127.0.0.1:8000 \
+  --gateway-wait
+```
+
+### Skill3: review and report results
+
+After Skill2 finishes ranking, run Skill3 read-only on the result directory:
+
+```bash
+open-neo review \
+  --result-dir /mnt/zzbnew/Public/neoag_results/CASE001 \
+  --reports patient,technical,onepage \
+  --outdir /mnt/zzbnew/Public/neoag_results/CASE001/review
+```
+
+Skill3 does not rerun heavy tools. It checks result integrity, compares weighted
+and evidence-consensus rankings, emits event-level experiment-priority tables,
+and writes bounded patient/technical reports. Missing or single-tool evidence
+is reported as partial evidence, never as a negative biological result.
 
 ## Quick Start
 

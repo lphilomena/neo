@@ -47,18 +47,163 @@ neoag-agent --message "比较 recommendation 和 NetMHCpan42 排序差异" --res
 
 默认模式只生成 dry-run plan。对支持的低风险 skill，可加 `--execute` 执行。skill 列表、输入、输出和解释边界见 `docs/AGENT_SKILLS_P0_P1.md`。
 
-如果要把本包迁移到新机器并交给另一个编程 agent 部署，建议使用 skill-first 迁移流程：先读 `.agents/config/skills_registry.abcd.json`，再生成本机 manifest，运行 Doctor，最后运行 `pipeline-full` dry-run。详见 `docs/SKILL_FIRST_MIGRATION.md`，也可以直接运行：
+## 新机器安装和运行：三个宏 Skill
 
-IEDB MHC ligand 参考库按预构建资产部署：新机器通过
-`configs/assets/production_assets.tsv` 同步三份结果 TSV、`manifest.json` 和
-`SHA256SUMS`，不复制或重新处理解压后约 9.1 GB 的原始导出文件。正式构建脚本
-`scripts/build_iedb_mhc_ligand_reference.py` 仅用于来源审计和显式重建。
+新机器部署和患者样本运行统一使用三个公开 Open-Neo 宏 Skill。README 只提供人类
+导航，机器可读 manifest 仍是准绳：
+
+- `.agents/skills/open-neo-install-check/SKILL.md`：Skill1，负责新机器安装、
+  参考库/工具发现、经批准的安装或修复、Doctor、smoke test 和生产运行就绪检查。
+- `.agents/skills/open-neo-run/SKILL.md`：Skill2，负责输入质控、路线选择、
+  Gateway 受控执行/续跑、多工具证据生成、旧加权排序和证据共识排序。
+- `.agents/skills/open-neo-review/SKILL.md`：Skill3，负责只读结果审阅、
+  实验优先级表和患者版/技术版报告。
+
+### Skill1：安装并验收新机器
+
+在目标机器 clone 发布分支：
 
 ```bash
-bash scripts/bootstrap_agent_deploy.sh
+mkdir -p /home/na/project
+git clone --branch na0707_upload_release \
+  https://github.com/lphilomena/neo.git \
+  /home/na/project/neo
+cd /home/na/project/neo
 ```
 
-如果要交给目标机器上的编程 agent 严格按 SOP 部署，请优先读取 `.agents/skills/neoag-remote-deploy/SKILL.md`。
+如果新机器上 `open-neo` console script 还不在 `PATH`，可先使用项目环境里的
+模块入口：
+
+```bash
+export PYTHONPATH="$PWD/src"
+alias open-neo='/home/na/miniforge3/envs/neoag-tools/bin/python -m neoag.open_neo.cli'
+```
+
+运行安装检查宏。生产使用默认按 `all-open` 安装；它会在许可允许的前提下安装
+开放生产工具集，同步全套生产参考资产，并在 `configs/local/` 写入本机配置后的
+manifest。
+
+```bash
+open-neo install-check \
+  --project-root "$PWD" \
+  --deployment-tier full \
+  --mode install \
+  --installer-profile all-open \
+  --asset-source-host na@10.200.50.134 \
+  --asset-source-root /mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git \
+  --tools-root /home/na/project/open-neo-deploy/env_tool \
+  --reference-root /home/na/project/open-neo-deploy/refs \
+  --conda-base /home/na/miniforge3 \
+  --allow-download \
+  --approved \
+  --outdir work/install-check-full
+```
+
+`--installer-profile minimal` 适合 review/core 场景；
+`--installer-profile standard` 是较轻的生产主路径安装。重复运行 Skill1 是安全
+的：已经安装的工具、已经同步的资产和 PASS checkpoint 会在签名匹配时复用。
+如果安装中断，用 `resume` 续跑：
+
+```bash
+open-neo install-check \
+  --project-root "$PWD" \
+  --deployment-tier full \
+  --mode resume \
+  --installer-profile all-open \
+  --approved \
+  --outdir work/install-check-full
+```
+
+完整安装默认没有墙钟超时。若操作者显式提供 `--install-timeout SECONDS`，
+中断或超时时会先终止整个安装进程组，再写入可控 checkpoint。
+
+### Skill2：通过 Gateway 运行患者样本
+
+先在目标机器本机启动 NeoAg Gateway。除非经过审阅，不建议把 Gateway 暴露到
+内网或公网。
+
+```bash
+cd /home/na/project/neo
+source /home/na/miniforge3/bin/activate neoag-tools
+
+mkdir -p work/neoag_gateway
+nohup env PYTHONPATH="$PWD/src" \
+  python -m neoag.controlled_execution.gateway \
+  --host 127.0.0.1 \
+  --port 8000 \
+  --project-root "$PWD" \
+  --outdir "$PWD/work/neoag_gateway" \
+  --allowed-root "$PWD/work" \
+  --allowed-root /mnt/zzbnew/Public/neoag_results \
+  > work/neoag_gateway/gateway.log 2>&1 &
+
+curl -s http://127.0.0.1:8000/health
+```
+
+有样本 manifest 时提交完整流程：
+
+```bash
+open-neo run \
+  --sample-manifest configs/local/sample.yaml \
+  --tools-manifest configs/local/tools_manifest.configured.yaml \
+  --reference-manifest configs/local/reference_manifest.configured.yaml \
+  --outdir /mnt/zzbnew/Public/neoag_results/CASE001 \
+  --mode execute \
+  --approved \
+  --gateway-url http://127.0.0.1:8000 \
+  --gateway-wait
+```
+
+没有 manifest 时，也可以直接给 BAM/VCF/RNA FASTQ：
+
+```bash
+open-neo run \
+  --sample-id CASE001 \
+  --tumor-dna-bam /path/to/tumor.bam \
+  --normal-dna-bam /path/to/normal.bam \
+  --somatic-vcf /path/to/somatic.pass.vcf.gz \
+  --tumor-rna-fastq /path/to/R1.fq.gz /path/to/R2.fq.gz \
+  --rna-threads 12 \
+  --outdir /mnt/zzbnew/Public/neoag_results/CASE001 \
+  --mode execute \
+  --approved \
+  --gateway-url http://127.0.0.1:8000 \
+  --gateway-wait
+```
+
+Skill2 会在安全时并行运行同类工具。成对 GRCh38 DNA 输入下，纯度/CNV 证据
+阶段可同时运行 FACETS、Sequenza 和 PURPLE，再生成跨工具 purity/ploidy 推荐。
+HLA LOH 必须先等到非单工具纯度共识，再并行启动 LOHHLA 和 SpecHLA。两个
+HLA LOH 工具都有可用输出时报告标记为 `dual_tool_consensus`；若其中一个失败
+或无输出，流程继续使用另一个工具的单工具证据，并在
+`hla_loh_tool_status.tsv`、`hla_loh_summary.json`、`hla_loh_review.md` 和
+`recommended_hla_loh.tsv` 中明确标记 `single_tool_result`。
+
+中断后的样本续跑：
+
+```bash
+open-neo run \
+  --result-dir /mnt/zzbnew/Public/neoag_results/CASE001 \
+  --mode resume \
+  --approved \
+  --gateway-url http://127.0.0.1:8000 \
+  --gateway-wait
+```
+
+### Skill3：审阅结果并生成报告
+
+Skill2 完成排序后，对结果目录只读运行 Skill3：
+
+```bash
+open-neo review \
+  --result-dir /mnt/zzbnew/Public/neoag_results/CASE001 \
+  --reports patient,technical,onepage \
+  --outdir /mnt/zzbnew/Public/neoag_results/CASE001/review
+```
+
+Skill3 不重跑重型工具。它检查结果完整性，比较旧加权排序和证据共识排序，
+生成事件级实验优先级表，并输出有边界的患者版/技术版报告。缺失证据或单工具
+证据只能写成部分证据，不能解释成生物学阴性。
 
 ## 快速开始
 
