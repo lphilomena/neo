@@ -1166,7 +1166,12 @@ def test_open_neo_review_is_event_level_and_non_mutating(tmp_path: Path):
     assert first_batch[1]["experiment_priority"] == "TARGETED_RNA_FIRST"
     completion = list(csv.DictReader((outdir / "review/evidence_completion_queue.tsv").open(), delimiter="\t"))
     assert [row["gene"] for row in completion] == ["GENE2::GENE3"]
-    assert (outdir / "reports/patient_report.md").is_file()
+    patient_report = outdir / "reports/patient_report.html"
+    assert patient_report.is_file()
+    assert "患者沟通版" in patient_report.read_text(encoding="utf-8")
+    assert not (outdir / "reports/patient_report.md").exists()
+    assert not (outdir / "reports/patient_report.docx").exists()
+    assert not (outdir / "reports/production_patient").exists()
     assert (outdir / "review/integrity/review_integrity.json").is_file()
     assert (outdir / "review/experiment_design/short_peptide_pool.tsv").is_file()
     assert (outdir / "review/experiment_design/targeted_rna_validation_plan.tsv").is_file()
@@ -1183,7 +1188,7 @@ def test_open_neo_review_can_skip_document_generation(tmp_path: Path):
     outdir = tmp_path / "review"
     result = run_review({"result_dir": str(result_dir), "reports": ["none"], "outdir": str(outdir)})
     assert result["status"] == "PASS_WITH_WARNINGS"
-    assert not (outdir / "reports/patient_report.md").exists()
+    assert not (outdir / "reports/patient_report.html").exists()
     assert not (outdir / "reports/technical_report.md").exists()
     assert next(step for step in result["steps"] if step["step_id"] == "06")["status"] == "SKIPPED"
 

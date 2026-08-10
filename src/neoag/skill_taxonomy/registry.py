@@ -227,11 +227,11 @@ SKILL_SPECS: list[SkillSpec] = [
         use_when=["需要解释 Evidence consensus 与 weighted 差异", "需要按事件去重生成第一批实验候选", "需要患者版或技术版报告"],
         do_not_use_when=["尚未生成 ranked_events.evidence_consensus.tsv；应先运行 open-neo-run"],
         required_inputs=["result_dir"], optional_inputs=["top_n", "clinical_context", "disease_profile", "therapy_context", "reports"],
-        outputs=["review_integrity.json", "candidate_review.tsv", "first_batch_experiment_set.tsv", "experiment_candidates.tsv", "short_peptide_pool.tsv", "long_peptide_design.tsv", "minigene_design.tsv", "targeted_rna_validation_plan.tsv", "manual_review_candidates.tsv", "patient_report.docx/md/html", "technical_report.docx/md/html", "onepage_summary.pptx"],
+        outputs=["review_integrity.json", "candidate_review.tsv", "first_batch_experiment_set.tsv", "experiment_candidates.tsv", "short_peptide_pool.tsv", "long_peptide_design.tsv", "minigene_design.tsv", "targeted_rna_validation_plan.tsv", "manual_review_candidates.tsv", "patient_report.html", "technical_report.docx/md/html", "onepage_summary.pptx"],
         risk_level="LOW_TO_MEDIUM", visibility="public",
-        composes=["neoag-ranking-compare", "neoag-experiment-design", "neoag-hla-loh-appm-review", "neoag-ccf-clonality-review", "neoag-patient-report", "neoag-technical-report", "neoag-concept-explainer"],
+        composes=["neoag-ranking-compare", "neoag-experiment-design", "neoag-hla-loh-appm-review", "neoag-ccf-clonality-review", "neoag-technical-report", "neoag-concept-explainer"],
         entrypoint="open-neo review",
-        boundaries=["以 event-level consensus 为主；不修改 Skill2 的 R 等级或 pipeline rank。", "第一批集合是研究性启发式清单，不是已验证的最优治疗组合。"],
+        boundaries=["以 event-level consensus 为主；不修改 Skill2 的 R 等级或 pipeline rank。", "患者报告复用 reports_dual 正式生成器，只保留 reports/patient_report.html。", "第一批集合是研究性启发式清单，不是已验证的最优治疗组合。"],
     ),
     # C: Review/report/design
     _spec(

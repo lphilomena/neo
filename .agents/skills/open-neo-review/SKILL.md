@@ -36,7 +36,7 @@ generation. Report generation is MEDIUM risk; table-only review is LOW risk.
 2. Return `NEEDS_RANKING` when event-level consensus is absent. Never substitute weighted Top20.
 3. Preserve `pipeline_r_grade` and `pipeline_event_rank`; write independent `review_status`, `review_reason`, and `experiment_priority` fields.
 4. Review event-level representatives, with at most two peptide-HLA pairs per event and explicit phase/redundancy handling.
-5. Invoke ranking comparison, experiment design, HLA-LOH/APPM review, CCF/clonality review, patient report, technical report, and bounded concept explanations.
+5. Invoke ranking comparison, experiment design, HLA-LOH/APPM review, CCF/clonality review, the shared formal patient-report renderer, technical report, and bounded concept explanations.
 6. Build a deterministic first-batch research set considering grade, RNA, safety, HLA diversity, clonality, event type, phase and redundancy. It is not a vaccine optimizer.
 7. Generate short-peptide, long-peptide, minigene, targeted-RNA, and manual-review lanes.
 
@@ -54,7 +54,7 @@ generation. Report generation is MEDIUM risk; table-only review is LOW risk.
 - `targeted_rna_validation_plan.tsv`
 - APPM/HLA-LOH and CCF review files
 - weighted-vs-consensus comparison files
-- patient report (`md/html/docx`)
+- one formal patient report (`reports/patient_report.html`), rendered by `neoag.reports_dual.make_patient_report`
 - technical report (`md/html/docx` when available)
 - `onepage_summary.pptx` when `python-pptx` is available
 
@@ -65,3 +65,4 @@ Allowed wording: computational candidate, experiment priority, missing evidence,
 Forbidden wording: confirmed neoantigen, guaranteed benefit, clinical resistance, ineffective immunotherapy, drug recommendation, or established vaccine/treatment plan.
 
 Skill3 is read-only with respect to Skill2 outputs.
+It must not create a second `production_patient/` report tree or maintain an independent simplified patient-report template.

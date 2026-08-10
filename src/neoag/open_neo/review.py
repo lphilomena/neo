@@ -8,10 +8,10 @@ from typing import Any
 from neoag.agent_skills.appm_review import main as appm_review_main
 from neoag.agent_skills.ccf_review import main as ccf_review_main
 from neoag.controlled_execution.io_utils import load_limited_yaml, markdown_table, read_tsv, write_json, write_tsv
+from neoag.reports_dual import load_report_bundle, make_patient_report
 from neoag.skill_taxonomy.review_skills import (
     run_concept_explainer,
     run_experiment_design,
-    run_patient_report,
     run_ranking_compare,
     run_technical_report,
 )
@@ -316,30 +316,6 @@ def _write_onepage(path: Path, first_batch: list[dict[str, str]], integrity: dic
 def _write_reports(layout: RunLayout, context: dict[str, Any], review_rows: list[dict[str, str]], first_batch: list[dict[str, str]], artifacts: dict[str, str], integrity: dict[str, Any], support_outputs: dict[str, str], reports: set[str]) -> dict[str, str]:
     uncertainties = sum(row["review_status"] == "COMPLETE_EVIDENCE" for row in review_rows)
     outputs: dict[str, str] = {}
-    patient_sections = [
-        ("阅读提示与重要说明", "本报告按事件而非重复肽段审阅。R1–R4是研究证据等级，不是疗效等级；缺失证据不解释为阴性。"),
-        ("1. 报告摘要", f"共审阅 {len(review_rows)} 个事件级候选；{len(first_batch)} 个进入第一批研究验证集合。候选经过事件、单倍型和重复窗口去重。"),
-        ("2. 患者样本与测序数据", _context_summary(context) + "\n样本配对、肿瘤/正常DNA深度、纯度/倍性和RNA质量以run manifest为准；缺失项目标记为未评估。"),
-        ("3. HLA分型与抗原呈递条件", "HLA、HLA LOH、APPM与IFNG/JAK-STAT仅用于解释呈递条件，不能单独预测免疫治疗敏感、耐药或患者获益。"),
-        ("4. 重点变异事件", "按SNV、InDel、Fusion、Splice和DNA SV分赛道审阅；同一event_id最多选择1–2个代表peptide-HLA，不让重叠窗口占据实验名额。"),
-        ("5. 候选肽段Top10", "第一批候选见文末事件去重表。优先事件同时考虑事件真实性、RNA支持、HLA呈递、MT/WT特异性、克隆性、HLA/APPM和安全性。"),
-        ("6. Top候选解读与实验建议", "错义突变采用MT/WT成对短肽；移码采用novel-tail长肽/minigene；融合先做RT-PCR/Sanger；剪接先做targeted RNA，再进行junction长肽/minigene。"),
-        ("7. 分析方法", "Evidence consensus分层后，在同赛道内进行Pareto排序和确定性tie-break，再进行事件级代表候选选择；不修改pipeline原始R等级和事件排名。"),
-        ("8. 局限性与总体结论", f"{uncertainties} 个事件应先补RNA、融合/剪接确认、phasing、安全性或呈递证据。这些结果不代表已经确认新抗原、确定治疗方案、临床耐药或预期获益。"),
-        ("附录A：R1–R4", "R1第一批实验优先；R2值得推进但有谨慎因素；R3优先补证据；R4当前暂不推进。"),
-        ("附录B：术语说明", "MT/WT为突变肽与正常肽对照；CCF估计事件克隆比例；APPM描述抗原加工呈递；junction reads必须精确支持同一异常连接。"),
-        ("附录C：可追溯文件", "run manifest、all_tool_results、事件/肽段证据共识排序、weighted baseline、validation plan和evidence conflicts共同构成审计链。"),
-    ]
-    if "patient" in reports:
-        patient_md = ["# Open-Neo 患者沟通版审阅报告", ""]
-        for heading, body in patient_sections: patient_md += [f"## {heading}", "", body, ""]
-        patient_md += ["## 第一批实验候选", "", markdown_table(first_batch, columns=["first_batch_rank", "gene", "event_kind", "pipeline_r_grade", "experiment_priority", "recommended_validation"], max_rows=30)]
-        patient_path = layout.reports / "patient_report.md"; patient_path.write_text("\n".join(patient_md) + "\n", encoding="utf-8")
-        patient_html = layout.reports / "patient_report.html"; patient_html.write_text("<html><body><pre>" + html.escape("\n".join(patient_md)) + "</pre></body></html>", encoding="utf-8")
-        outputs.update({"patient_report_md": str(patient_path), "patient_report_html": str(patient_html)})
-        patient_docx = layout.reports / "patient_report.docx"
-        if _write_docx(patient_docx, "Open-Neo 新抗原筛选报告（患者沟通版）", patient_sections, first_batch): outputs["patient_report_docx"] = str(patient_docx)
-
     technical_sections = [
         ("Integrity and provenance", markdown_table(integrity.get("checks", []), max_rows=100)),
         ("Source artifacts", markdown_table([{"artifact": key, "path": value} for key, value in sorted(artifacts.items())], max_rows=100)),
@@ -362,6 +338,85 @@ def _write_reports(layout: RunLayout, context: dict[str, Any], review_rows: list
         onepage = layout.reports / "onepage_summary.pptx"
         if _write_onepage(onepage, first_batch, integrity): outputs["onepage_summary_pptx"] = str(onepage)
     return outputs
+
+
+def _read_json_mapping(path: str | Path | None) -> dict[str, Any]:
+    if not path or not Path(path).is_file():
+        return {}
+    try:
+        payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _summary_mapping(path: str | Path | None) -> dict[str, Any]:
+    if not path or not Path(path).is_file():
+        return {}
+    _, rows = read_tsv(path)
+    if not rows:
+        return {}
+    if {"field", "value"}.issubset(rows[0]):
+        return {str(row.get("field") or ""): row.get("value", "") for row in rows if row.get("field")}
+    if {"metric", "value"}.issubset(rows[0]):
+        return {str(row.get("metric") or ""): row.get("value", "") for row in rows if row.get("metric")}
+    return dict(rows[0])
+
+
+def _formal_patient_report(
+    layout: RunLayout,
+    result_dir: Path,
+    context: dict[str, Any],
+    artifacts: dict[str, str],
+    events: list[dict[str, str]],
+    peptides: list[dict[str, str]],
+    all_tool: list[dict[str, str]],
+) -> dict[str, str]:
+    all_tool_by_id = {_get(row, "peptide_id"): row for row in all_tool if _get(row, "peptide_id")}
+    report_peptides: list[dict[str, str]] = []
+    for peptide in peptides:
+        merged = dict(all_tool_by_id.get(_get(peptide, "peptide_id"), {}))
+        merged.update(peptide)
+        report_peptides.append(merged)
+
+    provenance = _read_json_mapping(artifacts.get("run_manifest"))
+    provenance.update(_read_json_mapping(artifacts.get("provenance")))
+    for key, value in context.items():
+        provenance.setdefault(key, value)
+    provenance.setdefault("parallel_rankings", {})
+    if isinstance(provenance["parallel_rankings"], dict):
+        provenance["parallel_rankings"].update({
+            "evidence_consensus": artifacts.get("consensus_peptides", ""),
+            "event_consensus": artifacts.get("consensus_events", ""),
+            "weighted_baseline": artifacts.get("weighted_baseline", ""),
+        })
+
+    source_root = result_dir
+    consensus_path = Path(artifacts["consensus_peptides"])
+    if consensus_path.parent.name == "scoring":
+        source_root = consensus_path.parent.parent
+    _, validation_rows = read_tsv(artifacts["validation_plan"])
+    profile_name = str(
+        provenance.get("rules_name")
+        or provenance.get("profile")
+        or provenance.get("pipeline_version")
+        or "evidence_consensus"
+    )
+    profile = {"_profile_name": profile_name}
+    bundle = load_report_bundle(
+        profile=profile,
+        events=events,
+        peptides=report_peptides,
+        appm_summary=_summary_mapping(artifacts.get("appm_summary")),
+        validation_rows=validation_rows,
+        outdir=source_root,
+        provenance=provenance,
+        sample_id=str(provenance.get("sample_id") or ""),
+        entry_mode=str(provenance.get("entry_mode") or ""),
+    )
+    patient_html = layout.reports / "patient_report.html"
+    make_patient_report(patient_html, bundle)
+    return {"patient_report_html": str(patient_html)}
 
 
 def _run_appm_ccf_reviews(layout: RunLayout, artifacts: dict[str, str]) -> dict[str, str]:
@@ -456,17 +511,9 @@ def run_review(args: dict[str, Any]) -> dict[str, Any]:
     context = _read_context(args.get("disease_profile"), args.get("clinical_context"))
     support_outputs = {**mechanism_outputs, "ranking_compare_report": cmp.get("outputs", {}).get("report", "")}
     report_outputs = _write_reports(layout, context, review_rows, first_batch, artifacts, integrity, support_outputs, selected_reports)
-    production_reports: dict[str, str] = {}
     if "patient" in selected_reports:
-        patient = run_patient_report({
-            "outdir": str(layout.reports / "production_patient"),
-            "recommendation": str(candidate_review),
-            "evidence_report": artifacts.get("evidence_report", ""),
-            "ranking_compare_report": cmp.get("outputs", {}).get("report", ""),
-            "appm_review": mechanism_outputs.get("appm_review", ""),
-            "ccf_review": mechanism_outputs.get("ccf_review", ""),
-        })
-        production_reports.update({f"production_patient_{key}": value for key, value in patient.get("outputs", {}).items()})
+        report_outputs.update(_formal_patient_report(layout, result_dir, context, artifacts, events, peptides, all_tool))
+    production_reports: dict[str, str] = {}
     if "technical" in selected_reports:
         technical = run_technical_report({"outdir": str(layout.reports / "production_technical"), "result_dir_or_summary": str(result_dir), "pipeline_manifest": artifacts.get("run_manifest", "")})
         production_reports.update({f"production_technical_{key}": value for key, value in technical.get("outputs", {}).items()})
