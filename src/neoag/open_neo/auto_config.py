@@ -132,6 +132,10 @@ REFERENCE_CANDIDATES = {
     "purple_reference": ("data/hmf/purple_reference", "cnv/purple"),
     "bam_matcher_loci": ("data/sample_identity/bam_matcher.common_snps.hg38.vcf", "GRCh38/sample_identity/bam_matcher.common_snps.vcf"),
     "snaf_db": ("data/snaf/reference/data", "splice/snaf/reference/data"),
+    "splicemutr_workflow": (
+        "tools/SpliceMutr/simulation/running_splicemutr/run_splicemutr.smk",
+        "tools/splicemutr/simulation/running_splicemutr/run_splicemutr.smk",
+    ),
     "ascat_loci": ("data/ascat/G1000_loci_hg38.txt", "cnv/ascat/loci/G1000_loci_hg38.txt"),
     "ascat_alleles": ("data/ascat/G1000_alleles_hg38.txt", "cnv/ascat/loci/G1000_alleles_hg38.txt"),
     "normal_proteome": ("data/normal/proteome/Homo_sapiens.GRCh38.pep.all.fa",),
@@ -412,7 +416,7 @@ def configure_machine(
     conda_base = Path(os.environ.get("NEOAG_CONDA_BASE") or "").expanduser()
     if conda_base.is_dir():
         search_tool_roots.append(conda_base)
-    search_ref_roots = [reference_root_path, project]
+    search_ref_roots = [reference_root_path, project, Path(tools_root).resolve()]
 
     resolved_refs: dict[str, str] = {}
     rows: list[dict[str, str]] = []

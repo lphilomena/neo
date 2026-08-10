@@ -751,6 +751,12 @@ def _rna_profile_inputs(tmp_path: Path) -> dict[str, object]:
         path = tmp_path / name
         path.mkdir()
         files[name] = path
+    snaf_db = tmp_path / "snaf_db"
+    (snaf_db / "controls").mkdir(parents=True, exist_ok=True)
+    (snaf_db / "Alt91_db").mkdir(exist_ok=True)
+    (snaf_db / "controls/GTEx_junction_counts.h5ad").write_bytes(b"fixture")
+    splicemutr_workflow = tmp_path / "run_splicemutr.smk"
+    splicemutr_workflow.write_text("rule all:\n    input: []\n", encoding="utf-8")
     return {
         "sample_id": "RNA_PROFILE",
         "tumor_rna_fastq": [str(files["tumor_R1.fastq.gz"]), str(files["tumor_R2.fastq.gz"])],
@@ -761,6 +767,8 @@ def _rna_profile_inputs(tmp_path: Path) -> dict[str, object]:
         "easyfuse_ref": str(files["easyfuse_ref"]),
         "ctat_genome_lib": str(files["ctat"]),
         "salmon_index": str(files["salmon_index"]),
+        "snaf_db": str(snaf_db),
+        "splicemutr_workflow": str(splicemutr_workflow),
         "tx2gene": str(files["tx2gene.tsv"]),
         "rna_threads": 8,
     }
@@ -819,8 +827,8 @@ def test_rna_fastq_profile_accepts_rsem_expression_reference(tmp_path: Path):
 def test_rna_fastq_profile_uses_builtin_snaf_when_reference_is_configured(tmp_path: Path):
     inputs = _rna_profile_inputs(tmp_path)
     snaf_db = tmp_path / "snaf_db"
-    (snaf_db / "controls").mkdir(parents=True)
-    (snaf_db / "Alt91_db").mkdir()
+    (snaf_db / "controls").mkdir(parents=True, exist_ok=True)
+    (snaf_db / "Alt91_db").mkdir(exist_ok=True)
     for relative in (
         "controls/GTEx_junction_counts.h5ad",
         "Alt91_db/Hs_Ensembl_exon_add_col.txt",

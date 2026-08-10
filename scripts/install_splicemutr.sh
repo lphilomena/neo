@@ -176,7 +176,8 @@ chmod +x "${BIN_DIR}/splicemutr-neoag"
 for assignment in \
   "NEOAG_SPLICEMUTR_ENV=${ENV_NAME}" \
   "NEOAG_SPLICEMUTR_HOME=${HOME_DIR}" \
-  "NEOAG_SPLICEMUTR_BIN=${BIN_DIR}/splicemutr-neoag"; do
+  "NEOAG_SPLICEMUTR_BIN=${BIN_DIR}/splicemutr-neoag" \
++  "SPLICEMUTR_WORKFLOW=${HOME_DIR}/simulation/running_splicemutr/run_splicemutr.smk"; do
   key="${assignment%%=*}"; value="${assignment#*=}"
   if grep -q "^export ${key}=" "${TOOLS_ENV}" 2>/dev/null; then
     sed -i "s|^export ${key}=.*|export ${key}=\"${value}\"|" "${TOOLS_ENV}"

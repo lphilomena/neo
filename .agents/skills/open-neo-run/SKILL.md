@@ -25,7 +25,7 @@ When raw DNA/RNA BAM or paired FASTQ inputs are supplied without an explicit
 production manifest, Skill2 generates a capability-aware production profile.
 For RNA it includes FASTQ QC, STAR
 alignment, Salmon gene/transcript TPM, EasyFuse, STAR-Fusion, Arriba, RegTools,
-optional SNAF/SpliceMutr, cross-tool splice normalization, fusion/splice peptide
+SNAF and SpliceMutr, cross-tool splice normalization, fusion/splice peptide
 generation, presentation, evidence integration, and dual ranking. For DNA it
 can include BWA/samtools alignment, Mutect2, OptiType or command-template HLA
 callers, FACETS/Sequenza plus configured PURPLE/ASCAT, LOHHLA, VEP peptide
@@ -71,8 +71,9 @@ in the two-field allele-level cross-check. Consensus states are
 7. Reuse existing gene/transcript TPM and RNA alt/VAF tables, or plan/run Salmon/RSEM gene plus transcript quantification from tumor RNA FASTQ and RNA ref/alt counting from tumor RNA BAM plus somatic VCF. Retain fusion/splice junction read evidence.
    For the automatic RNA profile, require HLA, FASTA/GTF, STAR index,
    EasyFuse reference, CTAT library, Salmon index, and tx2gene before execute.
-   SNAF and SpliceMutr remain optional cohort/workflow stages; when their
-   reviewed workflow files are absent they are `UNASSESSED`, not negative.
+   SNAF and SpliceMutr are default splice stages. Their database/workflow
+   assets must be present before execution; missing assets block the splice
+   branch and are reported explicitly.
 8. Cross-check HLA typing, LOHHLA/SpecHLA HLA LOH, fusion, splice, presentation and FACETS/Sequenza/PURPLE/ASCAT purity/CNV/CCF evidence by domain; missing evidence remains `UNASSESSED`.
 9. Build `all_tool_results.tsv`, long-form tool evidence and explicit consensus/conflict outputs.
 10. Preserve the weighted baseline, generate independent Evidence consensus rankings, compare both rankings, and write run/audit manifests.
