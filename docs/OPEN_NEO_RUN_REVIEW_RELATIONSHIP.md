@@ -32,6 +32,12 @@ flowchart LR
 
 `open-neo-run` 决定候选的正式证据等级和 Pipeline 排名。
 
+为避免产生两份患者报告，`open-neo-run` 默认只生成 Pipeline 技术报告：
+
+- `reports/evidence_report.technical.html`
+
+底层 `neoag-v03 run-full` 为兼容既有调用，仍支持通过 `--reports patient,technical` 显式生成患者报告；该患者报告会标记为 Pipeline 结果快照，不作为最终患者报告。
+
 ## open-neo-review
 
 `open-neo-review` 负责读取、检查和解释 `open-neo-run` 的结果，不重新运行生信 Pipeline：
@@ -56,6 +62,10 @@ flowchart LR
 
 - `pipeline_r_grade`
 - `pipeline_event_rank`
+
+最终对外患者报告统一为：
+
+- `open-neo-review` 输出的 `reports/patient_report.html`
 
 ## 推荐执行顺序
 

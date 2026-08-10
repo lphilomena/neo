@@ -830,6 +830,11 @@ def make_patient_report(path: str | Path, bundle: ReportBundle) -> None:
         "R1–R4是研究性证据等级，不是疗效等级。</div>",
         "<div class='warn'><b>重要说明：</b>本报告为研究性计算筛选，不能替代临床诊断或治疗决策。预测候选不等于体内真实呈递、不等于T细胞能够识别，也不等于确定治疗方案；所有候选均需进一步实验和临床专业判断。</div>",
     ]
+    if str(bundle.provenance.get("report_role") or "").lower() == "pipeline_snapshot":
+        out.append(
+            "<div class='warn'><b>报告状态：</b>这是 Pipeline 运行阶段的结果快照，不是最终患者报告。"
+            "请在 Evidence-consensus 完成后运行 open-neo-review，并以其 reports/patient_report.html 为准。</div>"
+        )
 
     out.append("<div class='section'><h2>1. 报告摘要</h2>")
     summary = [

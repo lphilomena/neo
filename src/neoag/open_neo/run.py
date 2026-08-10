@@ -225,7 +225,7 @@ def _run_standard(args: dict[str, Any], routing: RoutingResult, layout: RunLayou
         stub=bool(args.get("stub", False)),
     )
     return run_cli(
-        ["run-full", "--config", str(config), "--outdir", str(layout.pipeline / "result")],
+        ["run-full", "--config", str(config), "--outdir", str(layout.pipeline / "result"), "--reports", "technical"],
         cwd=args.get("project_root") or ".",
         log_path=layout.logs / "run_full.log",
         timeout=int(args.get("timeout", 7200)),

@@ -76,6 +76,7 @@ in the two-field allele-level cross-check. Consensus states are
 8. Cross-check HLA typing, LOHHLA/SpecHLA HLA LOH, fusion, splice, presentation and FACETS/Sequenza/PURPLE/ASCAT purity/CNV/CCF evidence by domain; missing evidence remains `UNASSESSED`.
 9. Build `all_tool_results.tsv`, long-form tool evidence and explicit consensus/conflict outputs.
 10. Preserve the weighted baseline, generate independent Evidence consensus rankings, compare both rankings, and write run/audit manifests.
+11. Generate the technical Pipeline report by default. Do not generate a patient-facing report unless explicitly requested; the final patient report belongs to `open-neo-review`.
 
 ## Required outputs
 
@@ -94,6 +95,7 @@ in the two-field allele-level cross-check. Consensus states are
 - `ranked_events.evidence_consensus.tsv`
 - `ranking_compare_weighted_vs_consensus.md`
 - `run_manifest.json`, `audit_log.jsonl`
+- `reports/evidence_report.technical.html` as the default Pipeline report; an explicitly requested patient report is a non-final Pipeline snapshot
 - `manifests/rna_fusion_splice.production.toml` and
   `manifests/rna_fusion_splice.requirements.tsv` for automatic RNA FASTQ runs
 

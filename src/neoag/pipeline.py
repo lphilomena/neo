@@ -12,7 +12,7 @@ from .appm_lite import build_appm_lite
 from .ccf_v2 import build_ccf_2
 from .scoring import score
 from .validation import make_validation_plan
-from .reports_dual import load_report_bundle, make_dual_reports
+from .reports_dual import load_report_bundle, make_patient_report, make_technical_report
 from .evidence_provenance import ProvenanceRegistry
 from .evidence_layer import build_standard_evidence_layer
 from .peptide_safety_gate import build_peptide_safety_gate
@@ -53,6 +53,7 @@ def run(
     normal_junctions=None,
     cancer_gene_list=None,
     evidence_consensus_rules=None,
+    report_types=None,
 ):
     outdir = Path(outdir)
     outdir.mkdir(parents=True, exist_ok=True)
@@ -71,8 +72,8 @@ def run(
     immune_dir = outdir / "immune_escape"
     safety_dir.mkdir(exist_ok=True)
     immune_dir.mkdir(exist_ok=True)
-    reports = outdir / "reports"
-    reports.mkdir(exist_ok=True)
+    reports_dir = outdir / "reports"
+    reports_dir.mkdir(exist_ok=True)
 
     raw_events_path = parsed / "raw_events.tsv"
     raw_peptides_path = parsed / "raw_peptides.tsv"
@@ -267,6 +268,15 @@ def run(
             "legacy_ranking_modified": evidence_consensus_summary["legacy_ranking_modified"],
         },
     }
+    selected_reports = {"patient", "technical"}
+    if report_types is not None:
+        values = report_types.split(",") if isinstance(report_types, str) else list(report_types)
+        selected_reports = {str(value).strip().lower() for value in values if str(value).strip()}
+        if selected_reports == {"none"}:
+            selected_reports = set()
+        unknown = selected_reports - {"patient", "technical"}
+        if unknown:
+            raise ValueError("unsupported report type(s): " + ",".join(sorted(unknown)))
     report_bundle = load_report_bundle(
         profile=profile,
         events=evs,
@@ -278,7 +288,21 @@ def run(
         sample_id=sample_id,
         entry_mode=entry_mode or "",
     )
-    report_paths = make_dual_reports(reports, report_bundle)
+    report_paths = {"evidence_report": "", "evidence_report_patient": "", "evidence_report_technical": ""}
+    if "patient" in selected_reports:
+        report_bundle.provenance["report_role"] = "pipeline_snapshot"
+        patient_path = reports_dir / "evidence_report.patient.html"
+        make_patient_report(patient_path, report_bundle)
+        report_paths["evidence_report_patient"] = str(patient_path)
+    if "technical" in selected_reports:
+        technical_path = reports_dir / "evidence_report.technical.html"
+        make_technical_report(technical_path, report_bundle)
+        report_paths["evidence_report_technical"] = str(technical_path)
+    legacy_source = report_paths["evidence_report_technical"] or report_paths["evidence_report_patient"]
+    if legacy_source:
+        legacy_path = reports_dir / "evidence_report.html"
+        legacy_path.write_text(Path(legacy_source).read_text(encoding="utf-8"), encoding="utf-8")
+        report_paths["evidence_report"] = str(legacy_path)
     report_path = report_paths["evidence_report"]
     prov = outdir / "provenance.json"
     write_json(prov, prov_payload)

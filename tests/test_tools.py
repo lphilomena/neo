@@ -44,6 +44,27 @@ def test_run_full_cli_stub(tmp_path):
     assert (outdir / "scoring/comprehensive_peptide_evidence.tsv").exists()
 
 
+def test_run_full_cli_can_generate_technical_report_only(tmp_path):
+    outdir = tmp_path / "technical_only"
+    main([
+        "run-full", "--config", str(ROOT / "conf/run.stub.toml"),
+        "--outdir", str(outdir), "--reports", "technical",
+    ])
+    assert (outdir / "reports/evidence_report.technical.html").is_file()
+    assert not (outdir / "reports/evidence_report.patient.html").exists()
+
+
+def test_run_full_cli_marks_explicit_patient_report_as_pipeline_snapshot(tmp_path):
+    outdir = tmp_path / "patient_snapshot"
+    main([
+        "run-full", "--config", str(ROOT / "conf/run.stub.toml"),
+        "--outdir", str(outdir), "--reports", "patient",
+    ])
+    patient = outdir / "reports/evidence_report.patient.html"
+    assert patient.is_file()
+    assert "Pipeline 运行阶段的结果快照" in patient.read_text(encoding="utf-8")
+
+
 def test_multisource_peptides_all_enter_presentation_prediction(tmp_path):
     cfg = tmp_path / "multisource.toml"
     cfg.write_text(

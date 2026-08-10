@@ -381,6 +381,7 @@ def _formal_patient_report(
 
     provenance = _read_json_mapping(artifacts.get("run_manifest"))
     provenance.update(_read_json_mapping(artifacts.get("provenance")))
+    provenance["report_role"] = "final_review"
     for key, value in context.items():
         provenance.setdefault(key, value)
     provenance.setdefault("parallel_rankings", {})

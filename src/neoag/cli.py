@@ -906,6 +906,7 @@ def cmd_run_full(args):
         "rna_junction": inputs.get("rna_junction_tsv") or inputs.get("rna_junction"),
         "entry_mode": entry_mode,
         "cancer_gene_list": cancer_gene_list,
+        "report_types": args.reports,
     }
     if raw_events and raw_peptides:
         run_kwargs["raw_events"] = raw_events
@@ -1331,6 +1332,11 @@ def build_parser():
     rf = sub.add_parser("run-full", help="Upstream tools + current scoring/reporting into schema-compatible outputs")
     rf.add_argument("--config", default=str(ROOT / "conf" / "run.stub.toml"))
     rf.add_argument("--outdir")
+    rf.add_argument(
+        "--reports",
+        default="patient,technical",
+        help="Comma-separated report types: patient,technical; use none to skip reports",
+    )
     rf.set_defaults(func=cmd_run_full)
 
     bi = sub.add_parser("build-intermediates", help="Build parsed/raw_events + raw_peptides (multi-entry A–F)")

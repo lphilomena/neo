@@ -557,7 +557,8 @@ def run_production(
         command = (
             f"source {shlex.quote(str(root / 'conf/tools.env.sh'))}; "
             f"{shlex.quote(sys.executable)} -m neoag.cli run-full "
-            f"--config {shlex.quote(str(config_path))} --outdir {shlex.quote(str(final_outdir))}"
+            f"--config {shlex.quote(str(config_path))} --outdir {shlex.quote(str(final_outdir))} "
+            f"--reports technical"
         )
         log_path = logs_dir / "unified_ranking.log"
         proc = subprocess.run(["bash", "-lc", command], cwd=root, text=True, capture_output=True)
