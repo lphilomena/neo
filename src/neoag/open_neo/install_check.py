@@ -300,6 +300,9 @@ tools:
   gatk:
     executable: gatk
     mode: conda_or_container
+  java:
+    executable: java
+    mode: conda_or_container
   bam_matcher:
     executable: bam-matcher
     mode: conda
@@ -706,6 +709,40 @@ def _doctor_delta(before: DoctorResult | None, after: DoctorResult, path: Path) 
 
 
 def _run_doctor(args: dict[str, Any], project_root: Path, outdir: Path, tier: str, *, allow_execute: bool, smoke: bool) -> DoctorResult:
+    # Machine install readiness: audit the deploy root (neo-agent), not the
+    # source checkout. Docs/tests under project_root often contain example
+    # /root or /mnt paths that are irrelevant to whether this machine install
+    # is usable. Large asset trees under deploy_root are skipped.
+    deploy_root = Path(str(args.get("deploy_root") or "")).expanduser() if args.get("deploy_root") else None
+    release_audit_root = deploy_root if deploy_root and deploy_root.is_dir() else None
+    allowed: list[str] = []
+    for key in ("deploy_root", "tools_root", "reference_root", "licensed_root", "conda_base"):
+        value = args.get(key)
+        if value:
+            allowed.append(str(value))
+    allowed.append(str(project_root))
+    # Conda may record package-cache paths under <prefix>/pkgs or a sibling .conda/
+    # (e.g. .../genos/miniconda3 → .../genos/.conda/pkgs/...). Those are machine-
+    # local install paths, not site-private leaks outside the deploy tree.
+    conda_raw = args.get("conda_base")
+    if conda_raw:
+        try:
+            conda_path = Path(str(conda_raw)).expanduser().resolve()
+            allowed.append(str(conda_path / "pkgs"))
+            sibling_conda = conda_path.parent / ".conda"
+            if sibling_conda.is_dir():
+                allowed.append(str(sibling_conda))
+        except OSError:
+            pass
+    deploy_skip = {
+        ".git", "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache",
+        ".nextflow", "work", "results",
+        # large synced/install trees — not our deploy config surface
+        "refs", "licensed_tools", "sources", "conda_pkgs", "pkgs",
+        # third-party clones + env metadata: upstream docs mention /home/...;
+        # conda-meta JSON mentions package caches. Not Skill1 install leaks.
+        "tools", "conda_envs", "container_images", "install_cache",
+    }
     return run_doctor(
         project_root=project_root,
         outdir=outdir,
@@ -718,6 +755,9 @@ def _run_doctor(args: dict[str, Any], project_root: Path, outdir: Path, tier: st
         run_nextflow=bool(args.get("run_nextflow", False)),
         mini_smoke=bool(args.get("mini_smoke", smoke and tier in {"prediction", "full"})),
         release_audit=bool(args.get("release_audit", True)),
+        release_audit_root=release_audit_root,
+        release_audit_allowed_prefixes=allowed or None,
+        release_audit_skip_dirs=deploy_skip if release_audit_root is not None else None,
         allow_execute=allow_execute,
     )
 

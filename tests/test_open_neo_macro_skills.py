@@ -478,6 +478,27 @@ def test_deployment_profile_defaults_follow_requested_tier(tmp_path: Path):
     assert "--all-open" in explicit
 
 
+def test_standard_installer_profile_covers_open_neo_run_groups():
+    """Skill1 full→--standard must install fusion + bam-matcher (not side-path only)."""
+    script = Path(__file__).resolve().parents[1] / (
+        ".agents/skills/neoag-remote-deploy/scripts/16_install_new_machine.sh"
+    )
+    text = script.read_text(encoding="utf-8")
+    # Extract the --standard) INSTALL_TOOL_GROUPS=(...) line
+    match = None
+    for line in text.splitlines():
+        if line.strip().startswith("--standard)"):
+            match = line
+            break
+    assert match is not None
+    for flag in (
+        "--core-env", "--vep", "--gatk", "--immunogenicity", "--optitype",
+        "--facets", "--splice", "--lohhla", "--fusion", "--bam-matcher", "--install-torch",
+    ):
+        assert flag in match, f"missing {flag} in --standard groups"
+    assert "--ascat-pyclone" not in match
+
+
 def test_install_skill_defaults_to_central_asset_server(monkeypatch):
     monkeypatch.delenv("OPEN_NEO_ASSET_SOURCE_HOST", raising=False)
     monkeypatch.delenv("OPEN_NEO_ASSET_SOURCE_ROOT", raising=False)

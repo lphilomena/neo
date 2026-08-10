@@ -49,6 +49,45 @@ def test_release_audit_detects_private_path(tmp_path):
     assert res["status"] == "UNSAFE"
 
 
+def test_release_audit_allows_deploy_prefixes_and_skips_vendor_trees(tmp_path):
+    """Skill1 machine audit: scan deploy_root, allowlist install paths, skip vendor clones."""
+    deploy = tmp_path / "neo-agent"
+    (deploy / "env_tool" / "bin").mkdir(parents=True)
+    (deploy / "env_tool" / "tools" / "upstream").mkdir(parents=True)
+    wrapper = deploy / "env_tool" / "bin" / "vep"
+    wrapper.write_text(
+        "#!/usr/bin/env bash\n"
+        f"ROOT={deploy / 'env_tool'}\n"
+        "exec \"$ROOT/miniforge3/envs/neoag-vep/bin/vep\" \"$@\"\n",
+        encoding="utf-8",
+    )
+    # Upstream docs under tools/ must not fail the deploy audit.
+    (deploy / "env_tool" / "tools" / "upstream" / "README.md").write_text(
+        "Built at /home/paul/localwork/bam-matcher\npatient sample demo\n",
+        encoding="utf-8",
+    )
+    skip = {
+        ".git", "work", "results", "tools", "conda_envs", "refs",
+        "licensed_tools", "sources", "conda_pkgs", "pkgs",
+    }
+    res_ok = scan_release_boundary(
+        deploy,
+        skip_dirs=skip,
+        allowed_path_prefixes=[str(deploy)],
+    )
+    assert res_ok["summary"]["private_path_hits"] == 0
+    assert res_ok["summary"]["patient_hint_hits"] == 0
+    assert res_ok["status"] in {"PASS", "PARTIAL"}
+
+    (deploy / "env_tool" / "leak.py").write_text("x='/home/other/secret'\n", encoding="utf-8")
+    res_leak = scan_release_boundary(
+        deploy,
+        skip_dirs=skip,
+        allowed_path_prefixes=[str(deploy)],
+    )
+    assert any(h["path"].endswith("leak.py") for h in res_leak["private_path_hits"])
+
+
 def test_plan_pipeline_ranks_result_review():
     steps = plan_pipeline({"sample_id": "T003", "inputs": {"ranked_peptides_recommendation": "a.tsv", "ranked_peptides_netmhcpan42": "b.tsv"}})
     names = [s.name for s in steps]

@@ -139,11 +139,22 @@ def load_limited_yaml(path: str | Path) -> dict[str, Any]:
     Supports JSON directly. For YAML it supports nested dictionaries via
     indentation, scalar values, and top-level lists written as '- item'. This is
     intentionally small; if PyYAML is installed it is used automatically.
+
+    Also accepts JSON *content* stored under a ``.yaml`` / ``.yml`` suffix.
+    ``auto_config._dump_yaml`` falls back to ``json.dumps`` when PyYAML is
+    missing, so a second configure pass must not feed that file into the
+    indentation YAML fallback (which corrupts keys into quoted JSON fragments).
     """
     p = Path(path)
     text = p.read_text(encoding="utf-8")
-    if p.suffix.lower() == ".json":
-        return json.loads(text)
+    stripped = text.lstrip()
+    if p.suffix.lower() == ".json" or stripped[:1] in {"{", "["}:
+        try:
+            loaded = json.loads(text)
+            return loaded if isinstance(loaded, dict) else {"_list": loaded}
+        except json.JSONDecodeError:
+            if p.suffix.lower() == ".json":
+                raise
     try:
         import yaml  # type: ignore
         loaded = yaml.safe_load(text)

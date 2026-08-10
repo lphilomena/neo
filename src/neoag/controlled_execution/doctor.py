@@ -489,6 +489,9 @@ def run_doctor(
     run_nextflow: bool = False,
     mini_smoke: bool = False,
     release_audit: bool = True,
+    release_audit_root: str | Path | None = None,
+    release_audit_allowed_prefixes: list[str] | tuple[str, ...] | None = None,
+    release_audit_skip_dirs: set[str] | None = None,
     allow_execute: bool = True,
 ) -> DoctorResult:
     root = Path(project_root).resolve()
@@ -536,9 +539,21 @@ def run_doctor(
 
     # Release boundary audit.
     if release_audit:
-        audit_result = scan_release_boundary(root)
+        audit_root = Path(release_audit_root).resolve() if release_audit_root else root
+        audit_result = scan_release_boundary(
+            audit_root,
+            skip_dirs=release_audit_skip_dirs,
+            allowed_path_prefixes=release_audit_allowed_prefixes,
+        )
         write_release_audit(audit_result, od / "release_audit")
-        rows.append(_row("release", "boundary", audit_result["status"], f"private_path_hits={audit_result['summary']['private_path_hits']}; cache_hits={audit_result['summary']['cache_hits']}", str(root), blocking=audit_result["status"] == "UNSAFE"))
+        rows.append(_row(
+            "release",
+            "boundary",
+            audit_result["status"],
+            f"root={audit_root}; private_path_hits={audit_result['summary']['private_path_hits']}; cache_hits={audit_result['summary']['cache_hits']}",
+            str(audit_root),
+            blocking=audit_result["status"] == "UNSAFE",
+        ))
 
     # Optional smoke tests.
     if mini_smoke:

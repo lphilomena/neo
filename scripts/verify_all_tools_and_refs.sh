@@ -36,7 +36,9 @@ while [[ $# -gt 0 ]]; do
     --skip-reference) SKIP_REFERENCE=1 ;;
     -h|--help) usage; exit 0 ;;
     *)
-      if [[ -z "$REF_BUNDLE" && -d "$1" ]]; then
+      # Allow positional bundle/root even when NEOAG_REF_BUNDLE is already exported
+      # (13_install_readme_tools.sh sets the env and also passes --smoke "$REFERENCE_ROOT").
+      if [[ -d "$1" ]]; then
         REF_BUNDLE="$1"
       else
         echo "ERROR: unknown argument or missing directory: $1" >&2

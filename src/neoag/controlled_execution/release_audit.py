@@ -20,9 +20,74 @@ PATIENT_HINTS = ["patient", "患者", "肿瘤", "血液", "M1ML", "ML150", "chen
 TEXT_SUFFIXES = {".py", ".md", ".txt", ".toml", ".yaml", ".yml", ".json", ".sh", ".nf", ".html", ".rst", ".cfg", ".ini"}
 
 
-def scan_release_boundary(root: str | Path, *, max_file_bytes: int = 2_000_000, skip_dirs: set[str] | None = None) -> dict[str, Any]:
+def _is_text_candidate(path: Path) -> bool:
+    """True for known text suffixes, or extensionless files that look like scripts."""
+    suffix = path.suffix.lower()
+    if suffix in TEXT_SUFFIXES:
+        return True
+    if suffix:
+        return False
+    # Deploy wrappers (bin/vep, bin/bam-matcher, …) are often extensionless.
+    try:
+        with path.open("rb") as fh:
+            head = fh.read(256)
+    except OSError:
+        return False
+    if not head:
+        return False
+    if head.startswith(b"#!"):
+        return True
+    # Reject obvious binaries.
+    if b"\0" in head:
+        return False
+    try:
+        head.decode("utf-8")
+    except UnicodeDecodeError:
+        return False
+    return True
+
+
+def _normalize_allowed_prefixes(prefixes: list[str] | tuple[str, ...] | None) -> list[str]:
+    allowed: list[str] = []
+    for raw in prefixes or []:
+        if not raw:
+            continue
+        try:
+            allowed.append(str(Path(raw).expanduser().resolve()))
+        except OSError:
+            allowed.append(str(Path(raw).expanduser()))
+    return allowed
+
+
+def _match_allowed(matched: str, allowed_prefixes: list[str]) -> bool:
+    """Return True when a path-like match belongs to a machine-local deploy root."""
+    if not matched or not allowed_prefixes:
+        return False
+    candidate = matched.rstrip("/")
+    for prefix in allowed_prefixes:
+        pref = prefix.rstrip("/")
+        if candidate == pref or candidate.startswith(pref + "/"):
+            return True
+    return False
+
+
+def scan_release_boundary(
+    root: str | Path,
+    *,
+    max_file_bytes: int = 2_000_000,
+    skip_dirs: set[str] | None = None,
+    allowed_path_prefixes: list[str] | tuple[str, ...] | None = None,
+) -> dict[str, Any]:
+    """Scan *root* for release-boundary issues.
+
+    For portable release tarballs, ``root`` is usually the project checkout.
+    For Skill1 machine install checks, callers should pass ``deploy_root`` and
+    allowlist that deploy root / conda base so legitimate absolute paths under
+    the install tree are not treated as private leaks.
+    """
     base = Path(root)
     skip = DEFAULT_SKIP_DIRS if skip_dirs is None else set(skip_dirs)
+    allowed_prefixes = _normalize_allowed_prefixes(allowed_path_prefixes)
     cache_hits: list[dict[str, str]] = []
     skipped_dirs: list[dict[str, str]] = []
     private_hits: list[dict[str, str]] = []
@@ -47,7 +112,7 @@ def scan_release_boundary(root: str | Path, *, max_file_bytes: int = 2_000_000, 
             rel = safe_rel(p, base)
             if p.name in CACHE_PATTERNS:
                 cache_hits.append({"path": rel, "type": "cache_or_runtime_artifact"})
-            if p.suffix.lower() not in TEXT_SUFFIXES:
+            if not _is_text_candidate(p):
                 continue
             try:
                 size = p.stat().st_size
@@ -62,7 +127,10 @@ def scan_release_boundary(root: str | Path, *, max_file_bytes: int = 2_000_000, 
             for pat in PRIVATE_PATH_PATTERNS:
                 m = pat.search(text)
                 if m:
-                    private_hits.append({"path": rel, "match": m.group(0)[:200]})
+                    matched = m.group(0)[:200]
+                    if _match_allowed(matched, allowed_prefixes):
+                        break
+                    private_hits.append({"path": rel, "match": matched})
                     break
             low = text.lower()
             if any(h.lower() in low for h in PATIENT_HINTS):

@@ -10,6 +10,10 @@
   implementation in each HLA typing, HLA LOH, purity/CNV, fusion, splice and
   CCF capability group. Tool-specific optional alternatives are reported but
   do not all have to be installed simultaneously.
+  The default installer profile `--standard` installs fusion tools and
+  BAM-matcher (plus FACETS/OptiType/LOHHLA/splice/…) so a READY full install
+  can drive `open-neo-run` DNA+RNA paths without separate side-path installs.
+  ASCAT/PyClone remains optional.
 
 `tier_requirements.tsv` is the authoritative readiness matrix. `READY` is
 allowed only when every required item and every any-of capability group is

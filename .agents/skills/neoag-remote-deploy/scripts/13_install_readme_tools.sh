@@ -793,7 +793,14 @@ export SPECHLA_DB="$REFERENCE_ROOT/data/hla/spechla/db"
 export SPECHLA_ENV="$CONDA_BASE/envs/neoag-tools"
 export NEOAG_BAM_MATCHER_ENV_PREFIX="$TOOLS_ROOT/conda_envs/neoag-bam-matcher"
 export BAM_MATCHER_HOME="$TOOLS_ROOT/tools/bam-matcher"
-export BAM_MATCHER_LOCI="$REFERENCE_ROOT/data/facets/reference/1000G_omni2.5.hg38.biallelic.vcf.gz"
+# Prefer the portable GRCh38 identity panel (full-tier sample_identity_reference).
+if [[ -f "$REFERENCE_ROOT/data/sample_identity/bam_matcher.common_snps.hg38.vcf" ]]; then
+  export BAM_MATCHER_LOCI="$REFERENCE_ROOT/data/sample_identity/bam_matcher.common_snps.hg38.vcf"
+elif [[ -f "$REFERENCE_ROOT/data/facets/reference/bam_matcher.identity.hg38.vcf.gz" ]]; then
+  export BAM_MATCHER_LOCI="$REFERENCE_ROOT/data/facets/reference/bam_matcher.identity.hg38.vcf.gz"
+else
+  export BAM_MATCHER_LOCI="$REFERENCE_ROOT/data/facets/reference/1000G_omni2.5.hg38.biallelic.vcf.gz"
+fi
 export HLALA_HOME="$TOOLS_ROOT/tools/HLA-LA"
 export HLA_LA_HOME="$HLALA_HOME"
 export HLALA_ENV_PREFIX="$TOOLS_ROOT/tools/HLA-LA/.conda"
@@ -867,6 +874,24 @@ if [[ "$INSTALL_POLYSOLVER" == "1" ]]; then
   [[ -n "$NOVOALIGN_LICENSE_FILE_ARG" ]] && env_cmd="$env_cmd NOVOALIGN_LICENSE_FILE='$NOVOALIGN_LICENSE_FILE_ARG'"
   run "configure Polysolver" bash -lc "$env_cmd bash scripts/install_polysolver.sh"
 fi
+# Doctor / open-neo-run expect lohhla_reference under REFERENCE_ROOT/data/lohhla/polysolver.
+# Licensed sync lands Polysolver under LICENSED_ROOT; wire a stable symlink when needed.
+wire_lohhla_polysolver_reference() {
+  local licensed="${POLYSOLVER_HOME_ARG:-$LICENSED_ROOT/polysolver}"
+  local dest="$REFERENCE_ROOT/data/lohhla/polysolver"
+  if [[ ! -d "$licensed" ]]; then
+    return 0
+  fi
+  if [[ -e "$dest" || -L "$dest" ]]; then
+    return 0
+  fi
+  mkdir -p "$(dirname "$dest")"
+  ln -sfn "$licensed" "$dest"
+  log "Linked lohhla_reference -> $dest -> $licensed"
+}
+if [[ "$INSTALL_LOHHLA" == "1" || -d "${POLYSOLVER_HOME_ARG:-$LICENSED_ROOT/polysolver}" ]]; then
+  wire_lohhla_polysolver_reference
+fi
 [[ "$INSTALL_OPTITYPE" == "1" ]] && run "install OptiType" bash scripts/install_optitype.sh
 [[ "$INSTALL_BAM_MATCHER" == "1" ]] && { need_download_ok "BAM-matcher pinned source and compatibility environment"; run "install BAM-matcher" bash scripts/install_bam_matcher.sh; }
 [[ "$INSTALL_FACETS" == "1" ]] && run "install FACETS" bash scripts/install_facets.sh
@@ -888,9 +913,13 @@ register_hmf_purple_if_requested
 stage_bigmhc_models_if_requested
 
 if [[ "$RUN_VERIFY" == "1" ]]; then
-  verify_args=(--smoke "$REFERENCE_ROOT")
-  [[ "$STRICT_VERIFY" == "1" ]] && verify_args=(--smoke --strict "$REFERENCE_ROOT")
-  run "verify README tools and references" bash scripts/verify_all_tools_and_refs.sh "${verify_args[@]}"
+  # NEOAG_REF_BUNDLE is already exported to REFERENCE_ROOT above; pass flags only.
+  # Passing the path again used to fail when the env var was already set.
+  verify_args=(--smoke)
+  [[ "$STRICT_VERIFY" == "1" ]] && verify_args=(--smoke --strict)
+  run "verify README tools and references" \
+    env NEOAG_REF_BUNDLE="$REFERENCE_ROOT" \
+    bash scripts/verify_all_tools_and_refs.sh "${verify_args[@]}"
 fi
 
 if [[ "$RUN_REAL_VCF_SMOKE" == "1" ]]; then
