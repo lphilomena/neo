@@ -74,9 +74,9 @@ else
   echo "WARN: Arriba known fusions file not found; running without -k: ${KNOWN_FUSIONS}"
 fi
 if [[ -s "${PROTEIN_DOMAINS}" ]]; then
-  ARRIBA_EXTRA_ARGS+=(-t "${PROTEIN_DOMAINS}")
+  ARRIBA_EXTRA_ARGS+=(-p "${PROTEIN_DOMAINS}")
 else
-  echo "WARN: Arriba protein domains file not found; running without -t: ${PROTEIN_DOMAINS}"
+  echo "WARN: Arriba protein domains file not found; running without -p: ${PROTEIN_DOMAINS}"
 fi
 
 arriba \
@@ -85,7 +85,7 @@ arriba \
   -g "${GTF}" \
   "${ARRIBA_EXTRA_ARGS[@]}" \
   -o "${OUT}/${PATIENT_ID}.fusions.tsv" \
-  -d "${OUT}/${PATIENT_ID}.fusions.discarded.tsv"
+  -O "${OUT}/${PATIENT_ID}.fusions.discarded.tsv"
 
 echo "==> Arriba finished"
 ls -lh "${OUT}/${PATIENT_ID}.fusions.tsv" "${OUT}/${PATIENT_ID}.fusions.discarded.tsv"
