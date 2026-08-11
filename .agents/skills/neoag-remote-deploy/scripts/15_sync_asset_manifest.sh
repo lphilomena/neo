@@ -140,6 +140,23 @@ rsync_transport() {
 
 RSYNC_TRANSPORT="$(rsync_transport)"
 
+rsync_flags() {
+  local name="$1" src="$2" dst="$3"
+  case "$dst:$name:$src" in
+    "$LICENSED_ROOT"/*:*|*polysolver*|*licensed*)
+      # Licensed tool trees may contain vendor binaries or links that are not
+      # readable through their source targets. Preserve those links instead of
+      # dereferencing them with -L.
+      printf '%s' "-a"
+      ;;
+    *)
+      # Reference assets commonly contain absolute symlinks that only resolve on
+      # the source host, so keep dereferencing for non-licensed assets.
+      printf '%s' "-aL"
+      ;;
+  esac
+}
+
 verify_sha256() {
   local kind="$1" dst="$2" sha="$3"
   [[ -n "$sha" && "$sha" != "-" ]] || return 0
@@ -215,9 +232,11 @@ while IFS= read -r line || [[ -n "$line" ]]; do
     fi
     cmd="mkdir -p '$(dirname "$dst")' && ln -s '$src' '$dst'"
   elif [[ "$kind" == "file" ]]; then
-    cmd="mkdir -p '$(dirname "$dst")' && rsync -aL $RSYNC_TRANSPORT '$spec' '$dst'"
+    rsync_opts="$(rsync_flags "$name" "$src" "$dst")"
+    cmd="mkdir -p '$(dirname "$dst")' && rsync $rsync_opts $RSYNC_TRANSPORT '$spec' '$dst'"
   else
-    cmd="mkdir -p '$dst' && rsync -aL $RSYNC_TRANSPORT '$spec/' '$dst/'"
+    rsync_opts="$(rsync_flags "$name" "$src" "$dst")"
+    cmd="mkdir -p '$dst' && rsync $rsync_opts $RSYNC_TRANSPORT '$spec/' '$dst/'"
   fi
   log ""
   log "==> [$MODE] sync asset $name"

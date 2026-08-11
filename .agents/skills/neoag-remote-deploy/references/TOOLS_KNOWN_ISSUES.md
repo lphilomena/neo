@@ -196,8 +196,11 @@ the new machine.
 
 Fix:
 
-- `15_sync_asset_manifest.sh` uses `rsync -aL` so source symlinks are
-  dereferenced and the target receives real files/directories;
+- `15_sync_asset_manifest.sh` uses `rsync -aL` for ordinary reference assets so
+  source symlinks are dereferenced and the target receives real files/directories;
+- licensed-tool assets, including PolySolver, intentionally use `rsync -a` so
+  vendor binaries or unreadable source symlink targets such as `novoindex` are
+  preserved instead of dereferenced;
 - use `--asset-source-host` when the symlink target only exists on the source
   host;
 - use real marker files, such as `ref/hla.ref.extend.fa` for SpecHLA DB, rather
