@@ -18,6 +18,8 @@ INPUT="${EASYFUSE_INPUT_TSV:-${ROOT}/work/easyfuse_${SAMPLE_ID}_input.tsv}"
 OUT="${OUTDIR:-${ROOT}/results/easyfuse}"
 LOG="${LOG:-${ROOT}/work/run_easyfuse_${SAMPLE_ID}.log}"
 PREBUILD_LOG="${ROOT}/work/easyfuse_conda_prebuild.log"
+NXF_RUN_NAME="${EASYFUSE_RUN_NAME:-easyfuse_${SAMPLE_ID}}"
+NXF_STEM="${NXF_RUN_NAME//[^A-Za-z0-9_.-]/_}"
 
 ensure_input_tsv() {
   printf '%s\t%s\t%s\n' "${SAMPLE_ID}" "${FQ1}" "${FQ2}" > "${INPUT}"
@@ -27,8 +29,10 @@ ensure_input_tsv() {
   fi
 }
 
-STAR_TMP="${ROOT}/work/star_tmp"
-mkdir -p "${OUT}" "$(dirname "${LOG}")" "${ROOT}/work/.nextflow_home" "${ROOT}/work/.nextflow_work" "${STAR_TMP}"
+STAR_TMP="${ROOT}/work/star_tmp_${NXF_STEM}"
+export NXF_HOME="${EASYFUSE_NXF_HOME:-${ROOT}/work/.nextflow_home_${NXF_STEM}}"
+export NXF_WORK="${EASYFUSE_NXF_WORK:-${ROOT}/work/.nextflow_work_${NXF_STEM}}"
+mkdir -p "${OUT}" "$(dirname "${LOG}")" "${NXF_HOME}" "${NXF_WORK}" "${STAR_TMP}"
 export TMPDIR="${STAR_TMP}"
 ensure_input_tsv
 
@@ -37,13 +41,7 @@ for stale_pid in $(pgrep -f 'run_easyfuse_cfrna_test\.sh' 2>/dev/null || true); 
   echo "==> stopping stale easyfuse_cfrna_test PID=${stale_pid}"
   kill "${stale_pid}" 2>/dev/null || true
 done
-while pgrep -f 'nextflow.*EasyFuse/main.nf' >/dev/null 2>&1; do
-  echo "==> waiting for other EasyFuse Nextflow runs to finish ..."
-  sleep 30
-done
 
-export NXF_HOME="${ROOT}/work/.nextflow_home"
-export NXF_WORK="${ROOT}/work/.nextflow_work"
 export NXF_DISABLE_CHECK_TTY=true
 export CONDA_ALWAYS_YES=true
 export CONDA_YES=true
@@ -82,6 +80,8 @@ echo "    fq2=${FQ2}"
 echo "    input=${INPUT}"
 echo "    reference=${REF}"
 echo "    output=${OUT}"
+echo "    nxf_home=${NXF_HOME}"
+echo "    nxf_work=${NXF_WORK}"
 
 [[ -f "${FQ1}" && -f "${FQ2}" ]] || {
   echo "ERROR: FASTQ not found:" >&2
@@ -204,7 +204,6 @@ export PATH="$(echo "${PATH}" | tr ':' '\n' | grep -vE '/envs/neoag-tools/bin$|/
 cd "${ROOT}/work"
 
 # Separate run name avoids resume/lock collision with easyfuse_cfrna_test (session 9d03387c...).
-NXF_RUN_NAME="${EASYFUSE_RUN_NAME:-easyfuse_${SAMPLE_ID}}"
 NXF_HISTORY="${NXF_HOME:-${ROOT}/work/.nextflow_home}/history"
 if [[ ! -f "${NXF_HISTORY}" ]]; then
   NXF_HISTORY="${ROOT}/work/.nextflow/history"
