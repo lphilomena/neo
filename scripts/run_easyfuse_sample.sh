@@ -44,8 +44,6 @@ done
 
 export NXF_DISABLE_CHECK_TTY=true
 export CONDA_ALWAYS_YES=true
-export CONDA_YES=true
-export MAMBA_YES=1
 export MAMBA_ALWAYS_YES=true
 export NEOAG_REAL_MAMBA="${NEOAG_CONDA_BASE}/bin/mamba"
 mkdir -p "${ROOT}/work/easyfuse_bin"
