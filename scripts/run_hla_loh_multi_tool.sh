@@ -128,10 +128,15 @@ run_lohhla() {
 }
 
 run_spechla() {
-  TYPING_DIR="$OUTDIR/spechla_typing"
-  bash "$ROOT/scripts/run_spechla_sample.sh" --bam "$TUMOR_BAM" --sample-id "$TUMOR_ID" \
-    --threads "$THREADS" --outdir "$TYPING_DIR"
-  typing_result="$(find "$TYPING_DIR/typing" -type f -name 'hla.result.txt' -size +0c -print -quit)"
+  TYPING_DIR="${SPECHLA_TYPING_DIR:-$OUTDIR/spechla_typing}"
+  if [[ -n "${SPECHLA_TYPING_DIR:-}" ]]; then
+    [[ -d "$TYPING_DIR" ]] || { echo "ERROR: SPECHLA_TYPING_DIR missing: $TYPING_DIR" >&2; exit 5; }
+    typing_result="$(find "$TYPING_DIR" -maxdepth 2 -type f -name 'hla.result.txt' -size +0c -print -quit)"
+  else
+    bash "$ROOT/scripts/run_spechla_sample.sh" --bam "$TUMOR_BAM" --sample-id "$TUMOR_ID" \
+      --threads "$THREADS" --outdir "$TYPING_DIR"
+    typing_result="$(find "$TYPING_DIR/typing" -type f -name 'hla.result.txt' -size +0c -print -quit)"
+  fi
   [[ -n "$typing_result" ]] || { echo "ERROR: tumor SpecHLA typing output missing" >&2; exit 5; }
   spechla_args=(--sample-id "$SAMPLE_ID" --typing-dir "$(dirname "$typing_result")" \
     --purity "$PURITY" --ploidy "$PLOIDY" --outdir "$OUTDIR/spechla" --force)

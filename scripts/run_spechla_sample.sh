@@ -21,17 +21,39 @@ mkdir -p "$OUTDIR/reads" "$OUTDIR/typing"
 if [[ -s "$OUTDIR/.complete" && "$FORCE" != 1 ]]; then echo "SpecHLA already complete: $OUTDIR"; exit 0; fi
 rm -f "$OUTDIR/.complete"
 
+SAMTOOLS="${SAMTOOLS:-${NEOAG_CONDA_BASE:-/home/na/miniforge3}/envs/${NEOAG_TOOLS_ENV:-neoag-tools}/bin/samtools}"
+if [[ ! -x "$SAMTOOLS" ]]; then
+  SAMTOOLS="$(command -v samtools || true)"
+fi
+[[ -x "$SAMTOOLS" ]] || { echo "ERROR: samtools not found for SpecHLA direct MHC extraction" >&2; exit 3; }
+
 fq1="$OUTDIR/reads/${SAMPLE_ID}_extract_1.fq.gz"
 fq2="$OUTDIR/reads/${SAMPLE_ID}_extract_2.fq.gz"
 single="$OUTDIR/reads/${SAMPLE_ID}_extract_single.fq.gz"
 extract_bam="$OUTDIR/reads/${SAMPLE_ID}.tmp.extract.bam"
+
+direct_mhc_extract() {
+  local contig
+  contig="$("$SAMTOOLS" idxstats "$BAM" | awk -F '\t' '($1 == "chr6" || $1 == "6") && $2 >= 33150000 { print $1; exit }')"
+  [[ -n "$contig" ]] || { echo "ERROR: cannot find chr6/6 in BAM header for direct MHC extraction" >&2; return 5; }
+  echo "WARN: using direct GRCh38 MHC extraction fallback on ${contig}:29600000-33150000" >&2
+  "$SAMTOOLS" view -b "$BAM" "${contig}:29600000-33150000" \
+    | "$SAMTOOLS" view -b -F 0x4 - \
+    | "$SAMTOOLS" sort -@ "$THREADS" -m 2G -O BAM -o "$extract_bam" -
+  "$SAMTOOLS" index "$extract_bam"
+}
+
 set +e
 SPECHLA_MODE=extract "$ROOT/scripts/run_spechla_container.sh" \
   -s "$SAMPLE_ID" -b "$BAM" -r hg38 -o "$OUTDIR/reads" 2>&1 | tee "$OUTDIR/extract.log"
 extract_rc=${PIPESTATUS[0]}
 set -e
 if [[ ! -s "$fq1" || ! -s "$fq2" ]]; then
-  [[ -s "$extract_bam" ]] || { echo "ERROR: SpecHLA extraction failed (exit=$extract_rc) and extracted BAM is missing" >&2; exit 5; }
+  if [[ ! -s "$extract_bam" ]]; then
+    echo "WARN: SpecHLA extraction failed (exit=$extract_rc) and extracted BAM is missing; trying direct MHC extraction" >&2
+    direct_mhc_extract 2>&1 | tee -a "$OUTDIR/extract.log"
+  fi
+  [[ -s "$extract_bam" ]] || { echo "ERROR: direct MHC extraction did not produce an extracted BAM" >&2; exit 5; }
   echo "WARN: SpecHLA bamUtil FASTQ conversion failed; using samtools fallback" >&2
   rm -f "$fq1" "$fq2" "$single"
   SPECHLA_CMD="$ROOT/scripts/spechla_bam_to_fastq.sh" "$ROOT/scripts/run_spechla_container.sh" \

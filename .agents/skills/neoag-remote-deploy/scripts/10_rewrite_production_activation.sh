@@ -24,6 +24,18 @@ if [[ "$WRITE" != "1" ]]; then
   exit 0
 fi
 mkdir -p "$TOOLS_ROOT/bin" "$TOOLS_ROOT/wrappers/mixMHCpred_install"
+if [[ -x "$TOOLS_ROOT/conda_pkgs/bedtools-2.31.1-h13024bc_3/bin/bedtools" ]]; then
+  mkdir -p "$PROJECT_ROOT/bin"
+  cat > "$PROJECT_ROOT/bin/bedtools" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+BEDTOOLS_BIN="\${BEDTOOLS_BIN:-$TOOLS_ROOT/conda_pkgs/bedtools-2.31.1-h13024bc_3/bin/bedtools}"
+LIB_ROOT="\${BEDTOOLS_LIB_ROOT:-\${NEOAG_CONDA_BASE:-$TOOLS_ROOT/miniforge3}/envs/neoag-tools/lib}"
+export LD_LIBRARY_PATH="\${LIB_ROOT}:\${LD_LIBRARY_PATH:-}"
+exec "\${BEDTOOLS_BIN}" "\$@"
+EOF
+  chmod +x "$PROJECT_ROOT/bin/bedtools"
+fi
 [[ -f "$ACT" ]] && cp "$ACT" "$ACT.bak_$(date +%Y%m%d_%H%M%S)"
 cat > "$TOOLS_ROOT/bin/vep" <<EOF
 #!/usr/bin/env bash
@@ -105,6 +117,8 @@ export BAM_MATCHER_PYTHON="\${BAM_MATCHER_PYTHON:-\${NEOAG_BAM_MATCHER_ENV_PREFI
 export BAM_MATCHER_REFERENCE="\${BAM_MATCHER_REFERENCE:-$REFERENCE_ROOT/data/sequenza/reference/GRCh38.primary_assembly.chr.fa}"
 export BAM_MATCHER_LOCI="\${BAM_MATCHER_LOCI:-$REFERENCE_ROOT/data/facets/reference/bam_matcher.identity.hg38.vcf.gz}"
 export FACETS_SNP_VCF="\${FACETS_SNP_VCF:-$REFERENCE_ROOT/data/facets/reference/1000G_omni2.5.hg38.biallelic.vcf.gz}"
+export FACETS_R_ENV_PREFIX="\${FACETS_R_ENV_PREFIX:-\${NEOAG_CONDA_BASE}/envs/neoag-fusion}"
+export SNP_PILEUP_BIN="\${SNP_PILEUP_BIN:-\${NEOAG_CONDA_BASE}/envs/neoag-tools/bin/snp-pileup}"
 export NEOAG_CONTAMINATION_SITES="\${NEOAG_CONTAMINATION_SITES:-$REFERENCE_ROOT/data/facets/reference/contamination.common.hg38.vcf.gz}"
 export SPECHLA_HOME="\${SPECHLA_HOME:-$TOOLS_ROOT/tools/SpecHLA}"
 export NEOAG_SPECHLA_HOME="\${NEOAG_SPECHLA_HOME:-\${SPECHLA_HOME}}"
@@ -123,24 +137,28 @@ export NEOAG_HLALA_BACKEND="\${NEOAG_HLALA_BACKEND:-auto}"
 export NEOAG_HLALA_IMAGE="\${NEOAG_HLALA_IMAGE:-neoag-hla-la:ubuntu22.04}"
 export HMFTOOLS_HOME="\${HMFTOOLS_HOME:-$TOOLS_ROOT/tools/HMFTOOLS}"
 export NEOAG_HMFTOOLS_HOME="\${NEOAG_HMFTOOLS_HOME:-\${HMFTOOLS_HOME}}"
+export HMF_ENV="\${HMF_ENV:-\${HMFTOOLS_HOME}/.conda}"
 export NEOAG_PURPLE_IMAGE="\${NEOAG_PURPLE_IMAGE:-neoag-purple-suite:ubuntu22.04}"
+export HMFTOOLS_REFERENCE_ROOT="\${HMFTOOLS_REFERENCE_ROOT:-$REFERENCE_ROOT/data/hmf/purple_reference}"
+export HMFTOOLS_REFERENCE_FASTA="\${HMFTOOLS_REFERENCE_FASTA:-$REFERENCE_ROOT/data/sequenza/reference/GRCh38.primary_assembly.chr.fa}"
 export HMFTOOLS_AMBER_LOCI="\${HMFTOOLS_AMBER_LOCI:-$REFERENCE_ROOT/data/hmf/purple_reference/amber/GermlineHetPon.38.vcf.gz}"
 export HMFTOOLS_GC_PROFILE="\${HMFTOOLS_GC_PROFILE:-$REFERENCE_ROOT/data/hmf/purple_reference/cobalt/GC_profile.1000bp.38.cnp}"
 export HMFTOOLS_ENSEMBL_DATA_DIR="\${HMFTOOLS_ENSEMBL_DATA_DIR:-$REFERENCE_ROOT/data/hmf/purple_reference/ensembl_data_cache_38}"
 export SEQUENZA_FASTA="\${SEQUENZA_FASTA:-$REFERENCE_ROOT/data/sequenza/reference/GRCh38.primary_assembly.chr.fa}"
 export SEQUENZA_GC_WIG="\${SEQUENZA_GC_WIG:-$REFERENCE_ROOT/data/sequenza/reference/Homo_sapiens.GRCh38.dna.primary_assembly.chr.gc50.wig.gz}"
+export SAMTOOLS="\${SAMTOOLS:-\${NEOAG_CONDA_BASE}/envs/neoag-tools/bin/samtools}"
 export TF_USE_LEGACY_KERAS="\${TF_USE_LEGACY_KERAS:-1}"
 export CUDA_VISIBLE_DEVICES="\${CUDA_VISIBLE_DEVICES:--1}"
 export TF_CPP_MIN_LOG_LEVEL="\${TF_CPP_MIN_LOG_LEVEL:-2}"
 EOF
 chmod +x "$ACT"
 LOCAL_ENV="$PROJECT_ROOT/conf/tools.env.local.sh"
-python3 - "$LOCAL_ENV" "$TOOLS_ROOT" "$REFERENCE_ROOT" <<'PY'
+python3 - "$LOCAL_ENV" "$TOOLS_ROOT" "$REFERENCE_ROOT" "$PROJECT_ROOT" <<'PY'
 import sys
 from pathlib import Path
 
 path = Path(sys.argv[1])
-tools_root, reference_root = sys.argv[2:]
+tools_root, reference_root, project_root = sys.argv[2:]
 begin = "# BEGIN NEOAG PRODUCTION OVERRIDES"
 end = "# END NEOAG PRODUCTION OVERRIDES"
 text = path.read_text() if path.exists() else ""
@@ -161,12 +179,25 @@ export BAM_MATCHER_PYTHON="${{NEOAG_BAM_MATCHER_ENV_PREFIX}}/bin/python"
 export BAM_MATCHER_REFERENCE="{reference_root}/data/sequenza/reference/GRCh38.primary_assembly.chr.fa"
 export BAM_MATCHER_LOCI="{reference_root}/data/facets/reference/bam_matcher.identity.hg38.vcf.gz"
 export FACETS_SNP_VCF="{reference_root}/data/facets/reference/1000G_omni2.5.hg38.biallelic.vcf.gz"
+export FACETS_R_ENV_PREFIX="${{NEOAG_CONDA_BASE}}/envs/neoag-fusion"
+export SNP_PILEUP_BIN="${{NEOAG_CONDA_BASE}}/envs/neoag-tools/bin/snp-pileup"
 export NEOAG_CONTAMINATION_SITES="{reference_root}/data/facets/reference/contamination.common.hg38.vcf.gz"
 export PRIME_HOME="{reference_root}/data/predictors/prime"
 export NEOAG_PRIME_BIN="${{PRIME_HOME}}/PRIME"
 export MIXMHCPRED_HOME="{reference_root}/data/predictors/mixMHCpred_install"
 export MIXMHCPRED_BIN="${{MIXMHCPRED_HOME}}/MixMHCpred"
-export PATH="${{OPTITYPE_ENV}}/bin:${{NEOAG_BAM_MATCHER_ENV_PREFIX}}/bin:${{PRIME_HOME}}:${{MIXMHCPRED_HOME}}:${{PATH}}"
+export HMFTOOLS_HOME="{tools_root}/tools/HMFTOOLS"
+export NEOAG_HMFTOOLS_HOME="${{HMFTOOLS_HOME}}"
+export HMF_ENV="${{HMFTOOLS_HOME}}/.conda"
+export HMFTOOLS_REFERENCE_ROOT="{reference_root}/data/hmf/purple_reference"
+export HMFTOOLS_REFERENCE_FASTA="{reference_root}/data/sequenza/reference/GRCh38.primary_assembly.chr.fa"
+export HMFTOOLS_AMBER_LOCI="{reference_root}/data/hmf/purple_reference/amber/GermlineHetPon.38.vcf.gz"
+export HMFTOOLS_GC_PROFILE="{reference_root}/data/hmf/purple_reference/cobalt/GC_profile.1000bp.38.cnp"
+export HMFTOOLS_ENSEMBL_DATA_DIR="{reference_root}/data/hmf/purple_reference/ensembl_data_cache_38"
+export SEQUENZA_FASTA="{reference_root}/data/sequenza/reference/GRCh38.primary_assembly.chr.fa"
+export SEQUENZA_GC_WIG="{reference_root}/data/sequenza/reference/Homo_sapiens.GRCh38.dna.primary_assembly.chr.gc50.wig.gz"
+export SAMTOOLS="${{NEOAG_CONDA_BASE}}/envs/neoag-tools/bin/samtools"
+export PATH="{project_root}/bin:${{OPTITYPE_ENV}}/bin:${{NEOAG_BAM_MATCHER_ENV_PREFIX}}/bin:${{PRIME_HOME}}:${{MIXMHCPRED_HOME}}:${{NEOAG_CONDA_BASE}}/envs/neoag-tools/bin:${{PATH}}"
 {end}
 '''
 path.parent.mkdir(parents=True, exist_ok=True)

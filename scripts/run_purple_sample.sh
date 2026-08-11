@@ -45,12 +45,12 @@ if [[ ! -s "$AMBER_DIR/.complete" ]]; then
   date -Is > "$AMBER_DIR/.complete"
 fi
 if [[ ! -s "$COBALT_DIR/.complete" ]]; then
-  "$HMF_ENV/bin/cobalt" -Xms2g -Xmx16g -reference "$NORMAL_ID" -reference_bam "$NORMAL_BAM" -tumor "$TUMOR_ID" -tumor_bam "$TUMOR_BAM" \
+  "$HMF_ENV/bin/cobalt" -reference "$NORMAL_ID" -reference_bam "$NORMAL_BAM" -tumor "$TUMOR_ID" -tumor_bam "$TUMOR_BAM" \
     -gc_profile "$GC_PROFILE" -ref_genome "$REF_FASTA" -ref_genome_version 38 -threads "$THREADS" -output_dir "$COBALT_DIR"
   date -Is > "$COBALT_DIR/.complete"
 fi
 if [[ ! -s "$PURPLE_DIR/.complete" ]]; then
-  "$HMF_ENV/bin/purple" -Xms2g -Xmx16g -reference "$NORMAL_ID" -tumor "$TUMOR_ID" -amber_dir "$AMBER_DIR" -cobalt_dir "$COBALT_DIR" \
+  "$HMF_ENV/bin/purple" -reference "$NORMAL_ID" -tumor "$TUMOR_ID" -amber_dir "$AMBER_DIR" -cobalt_dir "$COBALT_DIR" \
     -ref_genome "$REF_FASTA" -ref_genome_version 38 -gc_profile "$GC_PROFILE" -ensembl_data_dir "$ENSEMBL_DIR" \
     -threads "$THREADS" -no_charts -output_dir "$PURPLE_DIR"
   date -Is > "$PURPLE_DIR/.complete"

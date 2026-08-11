@@ -53,6 +53,8 @@ if [[ ! -f "${NEOAG_VEP_PLUGINS}/Wildtype.pm" && -f "${NEOAG_TOOLS_ROOT}/../neoa
   export NEOAG_VEP_PLUGINS="${NEOAG_TOOLS_ROOT}/../neoag_event_pipeline_artifact_quarantine_20260622_091158/work/vep_plugins"
 fi
 export NEOAG_REFERENCE_FASTA="${NEOAG_TOOLS_ROOT}/data/ref/hg38/Homo_sapiens_assembly38.fasta"
+export SEQUENZA_FASTA="${SEQUENZA_FASTA:-${NEOAG_TOOLS_ROOT}/data/sequenza/reference/GRCh38.primary_assembly.chr.fa}"
+export SEQUENZA_GC_WIG="${SEQUENZA_GC_WIG:-${NEOAG_TOOLS_ROOT}/data/sequenza/reference/Homo_sapiens.GRCh38.dna.primary_assembly.chr.gc50.wig.gz}"
 
 # Ensembl GRCh38 reference proteome (optional; set in conf/tools.env.local.sh)
 export NEOAG_NORMAL_PROTEOME_FASTA="${NEOAG_NORMAL_PROTEOME_FASTA:-}"

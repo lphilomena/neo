@@ -229,7 +229,9 @@ ensure_polysolver() {
   source "${PSHOME}/scripts/config.local.bash"
   export PATH="${NEOAG_CONDA_BASE}/envs/${NEOAG_TOOLS_ENV:-neoag-tools}/bin:${PSHOME}/binaries:${PSHOME}/scripts:${PATH}"
   if [[ -f "${NOVOALIGN_LICENSE_FILE:-}" ]]; then
-    cp -f "${NOVOALIGN_LICENSE_FILE}" "${NOVO_DIR}/novoalign.lic"
+    if [[ "$(readlink -f "${NOVOALIGN_LICENSE_FILE}")" != "$(readlink -f "${NOVO_DIR}/novoalign.lic" 2>/dev/null || true)" ]]; then
+      cp -f "${NOVOALIGN_LICENSE_FILE}" "${NOVO_DIR}/novoalign.lic"
+    fi
   fi
 }
 
@@ -342,7 +344,9 @@ run_lohhla() {
     export PATH="${JAVA_HOME}/bin:${PATH}"
   fi
   if [[ -f "${NOVOALIGN_LICENSE_FILE:-}" ]]; then
-    cp -f "${NOVOALIGN_LICENSE_FILE}" "${NOVO_DIR}/novoalign.lic"
+    if [[ "$(readlink -f "${NOVOALIGN_LICENSE_FILE}")" != "$(readlink -f "${NOVO_DIR}/novoalign.lic" 2>/dev/null || true)" ]]; then
+      cp -f "${NOVOALIGN_LICENSE_FILE}" "${NOVO_DIR}/novoalign.lic"
+    fi
   fi
 
   echo "==> LOHHLA (tumor vs normal HLA LOH); intermediates on NAS: ${LOHHLA_OUT}"
@@ -354,16 +358,23 @@ run_lohhla() {
     # character-to-logical conversion bug in some LOHHLA revisions.
     echo "    reusing flagstat from ${flagstat_dir}"
   fi
+  local lohhla_out_abs winners_abs hla_fasta_abs copynum_abs
+  lohhla_out_abs="$(mkdir -p "${LOHHLA_OUT}" && cd "${LOHHLA_OUT}" && pwd -P)"
+  winners_abs="$(cd "$(dirname "${WINNERS}")" && pwd -P)/$(basename "${WINNERS}")"
+  hla_fasta_abs="$(cd "$(dirname "${PATIENT_HLA_FASTA}")" && pwd -P)/$(basename "${PATIENT_HLA_FASTA}")"
+  if [[ "${COPYNUM_LOC}" == "FALSE" ]]; then
+    copynum_abs="FALSE"
+  else
+    copynum_abs="$(cd "$(dirname "${COPYNUM_LOC}")" && pwd -P)/$(basename "${COPYNUM_LOC}")"
+  fi
   Rscript "${LOHHLA_SCRIPT}" \
     --patientId "${PATIENT_ID}" \
-    --outputDir "${LOHHLA_OUT}" \
-    --LOHHLA_loc "${LOHHLA_HOME}" \
+    --outputDir "${lohhla_out_abs}" \
     --normalBAMfile "${normal_bam}" \
     --tumorBAMfile "${tumor_bam}" \
-    --BAMDir "${BAM_LINK_DIR}" \
-    --hlaPath "${WINNERS}" \
-    --HLAfastaLoc "${PATIENT_HLA_FASTA}" \
-    --CopyNumLoc "${COPYNUM_LOC}" \
+    --hlaPath "${winners_abs}" \
+    --HLAfastaLoc "${hla_fasta_abs}" \
+    --CopyNumLoc "${copynum_abs}" \
     --overrideDir "${override_dir}" \
     --mappingStep "${LOHHLA_MAPPING_STEP}" \
     --fishingStep "${LOHHLA_FISHING_STEP}" \
@@ -373,8 +384,7 @@ run_lohhla() {
     --cleanUp FALSE \
     --gatkDir "${LOHHLA_GATK_RUNTIME_DIR}" \
     --novoDir "${NOVO_DIR}" \
-    --HLAexonLoc "${HLA_EXON_LOC}" \
-    --genomeAssembly "${LOHHLA_GENOME_ASSEMBLY}"
+    --HLAexonLoc "${HLA_EXON_LOC}"
 
   echo ""
   echo "==> Done. Key outputs:"

@@ -811,11 +811,32 @@ export HLALA_GRAPH="$REFERENCE_ROOT/data/hla/PRG_MHC_GRCh38_withIMGT"
 export HLA_LA_GRAPH="$HLALA_GRAPH"
 export NEOAG_HLALA_BACKEND="auto"
 export HMFTOOLS_HOME="$TOOLS_ROOT/tools/HMFTOOLS"
+export NEOAG_HMFTOOLS_HOME="$HMFTOOLS_HOME"
+export HMF_ENV="$HMFTOOLS_HOME/.conda"
+export HMFTOOLS_REFERENCE_ROOT="$REFERENCE_ROOT/data/hmf/purple_reference"
+export HMFTOOLS_REFERENCE_FASTA="$REFERENCE_ROOT/data/sequenza/reference/GRCh38.primary_assembly.chr.fa"
 export HMFTOOLS_AMBER_LOCI="$REFERENCE_ROOT/data/hmf/purple_reference/amber/GermlineHetPon.38.vcf.gz"
 export HMFTOOLS_GC_PROFILE="$REFERENCE_ROOT/data/hmf/purple_reference/cobalt/GC_profile.1000bp.38.cnp"
 export HMFTOOLS_ENSEMBL_DATA_DIR="$REFERENCE_ROOT/data/hmf/purple_reference/ensembl_data_cache_38"
 export SEQUENZA_FASTA="$REFERENCE_ROOT/data/sequenza/reference/GRCh38.primary_assembly.chr.fa"
-export SEQUENZA_GC_WIG="$REFERENCE_ROOT/data/sequenza/reference/gc.wig.gz"
+export SEQUENZA_GC_WIG="$REFERENCE_ROOT/data/sequenza/reference/Homo_sapiens.GRCh38.dna.primary_assembly.chr.gc50.wig.gz"
+export FACETS_R_ENV_PREFIX="$CONDA_BASE/envs/neoag-fusion"
+export SNP_PILEUP_BIN="$CONDA_BASE/envs/neoag-tools/bin/snp-pileup"
+export SAMTOOLS="$CONDA_BASE/envs/neoag-tools/bin/samtools"
+export PATH="$PROJECT_ROOT/bin:$CONDA_BASE/envs/neoag-tools/bin:$PATH"
+
+if [[ -x "$TOOLS_ROOT/conda_pkgs/bedtools-2.31.1-h13024bc_3/bin/bedtools" ]]; then
+  mkdir -p "$PROJECT_ROOT/bin"
+  cat > "$PROJECT_ROOT/bin/bedtools" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+BEDTOOLS_BIN="\${BEDTOOLS_BIN:-$TOOLS_ROOT/conda_pkgs/bedtools-2.31.1-h13024bc_3/bin/bedtools}"
+LIB_ROOT="\${BEDTOOLS_LIB_ROOT:-\${NEOAG_CONDA_BASE:-$CONDA_BASE}/envs/neoag-tools/lib}"
+export LD_LIBRARY_PATH="\${LIB_ROOT}:\${LD_LIBRARY_PATH:-}"
+exec "\${BEDTOOLS_BIN}" "\$@"
+EOF
+  chmod +x "$PROJECT_ROOT/bin/bedtools"
+fi
 
 sync_assets_if_requested
 
