@@ -984,16 +984,51 @@ def _production_run_readiness(args: dict[str, Any], project_root: Path, tier: st
     if easyfuse_root:
         env_dir = easyfuse_root / "environments"
         has_qc = _safe_path_exists(env_dir / "qc.yml")
-        has_alignment = _safe_path_exists(env_dir / "alignment.yml") or _safe_path_exists(env_dir / "easyfuse_src.yml")
-        has_requant = _safe_path_exists(env_dir / "requantification.yml") or _safe_path_exists(env_dir / "requantification_wo_easyfuse.yml")
-        easyfuse_env_ok = has_qc and has_alignment and has_requant
-        easyfuse_env_detail = f"{env_dir}; qc={has_qc}; alignment/src={has_alignment}; requant={has_requant}"
+        has_easyfuse_src = _safe_path_exists(env_dir / "easyfuse_src.yml")
+        has_requant_wo = _safe_path_exists(env_dir / "requantification_wo_easyfuse.yml")
+        module_text = ""
+        for module in ["modules/01_qc.nf", "modules/02_alignment.nf", "modules/04_joint_fusion_calling.nf", "modules/05_requantification.nf", "modules/06_summarize.nf"]:
+            module_text += _read_text_if_small(easyfuse_root / module)
+        requires_easyfuse_src = "easyfuse_src.yml" in module_text
+        requires_requant_wo = "requantification_wo_easyfuse.yml" in module_text
+        has_alignment = _safe_path_exists(env_dir / "alignment.yml") or has_easyfuse_src
+        has_requant = _safe_path_exists(env_dir / "requantification.yml") or has_requant_wo
+        legacy_compat_ok = ((not requires_easyfuse_src) or has_easyfuse_src) and ((not requires_requant_wo) or has_requant_wo)
+        easyfuse_env_ok = has_qc and has_alignment and has_requant and legacy_compat_ok
+        easyfuse_env_detail = (
+            f"{env_dir}; qc={has_qc}; alignment/src={has_alignment}; requant={has_requant}; "
+            f"requires_easyfuse_src={requires_easyfuse_src}; has_easyfuse_src={has_easyfuse_src}; "
+            f"requires_requantification_wo_easyfuse={requires_requant_wo}; has_requantification_wo_easyfuse={has_requant_wo}"
+        )
     rows.append(_production_row(
         "rna_fusion", "easyfuse_env_file_compatibility",
         "OK" if easyfuse_env_ok else "BLOCKED",
         "INFO" if easyfuse_env_ok else "BLOCKER",
         easyfuse_env_detail,
-        "Install EasyFuse env YAML files or use the runner compatibility mapping for alignment/requantification YAML names.",
+        "Create EasyFuse compatibility env YAML files when the installed Nextflow modules still reference easyfuse_src.yml or requantification_wo_easyfuse.yml.",
+    ))
+
+    easyfuse_runner = project_root / "scripts/run_easyfuse_sample.sh"
+    easyfuse_runner_text = _read_text_if_small(easyfuse_runner)
+    runner_cache_ok = "NXF_CONDA_CACHEDIR" in easyfuse_runner_text and "EASYFUSE_NXF_CONDA_CACHEDIR" in easyfuse_runner_text
+    rows.append(_production_row(
+        "rna_fusion", "easyfuse_nextflow_conda_cache_pinned",
+        "OK" if runner_cache_ok else "BLOCKED",
+        "INFO" if runner_cache_ok else "BLOCKER",
+        str(easyfuse_runner if easyfuse_runner_text else "run_easyfuse_sample.sh not found"),
+        "Pin NXF_CONDA_CACHEDIR to an absolute project work cache before launching Nextflow, so it does not resolve to work/work/.nextflow_conda.",
+    ))
+
+    easyfuse_config = project_root / "conf/easyfuse.nextflow.config"
+    easyfuse_config_text = _read_text_if_small(easyfuse_config)
+    has_duplicate_yes_flags = "CONDA_YES" in easyfuse_config_text or "MAMBA_YES" in easyfuse_config_text
+    config_cache_ok = 'System.getenv("NXF_CONDA_CACHEDIR")' in easyfuse_config_text
+    rows.append(_production_row(
+        "rna_fusion", "easyfuse_nextflow_config_noninteractive",
+        "OK" if config_cache_ok and not has_duplicate_yes_flags else "BLOCKED",
+        "INFO" if config_cache_ok and not has_duplicate_yes_flags else "BLOCKER",
+        f"{easyfuse_config}; uses_env_cache={config_cache_ok}; duplicate_yes_flags={has_duplicate_yes_flags}",
+        "Use NXF_CONDA_CACHEDIR from the environment and avoid setting both yes and always_yes conda/mamba flags.",
     ))
 
     set_interval_candidates = [
