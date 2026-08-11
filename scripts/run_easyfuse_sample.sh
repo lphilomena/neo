@@ -96,6 +96,43 @@ echo "    nxf_work=${NXF_WORK}"
 CONDA_CACHE="${ROOT}/work/.nextflow_conda"
 mkdir -p "${CONDA_CACHE}"
 
+ensure_easyfuse_env_compat_files() {
+  local env_dir="${NEOAG_EASYFUSE_HOME}/environments"
+  [[ -d "${env_dir}" ]] || { echo "ERROR: EasyFuse environments dir missing: ${env_dir}" >&2; exit 3; }
+
+  if [[ ! -f "${env_dir}/easyfuse_src.yml" ]]; then
+    echo "==> Creating EasyFuse v1 compatibility env: ${env_dir}/easyfuse_src.yml"
+    cat > "${env_dir}/easyfuse_src.yml" <<'YAML'
+name: easyfuse_src
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - bioconda::pyeasyfuse=2.0.3
+  - bioconda::skewer
+YAML
+  fi
+
+  if [[ ! -f "${env_dir}/requantification_wo_easyfuse.yml" ]]; then
+    echo "==> Creating EasyFuse v1 compatibility env: ${env_dir}/requantification_wo_easyfuse.yml"
+    if [[ -f "${env_dir}/alignment.yml" ]]; then
+      cp "${env_dir}/alignment.yml" "${env_dir}/requantification_wo_easyfuse.yml"
+    else
+      cat > "${env_dir}/requantification_wo_easyfuse.yml" <<'YAML'
+name: requantification_wo_easyfuse
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - bioconda::star=2.6.1d
+  - bioconda::samtools=1.9.0
+YAML
+    fi
+  fi
+}
+
 wait_for_mamba_free() {
   while pgrep -f 'mamba env create' >/dev/null 2>&1; do
     sleep 15
@@ -120,6 +157,8 @@ select_easyfuse_env_yml() {
   echo "ERROR: none of the EasyFuse env files exist under ${NEOAG_EASYFUSE_HOME}/environments: ${preferred} $*" >&2
   exit 3
 }
+
+ensure_easyfuse_env_compat_files
 
 prebuild_conda_env() {
   local env_id="$1"
