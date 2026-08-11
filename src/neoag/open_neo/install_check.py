@@ -1019,6 +1019,34 @@ def _production_run_readiness(args: dict[str, Any], project_root: Path, tier: st
         "Pin NXF_CONDA_CACHEDIR to an absolute project work cache before launching Nextflow, so it does not resolve to work/work/.nextflow_conda.",
     ))
 
+    easyfuse_ref_candidates = []
+    if os.environ.get("NEOAG_EASYFUSE_REF"):
+        easyfuse_ref_candidates.append(Path(os.environ["NEOAG_EASYFUSE_REF"]))
+    easyfuse_ref_candidates += [
+        project_root / "data/easyfuse/easyfuse_ref_v4",
+        project_root.parent / "open-neo-deploy/refs/data/easyfuse/easyfuse_ref_v4",
+    ]
+    easyfuse_star_index = next((
+        path / "starfusion_index/ref_genome.fa.star.idx"
+        for path in easyfuse_ref_candidates
+        if _safe_path_exists(path / "BEFORE_EXECUTING_EASYFUSE")
+        and _safe_path_exists(path / "starfusion_index/ref_genome.fa.star.idx/Genome")
+        and _safe_path_exists(path / "starfusion_index/ref_genome.fa.star.idx/genomeParameters.txt")
+    ), None)
+    runner_star_index_ok = (
+        "EASYFUSE_STAR_INDEX" in easyfuse_runner_text
+        and "--star_index" in easyfuse_runner_text
+        and "--starfusion_index" in easyfuse_runner_text
+        and "genomeParameters.txt" in easyfuse_runner_text
+    )
+    rows.append(_production_row(
+        "rna_fusion", "easyfuse_star_index_pinned",
+        "OK" if easyfuse_star_index and runner_star_index_ok else "BLOCKED",
+        "INFO" if easyfuse_star_index and runner_star_index_ok else "BLOCKER",
+        f"{easyfuse_star_index or 'EasyFuse STAR index not found'}; runner_pins_star_index={runner_star_index_ok}",
+        "Pin EasyFuse STAR alignment to starfusion_index/ref_genome.fa.star.idx and verify Genome plus genomeParameters.txt before launching Nextflow.",
+    ))
+
     easyfuse_config = project_root / "conf/easyfuse.nextflow.config"
     easyfuse_config_text = _read_text_if_small(easyfuse_config)
     has_duplicate_yes_flags = "CONDA_YES" in easyfuse_config_text or "MAMBA_YES" in easyfuse_config_text
