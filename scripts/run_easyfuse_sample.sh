@@ -95,6 +95,8 @@ echo "    nxf_work=${NXF_WORK}"
 
 CONDA_CACHE="${ROOT}/work/.nextflow_conda"
 mkdir -p "${CONDA_CACHE}"
+export NXF_CONDA_CACHEDIR="${EASYFUSE_NXF_CONDA_CACHEDIR:-${CONDA_CACHE}}"
+echo "    nxf_conda_cachedir=${NXF_CONDA_CACHEDIR}"
 
 ensure_easyfuse_env_compat_files() {
   local env_dir="${NEOAG_EASYFUSE_HOME}/environments"
