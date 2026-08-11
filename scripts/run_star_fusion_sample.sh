@@ -5,7 +5,7 @@ usage() {
   echo "Usage: $0 --fastq1 R1.fq.gz --fastq2 R2.fq.gz --ctat-genome-lib DIR --sample-id ID --outdir OUT [--threads N]" >&2
 }
 
-FQ1=""; FQ2=""; CTAT=""; SAMPLE_ID="sample"; OUTDIR=""; THREADS=16
+FQ1=""; FQ2=""; CTAT=""; SAMPLE_ID="sample"; OUTDIR=""; THREADS=${STAR_FUSION_THREADS:-4}
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --fastq1) FQ1="$2"; shift 2 ;;
@@ -34,6 +34,15 @@ STAR_FUSION_BIN="${NEOAG_STAR_FUSION_BIN:-$(command -v STAR-Fusion || true)}"
 [[ -n "$STAR_FUSION_BIN" && -x "$STAR_FUSION_BIN" ]] || { echo "ERROR: STAR-Fusion executable not found" >&2; exit 3; }
 
 CONDA_BASE="${NEOAG_CONDA_BASE:-${HOME}/miniforge3}"
+STAR_FUSION_PERL="${STAR_FUSION_PERL:-}"
+if [[ -z "$STAR_FUSION_PERL" && -x "${CONDA_BASE}/envs/neoag-vep/bin/perl" ]]; then
+  STAR_FUSION_PERL="${CONDA_BASE}/envs/neoag-vep/bin/perl"
+fi
+if [[ -z "$STAR_FUSION_PERL" ]]; then
+  STAR_FUSION_PERL="$(command -v perl || true)"
+fi
+[[ -n "$STAR_FUSION_PERL" && -x "$STAR_FUSION_PERL" ]] || { echo "ERROR: perl executable not found" >&2; exit 3; }
+
 for perl_dir in \
   "${CONDA_BASE}/envs/neoag-vep/lib/perl5/5.32/site_perl" \
   "${CONDA_BASE}/envs/neoag-vep/lib/perl5/site_perl" \
@@ -41,12 +50,13 @@ for perl_dir in \
   "${CONDA_BASE}/envs/neoag-fusion/lib/perl5/site_perl"; do
   [[ -d "$perl_dir" ]] && export PERL5LIB="${perl_dir}:${PERL5LIB:-}"
 done
-perl -MSet::IntervalTree -e 1 >/dev/null 2>&1 || {
+STAR_FUSION_PERL5LIB="${PERL5LIB:-}"
+"$STAR_FUSION_PERL" -MSet::IntervalTree -e 1 >/dev/null 2>&1 || {
   echo "ERROR: Perl module Set::IntervalTree not found; install it or expose neoag-vep Perl libs via PERL5LIB" >&2
   exit 3
 }
 mkdir -p "$OUTDIR"
-"$STAR_FUSION_BIN" --left_fq "$FQ1" --right_fq "$FQ2" \
+PERL5LIB="$STAR_FUSION_PERL5LIB" "$STAR_FUSION_PERL" "$STAR_FUSION_BIN" --left_fq "$FQ1" --right_fq "$FQ2" \
   --genome_lib_dir "$CTAT" --CPU "$THREADS" --output_dir "$OUTDIR" \
   >"$OUTDIR/star-fusion.log" 2>&1
 test -s "$OUTDIR/star-fusion.fusion_predictions.tsv"
