@@ -182,21 +182,21 @@ prebuild_conda_env() {
   bash "${ROOT}/scripts/fix_easyfuse_pyeasyfuse_env.sh"
 }
 
-QC_ENV="${CONDA_CACHE}/env-749ebc089f673418-1f348f31c1e78ea89e97e435a63f0c7d"
-SRC_ENV="${CONDA_CACHE}/env-e6082ee0f0a13e81-c203347e504f3b4d10ed96fdd01318ce"
+QC_ENV="${CONDA_CACHE}/env-574d468f667e5ead-1f348f31c1e78ea89e97e435a63f0c7d"
+SRC_ENV="${CONDA_CACHE}/env-adab1ef12c1f56bf-14649bb80e8151aa81731d54781c13cc"
 
 if [[ ! -x "${QC_ENV}/bin/fastqc" || ! -x "${SRC_ENV}/bin/skewer" ]]; then
   wait_for_mamba_free
 fi
 
 prebuild_conda_env \
-  "749ebc089f673418-1f348f31c1e78ea89e97e435a63f0c7d" \
+  "574d468f667e5ead-1f348f31c1e78ea89e97e435a63f0c7d" \
   "qc.yml" \
   "fastqc"
 
 if [[ -f "${NEOAG_EASYFUSE_HOME}/environments/easyfuse_src.yml" ]]; then
   prebuild_conda_env \
-    "e6082ee0f0a13e81-c203347e504f3b4d10ed96fdd01318ce" \
+    "adab1ef12c1f56bf-14649bb80e8151aa81731d54781c13cc" \
     "easyfuse_src.yml" \
     "skewer"
 else
