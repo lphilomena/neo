@@ -34,6 +34,9 @@ STAR_FUSION_BIN="${NEOAG_STAR_FUSION_BIN:-$(command -v STAR-Fusion || true)}"
 [[ -n "$STAR_FUSION_BIN" && -x "$STAR_FUSION_BIN" ]] || { echo "ERROR: STAR-Fusion executable not found" >&2; exit 3; }
 
 CONDA_BASE="${NEOAG_CONDA_BASE:-${HOME}/miniforge3}"
+if [[ -d "${CONDA_BASE}/envs/neoag-fusion/bin" ]]; then
+  export PATH="${CONDA_BASE}/envs/neoag-fusion/bin:${PATH}"
+fi
 STAR_FUSION_PERL="${STAR_FUSION_PERL:-}"
 if [[ -z "$STAR_FUSION_PERL" && -x "${CONDA_BASE}/envs/neoag-vep/bin/perl" ]]; then
   STAR_FUSION_PERL="${CONDA_BASE}/envs/neoag-vep/bin/perl"
