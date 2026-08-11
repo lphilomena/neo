@@ -34,7 +34,7 @@ extract_bam="$OUTDIR/reads/${SAMPLE_ID}.tmp.extract.bam"
 
 direct_mhc_extract() {
   local contig
-  contig="$("$SAMTOOLS" idxstats "$BAM" | awk -F '\t' '($1 == "chr6" || $1 == "6") && $2 >= 33150000 { print $1; exit }')"
+  contig="$(set +o pipefail; "$SAMTOOLS" idxstats "$BAM" | awk -F '\t' '($1 == "chr6" || $1 == "6") && $2 >= 33150000 { print $1; exit }')"
   [[ -n "$contig" ]] || { echo "ERROR: cannot find chr6/6 in BAM header for direct MHC extraction" >&2; return 5; }
   echo "WARN: using direct GRCh38 MHC extraction fallback on ${contig}:29600000-33150000" >&2
   "$SAMTOOLS" view -b "$BAM" "${contig}:29600000-33150000" \

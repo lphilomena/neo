@@ -68,4 +68,4 @@ else
 fi
 docker run --rm --user "$(id -u):$(id -g)" --workdir "$PWD" \
   -e SPECHLA_HOME="$SPECHLA_HOME" -e SPECHLA_DB="$SPECHLA_DB" -e SPECHLA_ENV="$SPECHLA_ENV" \
-  "${mounts[@]}" "$IMAGE" "$CMD" -- "$@"
+  "${mounts[@]}" --entrypoint /bin/bash "$IMAGE" -lc "$CMD" -- "$@"
