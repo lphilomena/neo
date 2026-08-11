@@ -14,6 +14,8 @@ SAMPLE_ID="${EASYFUSE_SAMPLE_ID:-${SAMPLE_ID:-sample}}"
 FQ1="${EASYFUSE_FQ1:?ERROR: set EASYFUSE_FQ1=/path/sample_R1.fq.gz}"
 FQ2="${EASYFUSE_FQ2:?ERROR: set EASYFUSE_FQ2=/path/sample_R2.fq.gz}"
 REF="${NEOAG_EASYFUSE_REF:?ERROR: set NEOAG_EASYFUSE_REF=/path/to/easyfuse_ref_v4}"
+STAR_INDEX="${EASYFUSE_STAR_INDEX:-${REF}/starfusion_index/ref_genome.fa.star.idx}"
+STARFUSION_INDEX="${EASYFUSE_STARFUSION_INDEX:-${REF}/starfusion_index}"
 INPUT="${EASYFUSE_INPUT_TSV:-${ROOT}/work/easyfuse_${SAMPLE_ID}_input.tsv}"
 OUT="${OUTDIR:-${ROOT}/results/easyfuse}"
 LOG="${LOG:-${ROOT}/work/run_easyfuse_${SAMPLE_ID}.log}"
@@ -77,6 +79,8 @@ echo "    fq1=${FQ1}"
 echo "    fq2=${FQ2}"
 echo "    input=${INPUT}"
 echo "    reference=${REF}"
+echo "    star_index=${STAR_INDEX}"
+echo "    starfusion_index=${STARFUSION_INDEX}"
 echo "    output=${OUT}"
 echo "    nxf_home=${NXF_HOME}"
 echo "    nxf_work=${NXF_WORK}"
@@ -90,6 +94,17 @@ echo "    nxf_work=${NXF_WORK}"
 
 [[ -f "${REF}/BEFORE_EXECUTING_EASYFUSE" ]] || {
   echo "ERROR: EasyFuse reference missing: ${REF}" >&2
+  exit 1
+}
+
+[[ -f "${STAR_INDEX}/genomeParameters.txt" && -f "${STAR_INDEX}/Genome" ]] || {
+  echo "ERROR: EasyFuse STAR index is incomplete: ${STAR_INDEX}" >&2
+  echo "       expected genomeParameters.txt and Genome" >&2
+  exit 1
+}
+
+[[ -d "${STARFUSION_INDEX}" ]] || {
+  echo "ERROR: EasyFuse STAR-Fusion index missing: ${STARFUSION_INDEX}" >&2
   exit 1
 }
 
@@ -262,6 +277,8 @@ run_nextflow() {
     --output "${OUT}" \
     --input_files "${INPUT}" \
     --reference "${REF}" \
+    --star_index "${STAR_INDEX}" \
+    --starfusion_index "${STARFUSION_INDEX}" \
     --annotation_db "${REF}/Homo_sapiens.GRCh38.110.gff3.db" \
     --reference_tsl "${REF}/Homo_sapiens.GRCh38.110.gtf.tsl" </dev/null
 }
