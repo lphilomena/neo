@@ -1046,6 +1046,76 @@ def _production_run_readiness(args: dict[str, Any], project_root: Path, tier: st
         "Install Perl Set::IntervalTree or expose the neoag-vep Perl library path before STAR-Fusion.",
     ))
 
+    star_fusion_runner = project_root / "scripts/run_star_fusion_sample.sh"
+    star_fusion_text = _read_text_if_small(star_fusion_runner)
+    star_fusion_perl_ok = "STAR_FUSION_PERL" in star_fusion_text and "envs/neoag-vep/bin/perl" in star_fusion_text
+    rows.append(_production_row(
+        "rna_fusion", "star_fusion_compatible_perl_runner",
+        "OK" if star_fusion_perl_ok else "BLOCKED",
+        "INFO" if star_fusion_perl_ok else "BLOCKER",
+        str(star_fusion_runner if star_fusion_text else "run_star_fusion_sample.sh not found"),
+        "Run STAR-Fusion through the Perl that owns Set::IntervalTree, typically neoag-vep/bin/perl, to avoid Perl ABI mismatches.",
+    ))
+
+    star_fusion_star_path_ok = "envs/neoag-fusion/bin" in star_fusion_text and "export PATH" in star_fusion_text
+    rows.append(_production_row(
+        "rna_fusion", "star_fusion_star_path_pinned",
+        "OK" if star_fusion_star_path_ok else "BLOCKED",
+        "INFO" if star_fusion_star_path_ok else "BLOCKER",
+        str(star_fusion_runner if star_fusion_text else "run_star_fusion_sample.sh not found"),
+        "Expose the STAR executable from neoag-fusion/bin before launching STAR-Fusion.",
+    ))
+
+    star_fusion_threads_ok = "STAR_FUSION_THREADS:-4" in star_fusion_text or "THREADS=4" in star_fusion_text
+    rows.append(_production_row(
+        "rna_fusion", "star_fusion_low_thread_default",
+        "OK" if star_fusion_threads_ok else "WARN",
+        "INFO" if star_fusion_threads_ok else "WARN",
+        str(star_fusion_runner if star_fusion_text else "run_star_fusion_sample.sh not found"),
+        "Default STAR-Fusion reruns to a conservative thread count, while still allowing explicit --threads override.",
+    ))
+
+    arriba_runner = project_root / "scripts/run_arriba_sample.sh"
+    arriba_text = _read_text_if_small(arriba_runner)
+    arriba_ref_candidates = []
+    if os.environ.get("NEOAG_ARRIBA_SHARE"):
+        arriba_ref_candidates.append(Path(os.environ["NEOAG_ARRIBA_SHARE"]))
+    arriba_ref_candidates += [
+        project_root / "data/fusion/arriba",
+        project_root.parent / "open-neo-deploy/refs/data/fusion/arriba",
+    ]
+    arriba_ref = next((
+        path for path in arriba_ref_candidates
+        if _safe_path_exists(path / "blacklist_grch38.tsv.gz")
+        or _safe_path_exists(path / "blacklist_hg38_GRCh38_v2.5.1.tsv.gz")
+    ), None)
+    rows.append(_production_row(
+        "rna_fusion", "arriba_fixed_reference_assets",
+        "OK" if arriba_ref else "BLOCKED",
+        "INFO" if arriba_ref else "BLOCKER",
+        str(arriba_ref or "Arriba blacklist asset not found"),
+        "Synchronize Arriba blacklist assets into the fixed deploy reference directory and expose a standard blacklist_grch38.tsv.gz name.",
+    ))
+
+    arriba_share_ok = "ARRIBA_DEPLOY_SHARE" in arriba_text and "NEOAG_ARRIBA_SHARE" in arriba_text
+    rows.append(_production_row(
+        "rna_fusion", "arriba_fixed_reference_lookup",
+        "OK" if arriba_share_ok else "BLOCKED",
+        "INFO" if arriba_share_ok else "BLOCKER",
+        str(arriba_runner if arriba_text else "run_arriba_sample.sh not found"),
+        "Prefer NEOAG_ARRIBA_SHARE or the fixed deploy Arriba asset directory before falling back to the conda package share directory.",
+    ))
+
+    arriba_discard_arg_bad = "\n  -d " in arriba_text or " -d \"${OUT" in arriba_text or " -d '${OUT" in arriba_text
+    arriba_args_ok = " -O " in arriba_text and "ARRIBA_EXTRA_ARGS+=(-p" in arriba_text and not arriba_discard_arg_bad
+    rows.append(_production_row(
+        "rna_fusion", "arriba_251_argument_mapping",
+        "OK" if arriba_args_ok else "BLOCKED",
+        "INFO" if arriba_args_ok else "BLOCKER",
+        str(arriba_runner if arriba_text else "run_arriba_sample.sh not found"),
+        "Use Arriba 2.5.1 arguments correctly: -O for discarded output and -p for protein domains; do not use -d as discarded output.",
+    ))
+
     bam_matcher_script = project_root / "scripts/run_bam_matcher_pair.sh"
     bam_text = _read_text_if_small(bam_matcher_script)
     python2_risk = "python2" in bam_text or ("python -" in bam_text and "NEOAG_PYTHON" not in bam_text)
