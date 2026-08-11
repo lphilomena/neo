@@ -20,8 +20,30 @@ export NXF_HOME="${ROOT}/work/.nextflow_home"
 export NXF_WORK="${ROOT}/work/.nextflow_work"
 export NXF_DISABLE_CHECK_TTY=true
 export CONDA_ALWAYS_YES=true
+export CONDA_YES=true
 export MAMBA_YES=1
+export MAMBA_ALWAYS_YES=true
 export NEOAG_REAL_MAMBA="${NEOAG_CONDA_BASE}/bin/mamba"
+mkdir -p "${ROOT}/work/easyfuse_bin"
+cat > "${ROOT}/work/easyfuse_bin/mamba" <<'MAMBA_WRAPPER'
+#!/usr/bin/env bash
+set -euo pipefail
+real="${NEOAG_REAL_MAMBA:-}"
+if [[ -z "$real" || ! -x "$real" ]]; then
+  real="$(command -v mamba.real || true)"
+fi
+if [[ -z "$real" || ! -x "$real" ]]; then
+  for candidate in "${NEOAG_CONDA_BASE:-${HOME}/miniforge3}/bin/mamba" "${HOME}/miniforge3/bin/mamba"; do
+    [[ -x "$candidate" && "$candidate" != "$0" ]] && real="$candidate" && break
+  done
+fi
+[[ -n "$real" && -x "$real" ]] || { echo "ERROR: real mamba not found" >&2; exit 127; }
+case " $* " in
+  *" -y "*|*" --yes "*) exec "$real" "$@" ;;
+  *) exec "$real" --yes "$@" ;;
+esac
+MAMBA_WRAPPER
+chmod +x "${ROOT}/work/easyfuse_bin/mamba"
 export JAVA_HOME="${NEOAG_CONDA_BASE}/envs/${NEOAG_FUSION_ENV}"
 export PATH="${ROOT}/work/easyfuse_bin:${NEOAG_CONDA_BASE}/bin:${JAVA_HOME}/bin:${PATH}"
 # Do not prepend repo STAR-Fusion — EasyFuse Nextflow uses its own starfusion conda env.
