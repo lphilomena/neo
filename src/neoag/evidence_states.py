@@ -263,8 +263,30 @@ def derive_rna_support(row: Mapping[str, Any], rules: Mapping[str, Any]) -> dict
     status = _text(row, "rna_support_status", "expression_evidence_status", "rna_evidence_completeness")
     if "RNA_ALT_SUPPORTED" in status or "RNA_JUNCTION_SUPPORTED" in status:
         return _result("RNA_CONFIRMED", 3, status)
-    if "RNA_ALT_NOT_DETECTED" in status or "RNA_JUNCTION_NOT_DETECTED" in status:
-        return _result("RNA_NEGATIVE", 0, status)
+    if "RNA_ALT_NOT_DETECTED" in status:
+        depth = _float(row, "rna_depth")
+        evaluable_depth = float(cfg.get("snv_min_evaluable_depth", 10))
+        if depth is None or depth <= 0:
+            return _result(
+                "RNA_UNASSESSED",
+                0,
+                "RNA alternate allele not detected, but site coverage is unavailable",
+                assessed=False,
+            )
+        if depth < evaluable_depth:
+            return _result(
+                "RNA_LOW_SUPPORT",
+                1,
+                f"RNA alternate allele not detected at low depth {depth:g} < {evaluable_depth:g}",
+            )
+        return _result("RNA_NEGATIVE", 0, f"{status}; RNA depth={depth:g}")
+    if "RNA_JUNCTION_NOT_DETECTED" in status:
+        return _result(
+            "RNA_UNASSESSED",
+            0,
+            "junction not detected without an explicit evaluable-coverage assertion",
+            assessed=False,
+        )
     if any(token in status for token in CONFLICT_TOKENS):
         return _result("RNA_LOW_SUPPORT", 1, status, conflict=True)
     if track in {"FUSION", "SPLICE"}:
@@ -296,15 +318,27 @@ def derive_rna_support(row: Mapping[str, Any], rules: Mapping[str, Any]) -> dict
         grade = 3 if (alt_reads or 0) >= 2 * minimum_reads else 2
         return _result("RNA_CONFIRMED", grade, f"RNA alt reads={alt_reads}; VAF={vaf}")
     if (alt_reads or 0) == 0:
-        return _result("RNA_NEGATIVE", 0, f"RNA alt reads={alt_reads}; VAF={vaf}")
+        depth = _float(row, "rna_depth")
+        evaluable_depth = float(cfg.get("snv_min_evaluable_depth", 10))
+        if depth is None or depth <= 0:
+            return _result(
+                "RNA_UNASSESSED",
+                0,
+                "RNA alt reads=0, but site coverage is unavailable",
+                assessed=False,
+            )
+        if depth < evaluable_depth:
+            return _result(
+                "RNA_LOW_SUPPORT",
+                1,
+                f"RNA alt reads=0 at low depth {depth:g} < {evaluable_depth:g}",
+            )
+        return _result("RNA_NEGATIVE", 0, f"RNA alt reads=0 at evaluable depth {depth:g}; VAF={vaf}")
     return _result("RNA_LOW_SUPPORT", 1, f"RNA support below provisional thresholds: reads={alt_reads}; VAF={vaf}")
 
 
 def derive_presentation_consensus(row: Mapping[str, Any], rules: Mapping[str, Any]) -> dict[str, Any]:
     cfg = _section(rules, "presentation")
-    gate = _text(row, "presentation_gate_status")
-    if any(token in gate for token in ("FAIL", "REJECT", "BLOCKED")):
-        return _result("PRESENTATION_WEAK", 0, f"presentation gate={gate}")
     el = _float(row, "netmhcpan_mt_rank_el", "netmhcpan_el_rank", "el_rank", "binding_rank")
     net_support = el is not None and el <= float(cfg.get("netmhcpan_el_supported", 2.0))
     net_strong = el is not None and el <= float(cfg.get("netmhcpan_el_strong", 0.5))

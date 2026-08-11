@@ -22,6 +22,32 @@ def test_pvactools_event_from_row_parses_rna_metrics():
     assert ev["rna_alt_reads"] == "16"
 
 
+def test_pvactools_reuse_preserves_indel_and_fusion_rna_evidence():
+    indel = event_from_row(
+        {"Index": "7.CASP9.ENST1.FS.413-414T/TGG", "Gene": "CASP9"},
+        "S1",
+        "default",
+        "pVACseq",
+    )
+    assert indel["event_type"] == "InDel"
+
+    fusion = event_from_row(
+        {
+            "Index": "1.EWSR1-WT1.ENST1-ENST2.inframe_fusion.23",
+            "Gene": "EWSR1-WT1",
+            "Best Transcript": "ENST1-ENST2",
+            "Expr": "12.5",
+            "Read Support": "23",
+        },
+        "S1",
+        "default",
+        "pVACfuse",
+    )
+    assert fusion["rna_junction_reads"] == "23"
+    assert fusion["event_expression"] == "12.5"
+    assert fusion["transcript_id"] == "ENST1-ENST2"
+
+
 def test_variant_peptide_adapter_maps_rna_metrics():
     row = {
         "gene": "TP53",

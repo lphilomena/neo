@@ -54,6 +54,14 @@ def infer_event_type(row: dict[str, str], tool: str) -> str:
         return "Fusion"
     if tool == "pVACsplice":
         return "Splice"
+    variant_text = " ".join(
+        first(row, [key], "") for key in ("Index", "AA Change", "Consequence")
+    ).lower()
+    if any(
+        token in variant_text
+        for token in ("frameshift", ".fs.", "inframe_del", "inframe_ins")
+    ):
+        return "InDel"
     return "SNV"
 
 
@@ -75,6 +83,7 @@ def event_from_row(
                 "Splice Junction",
                 "splice_junction",
                 "junction_id",
+                "Junction Name",
                 "Junction",
                 "event_id",
                 "Event",
@@ -108,7 +117,9 @@ def event_from_row(
         first(row, ["source_record_id", "Index", "ID", "id"], "")
         or f"{tool}:{source_row_number or event_id}"
     )
-    provided_reads = first(row, ["RNA Junction Reads", "rna_junction_reads"], "")
+    provided_reads = first(
+        row, ["RNA Junction Reads", "rna_junction_reads", "Read Support"], ""
+    )
     canonical = event_name if str(event_name).startswith("SJ|") else ""
     base = {
         "event_id": event_id,
@@ -132,10 +143,18 @@ def event_from_row(
         "junction_support_status": (
             "PROVIDED_UNVERIFIED" if tool == "pVACsplice" and provided_reads else ""
         ),
-        "provided_rna_junction_reads": provided_reads if tool == "pVACsplice" else "",
+        "provided_rna_junction_reads": (
+            provided_reads if tool in {"pVACsplice", "pVACfuse"} else ""
+        ),
         # Unverified pVACsplice counts do not enter scoring until the exact
         # RegTools junction adapter resolves the source junction.
-        "rna_junction_reads": "0" if tool == "pVACsplice" else "",
+        "rna_junction_reads": (
+            "0"
+            if tool == "pVACsplice"
+            else provided_reads
+            if tool == "pVACfuse"
+            else ""
+        ),
         "source_file": source_file,
         "source_row_number": str(source_row_number or ""),
         "source_record_id": source_record_id,
@@ -147,7 +166,9 @@ def event_from_row(
         "pos": first(row, ["Start", "Position", "POS", "pos"], ""),
         "ref": first(row, ["Reference", "REF", "ref"], ""),
         "alt": first(row, ["Variant", "ALT", "alt"], ""),
-        "transcript_id": first(row, ["Transcript", "Feature", "transcript_id"], ""),
+        "transcript_id": first(
+            row, ["Transcript", "Best Transcript", "Feature", "transcript_id"], ""
+        ),
         "consequence": first(row, ["Consequence", "consequence"], ""),
         "event_confidence": first(row, ["event_confidence", "Variant Confidence"], "0.7"),
         "event_expression": str(
@@ -161,6 +182,7 @@ def event_from_row(
                         "TPM",
                         "RNA Expr",
                         "Allele Expr",
+                        "Expr",
                     ],
                     "0",
                 ),
@@ -220,7 +242,7 @@ def peptide_from_row(
     )
     provided_reads = first(
         row,
-        ["rna_junction_reads", "RNA Junction Reads"],
+        ["rna_junction_reads", "RNA Junction Reads", "Read Support"],
         event.get("provided_rna_junction_reads", ""),
     )
 

@@ -687,7 +687,9 @@ def test_event_authenticity_named_states(status, expected):
 def test_rna_reuses_existing_status_and_gene_tpm_is_not_mutant_support():
     rules = load_consensus_rules()
     assert derive_rna_support({"event_type": "SNV", "rna_support_status": "RNA_ALT_SUPPORTED"}, rules)["state"] == "RNA_CONFIRMED"
-    assert derive_rna_support({"event_type": "SNV", "rna_support_status": "RNA_ALT_NOT_DETECTED"}, rules)["state"] == "RNA_NEGATIVE"
+    assert derive_rna_support({"event_type": "SNV", "rna_support_status": "RNA_ALT_NOT_DETECTED", "rna_depth": "20"}, rules)["state"] == "RNA_NEGATIVE"
+    assert derive_rna_support({"event_type": "SNV", "rna_support_status": "RNA_ALT_NOT_DETECTED", "rna_depth": "3"}, rules)["state"] == "RNA_LOW_SUPPORT"
+    assert derive_rna_support({"event_type": "SNV", "rna_support_status": "RNA_ALT_NOT_DETECTED", "rna_depth": "0"}, rules)["state"] == "RNA_UNASSESSED"
     state = derive_rna_support({"event_type": "SNV", "gene_expression_tpm": "20"}, rules)
     assert state["state"] == "GENE_EXPRESSION_ONLY"
     assert state["grade"] == 1
@@ -705,6 +707,13 @@ def test_presentation_uses_core_groups_without_double_counting_immunogenicity_mo
     single = derive_presentation_consensus({"netmhcpan_mt_rank_el": "0.2"}, rules)
     assert consistent["state"] == "PRESENTATION_CONSISTENT_STRONG"
     assert consistent["grade"] == 3
+    expression_gate_failed = derive_presentation_consensus({
+        "netmhcpan_mt_rank_el": "0.2",
+        "mhcflurry_presentation_score": "0.8",
+        "presentation_gate_status": "FAIL",
+        "presentation_gate_reason": "tpm=0.00;rna_alt_reads=0",
+    }, rules)
+    assert expression_gate_failed["state"] == "PRESENTATION_CONSISTENT_STRONG"
     assert discordant["state"] == "PRESENTATION_DISCORDANT"
     assert single["state"] == "PRESENTATION_SINGLE_TOOL"
 
