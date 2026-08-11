@@ -83,6 +83,24 @@ wait_for_mamba_free() {
   rm -f "${NEOAG_CONDA_BASE}/pkgs/pkgs.lock" 2>/dev/null || true
 }
 
+select_easyfuse_env_yml() {
+  local preferred="$1"
+  shift
+  if [[ -f "${NEOAG_EASYFUSE_HOME}/environments/${preferred}" ]]; then
+    printf '%s' "$preferred"
+    return 0
+  fi
+  local alt
+  for alt in "$@"; do
+    if [[ -f "${NEOAG_EASYFUSE_HOME}/environments/${alt}" ]]; then
+      printf '%s' "$alt"
+      return 0
+    fi
+  done
+  echo "ERROR: none of the EasyFuse env files exist under ${NEOAG_EASYFUSE_HOME}/environments: ${preferred} $*" >&2
+  exit 3
+}
+
 prebuild_conda_env() {
   local env_id="$1"
   local yml="$2"
@@ -115,10 +133,14 @@ prebuild_conda_env \
   "qc.yml" \
   "fastqc"
 
-prebuild_conda_env \
-  "e6082ee0f0a13e81-c203347e504f3b4d10ed96fdd01318ce" \
-  "easyfuse_src.yml" \
-  "skewer"
+if [[ -f "${NEOAG_EASYFUSE_HOME}/environments/easyfuse_src.yml" ]]; then
+  prebuild_conda_env \
+    "e6082ee0f0a13e81-c203347e504f3b4d10ed96fdd01318ce" \
+    "easyfuse_src.yml" \
+    "skewer"
+else
+  echo "==> EasyFuse easyfuse_src.yml not present; using v2 environment layout"
+fi
 
 if ! pgrep -f 'easyfuse_prebuild_remaining_envs\.sh' >/dev/null 2>&1; then
   nohup bash "${ROOT}/scripts/easyfuse_prebuild_remaining_envs.sh" >/dev/null 2>&1 &
@@ -149,7 +171,7 @@ if [[ ! -x "${REQ_WO_ENV}/bin/STAR" ]]; then
   rm -rf "${REQ_WO_ENV}"
   mamba env create -y \
     --prefix "${REQ_WO_ENV}" \
-    --file "${NEOAG_EASYFUSE_HOME}/environments/requantification_wo_easyfuse.yml"
+    --file "${NEOAG_EASYFUSE_HOME}/environments/$(select_easyfuse_env_yml requantification_wo_easyfuse.yml requantification.yml)"
 fi
 
 bash "${ROOT}/scripts/patch_easyfuse_star_avx2.sh"

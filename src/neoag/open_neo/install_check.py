@@ -955,7 +955,7 @@ def _production_run_readiness(args: dict[str, Any], project_root: Path, tier: st
 
     star_script = project_root / "scripts/run_star_rna_fastq.sh"
     star_text = _read_text_if_small(star_script)
-    has_legacy_chim = "SeparateSAMold" in star_text
+    has_legacy_chim = "SeparateSAMold" in star_text or "SoftClip" in star_text
     rows.append(_production_row(
         "rna_fusion", "star_chimouttype_compatible",
         "BLOCKED" if has_legacy_chim else "OK",
@@ -977,6 +977,38 @@ def _production_run_readiness(args: dict[str, Any], project_root: Path, tier: st
         "INFO" if easyfuse_root else "WARN",
         str(easyfuse_root or "main.nf not found"),
         "Install EasyFuse v2 layout or patch the runner to call the available Nextflow entrypoint.",
+    ))
+
+    easyfuse_env_ok = False
+    easyfuse_env_detail = "EasyFuse root not found"
+    if easyfuse_root:
+        env_dir = easyfuse_root / "environments"
+        has_qc = _safe_path_exists(env_dir / "qc.yml")
+        has_alignment = _safe_path_exists(env_dir / "alignment.yml") or _safe_path_exists(env_dir / "easyfuse_src.yml")
+        has_requant = _safe_path_exists(env_dir / "requantification.yml") or _safe_path_exists(env_dir / "requantification_wo_easyfuse.yml")
+        easyfuse_env_ok = has_qc and has_alignment and has_requant
+        easyfuse_env_detail = f"{env_dir}; qc={has_qc}; alignment/src={has_alignment}; requant={has_requant}"
+    rows.append(_production_row(
+        "rna_fusion", "easyfuse_env_file_compatibility",
+        "OK" if easyfuse_env_ok else "BLOCKED",
+        "INFO" if easyfuse_env_ok else "BLOCKER",
+        easyfuse_env_detail,
+        "Install EasyFuse env YAML files or use the runner compatibility mapping for alignment/requantification YAML names.",
+    ))
+
+    set_interval_candidates = [
+        conda_base / "envs/neoag-vep/lib/perl5/5.32/site_perl/Set/IntervalTree.pm",
+        conda_base / "envs/neoag-vep/lib/perl5/site_perl/Set/IntervalTree.pm",
+        conda_base / "envs/neoag-fusion/lib/perl5/5.32/site_perl/Set/IntervalTree.pm",
+        conda_base / "envs/neoag-fusion/lib/perl5/site_perl/Set/IntervalTree.pm",
+    ]
+    set_interval = next((path for path in set_interval_candidates if _safe_path_exists(path)), None)
+    rows.append(_production_row(
+        "rna_fusion", "star_fusion_set_intervaltree_perl_module",
+        "OK" if set_interval else "BLOCKED",
+        "INFO" if set_interval else "BLOCKER",
+        str(set_interval or "Set/IntervalTree.pm not found"),
+        "Install Perl Set::IntervalTree or expose the neoag-vep Perl library path before STAR-Fusion.",
     ))
 
     bam_matcher_script = project_root / "scripts/run_bam_matcher_pair.sh"
