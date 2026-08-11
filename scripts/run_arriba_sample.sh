@@ -27,10 +27,21 @@ REF_FASTA="${REF_FASTA:-${NEOAG_REFERENCE_FASTA:-}}"
 GTF="${GTF:-${NEOAG_EASYFUSE_REF:-}/Homo_sapiens.GRCh38.110.gtf}"
 
 FUSION_ENV="${NEOAG_CONDA_BASE}/envs/${NEOAG_FUSION_ENV:-neoag-fusion}"
-ARRIBA_SHARE="${ARRIBA_SHARE:-${FUSION_ENV}/share/arriba}"
+ARRIBA_FIXED_SHARE="${NEOAG_ARRIBA_SHARE:-${NEOAG_TOOLS_ROOT}/data/fusion/arriba}"
+ARRIBA_DEPLOY_SHARE="/home/na/project/open-neo-deploy/refs/data/fusion/arriba"
+if [[ -z "${ARRIBA_SHARE:-}" && -d "${ARRIBA_FIXED_SHARE}" ]]; then
+  ARRIBA_SHARE="${ARRIBA_FIXED_SHARE}"
+elif [[ -z "${ARRIBA_SHARE:-}" && -d "${ARRIBA_DEPLOY_SHARE}" ]]; then
+  ARRIBA_SHARE="${ARRIBA_DEPLOY_SHARE}"
+else
+  ARRIBA_SHARE="${ARRIBA_SHARE:-${FUSION_ENV}/share/arriba}"
+fi
 BLACKLIST="${BLACKLIST:-${ARRIBA_SHARE}/blacklist_grch38.tsv.gz}"
 if [[ ! -f "${BLACKLIST}" ]]; then
   BLACKLIST="${ARRIBA_SHARE}/blacklist_grch38.tsv"
+fi
+if [[ ! -f "${BLACKLIST}" ]]; then
+  BLACKLIST="${ARRIBA_SHARE}/blacklist_hg38_GRCh38_v2.5.1.tsv.gz"
 fi
 KNOWN_FUSIONS="${KNOWN_FUSIONS:-${ARRIBA_SHARE}/known_fusions_grch38.tsv.gz}"
 if [[ ! -f "${KNOWN_FUSIONS}" ]]; then
@@ -48,19 +59,31 @@ echo "==> run_arriba_sample $(date -Is)"
 echo "    patient=${PATIENT_ID}"
 echo "    input_bam=${INPUT_BAM}"
 echo "    out=${OUT}"
+echo "    arriba_share=${ARRIBA_SHARE}"
 
 [[ -s "${INPUT_BAM}" ]] || { echo "ERROR: missing BAM: ${INPUT_BAM}" >&2; exit 1; }
 [[ -s "${REF_FASTA}" ]] || { echo "ERROR: missing REF_FASTA (set REF_FASTA or NEOAG_REFERENCE_FASTA)" >&2; exit 1; }
 [[ -s "${GTF}" ]] || { echo "ERROR: missing GTF (set GTF or NEOAG_EASYFUSE_REF)" >&2; exit 1; }
+[[ -s "${BLACKLIST}" ]] || { echo "ERROR: missing Arriba blacklist: ${BLACKLIST}" >&2; exit 1; }
 command -v arriba >/dev/null 2>&1 || { echo "ERROR: arriba not on PATH; run bash scripts/install_fusion_tools.sh" >&2; exit 1; }
+
+ARRIBA_EXTRA_ARGS=(-b "${BLACKLIST}")
+if [[ -s "${KNOWN_FUSIONS}" ]]; then
+  ARRIBA_EXTRA_ARGS+=(-k "${KNOWN_FUSIONS}")
+else
+  echo "WARN: Arriba known fusions file not found; running without -k: ${KNOWN_FUSIONS}"
+fi
+if [[ -s "${PROTEIN_DOMAINS}" ]]; then
+  ARRIBA_EXTRA_ARGS+=(-t "${PROTEIN_DOMAINS}")
+else
+  echo "WARN: Arriba protein domains file not found; running without -t: ${PROTEIN_DOMAINS}"
+fi
 
 arriba \
   -x "${INPUT_BAM}" \
   -a "${REF_FASTA}" \
   -g "${GTF}" \
-  -b "${BLACKLIST}" \
-  -k "${KNOWN_FUSIONS}" \
-  -t "${PROTEIN_DOMAINS}" \
+  "${ARRIBA_EXTRA_ARGS[@]}" \
   -o "${OUT}/${PATIENT_ID}.fusions.tsv" \
   -d "${OUT}/${PATIENT_ID}.fusions.discarded.tsv"
 
