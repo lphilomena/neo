@@ -258,6 +258,7 @@ if [[ ! -x "${REQ_WO_ENV}/bin/STAR" ]]; then
 fi
 
 bash "${ROOT}/scripts/patch_easyfuse_star_avx2.sh"
+bash "${ROOT}/scripts/patch_easyfuse_fusioncatcher_compat.sh"
 bash "${ROOT}/scripts/fix_easyfuse_pyeasyfuse_env.sh"
 
 export PATH="$(echo "${PATH}" | tr ':' '\n' | grep -vE '/envs/neoag-tools/bin$|/tools/fusioncatcher/bin$' | paste -sd: -)"
@@ -293,6 +294,7 @@ run_nextflow() {
 run_nextflow || {
   echo "==> Nextflow failed; patching STAR and retrying once with -resume ..."
   bash "${ROOT}/scripts/patch_easyfuse_star_avx2.sh"
+  bash "${ROOT}/scripts/patch_easyfuse_fusioncatcher_compat.sh"
   NXF_RESUME_ARGS=(-resume "${NXF_RUN_NAME}")
   run_nextflow
 }

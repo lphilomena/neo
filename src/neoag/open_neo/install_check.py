@@ -1068,6 +1068,26 @@ def _production_run_readiness(args: dict[str, Any], project_root: Path, tier: st
         "Use NXF_CONDA_CACHEDIR from the environment and avoid setting both yes and always_yes conda/mamba flags.",
     ))
 
+    easyfuse_fc_patcher = project_root / "scripts/patch_easyfuse_fusioncatcher_compat.sh"
+    easyfuse_fc_patcher_text = _read_text_if_small(easyfuse_fc_patcher)
+    star252_candidates = [
+        project_root.parent / "open-neo-deploy/env_tool/conda_pkgs/star-2.5.2b-0/bin/STAR",
+        conda_base / "pkgs/star-2.5.2b-0/bin/STAR",
+    ]
+    star252 = next((path for path in star252_candidates if _safe_path_exists(path)), None)
+    easyfuse_fc_compat_ok = (
+        "patch_easyfuse_fusioncatcher_compat.sh" in easyfuse_runner_text
+        and "STAR_2.5.2b" in easyfuse_fc_patcher_text
+        and "startswith('1.33')" in easyfuse_fc_patcher_text
+    )
+    rows.append(_production_row(
+        "rna_fusion", "easyfuse_fusioncatcher_compat",
+        "OK" if easyfuse_fc_compat_ok and star252 else "BLOCKED",
+        "INFO" if easyfuse_fc_compat_ok and star252 else "BLOCKER",
+        f"{easyfuse_fc_patcher if easyfuse_fc_patcher_text else 'patch_easyfuse_fusioncatcher_compat.sh not found'}; star_2.5.2b={star252 or 'not found'}",
+        "Patch EasyFuse FusionCatcher envs to use STAR 2.5.2b and tolerate the pinned FusionCatcher 1.33 reference build when only the cached 1.00 package is available.",
+    ))
+
     set_interval_candidates = [
         conda_base / "envs/neoag-vep/lib/perl5/5.32/site_perl/Set/IntervalTree.pm",
         conda_base / "envs/neoag-vep/lib/perl5/site_perl/Set/IntervalTree.pm",
