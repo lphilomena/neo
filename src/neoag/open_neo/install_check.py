@@ -1080,12 +1080,26 @@ def _production_run_readiness(args: dict[str, Any], project_root: Path, tier: st
         and "STAR_2.5.2b" in easyfuse_fc_patcher_text
         and "startswith('1.33')" in easyfuse_fc_patcher_text
     )
+    easyfuse_fc_ref = next((
+        path / "fusioncatcher_index"
+        for path in easyfuse_ref_candidates
+        if _safe_path_exists(path / "fusioncatcher_index")
+    ), None)
+    easyfuse_fc_genome_index_ok = bool(easyfuse_fc_ref and (
+        any(_safe_path_exists(easyfuse_fc_ref / "genome_index" / name) for name in [".1.ebwt", ".1.ebwtl"])
+        or (
+            any(_safe_path_exists(easyfuse_fc_ref / "genome_index2" / name) for name in ["index.1.bt2", "index.1.bt2l"])
+            and "ensure_bowtie1_genome_index" in easyfuse_fc_patcher_text
+            and "bowtie2-inspect" in easyfuse_fc_patcher_text
+            and "bowtie-build" in easyfuse_fc_patcher_text
+        )
+    ))
     rows.append(_production_row(
         "rna_fusion", "easyfuse_fusioncatcher_compat",
-        "OK" if easyfuse_fc_compat_ok and star252 else "BLOCKED",
-        "INFO" if easyfuse_fc_compat_ok and star252 else "BLOCKER",
-        f"{easyfuse_fc_patcher if easyfuse_fc_patcher_text else 'patch_easyfuse_fusioncatcher_compat.sh not found'}; star_2.5.2b={star252 or 'not found'}",
-        "Patch EasyFuse FusionCatcher envs to use STAR 2.5.2b and tolerate the pinned FusionCatcher 1.33 reference build when only the cached 1.00 package is available.",
+        "OK" if easyfuse_fc_compat_ok and star252 and easyfuse_fc_genome_index_ok else "BLOCKED",
+        "INFO" if easyfuse_fc_compat_ok and star252 and easyfuse_fc_genome_index_ok else "BLOCKER",
+        f"{easyfuse_fc_patcher if easyfuse_fc_patcher_text else 'patch_easyfuse_fusioncatcher_compat.sh not found'}; star_2.5.2b={star252 or 'not found'}; fusioncatcher_ref={easyfuse_fc_ref or 'not found'}; genome_index_ready_or_buildable={easyfuse_fc_genome_index_ok}",
+        "Patch EasyFuse FusionCatcher envs to use STAR 2.5.2b, tolerate the pinned FusionCatcher 1.33 reference build when only the cached 1.00 package is available, and build the missing Bowtie1 genome_index from the bundled Bowtie2 genome_index2 when needed.",
     ))
 
     set_interval_candidates = [
