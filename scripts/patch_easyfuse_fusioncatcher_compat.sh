@@ -90,10 +90,37 @@ ensure_bowtie1_genome_index() {
 
 ensure_reference_aliases() {
   local ref_dir="${FUSIONCATCHER_REF}"
+  local optional_filters=(
+    antisenses.txt
+    rp11.txt
+    cta.txt
+    ctb.txt
+    ctd.txt
+    ctc.txt
+    rp.txt
+    celllines.txt
+  )
   [[ -d "${ref_dir}" ]] || return 0
   if [[ ! -e "${ref_dir}/lincrnas.txt" && -f "${ref_dir}/lncrnas.txt" ]]; then
     ln -s "lncrnas.txt" "${ref_dir}/lincrnas.txt" 2>/dev/null || cp -p "${ref_dir}/lncrnas.txt" "${ref_dir}/lincrnas.txt"
   fi
+  if [[ ! -e "${ref_dir}/prostates.txt" && -f "${ref_dir}/prostate_cancer.txt" ]]; then
+    ln -s "prostate_cancer.txt" "${ref_dir}/prostates.txt" 2>/dev/null || cp -p "${ref_dir}/prostate_cancer.txt" "${ref_dir}/prostates.txt"
+  fi
+  if [[ ! -e "${ref_dir}/chimerdb3kb.txt" && -f "${ref_dir}/chimerdb4kb.txt" ]]; then
+    ln -s "chimerdb4kb.txt" "${ref_dir}/chimerdb3kb.txt" 2>/dev/null || cp -p "${ref_dir}/chimerdb4kb.txt" "${ref_dir}/chimerdb3kb.txt"
+  fi
+  if [[ ! -e "${ref_dir}/chimerdb3pub.txt" && -f "${ref_dir}/chimerdb4pub.txt" ]]; then
+    ln -s "chimerdb4pub.txt" "${ref_dir}/chimerdb3pub.txt" 2>/dev/null || cp -p "${ref_dir}/chimerdb4pub.txt" "${ref_dir}/chimerdb3pub.txt"
+  fi
+  if [[ ! -e "${ref_dir}/chimerdb3seq.txt" && -f "${ref_dir}/chimerdb4seq.txt" ]]; then
+    ln -s "chimerdb4seq.txt" "${ref_dir}/chimerdb3seq.txt" 2>/dev/null || cp -p "${ref_dir}/chimerdb4seq.txt" "${ref_dir}/chimerdb3seq.txt"
+  fi
+  for filter_name in "${optional_filters[@]}"; do
+    if [[ ! -e "${ref_dir}/${filter_name}" ]]; then
+      : > "${ref_dir}/${filter_name}"
+    fi
+  done
 }
 
 patch_configuration_cfg "${ROOT}/../open-neo-deploy/env_tool/conda_pkgs/fusioncatcher-1.00-py27h8c6ebc1_1/etc/configuration.cfg"
