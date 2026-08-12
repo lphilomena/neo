@@ -88,9 +88,18 @@ ensure_bowtie1_genome_index() {
   rm -rf "${tmp_dir}"
 }
 
+ensure_reference_aliases() {
+  local ref_dir="${FUSIONCATCHER_REF}"
+  [[ -d "${ref_dir}" ]] || return 0
+  if [[ ! -e "${ref_dir}/lincrnas.txt" && -f "${ref_dir}/lncrnas.txt" ]]; then
+    ln -s "lncrnas.txt" "${ref_dir}/lincrnas.txt" 2>/dev/null || cp -p "${ref_dir}/lncrnas.txt" "${ref_dir}/lincrnas.txt"
+  fi
+}
+
 patch_configuration_cfg "${ROOT}/../open-neo-deploy/env_tool/conda_pkgs/fusioncatcher-1.00-py27h8c6ebc1_1/etc/configuration.cfg"
 patch_configuration_cfg "${ROOT}/../open-neo-deploy/env_tool/tools/fusioncatcher/etc/configuration.cfg"
 ensure_bowtie1_genome_index
+ensure_reference_aliases
 
 if [[ -d "${CONDA_CACHE}" ]]; then
   while IFS= read -r cfg; do

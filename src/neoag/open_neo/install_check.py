@@ -1094,12 +1094,20 @@ def _production_run_readiness(args: dict[str, Any], project_root: Path, tier: st
             and "bowtie-build" in easyfuse_fc_patcher_text
         )
     ))
+    easyfuse_fc_linc_ok = bool(easyfuse_fc_ref and (
+        _safe_path_exists(easyfuse_fc_ref / "lincrnas.txt")
+        or (
+            _safe_path_exists(easyfuse_fc_ref / "lncrnas.txt")
+            and "ensure_reference_aliases" in easyfuse_fc_patcher_text
+            and "lincrnas.txt" in easyfuse_fc_patcher_text
+        )
+    ))
     rows.append(_production_row(
         "rna_fusion", "easyfuse_fusioncatcher_compat",
-        "OK" if easyfuse_fc_compat_ok and star252 and easyfuse_fc_genome_index_ok else "BLOCKED",
-        "INFO" if easyfuse_fc_compat_ok and star252 and easyfuse_fc_genome_index_ok else "BLOCKER",
-        f"{easyfuse_fc_patcher if easyfuse_fc_patcher_text else 'patch_easyfuse_fusioncatcher_compat.sh not found'}; star_2.5.2b={star252 or 'not found'}; fusioncatcher_ref={easyfuse_fc_ref or 'not found'}; genome_index_ready_or_buildable={easyfuse_fc_genome_index_ok}",
-        "Patch EasyFuse FusionCatcher envs to use STAR 2.5.2b, tolerate the pinned FusionCatcher 1.33 reference build when only the cached 1.00 package is available, and build the missing Bowtie1 genome_index from the bundled Bowtie2 genome_index2 when needed.",
+        "OK" if easyfuse_fc_compat_ok and star252 and easyfuse_fc_genome_index_ok and easyfuse_fc_linc_ok else "BLOCKED",
+        "INFO" if easyfuse_fc_compat_ok and star252 and easyfuse_fc_genome_index_ok and easyfuse_fc_linc_ok else "BLOCKER",
+        f"{easyfuse_fc_patcher if easyfuse_fc_patcher_text else 'patch_easyfuse_fusioncatcher_compat.sh not found'}; star_2.5.2b={star252 or 'not found'}; fusioncatcher_ref={easyfuse_fc_ref or 'not found'}; genome_index_ready_or_buildable={easyfuse_fc_genome_index_ok}; lincrnas_ready_or_aliasable={easyfuse_fc_linc_ok}",
+        "Patch EasyFuse FusionCatcher envs to use STAR 2.5.2b, tolerate the pinned FusionCatcher 1.33 reference build when only the cached 1.00 package is available, build the missing Bowtie1 genome_index from the bundled Bowtie2 genome_index2 when needed, and provide the lincrnas.txt alias expected by FusionCatcher 1.00 references.",
     ))
 
     set_interval_candidates = [
