@@ -1085,13 +1085,15 @@ def _production_run_readiness(args: dict[str, Any], project_root: Path, tier: st
         for path in easyfuse_ref_candidates
         if _safe_path_exists(path / "fusioncatcher_index")
     ), None)
+    easyfuse_fc_bowtie1_index_names = [".1.ebwt", ".2.ebwt", ".3.ebwt", ".4.ebwt", ".rev.1.ebwt", ".rev.2.ebwt"]
     easyfuse_fc_genome_index_ok = bool(easyfuse_fc_ref and (
-        any(_safe_path_exists(easyfuse_fc_ref / "genome_index" / name) for name in [".1.ebwt", ".1.ebwtl"])
+        all(_safe_path_exists(easyfuse_fc_ref / "genome_index" / name) for name in easyfuse_fc_bowtie1_index_names)
         or (
             any(_safe_path_exists(easyfuse_fc_ref / "genome_index2" / name) for name in ["index.1.bt2", "index.1.bt2l"])
             and "ensure_bowtie1_genome_index" in easyfuse_fc_patcher_text
             and "bowtie2-inspect" in easyfuse_fc_patcher_text
             and "bowtie-build" in easyfuse_fc_patcher_text
+            and ".rev.2.ebwt" in easyfuse_fc_patcher_text
         )
     ))
     easyfuse_fc_linc_ok = bool(easyfuse_fc_ref and (

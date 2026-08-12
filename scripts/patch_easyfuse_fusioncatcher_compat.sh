@@ -56,13 +56,21 @@ ensure_bowtie1_genome_index() {
   local ref_dir="${FUSIONCATCHER_REF}"
   local genome_index="${ref_dir}/genome_index"
   local genome_index2="${ref_dir}/genome_index2/index"
+  local required_index_files=(.1.ebwt .2.ebwt .3.ebwt .4.ebwt .rev.1.ebwt .rev.2.ebwt)
   local bowtie_build=""
   local bowtie2_inspect=""
   local tmp_dir=""
   local fasta=""
+  local complete="yes"
 
   [[ -d "${ref_dir}" ]] || return 0
-  if compgen -G "${genome_index}/.1.ebwt*" >/dev/null; then
+  for idx_name in "${required_index_files[@]}"; do
+    if [[ ! -s "${genome_index}/${idx_name}" ]]; then
+      complete="no"
+      break
+    fi
+  done
+  if [[ "${complete}" == "yes" ]]; then
     return 0
   fi
   if [[ ! -f "${genome_index2}.1.bt2" && ! -f "${genome_index2}.1.bt2l" ]]; then
