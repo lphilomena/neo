@@ -1019,6 +1019,15 @@ def _production_run_readiness(args: dict[str, Any], project_root: Path, tier: st
         "Pin NXF_CONDA_CACHEDIR to an absolute project work cache before launching Nextflow, so it does not resolve to work/work/.nextflow_conda.",
     ))
 
+    easyfuse_home_fallback_ok = "open-neo-deploy/env_tool/tools/EasyFuse" in easyfuse_runner_text and "NEOAG_EASYFUSE_HOME" in easyfuse_runner_text
+    rows.append(_production_row(
+        "rna_fusion", "easyfuse_deploy_home_fallback",
+        "OK" if easyfuse_home_fallback_ok else "BLOCKED",
+        "INFO" if easyfuse_home_fallback_ok else "BLOCKER",
+        str(easyfuse_runner if easyfuse_runner_text else "run_easyfuse_sample.sh not found"),
+        "Resolve EasyFuse to the deployed open-neo-deploy/env_tool/tools/EasyFuse directory when the default project-local tools/EasyFuse path is absent.",
+    ))
+
     easyfuse_ref_candidates = []
     if os.environ.get("NEOAG_EASYFUSE_REF"):
         easyfuse_ref_candidates.append(Path(os.environ["NEOAG_EASYFUSE_REF"]))
@@ -1083,6 +1092,24 @@ def _production_run_readiness(args: dict[str, Any], project_root: Path, tier: st
         "INFO" if star_fusion_perl_ok else "BLOCKER",
         str(star_fusion_runner if star_fusion_text else "run_star_fusion_sample.sh not found"),
         "Run STAR-Fusion through the Perl that owns Set::IntervalTree, typically neoag-vep/bin/perl, to avoid Perl ABI mismatches.",
+    ))
+
+    star_fusion_bin_fallback_ok = "open-neo-deploy/env_tool/tools/STAR-Fusion/STAR-Fusion" in star_fusion_text
+    rows.append(_production_row(
+        "rna_fusion", "star_fusion_deploy_bin_fallback",
+        "OK" if star_fusion_bin_fallback_ok else "BLOCKED",
+        "INFO" if star_fusion_bin_fallback_ok else "BLOCKER",
+        str(star_fusion_runner if star_fusion_text else "run_star_fusion_sample.sh not found"),
+        "Resolve STAR-Fusion to the deployed open-neo-deploy tool path when it is not already on PATH.",
+    ))
+
+    star_fusion_vendor_perl_ok = "vendor_perl" in star_fusion_text
+    rows.append(_production_row(
+        "rna_fusion", "star_fusion_vendor_perl_path",
+        "OK" if star_fusion_vendor_perl_ok else "BLOCKED",
+        "INFO" if star_fusion_vendor_perl_ok else "BLOCKER",
+        str(star_fusion_runner if star_fusion_text else "run_star_fusion_sample.sh not found"),
+        "Include Perl vendor_perl directories in PERL5LIB so STAR-Fusion utilities can load modules such as common::sense and JSON::XS.",
     ))
 
     star_fusion_star_path_ok = "envs/neoag-fusion/bin" in star_fusion_text and "export PATH" in star_fusion_text

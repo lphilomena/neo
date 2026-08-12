@@ -6,6 +6,13 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck source=/dev/null
 source "${ROOT}/conf/tools.env.sh"
 : "${NEOAG_CONDA_BASE:?ERROR: set NEOAG_CONDA_BASE to your conda/mamba installation root}"
+if [[ ! -f "${NEOAG_EASYFUSE_HOME:-}/main.nf" && -f "${ROOT}/../open-neo-deploy/env_tool/tools/EasyFuse/main.nf" ]]; then
+  export NEOAG_EASYFUSE_HOME="${ROOT}/../open-neo-deploy/env_tool/tools/EasyFuse"
+fi
+[[ -f "${NEOAG_EASYFUSE_HOME:-}/main.nf" ]] || {
+  echo "ERROR: EasyFuse main.nf not found; set NEOAG_EASYFUSE_HOME to the deployed EasyFuse directory" >&2
+  exit 1
+}
 export PATH="${NEOAG_CONDA_BASE}/bin:${PATH}"
 # EasyFuse Nextflow activates starfusion.yml; keep repo STAR-Fusion off PATH.
 export PATH="$(echo "${PATH}" | tr ':' '\n' | grep -vE "${NEOAG_STAR_FUSION_HOME}\$" | paste -sd: -)"

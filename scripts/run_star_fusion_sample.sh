@@ -31,6 +31,16 @@ validate_fastq_list --fastq1 "$FQ1"
 validate_fastq_list --fastq2 "$FQ2"
 [[ -d "$CTAT" ]] || { echo "ERROR: CTAT genome library missing: $CTAT" >&2; exit 3; }
 STAR_FUSION_BIN="${NEOAG_STAR_FUSION_BIN:-$(command -v STAR-Fusion || true)}"
+if [[ -z "$STAR_FUSION_BIN" || ! -x "$STAR_FUSION_BIN" ]]; then
+  for candidate in \
+    "$(cd "$(dirname "$0")/.." && pwd)/../open-neo-deploy/env_tool/tools/STAR-Fusion/STAR-Fusion" \
+    "$(cd "$(dirname "$0")/.." && pwd)/tools/STAR-Fusion/STAR-Fusion"; do
+    if [[ -x "$candidate" ]]; then
+      STAR_FUSION_BIN="$candidate"
+      break
+    fi
+  done
+fi
 [[ -n "$STAR_FUSION_BIN" && -x "$STAR_FUSION_BIN" ]] || { echo "ERROR: STAR-Fusion executable not found" >&2; exit 3; }
 
 CONDA_BASE="${NEOAG_CONDA_BASE:-${HOME}/miniforge3}"
@@ -49,8 +59,12 @@ fi
 for perl_dir in \
   "${CONDA_BASE}/envs/neoag-vep/lib/perl5/5.32/site_perl" \
   "${CONDA_BASE}/envs/neoag-vep/lib/perl5/site_perl" \
+  "${CONDA_BASE}/envs/neoag-vep/lib/perl5/5.32/vendor_perl" \
+  "${CONDA_BASE}/envs/neoag-vep/lib/perl5/vendor_perl" \
   "${CONDA_BASE}/envs/neoag-fusion/lib/perl5/5.32/site_perl" \
-  "${CONDA_BASE}/envs/neoag-fusion/lib/perl5/site_perl"; do
+  "${CONDA_BASE}/envs/neoag-fusion/lib/perl5/site_perl" \
+  "${CONDA_BASE}/envs/neoag-fusion/lib/perl5/5.32/vendor_perl" \
+  "${CONDA_BASE}/envs/neoag-fusion/lib/perl5/vendor_perl"; do
   [[ -d "$perl_dir" ]] && export PERL5LIB="${perl_dir}:${PERL5LIB:-}"
 done
 STAR_FUSION_PERL5LIB="${PERL5LIB:-}"
