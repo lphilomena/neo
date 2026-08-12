@@ -42,6 +42,11 @@ if [[ -z "$STAR_FUSION_BIN" || ! -x "$STAR_FUSION_BIN" ]]; then
   done
 fi
 [[ -n "$STAR_FUSION_BIN" && -x "$STAR_FUSION_BIN" ]] || { echo "ERROR: STAR-Fusion executable not found" >&2; exit 3; }
+STAR_FUSION_HOME="$(cd "$(dirname "$STAR_FUSION_BIN")" && pwd)"
+SIDECAR_PATCHER="$(cd "$(dirname "$0")/.." && pwd)/scripts/patch_starfusion_sidecars.sh"
+if [[ -x "$SIDECAR_PATCHER" ]]; then
+  bash "$SIDECAR_PATCHER" --star-fusion-home "$STAR_FUSION_HOME"
+fi
 
 CONDA_BASE="${NEOAG_CONDA_BASE:-${HOME}/miniforge3}"
 if [[ -d "${CONDA_BASE}/envs/neoag-fusion/bin" ]]; then

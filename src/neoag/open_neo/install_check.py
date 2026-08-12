@@ -1112,6 +1112,22 @@ def _production_run_readiness(args: dict[str, Any], project_root: Path, tier: st
         "Include Perl vendor_perl directories in PERL5LIB so STAR-Fusion utilities can load modules such as common::sense and JSON::XS.",
     ))
 
+    sidecar_patcher = project_root / "scripts/patch_starfusion_sidecars.sh"
+    sidecar_patcher_text = _read_text_if_small(sidecar_patcher)
+    star_fusion_sidecar_runner_ok = (
+        "patch_starfusion_sidecars.sh" in star_fusion_text
+        and "FusionFilter/blast_and_promiscuity_filter.pl" in sidecar_patcher_text
+        and "FusionAnnotator/FusionAnnotator" in sidecar_patcher_text
+        and "annot_filter.pass" in sidecar_patcher_text
+    )
+    rows.append(_production_row(
+        "rna_fusion", "star_fusion_sidecars_complete",
+        "OK" if star_fusion_sidecar_runner_ok else "BLOCKED",
+        "INFO" if star_fusion_sidecar_runner_ok else "BLOCKER",
+        str(sidecar_patcher if sidecar_patcher_text else "patch_starfusion_sidecars.sh not found"),
+        "Ensure STAR-Fusion sidecar components FusionFilter and FusionAnnotator are present and align FusionFilter output naming with the STAR-Fusion driver.",
+    ))
+
     star_fusion_star_path_ok = "envs/neoag-fusion/bin" in star_fusion_text and "export PATH" in star_fusion_text
     rows.append(_production_row(
         "rna_fusion", "star_fusion_star_path_pinned",
