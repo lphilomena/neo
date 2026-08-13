@@ -37,3 +37,30 @@ manifest.
 
 The authoritative machine-readable policy is
 `configs/tools/tools_manifest.yaml:production_requirements`.
+
+## Reuse completed upstream results
+
+`scripts/generate_production_from_results_manifest.py` is the production entry
+for completed tool outputs. It now performs the previously manual closure steps:
+
+1. With `--optitype` and `--spechla-typing` (and optional `--hla-la`), it builds
+   the class-I typing consensus and validated allele file. `--hla-file` remains
+   an explicit override for an already reviewed consensus.
+2. FACETS, Sequenza, and PURPLE result directories are parsed into
+   `purity_cnv_tool_summary.tsv`, `purity_cnv_consensus.tsv`,
+   `recommended_purity.tsv`, and a provenance-recorded CNV segment selection.
+   Explicit `--purity` plus `--cnv` remain overrides.
+3. Normalized LOHHLA and SpecHLA `hla_loh.tsv` files are combined per allele;
+   retained, lost, discordant, and unassessed states are preserved. An existing
+   `--hla-loh` consensus may be supplied instead.
+4. EasyFuse, STAR-Fusion, and Arriba are normalized into one event union.
+   Caller-unique events remain in the technical review table. Only events with
+   an explicit reconstructed ORF/junction peptide generate MHC-I candidates;
+   event-only calls are marked `ORF_PEPTIDE_UNAVAILABLE_REVIEW_ONLY` and are
+   never assigned invented peptide sequences.
+
+The generated manifest runs these closure stages before NetMHCpan, MHCflurry,
+NetMHCstabpan, NetChop, immunogenicity, evidence ranking, and patient/technical
+report generation. Missing cross-tool requirements or a fusion-only event set
+without peptide-generating evidence blocks production release with an explicit
+gate record.

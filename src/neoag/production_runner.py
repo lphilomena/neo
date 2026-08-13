@@ -520,9 +520,11 @@ def run_production(
             profile=profile,
             normalized_dir=normalized_dir,
         )
-        if peptides:
+        if events:
             all_events.extend(events)
+        if peptides:
             all_peptides.extend(peptides)
+        if events or peptides:
             detected_sources.append(stage.source)
 
     merged_dir = run_outdir / "merged"
@@ -555,6 +557,28 @@ def run_production(
         "peptide_provenance": str(peptide_provenance_path),
         "evidence_conflicts": str(conflicts_path),
     }
+    if not merged_peptide_rows:
+        stage_results.append(StageResult(
+            "candidate_peptide_gate",
+            "FAILED",
+            True,
+            outputs={"raw_events": str(merged_events), "raw_peptides": str(merged_peptides)},
+            message=(
+                "events were retained for technical review, but no peptide-generating ORF or explicit "
+                "junction peptide was available; MHC prediction and patient ranking were not started"
+            ),
+        ))
+        result = ProductionResult(
+            sample_id,
+            "BLOCKED",
+            str(run_outdir),
+            False,
+            stage_results,
+            detected_sources=detected_sources,
+            provenance_outputs=provenance_outputs,
+        )
+        _write_result(result, run_outdir)
+        return result
 
     expected_sources = [str(source) for source in (expanded_run.get("expected_peptide_sources") or [])]
     detected_folded = {source.casefold() for source in detected_sources}

@@ -214,6 +214,7 @@ def main(argv: list[str] | None = None) -> int:
 
     root = Path(args.project_root).resolve()
     outdir = ensure_dir(args.outdir)
+    explicit_search_paths = bool(args.result_dir or args.file)
     search_paths = [Path(x) for x in args.result_dir if x] + [Path(x) for x in args.file if x]
     if not search_paths:
         for rel in ["results/hla_typing", "results/agent_hla_typing_compare_smoke", "results/llm_agent_web"]:
@@ -221,7 +222,10 @@ def main(argv: list[str] | None = None) -> int:
             if p.exists():
                 search_paths.append(p)
     search_paths.append(outdir.parent)
-    rows = collect_typing(search_paths, sample_id=args.sample_id)
+    # Explicit result paths define the sample boundary. Tool outputs often use
+    # fixed filenames (for example result.tsv or hla.result.txt) and need not
+    # repeat the sample ID in either path or content.
+    rows = collect_typing(search_paths, sample_id=None if explicit_search_paths else args.sample_id)
     cons = consensus(rows)
     run_suggestions = suggestions(args.bam, args.fastq1, args.fastq2)
 
