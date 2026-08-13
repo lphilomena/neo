@@ -40,6 +40,7 @@ def build_presentation_evidence(
     w_el = float(w.get("netmhcpan_el", 0.35))
     w_mhcf = float(w.get("mhcflurry_presentation", 0.30))
     w_proc = float(w.get("mhcflurry_processing", 0.10))
+    w_chop = float(w.get("netchop_processing", 0.10))
     rows = []
     for p in peptides:
         key = safe_id(f"{p.get('peptide','')}_{p.get('hla_allele','')}")
@@ -59,15 +60,21 @@ def build_presentation_evidence(
         pct_s = norm_rank(pct) if pct != "" else None
         proc_s = clamp(to_float(proc, -1)) if proc != "" else None
         pres_s = clamp(to_float(pres, -1)) if pres != "" else None
+        chop_raw = c.get("netchop_31d_cterm_score") or c.get("netchop_31d_max_score", "")
+        chop_s = clamp(to_float(chop_raw, -1)) if chop_raw != "" else None
         binding_parts = [x for x in [ba_s, pct_s] if x is not None]
         binding = max(binding_parts) if binding_parts else norm_rank(p.get("binding_rank", 99))
         num = den = 0.0
-        for val, wt in [(ba_s,w_ba),(el_s,w_el),(pres_s,w_mhcf),(proc_s,w_proc)]:
+        is_mhci = str(p.get("mhc_class") or "I").upper() not in {"II", "MHC-II", "CLASSII"}
+        weighted_evidence = [(ba_s,w_ba),(el_s,w_el),(pres_s,w_mhcf),(proc_s,w_proc)]
+        if is_mhci:
+            weighted_evidence.append((chop_s, w_chop))
+        for val, wt in weighted_evidence:
             if val is not None:
                 num += val * wt; den += wt
         if den:
             presentation = num / den
-            complete = min(1.0, den / (w_ba+w_el+w_mhcf+w_proc))
+            complete = min(1.0, den / sum(wt for _, wt in weighted_evidence))
         else:
             presentation = clamp(to_float(p.get("presentation_score"), 0.0))
             complete = 0.25 if p.get("presentation_score") else 0.0
@@ -88,6 +95,7 @@ def build_presentation_evidence(
             "netmhcstabpan_rank": str(to_float(s.get("netmhcstabpan_rank"), 99.0)) if s else "",
             "netchop_31d_max_score": c.get("netchop_31d_max_score", ""),
             "netchop_31d_mean_score": c.get("netchop_31d_mean_score", ""),
+            "netchop_31d_cterm_score": c.get("netchop_31d_cterm_score", ""),
             "netchop_31d_cleavage_sites": c.get("netchop_31d_cleavage_sites", ""),
             "netchop_processing_status": c.get("netchop_processing_status", "ASSESSED" if c else "UNASSESSED"),
             "mhcflurry_affinity_percentile": str(to_float(pct, 99.0)),
@@ -118,7 +126,7 @@ def build_presentation_evidence(
         composite = provenance_derived(
             "presentation_composite",
             out,
-            upstream="netmhcpan+mhcflurry+netmhcstabpan+immunogenicity",
+            upstream="netmhcpan+mhcflurry+netmhcstabpan+netchop+immunogenicity",
         )
         for row in rows:
             row.update(summary)

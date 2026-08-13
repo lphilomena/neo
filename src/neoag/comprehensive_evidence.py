@@ -32,7 +32,7 @@ PRESENTATION_FIELDS = {
     "netmhcpan_mt_rank_ba", "netmhcpan_mt_rank_el", "netmhcpan_wt_ic50",
     "netmhcpan_wt_rank_ba", "netmhcpan_wt_rank_el", "netmhcpan_ba_rank",
     "netmhcpan_el_rank", "netmhcstabpan_score", "netmhcstabpan_rank",
-    "netchop_31d_max_score", "netchop_31d_mean_score",
+    "netchop_31d_max_score", "netchop_31d_mean_score", "netchop_31d_cterm_score",
     "netchop_31d_cleavage_sites", "netchop_processing_status",
     "mhcflurry_affinity_percentile", "mhcflurry_processing_score",
     "mhcflurry_presentation_score", "mhcflurry_wt_affinity_percentile",

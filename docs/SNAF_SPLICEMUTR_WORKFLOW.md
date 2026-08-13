@@ -76,3 +76,9 @@ For a licensed or locally reviewed SpliceMutr deployment, add:
 ```bash
   --splicemutr-workflow configs/workflows/splicemutr.site.smk
 ```
+
+## Validated run record
+
+The audited Xiaoliang liver-tumor run, exact cross-validation rules, counts,
+output paths, hashes, and interpretation limits are recorded in
+[`SPLICEMUTR_XIAOLIANG_RUN_RECORD.md`](SPLICEMUTR_XIAOLIANG_RUN_RECORD.md).

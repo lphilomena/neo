@@ -353,6 +353,8 @@ def score_peptide(p, e, profile, pres, summary):
         p[field] = e.get(field, p.get(field, ""))
     for k in [
         "netmhcpan_ba_rank", "netmhcpan_el_rank", "netmhcstabpan_score", "netmhcstabpan_rank",
+        "netchop_31d_max_score", "netchop_31d_mean_score", "netchop_31d_cterm_score",
+        "netchop_31d_cleavage_sites", "netchop_processing_status",
         "mhcflurry_affinity_percentile", "mhcflurry_processing_score", "mhcflurry_presentation_score",
         "binding_evidence_score", "presentation_evidence_score", "presentation_evidence_grade",
         "prime_score", "prime_rank", "bigmhc_im_score", "deepimmuno_score",

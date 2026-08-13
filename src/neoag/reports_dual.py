@@ -282,6 +282,8 @@ def _enrich_rows_from_sources(
         "escape_status", "immunogenicity_score", "immunogenicity_composite_score",
         "netmhcpan_el_rank", "mhcflurry_presentation_score", "mhcflurry_processing_score",
         "prime_score", "bigmhc_im_score", "netmhcstabpan_rank", "netmhcstabpan_score",
+        "netchop_31d_cterm_score", "netchop_31d_max_score", "netchop_31d_mean_score",
+        "netchop_31d_cleavage_sites", "netchop_processing_status",
         "tap_processing_status", "evidence_field_sources", "evidence_conflict_fields",
     }
     copy_fields = set(fields) | authoritative_evidence_fields
@@ -1266,7 +1268,7 @@ def _patient_comprehensive_evidence(row: Mapping[str, Any], bundle: ReportBundle
     processing = "; ".join([
         _patient_metric("MHCflurry processing", row, "mhcflurry_processing_score"),
         _patient_metric("NetMHCstabpan rank", row, "netmhcstabpan_rank"),
-        _patient_metric("NetChop 3.1d", row, "netchop_processing_status", "netchop_31d_max_score"),
+        _patient_metric("NetChop 3.1d C端切割", row, "netchop_31d_cterm_score", "netchop_31d_max_score", "netchop_processing_status"),
         _patient_metric("TAP/APPM", row, "tap_processing_status"),
     ])
     rna = _patient_metric("状态", row, "rna_support_state", "rna_support_status")
@@ -1298,7 +1300,7 @@ def _patient_evidence_audit_rows(rows: list[dict[str, str]], bundle: ReportBundl
         ("事件真实性", ("event_authenticity_state", "cross_platform_status")),
         ("RNA直接证据", ("rna_support_state", "rna_support_status")),
         ("核心呈递共识", ("presentation_consensus_state", "presentation_evidence_grade")),
-        ("加工/稳定性", ("mhcflurry_processing_score", "netmhcstabpan_rank", "netchop_31d_max_score", "tap_processing_status")),
+        ("加工/稳定性", ("mhcflurry_processing_score", "netmhcstabpan_rank", "netchop_31d_cterm_score", "netchop_31d_max_score", "tap_processing_status")),
         ("MT/WT特异性", ("mutant_specificity_status", "mutant_specificity_state")),
         ("安全性", ("safety_state", "safety_status")),
         ("免疫原性", ("immunogenicity_composite_score", "immunogenicity_score", "bigmhc_im_score")),
@@ -1325,7 +1327,7 @@ def _patient_inferred_tool_rows(rows: list[dict[str, str]], tool_versions: Mappi
         ("PRIME", ("prime_score",), "免疫原性/呈递辅助"),
         ("BigMHC", ("bigmhc_im_score",), "免疫原性辅助"),
         ("NetMHCstabpan", ("netmhcstabpan_rank", "netmhcstabpan_score"), "肽-HLA稳定性"),
-        ("NetChop 3.1d", ("netchop_processing_status", "netchop_31d_max_score"), "蛋白酶体酶切加工"),
+        ("NetChop 3.1d", ("netchop_processing_status", "netchop_31d_cterm_score", "netchop_31d_max_score"), "蛋白酶体C端酶切加工"),
         ("TAP/APPM", ("tap_processing_status",), "TAP转运与加工通路"),
     ]
     result = []
@@ -2313,6 +2315,7 @@ def make_technical_report(path: str | Path, bundle: ReportBundle) -> None:
         "peptide", "wildtype_peptide", "peptide_consequence",
         "hla_allele", "mhc_class", "presentation_evidence_grade", "binding_evidence_score",
         "presentation_evidence_score", "netmhcpan_ba_rank", "netmhcpan_el_rank",
+        "netchop_31d_cterm_score", "netchop_31d_max_score", "netchop_processing_status",
         "netmhcpan_wt_rank_el", "agretopicity_el", "mt_wt_el_rank_difference",
         "mhcflurry_mt_wt_presentation_difference", "prime_mt_wt_score_difference",
         "bigmhc_mt_wt_score_difference", "mutation_positions_in_peptide",

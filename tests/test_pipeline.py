@@ -31,10 +31,13 @@ def test_presentation_merges_netchop_by_peptide_id(tmp_path):
     pep = tmp_path / "peptides.tsv"
     pep.write_text("peptide_id\tevent_id\tsample_id\tpeptide\thla_allele\tmhc_class\nP1\tE1\tS1\tAAAAAAAAA\tHLA-A*02:01\tI\n")
     chop = tmp_path / "netchop.tsv"
-    chop.write_text("peptide_id\tpeptide\tnetchop_31d_max_score\tnetchop_31d_mean_score\tnetchop_31d_cleavage_sites\tnetchop_processing_status\nP1\tAAAAAAAAA\t0.9\t0.4\t1\tASSESSED\n")
+    chop.write_text("peptide_id\tpeptide\tnetchop_31d_max_score\tnetchop_31d_mean_score\tnetchop_31d_cterm_score\tnetchop_31d_cleavage_sites\tnetchop_processing_status\nP1\tAAAAAAAAA\t0.9\t0.4\t0.8\t1\tASSESSED\n")
     rows = build_presentation_evidence(pep, None, None, load_profile("default"), netchop=chop)
     assert rows[0]["netchop_31d_max_score"] == "0.9"
+    assert rows[0]["netchop_31d_cterm_score"] == "0.8"
     assert rows[0]["netchop_processing_status"] == "ASSESSED"
+    assert float(rows[0]["presentation_evidence_score"]) == 0.8
+    assert float(rows[0]["evidence_completeness"]) > 0
 
 def test_appm_and_ccf(tmp_path):
     profile = load_profile("leukemia")

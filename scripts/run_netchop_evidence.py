@@ -24,20 +24,32 @@ def read_peptides(path: Path) -> tuple[dict[str, str], dict[str, str]]:
     return by_id, sequence_ids
 
 
-def parse_outputs(paths: list[Path]) -> dict[str, tuple[str, str, str]]:
+def parse_outputs(paths: list[Path]) -> dict[str, tuple[str, str, str, str]]:
     scores: dict[str, list[float]] = defaultdict(list)
     sites: dict[str, int] = defaultdict(int)
-    pattern = re.compile(r"^\s*\d+\s+[A-Z]\s+([CS.])\s+([0-9.]+)\s+(\S+)")
+    cterm: dict[str, tuple[int, float]] = {}
+    pattern = re.compile(r"^\s*(\d+)\s+[A-Z]\s+([CS.])\s+([0-9.]+)\s+(\S+)")
     for path in paths:
         for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
             match = pattern.match(line)
             if not match:
                 continue
-            score = float(match.group(2)); ident = match.group(3)
+            position = int(match.group(1))
+            score = float(match.group(3)); ident = match.group(4)
             scores[ident].append(score)
-            if match.group(1) == "S":
+            if position >= cterm.get(ident, (0, 0.0))[0]:
+                cterm[ident] = (position, score)
+            if match.group(2) == "S":
                 sites[ident] += 1
-    return {key: (f"{max(values):.6g}", f"{sum(values)/len(values):.6g}", str(sites.get(key, 0))) for key, values in scores.items()}
+    return {
+        key: (
+            f"{max(values):.6g}",
+            f"{sum(values)/len(values):.6g}",
+            f"{cterm[key][1]:.6g}",
+            str(sites.get(key, 0)),
+        )
+        for key, values in scores.items()
+    }
 
 
 def main() -> int:
@@ -48,6 +60,11 @@ def main() -> int:
     parser.add_argument("--home", default=os.environ.get("NETCHOP_HOME", ""))
     parser.add_argument("--threads", type=int, default=8)
     parser.add_argument("--chunk-size", type=int, default=100)
+    parser.add_argument(
+        "--reuse-existing-raw",
+        action="store_true",
+        help="reparse complete netchop.*.out batches without rerunning NetChop",
+    )
     args = parser.parse_args()
     by_id, sequence_ids = read_peptides(args.raw_peptides)
     if not by_id:
@@ -69,17 +86,23 @@ def main() -> int:
             subprocess.run([args.binary, "-tdir", "/tmp/netChopXXXXXX", str(fasta)], stdout=handle, stderr=subprocess.STDOUT, env=env, check=True)
         return output
 
-    with ThreadPoolExecutor(max_workers=max(1, min(args.threads, len(chunks)))) as pool:
-        outputs = list(pool.map(lambda item: run_chunk(*item), enumerate(chunks)))
+    outputs = [work / f"netchop.{index:05d}.out" for index in range(len(chunks))]
+    if args.reuse_existing_raw:
+        missing = [path for path in outputs if not path.is_file() or path.stat().st_size == 0]
+        if missing:
+            raise SystemExit(f"Cannot reuse incomplete NetChop output: {missing[0]}")
+    else:
+        with ThreadPoolExecutor(max_workers=max(1, min(args.threads, len(chunks)))) as pool:
+            outputs = list(pool.map(lambda item: run_chunk(*item), enumerate(chunks)))
     parsed = parse_outputs(outputs)
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    fields = ["peptide_id", "peptide", "netchop_31d_max_score", "netchop_31d_mean_score", "netchop_31d_cleavage_sites", "netchop_processing_status", "netchop_model"]
+    fields = ["peptide_id", "peptide", "netchop_31d_max_score", "netchop_31d_mean_score", "netchop_31d_cterm_score", "netchop_31d_cleavage_sites", "netchop_processing_status", "netchop_model"]
     with args.output.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fields, delimiter="\t", lineterminator="\n")
         writer.writeheader()
         for peptide_id, sequence in by_id.items():
             values = parsed.get(sequence_ids[sequence])
-            writer.writerow({"peptide_id": peptide_id, "peptide": sequence, "netchop_31d_max_score": values[0] if values else "", "netchop_31d_mean_score": values[1] if values else "", "netchop_31d_cleavage_sites": values[2] if values else "", "netchop_processing_status": "ASSESSED" if values else "UNASSESSED", "netchop_model": "NetChop 3.1d C-term"})
+            writer.writerow({"peptide_id": peptide_id, "peptide": sequence, "netchop_31d_max_score": values[0] if values else "", "netchop_31d_mean_score": values[1] if values else "", "netchop_31d_cterm_score": values[2] if values else "", "netchop_31d_cleavage_sites": values[3] if values else "", "netchop_processing_status": "ASSESSED" if values else "UNASSESSED", "netchop_model": "NetChop 3.1d C-term"})
     return 0
 
 
