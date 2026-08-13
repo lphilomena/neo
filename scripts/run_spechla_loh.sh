@@ -69,11 +69,13 @@ if [[ -z "$TYPING_RESULT" ]]; then
   TYPING_RESULT="$TYPING_DIR/hla.result.txt"
 fi
 [[ -s "$TYPING_RESULT" ]] || { echo "ERROR: SpecHLA typing result missing: $TYPING_RESULT" >&2; exit 3; }
+TYPING_RESULT="$(readlink -f "$TYPING_RESULT")"
 
 mapfile -t FREQ_FILES < <(find "$TYPING_DIR" -maxdepth 1 -type f -name 'HLA_*_freq.txt' -print | sort)
 (( ${#FREQ_FILES[@]} > 0 )) || { echo "ERROR: no HLA_*_freq.txt files found in $TYPING_DIR" >&2; exit 3; }
 
 mkdir -p "$OUTDIR"
+OUTDIR="$(readlink -f "$OUTDIR")"
 RAW="$OUTDIR/merge.hla.copy.txt"
 NORMALIZED="$OUTDIR/hla_loh.tsv"
 DETAIL="$OUTDIR/spechla_loh_evidence.tsv"
@@ -83,7 +85,9 @@ if [[ "$FORCE" != "1" && ( -e "$RAW" || -e "$NORMALIZED" ) ]]; then
   exit 4
 fi
 
-printf '%s\n' "${FREQ_FILES[@]}" > "$FILELIST"
+for freq_file in "${FREQ_FILES[@]}"; do
+  readlink -f "$freq_file"
+done > "$FILELIST"
 rm -f "$RAW" "$NORMALIZED" "$DETAIL" "$OUTDIR/hla_loh.crosscheck.tsv" "$OUTDIR/hla_loh.consensus.tsv" "$OUTDIR/.complete"
 
 SPECHLA_MODE=loh "$REPO_ROOT/scripts/run_spechla_container.sh" \

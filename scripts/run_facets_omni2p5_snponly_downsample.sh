@@ -36,9 +36,18 @@ FACETS_STEP="${FACETS_STEP:-all}"
 
 FACETS_SNPSET_NAME="${FACETS_SNPSET_NAME:-omni2p5}"
 FACETS_SNP_VCF="${FACETS_SNP_VCF:-${OMNI2P5_VCF:-${ROOT}/data/facets/reference/1000G_omni2.5.hg38.biallelic.vcf.gz}}"
-SNP_PILEUP_BIN="${SNP_PILEUP_BIN:-${ROOT}/bin/snp-pileup}"
-FACETS_R_ENV_PREFIX="${FACETS_R_ENV_PREFIX:-${NEOAG_CONDA_BASE}/envs/${NEOAG_FACETS_ENV:-neoag-facets}}"
+SNP_PILEUP_BIN="${SNP_PILEUP_BIN:-}"
+FACETS_R_ENV_PREFIX="${FACETS_R_ENV_PREFIX:-${NEOAG_CONDA_BASE}/envs/${NEOAG_FACETS_ENV:-neoag-fusion}}"
 RSCRIPT="${RSCRIPT:-${FACETS_R_ENV_PREFIX}/bin/Rscript}"
+if [[ -z "${SNP_PILEUP_BIN:-}" ]]; then
+  if [[ -x "${NEOAG_CONDA_BASE}/envs/neoag-tools/bin/snp-pileup" ]]; then
+    SNP_PILEUP_BIN="${NEOAG_CONDA_BASE}/envs/neoag-tools/bin/snp-pileup"
+  elif [[ -x "${ROOT}/bin/snp-pileup" ]]; then
+    SNP_PILEUP_BIN="${ROOT}/bin/snp-pileup"
+  else
+    SNP_PILEUP_BIN="snp-pileup"
+  fi
+fi
 SNP_PILEUP_MIN_READS="${SNP_PILEUP_MIN_READS:-5,5}"
 FACETS_TARGET_ROWS="${FACETS_TARGET_ROWS:-1000000}"
 FACETS_NDEPTH="${FACETS_NDEPTH:-5}"

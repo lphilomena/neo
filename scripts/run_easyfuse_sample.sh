@@ -6,6 +6,13 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck source=/dev/null
 source "${ROOT}/conf/tools.env.sh"
 : "${NEOAG_CONDA_BASE:?ERROR: set NEOAG_CONDA_BASE to your conda/mamba installation root}"
+if [[ ! -f "${NEOAG_EASYFUSE_HOME:-}/main.nf" && -f "${ROOT}/../open-neo-deploy/env_tool/tools/EasyFuse/main.nf" ]]; then
+  export NEOAG_EASYFUSE_HOME="${ROOT}/../open-neo-deploy/env_tool/tools/EasyFuse"
+fi
+[[ -f "${NEOAG_EASYFUSE_HOME:-}/main.nf" ]] || {
+  echo "ERROR: EasyFuse main.nf not found; set NEOAG_EASYFUSE_HOME to the deployed EasyFuse directory" >&2
+  exit 1
+}
 export PATH="${NEOAG_CONDA_BASE}/bin:${PATH}"
 # EasyFuse Nextflow activates starfusion.yml; keep repo STAR-Fusion off PATH.
 export PATH="$(echo "${PATH}" | tr ':' '\n' | grep -vE "${NEOAG_STAR_FUSION_HOME}\$" | paste -sd: -)"
@@ -14,10 +21,14 @@ SAMPLE_ID="${EASYFUSE_SAMPLE_ID:-${SAMPLE_ID:-sample}}"
 FQ1="${EASYFUSE_FQ1:?ERROR: set EASYFUSE_FQ1=/path/sample_R1.fq.gz}"
 FQ2="${EASYFUSE_FQ2:?ERROR: set EASYFUSE_FQ2=/path/sample_R2.fq.gz}"
 REF="${NEOAG_EASYFUSE_REF:?ERROR: set NEOAG_EASYFUSE_REF=/path/to/easyfuse_ref_v4}"
+STAR_INDEX="${EASYFUSE_STAR_INDEX:-${REF}/starfusion_index/ref_genome.fa.star.idx}"
+STARFUSION_INDEX="${EASYFUSE_STARFUSION_INDEX:-${REF}/starfusion_index}"
 INPUT="${EASYFUSE_INPUT_TSV:-${ROOT}/work/easyfuse_${SAMPLE_ID}_input.tsv}"
 OUT="${OUTDIR:-${ROOT}/results/easyfuse}"
 LOG="${LOG:-${ROOT}/work/run_easyfuse_${SAMPLE_ID}.log}"
 PREBUILD_LOG="${ROOT}/work/easyfuse_conda_prebuild.log"
+NXF_RUN_NAME="${EASYFUSE_RUN_NAME:-easyfuse_${SAMPLE_ID}}"
+NXF_STEM="${NXF_RUN_NAME//[^A-Za-z0-9_.-]/_}"
 
 ensure_input_tsv() {
   printf '%s\t%s\t%s\n' "${SAMPLE_ID}" "${FQ1}" "${FQ2}" > "${INPUT}"
@@ -27,8 +38,10 @@ ensure_input_tsv() {
   fi
 }
 
-STAR_TMP="${ROOT}/work/star_tmp"
-mkdir -p "${OUT}" "$(dirname "${LOG}")" "${ROOT}/work/.nextflow_home" "${ROOT}/work/.nextflow_work" "${STAR_TMP}"
+STAR_TMP="${ROOT}/work/star_tmp_${NXF_STEM}"
+export NXF_HOME="${EASYFUSE_NXF_HOME:-${ROOT}/work/.nextflow_home_${NXF_STEM}}"
+export NXF_WORK="${EASYFUSE_NXF_WORK:-${ROOT}/work/.nextflow_work_${NXF_STEM}}"
+mkdir -p "${OUT}" "$(dirname "${LOG}")" "${NXF_HOME}" "${NXF_WORK}" "${STAR_TMP}"
 export TMPDIR="${STAR_TMP}"
 ensure_input_tsv
 
@@ -37,17 +50,31 @@ for stale_pid in $(pgrep -f 'run_easyfuse_cfrna_test\.sh' 2>/dev/null || true); 
   echo "==> stopping stale easyfuse_cfrna_test PID=${stale_pid}"
   kill "${stale_pid}" 2>/dev/null || true
 done
-while pgrep -f 'nextflow.*EasyFuse/main.nf' >/dev/null 2>&1; do
-  echo "==> waiting for other EasyFuse Nextflow runs to finish ..."
-  sleep 30
-done
 
-export NXF_HOME="${ROOT}/work/.nextflow_home"
-export NXF_WORK="${ROOT}/work/.nextflow_work"
 export NXF_DISABLE_CHECK_TTY=true
 export CONDA_ALWAYS_YES=true
-export MAMBA_YES=1
+export MAMBA_ALWAYS_YES=true
 export NEOAG_REAL_MAMBA="${NEOAG_CONDA_BASE}/bin/mamba"
+mkdir -p "${ROOT}/work/easyfuse_bin"
+cat > "${ROOT}/work/easyfuse_bin/mamba" <<'MAMBA_WRAPPER'
+#!/usr/bin/env bash
+set -euo pipefail
+real="${NEOAG_REAL_MAMBA:-}"
+if [[ -z "$real" || ! -x "$real" ]]; then
+  real="$(command -v mamba.real || true)"
+fi
+if [[ -z "$real" || ! -x "$real" ]]; then
+  for candidate in "${NEOAG_CONDA_BASE:-${HOME}/miniforge3}/bin/mamba" "${HOME}/miniforge3/bin/mamba"; do
+    [[ -x "$candidate" && "$candidate" != "$0" ]] && real="$candidate" && break
+  done
+fi
+[[ -n "$real" && -x "$real" ]] || { echo "ERROR: real mamba not found" >&2; exit 127; }
+case " $* " in
+  *" -y "*|*" --yes "*) exec "$real" "$@" ;;
+  *) exec "$real" --yes "$@" ;;
+esac
+MAMBA_WRAPPER
+chmod +x "${ROOT}/work/easyfuse_bin/mamba"
 export JAVA_HOME="${NEOAG_CONDA_BASE}/envs/${NEOAG_FUSION_ENV}"
 export PATH="${ROOT}/work/easyfuse_bin:${NEOAG_CONDA_BASE}/bin:${JAVA_HOME}/bin:${PATH}"
 export NEOAG_NEXTFLOW="${JAVA_HOME}/bin/nextflow"
@@ -59,7 +86,11 @@ echo "    fq1=${FQ1}"
 echo "    fq2=${FQ2}"
 echo "    input=${INPUT}"
 echo "    reference=${REF}"
+echo "    star_index=${STAR_INDEX}"
+echo "    starfusion_index=${STARFUSION_INDEX}"
 echo "    output=${OUT}"
+echo "    nxf_home=${NXF_HOME}"
+echo "    nxf_work=${NXF_WORK}"
 
 [[ -f "${FQ1}" && -f "${FQ2}" ]] || {
   echo "ERROR: FASTQ not found:" >&2
@@ -73,8 +104,58 @@ echo "    output=${OUT}"
   exit 1
 }
 
+[[ -f "${STAR_INDEX}/genomeParameters.txt" && -f "${STAR_INDEX}/Genome" ]] || {
+  echo "ERROR: EasyFuse STAR index is incomplete: ${STAR_INDEX}" >&2
+  echo "       expected genomeParameters.txt and Genome" >&2
+  exit 1
+}
+
+[[ -d "${STARFUSION_INDEX}" ]] || {
+  echo "ERROR: EasyFuse STAR-Fusion index missing: ${STARFUSION_INDEX}" >&2
+  exit 1
+}
+
 CONDA_CACHE="${ROOT}/work/.nextflow_conda"
 mkdir -p "${CONDA_CACHE}"
+export NXF_CONDA_CACHEDIR="${EASYFUSE_NXF_CONDA_CACHEDIR:-${CONDA_CACHE}}"
+echo "    nxf_conda_cachedir=${NXF_CONDA_CACHEDIR}"
+
+ensure_easyfuse_env_compat_files() {
+  local env_dir="${NEOAG_EASYFUSE_HOME}/environments"
+  [[ -d "${env_dir}" ]] || { echo "ERROR: EasyFuse environments dir missing: ${env_dir}" >&2; exit 3; }
+
+  if [[ ! -f "${env_dir}/easyfuse_src.yml" ]]; then
+    echo "==> Creating EasyFuse v1 compatibility env: ${env_dir}/easyfuse_src.yml"
+    cat > "${env_dir}/easyfuse_src.yml" <<'YAML'
+name: easyfuse_src
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - bioconda::pyeasyfuse=2.0.3
+  - bioconda::skewer
+YAML
+  fi
+
+  if [[ ! -f "${env_dir}/requantification_wo_easyfuse.yml" ]]; then
+    echo "==> Creating EasyFuse v1 compatibility env: ${env_dir}/requantification_wo_easyfuse.yml"
+    if [[ -f "${env_dir}/alignment.yml" ]]; then
+      cp "${env_dir}/alignment.yml" "${env_dir}/requantification_wo_easyfuse.yml"
+    else
+      cat > "${env_dir}/requantification_wo_easyfuse.yml" <<'YAML'
+name: requantification_wo_easyfuse
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - bioconda::star=2.6.1d
+  - bioconda::samtools=1.9.0
+YAML
+    fi
+  fi
+}
 
 wait_for_mamba_free() {
   while pgrep -f 'mamba env create' >/dev/null 2>&1; do
@@ -82,6 +163,26 @@ wait_for_mamba_free() {
   done
   rm -f "${NEOAG_CONDA_BASE}/pkgs/pkgs.lock" 2>/dev/null || true
 }
+
+select_easyfuse_env_yml() {
+  local preferred="$1"
+  shift
+  if [[ -f "${NEOAG_EASYFUSE_HOME}/environments/${preferred}" ]]; then
+    printf '%s' "$preferred"
+    return 0
+  fi
+  local alt
+  for alt in "$@"; do
+    if [[ -f "${NEOAG_EASYFUSE_HOME}/environments/${alt}" ]]; then
+      printf '%s' "$alt"
+      return 0
+    fi
+  done
+  echo "ERROR: none of the EasyFuse env files exist under ${NEOAG_EASYFUSE_HOME}/environments: ${preferred} $*" >&2
+  exit 3
+}
+
+ensure_easyfuse_env_compat_files
 
 prebuild_conda_env() {
   local env_id="$1"
@@ -103,22 +204,26 @@ prebuild_conda_env() {
   bash "${ROOT}/scripts/fix_easyfuse_pyeasyfuse_env.sh"
 }
 
-QC_ENV="${CONDA_CACHE}/env-749ebc089f673418-1f348f31c1e78ea89e97e435a63f0c7d"
-SRC_ENV="${CONDA_CACHE}/env-e6082ee0f0a13e81-c203347e504f3b4d10ed96fdd01318ce"
+QC_ENV="${CONDA_CACHE}/env-574d468f667e5ead-1f348f31c1e78ea89e97e435a63f0c7d"
+SRC_ENV="${CONDA_CACHE}/env-adab1ef12c1f56bf-14649bb80e8151aa81731d54781c13cc"
 
 if [[ ! -x "${QC_ENV}/bin/fastqc" || ! -x "${SRC_ENV}/bin/skewer" ]]; then
   wait_for_mamba_free
 fi
 
 prebuild_conda_env \
-  "749ebc089f673418-1f348f31c1e78ea89e97e435a63f0c7d" \
+  "574d468f667e5ead-1f348f31c1e78ea89e97e435a63f0c7d" \
   "qc.yml" \
   "fastqc"
 
-prebuild_conda_env \
-  "e6082ee0f0a13e81-c203347e504f3b4d10ed96fdd01318ce" \
-  "easyfuse_src.yml" \
-  "skewer"
+if [[ -f "${NEOAG_EASYFUSE_HOME}/environments/easyfuse_src.yml" ]]; then
+  prebuild_conda_env \
+    "adab1ef12c1f56bf-14649bb80e8151aa81731d54781c13cc" \
+    "easyfuse_src.yml" \
+    "skewer"
+else
+  echo "==> EasyFuse easyfuse_src.yml not present; using v2 environment layout"
+fi
 
 if ! pgrep -f 'easyfuse_prebuild_remaining_envs\.sh' >/dev/null 2>&1; then
   nohup bash "${ROOT}/scripts/easyfuse_prebuild_remaining_envs.sh" >/dev/null 2>&1 &
@@ -149,10 +254,11 @@ if [[ ! -x "${REQ_WO_ENV}/bin/STAR" ]]; then
   rm -rf "${REQ_WO_ENV}"
   mamba env create -y \
     --prefix "${REQ_WO_ENV}" \
-    --file "${NEOAG_EASYFUSE_HOME}/environments/requantification_wo_easyfuse.yml"
+    --file "${NEOAG_EASYFUSE_HOME}/environments/$(select_easyfuse_env_yml requantification_wo_easyfuse.yml requantification.yml)"
 fi
 
 bash "${ROOT}/scripts/patch_easyfuse_star_avx2.sh"
+bash "${ROOT}/scripts/patch_easyfuse_fusioncatcher_compat.sh"
 bash "${ROOT}/scripts/fix_easyfuse_pyeasyfuse_env.sh"
 
 export PATH="$(echo "${PATH}" | tr ':' '\n' | grep -vE '/envs/neoag-tools/bin$|/tools/fusioncatcher/bin$' | paste -sd: -)"
@@ -160,7 +266,6 @@ export PATH="$(echo "${PATH}" | tr ':' '\n' | grep -vE '/envs/neoag-tools/bin$|/
 cd "${ROOT}/work"
 
 # Separate run name avoids resume/lock collision with easyfuse_cfrna_test (session 9d03387c...).
-NXF_RUN_NAME="${EASYFUSE_RUN_NAME:-easyfuse_${SAMPLE_ID}}"
 NXF_HISTORY="${NXF_HOME:-${ROOT}/work/.nextflow_home}/history"
 if [[ ! -f "${NXF_HISTORY}" ]]; then
   NXF_HISTORY="${ROOT}/work/.nextflow/history"
@@ -180,6 +285,8 @@ run_nextflow() {
     --output "${OUT}" \
     --input_files "${INPUT}" \
     --reference "${REF}" \
+    --star_index "${STAR_INDEX}" \
+    --starfusion_index "${STARFUSION_INDEX}" \
     --annotation_db "${REF}/Homo_sapiens.GRCh38.110.gff3.db" \
     --reference_tsl "${REF}/Homo_sapiens.GRCh38.110.gtf.tsl" </dev/null
 }
@@ -187,6 +294,7 @@ run_nextflow() {
 run_nextflow || {
   echo "==> Nextflow failed; patching STAR and retrying once with -resume ..."
   bash "${ROOT}/scripts/patch_easyfuse_star_avx2.sh"
+  bash "${ROOT}/scripts/patch_easyfuse_fusioncatcher_compat.sh"
   NXF_RESUME_ARGS=(-resume "${NXF_RUN_NAME}")
   run_nextflow
 }

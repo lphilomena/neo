@@ -19,6 +19,24 @@ fi
   exit 1
 }
 
+patch_star_runtime_libs() {
+  local prefix="$1"
+  local lib
+  [[ -d "${prefix}/lib" ]] || mkdir -p "${prefix}/lib"
+  for lib in libhts.so libhts.so.3 libhts.so.1.21 libdeflate.so.0 liblzma.so.5 libbz2.so.1.0; do
+    if [[ -e "${STAR_SRC}/../lib/${lib}" && ! -e "${prefix}/lib/${lib}" ]]; then
+      cp -a "${STAR_SRC}/../lib/${lib}" "${prefix}/lib/${lib}"
+    fi
+  done
+  if [[ -x "${prefix}/bin/STAR-avx2" ]]; then
+    if ldd "${prefix}/bin/STAR-avx2" | grep -q 'not found'; then
+      echo "ERROR: STAR-avx2 still has unresolved libraries in ${prefix}" >&2
+      ldd "${prefix}/bin/STAR-avx2" >&2
+      return 1
+    fi
+  fi
+}
+
 patch_prefix() {
   local prefix="$1"
   [[ -d "${prefix}/bin" ]] || return 0
@@ -26,6 +44,7 @@ patch_prefix() {
 
   if [[ -f "${prefix}/bin/STAR.orig-bioconda" ]]; then
     echo "    already patched ${prefix}"
+    patch_star_runtime_libs "${prefix}"
     return 0
   fi
 
@@ -40,6 +59,7 @@ patch_prefix() {
     chmod +x "${prefix}/bin/${bin}"
   done
 
+  patch_star_runtime_libs "${prefix}"
   "${prefix}/bin/STAR" --version >/dev/null
   echo "    verified STAR wrapper -> $("${prefix}/bin/STAR" --version 2>&1 | head -1)"
 }

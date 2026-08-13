@@ -49,6 +49,7 @@ REFERENCE_ALIASES = {
     "vep_cache": ("vep_cache", "vep.cache"),
     "facets_snp_vcf": ("facets_snp_vcf", "common_snp", "facets.vcf"),
     "bam_matcher_loci": ("bam_matcher_loci", "bam-matcher.loci", "sample_identity_vcf"),
+    "sequenza_fasta": ("sequenza_fasta", "sequenza_reference_fasta", "sequenza.reference_fasta"),
     "sequenza_gc_wiggle": ("sequenza_gc_wiggle", "gc_wiggle"),
     "hla_la_graph": ("hla_la_graph", "prg_mhc", "hla-la.graph"),
     "spechla_db": ("spechla_db", "spechla.db"),
@@ -508,13 +509,14 @@ def build_automatic_production_plan(
         seq_available, seq_exe, _ = _tool_info("sequenza", tools)
         if not permitted("sequenza"):
             decide("purity_cnv", "sequenza", "POLICY_SKIPPED", f"excluded by {policy} policy", executable=seq_exe)
-        elif seq_available and refs.get("reference_fasta") and refs.get("sequenza_gc_wiggle"):
+        elif seq_available and (refs.get("sequenza_fasta") or refs.get("reference_fasta")) and refs.get("sequenza_gc_wiggle"):
+            seq_ref = refs.get("sequenza_fasta") or refs["reference_fasta"]
             gc = refs["sequenza_gc_wiggle"]
-            command = f"SAMPLE_ID={sample_id} TUMOR_BAM={tumor_bam} NORMAL_BAM={normal_bam} REF_FASTA={refs['reference_fasta']} GC_WIGGLE={gc} OUTDIR={{outdir}}/purity/sequenza bash {root / 'scripts/run_sequenza_sample_by_chrom.sh'}"
+            command = f"SAMPLE_ID={sample_id} TUMOR_BAM={tumor_bam} NORMAL_BAM={normal_bam} REF_FASTA={seq_ref} GC_WIGGLE={gc} OUTDIR={{outdir}}/purity/sequenza bash {root / 'scripts/run_sequenza_sample_by_chrom.sh'}"
             summary = f"{{outdir}}/purity/sequenza/sequenza_fit/{sample_id}.sequenza_summary.tsv"
             add_stage("purity_sequenza", command=command, outputs={"purity": summary}, depends=paired_analysis_deps)
             purity_dirs.append("{outdir}/purity/sequenza")
-            decide("purity_cnv", "sequenza", "SELECTED", "BAM pair and reference FASTA are available", stage="purity_sequenza", executable=seq_exe, references=["reference_fasta", "sequenza_gc_wiggle"])
+            decide("purity_cnv", "sequenza", "SELECTED", "BAM pair and chr-prefixed Sequenza reference FASTA are available", stage="purity_sequenza", executable=seq_exe, references=["sequenza_fasta", "sequenza_gc_wiggle"])
         else:
             decide("purity_cnv", "sequenza", "UNAVAILABLE", "Sequenza or reference FASTA is missing", references=["reference_fasta"])
 

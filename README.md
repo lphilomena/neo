@@ -37,6 +37,13 @@ The pipeline can:
 
 The `.tsv` suffix in ranked outputs is a schema-compatibility label. It is not the software version. The current release is v0.5.0 and writes schema-compatible tables so older downstream scripts can keep reading the same filenames.
 
+MHC-I peptide generation defaults to 8-11-mers for SNV/InDel, fusion, splice,
+and reconstructed SV events. Set `inputs.mhc1_high_recall_12mer = true` in the
+run configuration, or use a command's `--high-recall-12mer` option, to add
+12-mers as a secondary high-recall layer. Explicit peptide-length settings take
+precedence. SNAF-native peptide lengths remain tool-defined; NeoAg-generated
+12-mer splice candidates are recorded as downstream junction/ORF translation.
+
 ## Agent Skills And Coordinator
 
 This release includes a repo-scoped agent skills pack under `.agents/skills/` and a lightweight coordinator CLI:
@@ -47,128 +54,177 @@ neoag-agent --message "compare recommendation and NetMHCpan42 rankings" --result
 
 Default mode is dry-run planning. Add `--execute` for supported low-impact skills. See `docs/AGENT_SKILLS_P0_P1.md` for the skill list, expected inputs, outputs, and interpretation boundaries.
 
-For moving this package to a new machine with another programming agent, use the skill-first migration flow: read `.agents/config/skills_registry.abcd.json`, create local manifests, run Doctor, then run `pipeline-full` dry-run. See `docs/SKILL_FIRST_MIGRATION.md` and the helper:
+For new-machine deployment and production execution, use the three Open-Neo macro Skills below. They replace the older script-by-script migration notes.
+
+## New Machine Install And Run: Three Macro Skills
+
+Use the three public Open-Neo macro Skills for new-machine deployment and case
+execution. The machine-readable manifests remain the source of truth.
+Production-required tools, cross-validation gates, and accepted upstream-result
+inputs are summarized in `docs/PRODUCTION_REQUIRED_TOOLS.md`. Production
+ranking requires both NetMHCstabpan stability and NetChop 3.1d cleavage evidence;
+missing results block production release rather than being silently skipped:
+
+- `.agents/skills/open-neo-install-check/SKILL.md`: Skill1, machine setup,
+  reference/tool discovery, approved install/repair, Doctor, smoke tests and
+  production-readiness checks.
+- `.agents/skills/open-neo-run/SKILL.md`: Skill2, input QC, route selection,
+  Gateway-controlled execution/resume, multi-tool evidence generation and
+  weighted plus evidence-consensus ranking.
+- `.agents/skills/open-neo-review/SKILL.md`: Skill3, read-only result review,
+  experiment-priority tables and patient/technical reports.
+
+### Skill1: install and verify the machine
+
+Clone the release branch on the target machine:
 
 ```bash
-bash scripts/bootstrap_agent_deploy.sh
-```
-
-For stricter hand-off to a target-machine programming agent, use the dedicated deployment skill at `.agents/skills/neoag-remote-deploy/SKILL.md`. For a fresh production-like machine, the preferred consolidated entrypoint is:
-
-```bash
-bash .agents/skills/neoag-remote-deploy/scripts/16_install_new_machine.sh \
-  --asset-source-host na@10.200.50.134 \
-  --allow-download \
-  --execute
-```
-
-Add `--standard` for a broader common tool set, and add `--run-real-vcf-smoke --real-vcf-smoke-top-n 1` when a post-install real VCF smoke test is approved. The default installer pins VEP to Ensembl release 105 (`--vep-version 105`) to match the `homo_sapiens/105_GRCh38` cache.
-
-## New Machine Migration
-
-Use the machine-readable manifests as the source of truth. README is only the
-human navigation layer:
-
-- `configs/assets/production_assets.tsv`: large assets to synchronize, including
-  references, VEP cache, BigMHC/DeepImmuno models, EasyFuse references, LOHHLA,
-  licensed-tool assets, and the prebuilt IEDB human MHC ligand tables.
-- `configs/references/reference_manifest.yaml`: reference paths, genome build,
-  required markers, and VEP cache version checks.
-  IEDB deployment uses generated TSV files, manifest, and checksums as assets;
-  new machines do not rebuild the 9.1 GB source export.
-- `configs/tools/tools_manifest.yaml`: tools, environments, containers,
-  license/distribution flags, and smoke commands.
-
-For a fresh target machine, clone this branch and run the consolidated installer
-from the checkout:
-
-```bash
-mkdir -p /root/neo/src
-
+mkdir -p /home/na/project
 git clone --branch na0707_upload_release \
   https://github.com/lphilomena/neo.git \
-  /root/neo/src/na0707_upload_release
-
-cd /root/neo/src/na0707_upload_release
+  /home/na/project/neo
+cd /home/na/project/neo
 ```
 
-Recommended production-like install:
+If the console script is not yet on `PATH`, use the module entrypoint from the
+project environment:
 
 ```bash
-bash .agents/skills/neoag-remote-deploy/scripts/13_install_readme_tools.sh \
-  --project-root /root/neo/src/na0707_upload_release \
-  --tools-root /root/neo/env_tool \
-  --licensed-root /root/neo/licensed_tools \
-  --reference-root /root/neo/neodata4git \
-  --conda-base /root/neo/env_tool/miniforge3 \
-  --asset-manifest configs/assets/production_assets.tsv \
-  --reference-manifest configs/references/reference_manifest.yaml \
-  --sync-assets \
+export PYTHONPATH="$PWD/src"
+alias open-neo='/home/na/miniforge3/envs/neoag-tools/bin/python -m neoag.open_neo.cli'
+```
+
+Run the install-check macro. For production use, the default installer profile
+is `all-open`; it installs the open production tool set where licenses permit,
+synchronizes full production reference assets, and writes configured manifests
+under `configs/local/`.
+
+```bash
+open-neo install-check \
+  --project-root "$PWD" \
+  --deployment-tier full \
+  --mode install \
+  --installer-profile all-open \
   --asset-source-host na@10.200.50.134 \
-  --all-open \
-  --verify \
+  --asset-source-root /mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git \
+  --tools-root /home/na/project/open-neo-deploy/env_tool \
+  --reference-root /home/na/project/open-neo-deploy/refs \
+  --conda-base /home/na/miniforge3 \
   --allow-download \
-  --execute
+  --approved \
+  --outdir work/install-check-full
 ```
 
-To run the default real VCF smoke test after installation, add
-`--run-real-vcf-smoke`:
+Use `--installer-profile minimal` for review/core use and
+`--installer-profile standard` for the lighter production main path. Re-running
+Skill1 is safe: installed tools, synchronized assets and PASS checkpoints are
+reused when signatures still match. If installation was interrupted, resume it
+instead of starting from scratch:
 
 ```bash
-bash .agents/skills/neoag-remote-deploy/scripts/13_install_readme_tools.sh \
-  --project-root /root/neo/src/na0707_upload_release \
-  --tools-root /root/neo/env_tool \
-  --licensed-root /root/neo/licensed_tools \
-  --reference-root /root/neo/neodata4git \
-  --conda-base /root/neo/env_tool/miniforge3 \
-  --asset-manifest configs/assets/production_assets.tsv \
-  --reference-manifest configs/references/reference_manifest.yaml \
-  --sync-assets \
-  --asset-source-host na@10.200.50.134 \
-  --all-open \
-  --verify \
-  --run-real-vcf-smoke \
-  --allow-download \
-  --execute
+open-neo install-check \
+  --project-root "$PWD" \
+  --deployment-tier full \
+  --mode resume \
+  --installer-profile all-open \
+  --approved \
+  --outdir work/install-check-full
 ```
 
-The default asset source is:
+Full installs default to no wall-clock timeout. If an operator supplies
+`--install-timeout SECONDS`, interruption or timeout terminates the whole
+installer process group before writing a controlled checkpoint.
+
+### Skill2: run a case through Gateway
+
+Start a local NeoAg Gateway on the target machine. Keep it bound to
+`127.0.0.1` unless there is a reviewed reason to expose it.
 
 ```bash
-<asset-source-root>
+cd /home/na/project/neo
+source /home/na/miniforge3/bin/activate neoag-tools
+
+mkdir -p work/neoag_gateway
+nohup env PYTHONPATH="$PWD/src" \
+  python -m neoag.controlled_execution.gateway \
+  --host 127.0.0.1 \
+  --port 8000 \
+  --project-root "$PWD" \
+  --outdir "$PWD/work/neoag_gateway" \
+  --allowed-root "$PWD/work" \
+  --allowed-root /mnt/zzbnew/Public/neoag_results \
+  > work/neoag_gateway/gateway.log 2>&1 &
+
+curl -s http://127.0.0.1:8000/health
 ```
 
-The installer defaults to Miniforge3 and pins VEP to Ensembl release 105 to
-match `homo_sapiens/105_GRCh38` in the VEP cache. Licensed tools such as
-NetMHCpan, NetMHCstabpan, Polysolver, and Novoalign are represented in the asset
-and tools manifests, but the operator must confirm the license permits use on
-the new machine.
-
-After installation, verify the machine explicitly:
+Submit a full run from a sample manifest:
 
 ```bash
-source /root/neo/src/na0707_upload_release/conf/tools.env.sh
-
-neoag check-tools
-
-python3 scripts/verify_reference_manifest.py \
-  configs/references/reference_manifest.yaml \
-  --vep-version 105
+open-neo run \
+  --sample-manifest configs/local/sample.yaml \
+  --tools-manifest configs/local/tools_manifest.configured.yaml \
+  --reference-manifest configs/local/reference_manifest.configured.yaml \
+  --outdir /mnt/zzbnew/Public/neoag_results/CASE001 \
+  --mode execute \
+  --approved \
+  --gateway-url http://127.0.0.1:8000 \
+  --gateway-wait
 ```
 
-The older wrapper remains available for short-form installs:
+Direct BAM/VCF/RNA FASTQ inputs are also supported when a manifest is not yet
+available:
 
 ```bash
-bash .agents/skills/neoag-remote-deploy/scripts/16_install_new_machine.sh \
-  --standard \
-  --asset-source-host na@10.200.50.134 \
-  --allow-download \
-  --execute
+open-neo run \
+  --sample-id CASE001 \
+  --tumor-dna-bam /path/to/tumor.bam \
+  --normal-dna-bam /path/to/normal.bam \
+  --somatic-vcf /path/to/somatic.pass.vcf.gz \
+  --tumor-rna-fastq /path/to/R1.fq.gz /path/to/R2.fq.gz \
+  --rna-threads 12 \
+  --outdir /mnt/zzbnew/Public/neoag_results/CASE001 \
+  --mode execute \
+  --approved \
+  --gateway-url http://127.0.0.1:8000 \
+  --gateway-wait
 ```
 
-Prefer the explicit `13_install_readme_tools.sh` command above when recording a
-production migration, because it names the tool root, licensed-tool root,
-reference root, and manifest files directly.
+Skill2 runs domain tools concurrently where safe. For paired GRCh38 DNA, the
+purity/CNV evidence stage can run FACETS, Sequenza and PURPLE and then build a
+cross-tool purity/ploidy recommendation. HLA LOH waits for a non-single-tool
+purity consensus before launching LOHHLA and SpecHLA in parallel. If both HLA
+LOH tools produce usable output the report is labelled `dual_tool_consensus`;
+if one fails or has no output, the run continues with `single_tool_result`
+evidence explicitly recorded in `hla_loh_tool_status.tsv`,
+`hla_loh_summary.json`, `hla_loh_review.md` and `recommended_hla_loh.tsv`.
+
+Resume an interrupted case with:
+
+```bash
+open-neo run \
+  --result-dir /mnt/zzbnew/Public/neoag_results/CASE001 \
+  --mode resume \
+  --approved \
+  --gateway-url http://127.0.0.1:8000 \
+  --gateway-wait
+```
+
+### Skill3: review and report results
+
+After Skill2 finishes ranking, run Skill3 read-only on the result directory:
+
+```bash
+open-neo review \
+  --result-dir /mnt/zzbnew/Public/neoag_results/CASE001 \
+  --reports patient,technical,onepage \
+  --outdir /mnt/zzbnew/Public/neoag_results/CASE001/review
+```
+
+Skill3 does not rerun heavy tools. It checks result integrity, compares weighted
+and evidence-consensus rankings, emits event-level experiment-priority tables,
+and writes bounded patient/technical reports. Missing or single-tool evidence
+is reported as partial evidence, never as a negative biological result.
 
 ## Quick Start
 
@@ -261,9 +317,7 @@ pytest -q
 
 The default test command intentionally skips integration, benchmark, and external-tool tests.
 
-## Common Run Commands
-
-### Prepare The Environment
+## Development And Legacy CLI Notes
 
 For fixture-only development:
 
@@ -273,724 +327,12 @@ pytest -q
 neoag run-demo --outdir work/demo_v043 --sample-id DEMO001
 ```
 
-For runs that need external tools:
-
-```bash
-bash scripts/setup_tools_env.sh
-source conf/tools.env.sh
-python -m pip install -e '.[test]'
-neoag check-tools
-```
-
-For a smaller development/test environment:
-
-```bash
-NEOAG_TOOLS_LITE=1 bash scripts/setup_tools_env.sh
-source conf/tools.env.sh
-python -m pip install -e '.[test]'
-pytest -q
-```
-
-### Complete Production Workflow
-
-The production flow runs HLA typing, purity/CNV/CCF, HLA LOH/APPM, and RNA expression in parallel, then merges SNV/InDel, fusion, and splice peptides before presentation prediction and ranking. Fusion and splice events are not considered complete until their junction-derived peptides pass NetMHCpan/MHCflurry and the shared immunogenicity and safety layers.
-
-See `docs/PRODUCTION_WORKFLOW.md`. Use `configs/workflows/production_workflow.example.toml` with `neoag-production-run` for full stage execution, or `conf/run.production_multisource.example.toml` for merge-only runs. Missing fusion/splice sources are reported as `LOW_CONFIDENCE` without stopping the run; missing required presentation predictors still fail clearly.
-
-The following script runs the complete manifest-driven workflow. On first use it creates a private manifest and stops so that sample paths, HLA typing, BAM/FASTQ/VCF inputs, references, and licensed tools can be configured before execution.
-
-```bash
-#!/usr/bin/env bash
-set -euo pipefail
-
-PROJECT_ROOT="${PROJECT_ROOT:-/root/neo/src/na0707_upload_release}"
-SAMPLE_ID="${SAMPLE_ID:-SAMPLE001}"
-MANIFEST="${MANIFEST:-${PROJECT_ROOT}/configs/workflows/production_workflow.private.toml}"
-OUTDIR="${OUTDIR:-${PROJECT_ROOT}/results/${SAMPLE_ID}_production}"
-
-cd "$PROJECT_ROOT"
-source conf/tools.env.sh
-python -m pip install --no-deps -e .
-
-if [[ ! -f "$MANIFEST" ]]; then
-  cp configs/workflows/production_workflow.example.toml "$MANIFEST"
-  echo "Created $MANIFEST"
-  echo "Edit every /path/... value and stage command, then rerun this script."
-  exit 2
-fi
-
-# Environment/tool preflight, followed by a command-only production plan.
-neoag check-tools
-neoag-production-run \
-  --project-root "$PROJECT_ROOT" \
-  --manifest "$MANIFEST" \
-  --outdir "$OUTDIR"
-
-# Execute missing stages and reuse stages whose declared outputs already exist.
-neoag-production-run \
-  --project-root "$PROJECT_ROOT" \
-  --manifest "$MANIFEST" \
-  --outdir "$OUTDIR" \
-  --execute
-
-# Minimum acceptance checks for the unified production result.
-test -s "$OUTDIR/production_run_summary.json"
-test -s "$OUTDIR/production_stage_status.tsv"
-test -s "$OUTDIR/final/scoring/ranked_peptides.tsv"
-test -s "$OUTDIR/final/scoring/comprehensive_peptide_evidence.tsv"
-test -s "$OUTDIR/final/reports/evidence_report.html"
-
-python -m json.tool "$OUTDIR/production_run_summary.json"
-```
-
-Do not add `--force` for routine resumes. It is only for intentionally recomputing stages whose declared outputs already exist. A final `LOW_CONFIDENCE` status means ranking completed but one or more optional sources, commonly fusion or splice, were unavailable or failed; inspect `production_stage_status.tsv` before interpreting the ranking.
-
-### Run From Existing pVAC-like Tables
-
-Use this when you already have pVACseq/pVACfuse/pVACsplice-like aggregated tables:
-
-```bash
-neoag run \
-  --outdir results/sample \
-  --sample-id SAMPLE001 \
-  --profile default \
-  --pvac data/fixtures/pvacseq_aggregated.tsv \
-  --immunogenicity-stub
-```
-
-### Run From Pre-built Raw Intermediates
-
-Use this when `parsed/raw_events.tsv` and `parsed/raw_peptides.tsv` already exist:
-
-```bash
-neoag run \
-  --outdir results/sample \
-  --sample-id SAMPLE001 \
-  --profile default \
-  --raw-events results/sample/parsed/raw_events.tsv \
-  --raw-peptides results/sample/parsed/raw_peptides.tsv \
-  --netmhcpan results/sample/presentation/netmhcpan.xls \
-  --mhcflurry results/sample/presentation/mhcflurry.csv \
-  --expression results/sample/parsed/expression.tsv \
-  --hla-loh results/sample/tools/hla_loh.tsv \
-  --purity results/sample/tools/purity.tsv \
-  --cnv results/sample/tools/cnv_segments.tsv
-```
-
-### Sliding-window Variant Peptides To Ranking
-
-Use this path when you have a somatic SNV/InDel VCF and want to generate mutant peptides by sliding window, predict peptide-HLA presentation, and rank event/peptide candidates.
-
-If the VCF already contains VEP `CSQ` annotations, the pipeline uses it directly. If `CSQ` is missing, `run-full` will run VEP annotation first when VEP, cache, reference FASTA, and plugins are configured.
-
-MHC-I short-peptide generation defaults to `8,9,10,11` for SNV/InDel, fusion,
-splice, and reconstructed SV events. To add 12-mers as a secondary high-recall
-layer without changing the default, set the shared run-config switch:
-
-```toml
-[inputs]
-mhc1_high_recall_12mer = true
-```
-
-Explicit `variant_peptide_lengths` or CLI length lists take precedence. For
-standalone commands use `--high-recall-12mer`, for example:
-
-```bash
-neoag extract-variant-peptides \
-  --input-vcf sample.vep.vcf.gz --output variant_peptides.tsv \
-  --high-recall-12mer
-neoag sv-build-raw \
-  --sample-id SAMPLE --sv-vcf sample.sv.vcf.gz \
-  --reference-fasta GRCh38.fa --gencode-gtf gencode.gtf \
-  --hla hla.txt --outdir results/sv --high-recall-12mer
-bash scripts/run_pvacbind_sample.sh ... --high-recall-12mer
-python scripts/build_longrna_unique_splice_peptides.py ... --high-recall-12mer
-```
-
-SNAF-native peptide lengths remain tool-defined. NeoAg-generated 12-mer splice
-candidates are recorded as downstream junction/ORF translation and must not be
-described as native SNAF 12-mer output. Run manifests record the actual MHC-I
-length list used.
-
-```bash
-cat > conf/run.sliding.private.toml <<'TOML'
-[sample]
-id = "SAMPLE001"
-profile = "default"
-
-[tools]
-stub = false
-enabled = ["netmhcpan", "mhcflurry"]
-immunogenicity_stub = false
-
-[inputs]
-entry_mode = "snv_indel"
-variant_peptide_extraction = true
-variants_vcf = "/path/to/sample.somatic.pass.vcf.gz"
-tumor_sample_name = "TUMOR"
-hla_alleles = ["HLA-A*02:01", "HLA-B*07:02", "HLA-C*07:02"]
-extract_appm_from_vcf = false
-normal_expression = "resources/normal_expression.example.tsv"
-normal_hla_ligands = "resources/normal_hla_ligands.example.tsv"
-TOML
-
-neoag run-full \
-  --config conf/run.sliding.private.toml \
-  --outdir results/SAMPLE001_sliding
-```
-
-Key outputs:
-
-- `results/SAMPLE001_sliding/upstream/tools/variant_peptides.tsv`
-- `results/SAMPLE001_sliding/upstream/tools/variant_peptides.annotated.tsv`
-- `results/SAMPLE001_sliding/upstream/parsed/raw_events.tsv`
-- `results/SAMPLE001_sliding/upstream/parsed/raw_peptides.tsv`
-- `results/SAMPLE001_sliding/scoring/ranked_events.tsv`
-- `results/SAMPLE001_sliding/scoring/ranked_peptides.tsv`
-- `results/SAMPLE001_sliding/scoring/comprehensive_peptide_evidence.tsv` (all annotation, predictor, RNA, APPM, CCF, safety, escape, ranking, and validation evidence)
-- `results/SAMPLE001_sliding/scoring/validation_plan.tsv`
-- `results/SAMPLE001_sliding/reports/evidence_report.html`
-- `results/SAMPLE001_sliding/reports/evidence_report.patient.html`
-- `results/SAMPLE001_sliding/reports/evidence_report.technical.html`
-
-When `inputs.purity_recommendation` points to `purity_recommendation.json`, the full
-pipeline uses the multi-tool median for concordant calls. All tool values and the
-consensus range/status are retained in CCF outputs; strong discordance forces low confidence.
-
-Manual debug path for variant peptide extraction:
-
-```bash
-neoag extract-variant-peptides \
-  --input-vcf /path/to/sample.vep.annotated.vcf.gz \
-  --output results/SAMPLE001_sliding/upstream/tools/variant_peptides.tsv \
-  --sample-id SAMPLE001 \
-  --lengths 8,9,10,11 \
-  --mini-len 27 \
-  --hla-alleles HLA-A*02:01,HLA-B*07:02,HLA-C*07:02 \
-  --tumor-sample-name TUMOR \
-  --normal-proteome-fasta /path/to/Homo_sapiens.GRCh38.pep.all.fa \
-  --filter-normal-proteome
-```
-
-For smoke tests without licensed predictors, set `stub = true` in the TOML or add `--immunogenicity-stub` to direct `run` calls. For production ranking, use real NetMHCpan/MHCflurry outputs and real normal-expression/normal-ligand evidence instead of fixture resources.
-
-### Build Standard Evidence Sidecars
-
-```bash
-neoag build-evidence-layer \
-  --outdir results/sample \
-  --profile default \
-  --sample-id SAMPLE001 \
-  --raw-events results/sample/parsed/raw_events.tsv \
-  --raw-peptides results/sample/parsed/raw_peptides.tsv \
-  --expression results/sample/parsed/gene_expression.tsv \
-  --rna-vaf results/sample/parsed/rna_vaf.tsv \
-  --rna-junction results/sample/parsed/rna_junctions.tsv \
-  --fusion-evidence results/sample/parsed/fusion_evidence.tsv \
-  --normal-expression resources/normal_expression.example.tsv \
-  --normal-hla-ligands resources/normal_hla_ligands.example.tsv
-```
-
-### HLA LOH Conversion And Cross-check
-
-```bash
-neoag convert-lohhla \
-  -i results/sample/tools/LOHHLA.HLAlossPrediction_CI.xls \
-  -o results/sample/tools/lohhla.hla_loh.tsv
-
-neoag convert-spechla \
-  -i results/sample/tools/merge.hla.copy.txt \
-  -o results/sample/tools/spechla.hla_loh.tsv
-
-neoag crosscheck-hla-loh \
-  --lohhla-hla-loh results/sample/tools/lohhla.hla_loh.tsv \
-  --spechla-hla-loh results/sample/tools/spechla.hla_loh.tsv \
-  --out results/sample/tools/hla_loh.crosscheck.tsv \
-  --consensus-out results/sample/tools/hla_loh.consensus.tsv
-```
-
-### Generate Reports
-
-Generate the default combined report plus patient and technical audience-specific reports:
-
-```bash
-neoag report \
-  --profile default \
-  --ranked-events results/sample/scoring/ranked_events.tsv \
-  --ranked-peptides results/sample/scoring/ranked_peptides.tsv \
-  --appm-summary results/sample/appm/appm_summary.tsv \
-  --validation-plan results/sample/scoring/validation_plan.tsv \
-  --outdir results/sample \
-  --audience both \
-  --out results/sample/reports/evidence_report.html
-```
-
-### Nextflow Fixture Run
-
-Use the project wrapper rather than calling `nextflow` directly. The wrapper prioritizes the current checkout's `bin/neoag`, sets project paths, and avoids writing Nextflow metadata into a root-owned location.
-
-```bash
-export NXF_HOME=/path/to/writable/nextflow_cache
-bin/neoag-nextflow -version
-bin/neoag-nextflow run workflows/main.nf \
-  -w /tmp/neoag_nf_work \
-  --pvac_files data/fixtures/pvacseq_aggregated.tsv \
-  --outdir results/demo_nf \
-  --sample_id NF_DEMO
-```
-
-For command-specific options:
-
-```bash
-neoag <command> --help
-```
-
-## Configuration Files
-
-Real deployment paths should be kept in local/private files. Start with the templates below and copy them before editing site-specific values.
-
-| File | Purpose | Edit for real data? | Commit/package? |
-| --- | --- | --- | --- |
-| `conf/tools.env.sh` | Main environment entry point. Sets project paths, conda env names, tool roots, VEP cache fallback, and wrapper `PATH`. | Usually no; override locally instead. | Yes |
-| `conf/tools.env.local.example.sh` | Template for private site paths such as patient data roots, shared references, licensed tool installs, and cache directories. | Copy to `conf/tools.env.local.sh` and edit. | Example yes; copied local file no |
-| `conf/site.config.example` | Site/cluster/Nextflow executor template. | Copy to `conf/site.config` and edit. | Example yes; copied local file no |
-| `conf/run.private.example.toml` | Private real-sample run configuration template. | Copy to a private TOML and edit. | Example yes; copied local file no |
-| `conf/run.snv_wes.example.toml` | WES SNV workflow example with Mutect2/annotation inputs. | Copy before using with real BAM/VCF paths. | Example yes |
-| `conf/run.stub.toml` | Lightweight stub/demo upstream config. | No for production; useful for smoke tests. | Yes |
-| `conf/*.example.toml` | Workflow-specific examples for SV, fusion, splice, peptide-only, or site modes. | Copy and edit. | Example yes |
-
-Typical setup pattern:
-
-```bash
-cp conf/tools.env.local.example.sh conf/tools.env.local.sh
-cp conf/run.private.example.toml conf/run.sample.private.toml
-# Edit both files with site paths and sample inputs.
-source conf/tools.env.sh
-neoag check-tools
-neoag run-full --config conf/run.sample.private.toml --outdir results/sample
-```
-
-Important variables commonly set by `conf/tools.env.sh` or local overrides:
-
-| Variable | Meaning |
-| --- | --- |
-| `NEOAG_PROJECT_ROOT` | Project checkout root. |
-| `NEOAG_TOOLS_ROOT` | Root for external tools, wrappers, and local artifact bundles. |
-| `NEOAG_CONDA_BASE` | Miniforge/Mambaforge install path. |
-| `NEOAG_CONDA_ENV` | Main Python CLI environment. |
-| `NEOAG_VEP_ENV` | VEP conda environment name/path. |
-| `NEOAG_VEP_BIN` | VEP executable or wrapper path. |
-| `NEOAG_VEP_CACHE` | VEP offline cache **root** directory. Must contain `homo_sapiens/<version>_GRCh38/` (this project uses `105_GRCh38`). Do **not** point this variable at the `105_GRCh38` subdirectory itself. |
-| `NEOAG_VEP_CACHE_VERSION` | Ensembl cache release passed to VEP as `--cache_version` (default `105`). |
-| `NEOAG_VEP_PLUGINS` | VEP plugin directory containing `Wildtype.pm` and `Frameshift.pm`. |
-| `NEOAG_REFERENCE_FASTA` | GRCh38 FASTA used by VEP/GATK/SV peptide workflows. |
-| `NEOAG_NORMAL_PROTEOME_FASTA` | Normal/reference proteome FASTA used by peptide safety filtering. |
-| `NETMHCPAN_HOME` / `NEOAG_NETMHCPAN_BIN` | NetMHCpan install and executable path. |
-| `NEOAG_NETMHCPAN_TMPDIR` | Short temporary directory for NetMHCpan. |
-| `NETMHCSTABPAN_HOME` | NetMHCstabpan install path. |
-| `LOHHLA_HOME`, `POLYSOLVER_HOME`, `NOVOALIGN_LICENSE_FILE` | LOHHLA and dependency paths/licenses. |
-| `FACETS_HOME`, `NEOAG_DBSNP_VCF` | FACETS scripts and dbSNP/common SNP VCF for `snp-pileup`. |
-| `NEOAG_ASCAT_ENV`, `ASCAT_HOME` | ASCAT conda env and wrapper path. |
-| `NXF_HOME` | Writable Nextflow cache; required for clean online/offline workflow runs. |
-
-Do not commit or package local/private files such as:
-
-- `conf/tools.env.local.sh`
-- `conf/site.config`
-- `conf/private/*`
-- `conf/*.private.toml`
-- files containing patient identifiers, absolute clinical data paths, cluster credentials, or licensed tool paths
-
-## Installation, Tools, And Data
-
-### Base System Environment
-
-Recommended baseline:
-
-| Component | Recommended | Notes |
-| --- | --- | --- |
-| OS | Linux x86_64 | The included wrappers and most upstream bioinformatics tools assume Linux. |
-| Shell | Bash | Scripts are written for Bash. |
-| CPU/RAM | 8+ CPU, 32+ GB RAM for real data | Fixture demo is small; patient-scale WES/WGS/fusion runs need more. |
-| Disk | 200 GB+ for real-data deployment | VEP cache, hg38 references, fusion references, and Nextflow work dirs are large. |
-| Network | Required for first install/download | Offline installs should pre-stage tarballs, conda packages, references, and Nextflow cache. |
-| Java | Java 11 or newer | Required by Nextflow and some tools. |
-| Conda/Mamba | Miniforge/Mambaforge recommended | Tool environments are defined under `conda/`. |
-
-Suggested Ubuntu/Debian packages:
-
-```bash
-sudo apt-get update
-sudo apt-get install -y \
-  bash coreutils curl wget git tar gzip unzip bzip2 xz-utils \
-  ca-certificates build-essential openjdk-17-jre-headless rsync file
-```
-
-If a migrated archive lost executable permissions:
-
-```bash
-find bin -maxdepth 1 -type f -exec chmod +x {} \;
-find scripts -maxdepth 1 -type f -name '*.sh' -exec chmod +x {} \;
-```
-
-### External Tool Installation Table
-
-Tools are optional for the fixture demo but required by specific real-data modes. Install only the tools needed for your workflow.
-
-| Tool | Needed for | Required? | Install/download command | Key variables | Verify |
-| --- | --- | --- | --- | --- | --- |
-| pVACtools (`pvacseq`, `pvacfuse`, `pvacsplice`) | Upstream SNV/fusion/splice candidate generation | Optional unless using pVAC upstream modes | `bash scripts/setup_tools_env.sh` | `NEOAG_PVAC_DOCKER`, `NEOAG_PVAC_WORKDIR` | `neoag check-tools` |
-| NetMHCpan 4.2 | Binding/presentation prediction | Required for real local NetMHCpan runs unless using fallback/stub | `bash scripts/install_netmhcpan.sh /path/to/netMHCpan-4.2*.tar.gz` | `NETMHCPAN_HOME`, `NETMHCpan`, `NEOAG_NETMHCPAN_BIN`, `NEOAG_NETMHCPAN_BACKEND` | `neoag check-tools` |
-| MHCflurry | Binding/presentation prediction | Optional alternative/complement to NetMHCpan | `bash scripts/setup_tools_env.sh`; then `mhcflurry-downloads fetch` if needed | `NEOAG_CONDA_ENV`, `NEOAG_FORCE_CPU` | `neoag check-tools` |
-| NetMHCstabpan | pMHC stability evidence | Required for production; installed by `--standard`, `--all`, and `--all-open` | `bash scripts/install_netmhcstabpan.sh --iedb` or licensed tarball install / install skill `--netmhcstabpan` | `NETMHCSTABPAN_HOME` | `neoag check-tools` |
-| PRIME / MixMHCpred / BigMHC | Immunogenicity evidence | Optional | `bash scripts/install_immunogenicity_tools.sh` | `PRIME_HOME`, `MIXMHCPRED_HOME`, `BIGMHC_DIR`, `NEOAG_PRIME_JOBS` | `neoag check-tools` |
-| DeepImmuno | Optional immunogenicity evidence | Optional | `bash scripts/install_deepimmuno.sh` | `DEEPIMMUNO_DIR` | `neoag check-tools` |
-| SHERPA-Presentation | MHC-I presentation ranking; restricted/authorized asset required | Optional | `bash .agents/skills/neoag-remote-deploy/scripts/13_install_readme_tools.sh --sherpa --sherpa-source /path/to/SHERPA-Presentation --execute` | `SHERPA_PRESENTATION_HOME`, `SHERPA_PRESENTATION_BIN` | `scripts/verify_all_tools_and_refs.sh` |
-| VEP | VCF annotation and peptide extraction | Required for `vep-annotate` / auto-annotation in `run-full` | `bash scripts/install_vep.sh`; cache with `bash scripts/install_vep_cache.sh` | `NEOAG_VEP_ENV`, `NEOAG_VEP_BIN`, `NEOAG_VEP_CACHE`, `NEOAG_VEP_PLUGINS`, `NEOAG_VEP_ONLINE` | `neoag check-tools` |
-| GATK4 / Mutect2 | WES/WGS SNV calling | Required if starting from BAMs | `bash scripts/install_gatk.sh` | `NEOAG_GATK_ENV` | `neoag check-tools` |
-| LOHHLA | HLA LOH evidence | Optional but recommended for immune-escape evidence | `bash scripts/install_lohhla.sh`; configure Polysolver/Novoalign separately | `LOHHLA_HOME`, `POLYSOLVER_HOME`, `NOVOALIGN_LICENSE_FILE` | `neoag check-tools` |
-| SpecHLA | HLA copy/LOH conversion | Optional | Install externally and provide output to `convert-spechla` | Site-specific | `neoag convert-spechla --help` |
-| OptiType | HLA-A/B/C typing from DNA/RNA FASTQ or BAM | Optional HLA typing cross-check | `bash scripts/install_optitype.sh` or `mamba create -n neoag-optitype -c conda-forge -c bioconda optitype glpk coincbc razers3` | `OPTITYPE_ENV`, `OPTITYPE_BIN`, `OPTITYPE_REFERENCE` | `optitype check-deps` |
-| FACETS | Purity/CNV/LOH evidence | Optional but recommended for CCF/escape | `bash scripts/install_facets.sh` | `FACETS_HOME`, `NEOAG_DBSNP_VCF` | `neoag check-tools` |
-| ASCAT | CNV/LOH evidence | Optional | `bash scripts/install_ascat_pyclone.sh` | `NEOAG_ASCAT_ENV`, `ASCAT_HOME` | `neoag check-tools` |
-| PyClone-VI | Clonality context | Optional | `bash scripts/install_ascat_pyclone.sh` | `NEOAG_PYCLONE_ENV`, `NEOAG_PYCLONE_BIN` | `neoag check-tools` |
-| STAR-Fusion / FusionCatcher / Arriba / EasyFuse | Fusion discovery | Optional; required for corresponding fusion workflows | Install/mount externally; seed EasyFuse envs only when a Nextflow conda cache exists | `NEOAG_FUSION_ENV`, `NEOAG_STAR_FUSION_HOME`, `NEOAG_CTAT_LIB_DIR`, `NEOAG_EASYFUSE_HOME`, `NEOAG_EASYFUSE_REF` | `neoag check-tools` |
-| pVACsplice / RegTools / SNAF / SpliceMutr | Splice-derived neoantigen discovery | Optional; required for splice-junction workflows | `bash scripts/install_splice_tools.sh` installs all four by default. SNAF uses a Python 3.8 compatibility env; SpliceMutr uses a pinned source snapshot and `neoag-splicemutr` R/Python/Snakemake env. Set `NEOAG_INSTALL_SNAF=0` or `NEOAG_INSTALL_SPLICEMUTR=0` to opt out. | `NEOAG_SPLICE_ENV`, `NEOAG_SNAF_ENV`, `NEOAG_SPLICEMUTR_ENV`, `NEOAG_SPLICEMUTR_HOME` | `bash scripts/run_splice_tool_smoke.sh`; `splicemutr-neoag doctor` |
-| SplAdder / IRFinder-S / ImmunoPepper / pVACbind | Splice graph, intron retention, splice-derived peptides, and peptide-FASTA binding prediction | Optional extended splice workflow | `bash scripts/install_extended_splice_tools.sh --all` installs official pinned versions in isolated environments/containers | `NEOAG_ENV_ROOT`, `NEOAG_SPLICE_TOOLS_ROOT`, `NEOAG_IRFINDER_WORKDIR` | `bash scripts/verify_extended_splice_tools.sh` |
-| Manta / GRIDSS / SvABA / Sniffles2 | SV discovery | Optional upstream SV callers | Install externally or via site conda/modules | `NEOAG_SV_ENV`, `NEOAG_MANTA_ENV` | `neoag check-tools` |
-| PURPLE / AMBER / COBALT | Purity, ploidy, CNV, LOH evidence | Optional | See `docs/TOOLS_SETUP.md` and local wrappers | `HMFTOOLS_HOME`, site-specific references | Tool-specific wrapper `--help` |
-| DASH | HLA LOH / allele-specific deletion evidence | Optional | See `docs/TOOLS_SETUP.md`; model may need to be provided separately | DASH env/model path | Tool-specific wrapper |
-
-Licensed tools such as NetMHCpan, NetMHCstabpan, LOHHLA, and Novoalign/Polysolver components may require academic or institutional approval. Do not redistribute their binaries inside the online release.
-
-### NetMHCpan Notes
-
-Install from the DTU-licensed Linux tarball:
-
-```bash
-mkdir -p vendor
-cp /path/to/netMHCpan-4.2c.Linux.tar.gz vendor/
-export NEOAG_CONDA_BASE="$(conda info --base)"
-bash scripts/install_netmhcpan.sh vendor/netMHCpan-4.2c.Linux.tar.gz
-source conf/tools.env.sh
-neoag check-tools
-netMHCpan -h | head
-```
-
-If NetMHCpan is already installed but its wrapper is broken:
-
-```bash
-bash scripts/install_netmhcpan.sh --repair
-```
-
-For patched NetMHCpan binaries on older host glibc, the `neoag-tools` environment must retain `sysroot_linux-64` and `patchelf`. The lite environment file includes these dependencies.
-
-### VEP Notes
-
-Install VEP and configure cache/plugins:
-
-```bash
-bash scripts/install_vep.sh
-source conf/tools.env.sh
-neoag check-tools
-```
-
-#### VEP cache layout
-
-`NEOAG_VEP_CACHE` is the **cache root**, not the release subdirectory. VEP is invoked with:
-
-```bash
-vep --cache --offline \
-  --dir_cache "$NEOAG_VEP_CACHE" \
-  --cache_version "$NEOAG_VEP_CACHE_VERSION"
-```
-
-Expected directory layout:
-
-```text
-$NEOAG_VEP_CACHE/
-└── homo_sapiens/
-    └── 105_GRCh38/
-        ├── info.txt
-        ├── 1/ 2/ ... 22/          # per-chromosome indexed cache files
-        └── ...                     # optional FASTA / auxiliary files from vep_install
-```
-
-For this project:
-
-| Item | Value |
-| --- | --- |
-| Species | `homo_sapiens` |
-| Assembly | `GRCh38` |
-| Cache release | `105` (`NEOAG_VEP_CACHE_VERSION=105`) |
-| Data package | Ensembl indexed cache `homo_sapiens_vep_105_GRCh38.tar.gz` |
-| Typical size | about 12–16 GB after extraction |
-| Download source | `https://ftp.ensembl.org/pub/release-105/variation/indexed_vep_cache/homo_sapiens_vep_105_GRCh38.tar.gz` |
-
-Install a new cache, or point to an existing one:
-
-```bash
-# Fresh install (downloads to ~/.vep by default).
-bash scripts/install_vep_cache.sh
-export NEOAG_VEP_CACHE="${HOME}/.vep"
-export NEOAG_VEP_CACHE_VERSION=105
-
-# Or reuse a site-managed cache root.
-export NEOAG_VEP_CACHE=/path/to/data/vep
-export NEOAG_VEP_CACHE_VERSION=105
-source conf/tools.env.sh
-```
-
-Verify:
-
-```bash
-test -f "$NEOAG_VEP_CACHE/homo_sapiens/105_GRCh38/info.txt"
-```
-
-Recommended VEP cache resolution for a portable release:
-
-1. Set `NEOAG_REF_BUNDLE=/path/to/neodata4git` and source `$NEOAG_REF_BUNDLE/neodata4git.env.sh`.
-2. Or set `NEOAG_VEP_CACHE=/path/to/data/vep` directly.
-3. Keep server-specific cache paths in `conf/tools.env.local.sh`, not in tracked release files.
-
-```bash
-export NEOAG_REF_BUNDLE=/path/to/neodata4git
-source "$NEOAG_REF_BUNDLE/neodata4git.env.sh"
-# sets NEOAG_VEP_CACHE=$NEOAG_REF_BUNDLE/data/vep when the bundle env file is configured
-```
-
-`NEOAG_VEP_PLUGINS` should point to a directory containing `Wildtype.pm` and `Frameshift.pm`. Plain VEP can run without these plugins, but this project uses them for pVACseq-compatible WT/frameshift information and more complete peptide extraction.
-
-### Reference Data Table
-
-Large data should live under `NEOAG_TOOLS_ROOT`, `NEOAG_SHARED_REF_DIR`, or another site-managed reference area, not inside the source checkout.
-
-| Data/reference | Needed for | Download/setup command | Expected variable/path | Verify |
-| --- | --- | --- | --- | --- |
-| VEP cache, GRCh38 release 105 | Offline VEP annotation | `bash scripts/install_vep_cache.sh` or reuse site cache | `NEOAG_VEP_CACHE=/path/to/data/vep` (cache root); release dir is `$NEOAG_VEP_CACHE/homo_sapiens/105_GRCh38/`; `NEOAG_VEP_CACHE_VERSION=105` | `test -f "$NEOAG_VEP_CACHE/homo_sapiens/105_GRCh38/info.txt"` |
-| VEP plugins | WT and frameshift plugin annotations | Installed by VEP/pVAC tooling or copied from a site bundle | `NEOAG_VEP_PLUGINS=/path/to/work/vep_plugins` | `test -f "$NEOAG_VEP_PLUGINS/Wildtype.pm"` |
-| GRCh38 FASTA and indices | VEP peptide extraction, GATK, SV peptide building | `bash scripts/download_ref_hg38.sh /path/to/ref/hg38` | `NEOAG_REFERENCE_FASTA=/path/to/Homo_sapiens_assembly38.fasta` | `test -f "$NEOAG_REFERENCE_FASTA"` |
-| dbSNP/common SNP VCF | FACETS `snp-pileup`, some CNV workflows | Included in site reference bundle or downloaded with hg38 bundle where available | `NEOAG_DBSNP_VCF=/path/to/dbsnp_chr.vcf.gz` | `test -f "$NEOAG_DBSNP_VCF"` |
-| gnomAD AF VCF and PoN | GATK Mutect2 filtering | `bash scripts/download_ref_hg38.sh /path/to/ref/hg38` or site bundle | Paths inside selected run config | `test -f /path/to/af-only-gnomad.hg38.vcf.gz` |
-| Ensembl protein FASTA | Peptide safety normal/reference proteome screen | Download Ensembl GRCh38 peptide FASTA manually or from site bundle | `NEOAG_NORMAL_PROTEOME_FASTA=/path/to/Homo_sapiens.GRCh38.pep.all.fa` | `test -f "$NEOAG_NORMAL_PROTEOME_FASTA"` |
-| Normal expression table | Peptide safety evidence | Site-generated TSV or fixture example | CLI argument or run config path | Check expected TSV header |
-| Normal HLA ligand table | Peptide safety evidence | Site-generated TSV or fixture example | CLI argument or run config path | Check expected TSV header |
-| CTAT genome lib | STAR-Fusion | Download per STAR-Fusion/CTAT docs or mount site bundle | `CTAT_GENOME_LIB`, `NEOAG_CTAT_LIB_DIR`, `NEOAG_SHARED_REF_DIR` | `test -d "$CTAT_GENOME_LIB"` |
-| EasyFuse reference | EasyFuse workflow | Download per EasyFuse docs or mount site bundle | `NEOAG_EASYFUSE_REF`, `NEOAG_SHARED_REF_DIR` | `test -d "$NEOAG_EASYFUSE_REF"` |
-| GTF annotation | SV/fusion peptide generation | Use GENCODE/Ensembl GTF matching reference FASTA | CLI argument `--gencode-gtf` | `test -f /path/to/genes.gtf` |
-| Capture BED | WES SV Phase 1.5 | Use panel/exome capture BED | CLI argument `--capture-bed` | `test -f /path/to/capture.bed` |
-| HLA allele file | Peptide prediction and SV workflows | Site HLA typing output converted to one allele per line | CLI argument `--hla` | `head /path/to/hla.txt` |
-
-
-### Reference Files By Tool And Module
-
-The table below lists the highest-priority reference files by tool/module. Put large references in `NEOAG_TOOLS_ROOT`, `NEOAG_SHARED_REF_DIR`, or another site-managed reference bundle. Do not commit licensed tools, public reference bundles, or patient data to Git.
-
-| Tool/module | Required reference files | Optional reference files | Environment variables / recommended paths | Purpose |
-| --- | --- | --- | --- | --- |
-| Core GRCh38 reference | GRCh38 FASTA, `.fai`, and sequence dictionary, for example `Homo_sapiens_assembly38.fasta`, `Homo_sapiens_assembly38.fasta.fai`, `Homo_sapiens_assembly38.dict` | Capture BED or interval BED for WES/panel workflows | `NEOAG_REFERENCE_FASTA=$NEOAG_TOOLS_ROOT/data/ref/hg38/Homo_sapiens_assembly38.fasta` | Shared genome reference for GATK, VEP peptide extraction, SV/fusion peptide generation, and read-based evidence workflows. |
-| VEP | GRCh38 VEP cache, expected as `homo_sapiens/105_GRCh38/info.txt`; matching reference FASTA | VEP plugins such as `Wildtype.pm` and `Frameshift.pm` | `NEOAG_VEP_CACHE=$NEOAG_TOOLS_ROOT/data/vep`; `NEOAG_VEP_CACHE_VERSION=105`; `NEOAG_VEP_PLUGINS=$NEOAG_TOOLS_ROOT/work/vep_plugins` | Offline annotation and pVACseq-compatible WT/frameshift peptide context. |
-| GATK / Mutect2 | GRCh38 FASTA bundle, gnomAD AF-only VCF + `.tbi`, Panel of Normals VCF + `.tbi` | Exome/panel intervals, contamination resources | Run-config paths; recommended under `$NEOAG_TOOLS_ROOT/data/ref/hg38/` | Somatic SNV/indel calling and filtering. |
-| NetMHCpan | Licensed NetMHCpan executable and its `data/` directory | None | `NETMHCPAN_HOME=$NEOAG_TOOLS_ROOT/tools/netMHCpan`; `NETMHCpan=$NETMHCPAN_HOME`; `NEOAG_NETMHCPAN_BIN=$NETMHCPAN_HOME/netMHCpan` | Primary peptide-HLA binding and presentation prediction. |
-| MHCflurry | Installed MHCflurry environment and downloaded models | Custom model cache | `NEOAG_MHCFLURRY_ENV`; model cache managed by MHCflurry | Optional binding/presentation cross-check. |
-| PRIME / MixMHCpred / BigMHC / DeepImmuno | Tool-specific executables or model directories | Model/version-specific data files | `PRIME_HOME`, `MIXMHCPRED_HOME`, `BIGMHC_DIR`, `DEEPIMMUNO_DIR` | Immunogenicity and presentation evidence layers. |
-| NetMHCstabpan / IEDB shim | Licensed NetMHCstabpan executable or configured IEDB-compatible shim | None | `NETMHCSTABPAN_HOME=$NEOAG_TOOLS_ROOT/tools/netMHCstabpan` | Required peptide stability evidence for production ranking. |
-| FACETS | Common biallelic SNP/dbSNP VCF + `.tbi` matching the BAM reference build | Downsampled SNP pileups or curated SNP-only panels such as Omni2.5/common SNP resources | `NEOAG_DBSNP_VCF=$NEOAG_TOOLS_ROOT/data/facets/reference/common_snp.hg38.vcf.gz` | Tumor purity, ploidy, CNV, and LOH evidence. |
-| ASCAT | hg38 loci and alleles resources; GC and RT correction files for ASCAT v3/prepareHTS modes | Platform-specific SNP panels | Site variables or run config paths such as `ASCAT_LOCI_PREFIX`, `ASCAT_ALLELES_PREFIX`, `ASCAT_GC_FILE`, `ASCAT_RT_FILE` | Independent purity/ploidy/CNV/LOH cross-check. |
-| Sequenza | GRCh38 FASTA, GC wiggle/file, matched tumor/normal BAMs | Precomputed per-chromosome `.seqz.gz` blocks | Run script arguments and Sequenza config paths | Independent purity, ploidy, and CNV estimation. |
-| PURPLE / AMBER / COBALT | HMF reference bundle matching GRCh38; tumor/normal BAMs; AMBER and COBALT resources | Somatic VCF for richer PURPLE interpretation | HMF/PURPLE config paths; keep the bundle outside Git | Purity, ploidy, CNV, LOH, and QC cross-check. |
-| STAR-Fusion / CTAT | CTAT genome library directory | RNA FASTQ QC and caller-specific caches | `CTAT_GENOME_LIB` or `$NEOAG_TOOLS_ROOT/data/ref/ctat/current` | RNA fusion discovery. |
-| Arriba | GRCh38 FASTA, matching GTF, STAR index/reference files | Blacklist/known fusion resources | `GTF=/path/to/gencode.gtf`; Arriba/STAR paths in run config | RNA fusion discovery and SV/fusion peptide generation. |
-| EasyFuse | EasyFuse reference bundle | Prebuilt conda/Docker environment cache | `NEOAG_EASYFUSE_REF` or `$NEOAG_SHARED_REF_DIR/easyfuse_ref_v4`; `NEOAG_EASYFUSE_HOME` | RNA fusion discovery and fusion evidence cross-check. |
-| LOHHLA / Polysolver | Polysolver distribution, Novoalign license, patient HLA FASTA or Polysolver HLA output | FACETS/ASCAT/PURPLE purity/CNV evidence | `POLYSOLVER_HOME=/path/to/polysolver`; `NOVOALIGN_LICENSE_FILE=/path/to/novoalign.lic` | HLA LOH evidence and HLA typing support. |
-| SpecHLA | SpecHLA database/reference files and tumor/normal BAM or extracted HLA reads | User-supplied purity/ploidy and HLA typing | SpecHLA install path plus run-script arguments | HLA typing and HLA LOH cross-check. |
-| HLA-LA | `PRG_MHC_GRCh38_withIMGT` graph directory | Long-read BAM input for higher-confidence HLA typing | HLA-LA graph argument/path; keep graph outside Git | Independent HLA typing cross-check, especially useful for long-read data. |
-| OptiType | HLA-I reference bundled with OptiType: `hla_reference_dna.fasta`, `hla_reference_rna.fasta`, and allele parquet files | RNA-derived FASTQ input | `OPTITYPE_ENV=$NEOAG_CONDA_BASE/envs/neoag-optitype`; `OPTITYPE_BIN=$OPTITYPE_ENV/bin/optitype`; `OPTITYPE_REFERENCE=$OPTITYPE_ENV/share/optitype/data`; optional bundle link: `$NEOAG_REF_BUNDLE/data/hla/optitype_reference` | HLA-A/B/C typing cross-check from DNA or RNA short reads. |
-| Normal safety evidence | Normal/reference proteome FASTA; normal expression TSV; normal HLA ligand TSV | Site-specific normal tissue evidence tables | `NEOAG_NORMAL_PROTEOME_FASTA=/path/to/Homo_sapiens.GRCh38.pep.all.fa`; CLI/run-config paths for TSV evidence | Filtering or annotation against normal protein and normal tissue/ligand evidence. |
-| RNA evidence | RNA allele-count/RNA VAF TSV; RNA expression matrix or TPM table | Targeted junction/fusion validation tables | CLI arguments such as `--rna-vaf`; generated by `scripts/rna_allele_counts_pysam.py` or RNA workflows | RNA support, RNA VAF, and expression evidence for candidate events. |
-| SV/long-read module | GRCh38 FASTA, matching GTF, HLA allele file, SV VCF or long-read caller output | Capture BED for WES-like SV workflows | `--gencode-gtf`, `--hla`, `--capture-bed`; run config paths | SV/fusion event parsing, peptide generation, and ranking. |
-
-### RNA FASTQ to TPM
-
-RNA expression evidence can be reviewed through the `neoag-rna-fastq-to-tpm` agent skill. When paired RNA FASTQ files and Salmon references are configured, the skill can also execute Salmon and generate a normalized gene TPM table.
-
-```bash
-export SALMON_BIN=salmon
-export SALMON_INDEX="$NEOAG_DATA_ROOT/data/ref/rna/salmon_index"
-export SALMON_TX2GENE="$NEOAG_DATA_ROOT/data/ref/rna/tx2gene.tsv"
-
-bin/neoag-llm-agent \
-  --message "Generate RNA TPM with Salmon, sample_id=SAMPLE01" \
-  --file tumor_R1.fastq.gz \
-  --file tumor_R2.fastq.gz \
-  --outdir results/llm_agent_rna_tpm \
-  --mode execute-with-approval \
-  --allow-high-risk
-```
-
-Direct script entry points are also available:
-
-```bash
-bash scripts/run_salmon_fastq_to_tpm.sh \
-  --fastq1 tumor_R1.fastq.gz \
-  --fastq2 tumor_R2.fastq.gz \
-  --sample-id SAMPLE01 \
-  --outdir results/rna_tpm/SAMPLE01
-
-bash scripts/run_rsem_fastq_to_tpm.sh --help
-
-Splice-junction local acceptance:
-
-```bash
-bash scripts/install_splice_tools.sh
-bash scripts/run_splice_tool_smoke.sh
-bash scripts/run_regtools_junctions.sh --help
-bash scripts/run_pvacsplice_sample.sh --help
-bash scripts/run_snaf_sample.sh --help
-```
-```
-
-Required Salmon references are a transcriptome index and a transcript-to-gene mapping table. RSEM requires `RSEM_REFERENCE` built for the same genome/GTF version and writes both native `*.genes.results` and normalized `gene_tpm.tsv` outputs.
-
-For the full installation and data checklist, including acceptance commands and common fixes, see `docs/INSTALL_AND_DATA.md`.
-
-OptiType local acceptance:
-
-```bash
-source conf/tools.env.sh
-optitype --version
-optitype check-deps
-# DNA paired FASTQ example
-optitype run -i tumor_R1.fastq.gz -i tumor_R2.fastq.gz --dna -o results/optitype_sample --solver cbc --threads 8
-# RNA single/paired FASTQ uses --rna instead of --dna. BAM input is also supported by OptiType.
-```
-
-The bundled OptiType references are also linked into the portable reference layout:
-
-```text
-$NEOAG_REF_BUNDLE/data/hla/optitype_reference
-```
-
-### Portable `neodata4git` Reference Bundle
-
-For a new machine, stage large public references and licensed/local tool references outside Git using this layout. Example configuration:
-
-```bash
-export NEOAG_REF_BUNDLE=/path/to/neodata4git
-source "$NEOAG_REF_BUNDLE/neodata4git.env.sh"
-bash scripts/verify_reference_bundle.sh "$NEOAG_REF_BUNDLE"
-NEOAG_REF_BUNDLE="$NEOAG_REF_BUNDLE" bash scripts/deploy_external_tools.sh --smoke
-```
-
-Recommended layout:
-
-```text
-neodata4git/
-  data/
-    ref/
-      hg38/
-        Homo_sapiens_assembly38.fasta
-        Homo_sapiens_assembly38.fasta.fai
-        Homo_sapiens_assembly38.dict
-        gencode.gtf
-        capture.bed                  # optional; required for WES/panel SV workflows
-      ctat/current/
-    facets/reference/
-      common_snp.hg38.vcf.gz
-      common_snp.hg38.vcf.gz.tbi
-    vep/homo_sapiens/105_GRCh38/
-    easyfuse/easyfuse_ref_v4/
-    ascat/reference/WGS_hg38/
-    sequenza/reference/
-      GRCh38.primary_assembly.chr.fa
-      GRCh38.primary_assembly.chr.fa.fai
-      gc.wig.gz                      # optional until Sequenza is used
-    hla/
-      spechla_db/
-      PRG_MHC_GRCh38_withIMGT/
-      optitype_reference/
-    lohhla/
-      polysolver/
-      novoalign.lic
-    predictors/
-      netMHCpan/
-      netMHCstabpan/
-      prime/
-      mixMHCpred_install/
-      bigmhc/models/
-      DeepImmuno/
-    hmf/purple_reference/            # optional until PURPLE is used
-    normal/proteome/
-  work/
-    vep_plugins/
-    nextflow_cache/
-  neodata4git.env.sh
-  tool_reference_manifest.tsv
-```
-
-Current known gaps in this bundle are `data/ref/hg38/capture.bed`, `data/sequenza/reference/gc.wig.gz`, and `data/hmf/purple_reference`. They are not needed for every workflow, but must be staged before WES/panel SV, Sequenza, or PURPLE production runs respectively.
-
-For this deployment line, the canonical large-asset source root is:
-
-```bash
-<asset-source-root>
-```
-
-
-Current synchronized assets larger than 1G are:
-
-| Asset | Current size | Source path | Install target | Required by default |
-| --- | ---: | --- | --- | --- |
-| EasyFuse reference | 104G | `<asset-source-root>/data/easyfuse/easyfuse_ref_v4` | `<data-root>/easyfuse/easyfuse_ref_v4` | No |
-| HLA-LA graph | 29G | `<asset-source-root>/data/hla/PRG_MHC_GRCh38_withIMGT` | `<data-root>/hla/PRG_MHC_GRCh38_withIMGT` | No |
-| VEP cache | 16G | `<asset-source-root>/data/vep` | `<data-root>/vep` | Yes |
-| Sequenza reference | 3.2G | `<asset-source-root>/data/sequenza/reference` | `<data-root>/sequenza/reference` | No |
-| GRCh38 FASTA | 3.0G | `<asset-source-root>/data/easyfuse/easyfuse_ref_v4/Homo_sapiens.GRCh38.dna.primary_assembly.fa` | `<data-root>/ref/hg38/Homo_sapiens_assembly38.fasta` | Yes |
-| BigMHC models | 2.4G | `<asset-source-root>/data/predictors/bigmhc/models` | `<tools-root>/tools/bigmhc/models` | Yes |
-| Polysolver distribution | 1.7G | `<asset-source-root>/data/lohhla/polysolver` | `<licensed-tools-root>/polysolver` | No |
-| GENCODE GTF | 1.4G | `<asset-source-root>/data/easyfuse/easyfuse_ref_v4/Homo_sapiens.GRCh38.110.gtf` | `<data-root>/ref/hg38/gencode.gtf` | Yes |
-
-Smaller assets are still kept in `production_assets.tsv` when they are needed
-for automated installation or validation, but they are intentionally omitted
-from this size-focused checklist.
-
-The installer reads `configs/assets/production_assets.tsv` and can sync large
-assets from that root via:
-
-```bash
-bash .agents/skills/neoag-remote-deploy/scripts/13_install_readme_tools.sh \
-  --asset-manifest configs/assets/production_assets.tsv \
-  --sync-assets \
-  --asset-source-host na@10.200.50.134 \
-  --execute
-```
-
-`production_assets.tsv` stores paths and markers only; it does not put BigMHC
-models, EasyFuse references, real VCFs, licensed tools, or patient data into Git.
-
-
-For the full portable reference-bundle layout and acceptance command, use the `neodata4git` section above. Minimal configuration is:
-
-```bash
-export NEOAG_REF_BUNDLE=/path/to/neodata4git
-source "$NEOAG_REF_BUNDLE/neodata4git.env.sh"
-bash scripts/verify_reference_bundle.sh "$NEOAG_REF_BUNDLE"
-neoag check-tools
-```
-
-Full release acceptance entry point:
-
-```bash
-# Lightweight complete check: reports missing specialized tools as warnings.
-NEOAG_REF_BUNDLE=/path/to/neodata4git bash scripts/verify_all_tools_and_refs.sh --smoke
-
-# Release-gate check: missing specialized tools or references fail the command.
-NEOAG_REF_BUNDLE=/path/to/neodata4git bash scripts/verify_all_tools_and_refs.sh --strict
-```
-
-`verify_all_tools_and_refs.sh` calls the core external-tool check and reference-bundle check, then adds dedicated checks for VEP, GATK/Mutect2, NetMHCpan, NetMHCstabpan, EasyFuse/Nextflow, SpecHLA, HLA-LA, PURPLE/AMBER/COBALT, and Sequenza.
-
-For a detailed local path inventory, see `docs/PROJECT_DATA_PATHS.md`.
+For production deployment and patient runs, prefer the three macro Skills above.
+Older low-level run, run-full, production-run, evidence-rank, and converter
+utilities remain
+available for debugging and compatibility, but they are no longer the README
+path for new-machine installation or full case execution. Use
+`neoag <command> --help` for command-specific options.
 
 ## Workflow Dependency Matrix
 
@@ -1042,85 +384,14 @@ pytest -q -m external --run-external
 
 This split prevents lightweight release users from accidentally running long Nextflow, benchmark, or external-tool tests with plain `pytest`.
 
-## Installation Acceptance Commands
-
-Run these from the project root after installation.
-
-### Basic Package Acceptance
-
-```bash
-source conf/tools.env.sh
-python -m pip install -e '.[test]'
-pytest -q
-neoag run-demo --outdir work/demo_v043 --sample-id DEMO001
-```
-
-### Tool Visibility Acceptance
-
-```bash
-source conf/tools.env.sh
-neoag check-tools
-bash scripts/check_tools_env.sh
-```
-
-`check-tools` may report optional tools as missing if your selected workflow does not need them. For production runs, every tool required by the selected workflow should be `OK`.
-
-### Nextflow Acceptance
-
-```bash
-export NXF_HOME=/path/to/writable/nextflow_cache
-bin/neoag-nextflow -version
-bin/neoag-nextflow run workflows/main.nf \
-  -w /tmp/neoag_nf_work \
-  --pvac_files data/fixtures/pvacseq_aggregated.tsv \
-  --outdir results/demo_nf \
-  --sample_id NF_DEMO
-```
-
-Expected outputs include:
-
-- `results/demo_nf/scoring/ranked_peptides.tsv`
-- `results/demo_nf/scoring/ranked_events.tsv`
-- `results/demo_nf/reports/evidence_report.html`
-- `results/demo_nf/provenance/workflow_provenance.yml`
-
-### Reference File Acceptance
-
-```bash
-test -f "$NEOAG_REFERENCE_FASTA"
-test -f "$NEOAG_VEP_CACHE/homo_sapiens/105_GRCh38/info.txt"
-test -f "$NEOAG_VEP_PLUGINS/Wildtype.pm"
-test -f "$NEOAG_NORMAL_PROTEOME_FASTA"
-```
-
-Run only the checks relevant to your selected workflow and configured paths.
-
 ## Common Errors And Fixes
 
 | Symptom | Likely cause | Fix |
 | --- | --- | --- |
-| `neoag: command not found` | Package not installed or project `bin/` not on `PATH` | Run `source conf/tools.env.sh`, then `python -m pip install -e '.[test]'`. |
-| `No module named neoag` | `PYTHONPATH` or editable install missing | Run `python -m pip install -e .` or execute with `PYTHONPATH=src python -m neoag.cli ...`. |
-| `pytest: command not found` | Test extra not installed | Run `python -m pip install -e '.[test]'`. |
-| `bin/neoag-nextflow: Permission denied` | Executable bit lost during archive/migration | `find bin -maxdepth 1 -type f -exec chmod +x {} \;`. |
-| `conda not found` | Miniforge/Mambaforge not installed or not initialized | Install Miniforge and open a new shell, or source its `etc/profile.d/conda.sh`. |
-| `mamba: unrecognized arguments -n ...` | Pip package `mamba` was installed instead of conda-forge mamba | Do not use `pip install mamba`; use the scripts' default conda mode or install real conda/mamba. |
-| `CXXABI_1.3.15 not found` | MHCflurry/scipy loaded an old system `libstdc++` | `conda install -n neoag-tools -c conda-forge 'libstdcxx-ng>=13'` and ensure conda `lib` is first in `LD_LIBRARY_PATH`. |
-| `mhcflurry-downloads fetch failed` | Network/model download issue | Activate the env and rerun `mhcflurry-downloads fetch`; for offline deploys, pre-stage model data. |
-| `NetMHCpan MISSING` | Licensed tarball not installed or `NETMHCPAN_HOME` wrong | Install with `bash scripts/install_netmhcpan.sh /path/to/tar.gz`, then `source conf/tools.env.sh`. |
-| NetMHCpan wrapper looks for a stale conda path | Wrapper was created with an old conda base | Set `NEOAG_CONDA_BASE="$(conda info --base)"` and run `bash scripts/install_netmhcpan.sh --repair`. |
-| NetMHCpan reports missing `ld-linux-x86-64.so.2` | Conda sysroot was removed from `neoag-tools` | Install `sysroot_linux-64` and `patchelf` in `neoag-tools`; the lite env file now keeps them. |
-| `VEP cache not found` | Offline cache missing, `NEOAG_VEP_CACHE` points at the wrong directory, or release `105_GRCh38` is absent | Set `NEOAG_VEP_CACHE` to the cache root (not `.../105_GRCh38`), run `bash scripts/install_vep_cache.sh`, or verify `test -f "$NEOAG_VEP_CACHE/homo_sapiens/105_GRCh38/info.txt"`. |
-| `vep MISSING` but VEP is installed | VEP env/wrapper not on configured path | Run `bash scripts/install_vep.sh`, source `conf/tools.env.sh`, and verify `NEOAG_VEP_BIN`. |
-| `Can't locate DBI.pm` during VEP | Perl environment from another conda env polluted VEP | Use `bin/vep-neoag`, which clears conflicting Perl environment variables. |
-| `No CSQ annotations` | Input VCF was not VEP-annotated | Use `run-full` with VEP configured for auto-annotation, or run `neoag vep-annotate` first. |
-| `.nextflow/history.lock (Permission denied)` | Root-owned `.nextflow` metadata | Use `export NXF_HOME=/path/to/writable/cache` and run `bin/neoag-nextflow`. |
-| `Downloading nextflow dependencies` hangs | First launch without cache or blocked network | Pre-populate `NXF_HOME`, use a shared cache, or allow network until download completes. |
-| `Java not found` or unsupported Java | Java missing/old | Install OpenJDK 11+; verify with `java -version`. |
-| `Permission denied` under `work/`, `results/`, or `tools/` | Directory owned by another user/root | Use a user-writable output/work directory or ask an administrator to fix ownership. |
-| `GATK reference dictionary missing` | FASTA index/dict missing | Run `bash scripts/download_ref_hg38.sh /path/to/ref/hg38` or create `.fai`/`.dict` with samtools/picard. |
-| Real-data workflow runs with fixture paths | Private run config not edited | Copy an example config to a private local config and update all paths before production. |
-| Optional tool is missing but demo works | Tool not needed for fixture demo | Install only if selected workflow requires it; see the dependency matrix. |
+| `open-neo` is not found | Console script is not on `PATH` yet | Use the module entrypoint shown in the Skill1 section, then rerun `open-neo install-check`. |
+| Install, tool, reference, or smoke check fails | Machine is not production-ready yet | Rerun `open-neo install-check --mode resume --approved` and read `deployment_report.md` plus `production_run_readiness.tsv`. |
+| Case execution stops or disconnects | Gateway job or production stage was interrupted | Rerun `open-neo run --mode resume --approved --gateway-url http://127.0.0.1:8000 --gateway-wait`. |
+| Evidence is marked `UNASSESSED`, `PARTIAL`, or `single_tool_result` | One input/tool/reference was missing or only one tool produced usable evidence | Continue review, but keep the partial-evidence label in reports and experiment decisions. |
 
 ## Release Boundary
 
@@ -1140,9 +411,6 @@ Use `scripts/check_release_boundary.sh` before preparing an online release.
 
 ## Additional Documentation
 
-- `docs/TOOLS_SETUP.md`: external tool installation details.
-- `docs/PROJECT_DATA_PATHS.md`: project reference/data path inventory.
-- `docs/INSTALL_AND_DATA.md`: installation and data setup guide.
 - `docs/V043_CCF21.md`: CCF 2.1 notes.
 - `docs/V042_P1_APPM_EXPLAINABILITY.md`: APPM explainability notes.
 - `docs/V04_EVIDENCE_SAFETY_ESCAPE.md`: safety and immune-escape evidence notes.
@@ -1220,23 +488,6 @@ neoag-skill run neoag-peptide-csv --outdir work/peptides --arg peptide_csv=pepti
 
 Skills are SOP wrappers. They do not make clinical decisions, do not include patient BAM/FASTQ/VCF or large references, and high-risk execution paths remain dry-run or human-approval gated.
 
-## Open-Neo Macro Skills
-
-Three public macro entrypoints compose the existing A/B/C/D Skills without duplicating their algorithms:
-
-- `open-neo install-check`: portable deployment planning, approved installation/repair, Doctor, references, and smoke checks.
-- `open-neo run`: manifest/CLI/directory input QC, Gateway-controlled production execution or resume, domain-level tool consensus, comprehensive evidence, weighted baseline, and evidence-consensus ranking.
-- `open-neo review`: event-level review, an R1/R2 first-batch set, an R3 evidence-completion queue, and patient/technical reports.
-
-For exactly one paired tumor RNA FASTQ input, `open-neo run` now generates the
-standard `rna_fusion_splice_v1` production profile automatically. After Doctor
-checks and Gateway approval, it can run FASTQ QC, STAR, Salmon, EasyFuse,
-STAR-Fusion, Arriba, RegTools, optional reviewed SNAF/SpliceMutr workflows,
-fusion/splice cross-validation, peptide generation and the two rankings.
-Missing optional tools or normal-background references remain `UNASSESSED` or
-`SAFETY_PARTIAL`; they are never reported as negative evidence.
-
-`plan`, `verify`, and review operations are non-destructive. Installation, repair, execution, and resume require explicit approval. See [docs/OPEN_NEO_MACRO_SKILLS.md](docs/OPEN_NEO_MACRO_SKILLS.md).
 ## v0.5.1 three evidence chains
 
 The formal splice layer now supports an RNA-driven ImmunoPepper + moPepGen branch, a DNA-causal splice2neo + EasyQuant + pVACsplice branch, and a separately audited normal-background + k4neo branch. See `README_v0.5.1.md` and `docs/V051_THREE_EVIDENCE_CHAINS.md`.

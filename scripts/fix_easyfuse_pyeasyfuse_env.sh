@@ -42,9 +42,11 @@ fix_env_prefix() {
 
 patch_fusionannotation_gff_name() {
   local prefix="$1"
+  local found=0
   shopt -s nullglob
   for fa in "${prefix}"/lib/python*/site-packages/pyeasyfuse/fusionannotation.py; do
     [[ -f "${fa}" ]] || continue
+    found=1
     if grep -q 'NEOAG_PATCH: gff Name fallback' "${fa}" 2>/dev/null; then
       echo "    already patched ${fa}"
       continue
@@ -53,6 +55,9 @@ patch_fusionannotation_gff_name() {
 import sys
 from pathlib import Path
 path = Path(sys.argv[1])
+if not path.exists():
+    print(f"    skip missing {path}")
+    sys.exit(0)
 text = path.read_text(encoding="utf-8")
 old = """            elif parent.id.startswith(\"gene:\"):
                 gene_id = parent.id
@@ -75,6 +80,9 @@ print(f"    patched {path}")
 PY
   done
   shopt -u nullglob
+  if [[ "${found}" -eq 0 ]]; then
+    echo "    skip fusionannotation.py patch in ${prefix}: file not present"
+  fi
 }
 
 echo "==> fix_easyfuse_pyeasyfuse_env $(date -Is)"
