@@ -78,8 +78,8 @@ Tool group shortcuts:
                               EasyFuse family), BAM-matcher, and CPU torch (BigMHC +
                               runtime validate). ASCAT/PyClone remains optional
                               (--add-tool-group --ascat-pyclone).
-  --all-open                  Pass --all-open to 13_install_readme_tools.sh; NetMHCstabpan stays skipped
-  --all                      Pass --all to 13_install_readme_tools.sh; NetMHCstabpan stays skipped
+  --all-open                  Pass --all-open to 13_install_readme_tools.sh; includes NetMHCstabpan installer/shim
+  --all                      Pass --all to 13_install_readme_tools.sh; includes NetMHCstabpan
   --add-tool-group FLAG       Add any 13_install_readme_tools.sh group flag, e.g. --vep
 
 Asset / validation toggles:
@@ -143,7 +143,7 @@ while [[ $# -gt 0 ]]; do
     # Default 13_install skips torch; without this flag Skill1 full/standard fails exit 21.
     # --fusion / --bam-matcher: required by Skill1 full tier groups and by open-neo-run
     # DNA identity + RNA FASTQ paths; previously only available via side-path installs.
-    --standard) INSTALL_TOOL_GROUPS=(--core-env --vep --gatk --immunogenicity --optitype --facets --splice --lohhla --fusion --bam-matcher --install-torch); shift ;;
+    --standard) INSTALL_TOOL_GROUPS=(--core-env --vep --gatk --immunogenicity --netmhcstabpan --optitype --facets --splice --lohhla --fusion --bam-matcher --install-torch); shift ;;
     --all-open) INSTALL_TOOL_GROUPS=(--all-open); shift ;;
     --all) INSTALL_TOOL_GROUPS=(--all); shift ;;
     --add-tool-group) EXTRA_INSTALL_ARGS+=("$2"); shift 2 ;;

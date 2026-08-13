@@ -147,8 +147,9 @@ def generate_rna_fusion_splice_manifest(
         "tools_stub = false",
         "immunogenicity_stub = false",
         f"expected_peptide_sources = {_toml(['EasyFuse', 'SNAF', 'SpliceMutr'])}",
-        'presentation_predictors = ["netmhcpan", "mhcflurry"]',
-        'required_presentation_predictors = ["netmhcpan"]',
+        'presentation_predictors = ["netmhcpan", "mhcflurry", "netmhcstabpan", "netchop"]',
+        'required_presentation_predictors = ["netmhcpan", "mhcflurry", "netmhcstabpan", "netchop"]',
+        'reports = "patient,technical"',
     ]
 
     qc_command = (

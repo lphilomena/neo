@@ -15,7 +15,7 @@ parameters:
   require_complete_cds: true
   require_non_nmd: true
   min_psauron_score: 0.8
-  skip_netmhcstabpan: true
+  skip_netmhcstabpan: false
 
 stages:
   - fastq_validation

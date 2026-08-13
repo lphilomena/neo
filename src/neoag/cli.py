@@ -44,7 +44,7 @@ from .vep.annotate import (
     resolve_vep_annotate_from_config,
     run_vep_pvacseq_annotate,
 )
-from .vep.extract_peptides import extract_variant_peptides_from_vcf, parse_peptide_lengths
+from .vep.extract_peptides import extract_variant_peptides_from_vcf, parse_peptide_lengths, resolve_mhc1_peptide_lengths
 from .peptide_safety_gate import build_peptide_safety_gate
 from .immune_escape import build_immune_escape_evidence
 from .hla_loh_crosscheck import write_hla_loh_crosscheck
@@ -64,6 +64,7 @@ from .source_chain import build_source_chain_table
 from .report_dimensions import audit_report_dimensions
 
 ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_REPORT_PROFILE = str(ROOT / "configs" / "ranking" / "sarcoma_evidence_consensus_v3_source_chain.toml")
 def fixture(x): return ROOT/"data"/"fixtures"/x
 def resource(x): return ROOT/"resources"/x
 
@@ -292,6 +293,7 @@ def cmd_report(args):
         validation_rows=validation_rows,
         outdir=getattr(args, "outdir", None),
         provenance=_read_json_optional(getattr(args, "provenance", None)) if getattr(args, "provenance", None) else None,
+        patient_inputs=_read_json_optional(getattr(args, "patient_inputs", None)) if getattr(args, "patient_inputs", None) else None,
         sample_id=getattr(args, "sample_id", "") or "",
     )
     audience = getattr(args, "audience", "both")
@@ -305,7 +307,12 @@ def cmd_report(args):
             out.write_text(tech_out.read_text(encoding="utf-8"), encoding="utf-8")
     if audience in {"both", "patient"}:
         patient_out = out.parent / "evidence_report.patient.html" if audience == "both" else out
-        make_patient_report(patient_out, bundle)
+        make_patient_report(
+            patient_out,
+            bundle,
+            event_top_n=args.event_top_n,
+            candidate_top_n=args.candidate_top_n,
+        )
     if audience == "both":
         print(f"Wrote patient report to {out.parent / 'evidence_report.patient.html'}")
         print(f"Wrote technical report to {out.parent / 'evidence_report.technical.html'}")
@@ -323,10 +330,11 @@ def cmd_extract_variant_peptides(args):
     normal_proteome_fasta = args.normal_proteome_fasta or os.environ.get("NEOAG_NORMAL_PROTEOME_FASTA")
     if args.filter_normal_proteome and not normal_proteome_fasta:
         raise SystemExit("--filter-normal-proteome requires --normal-proteome-fasta or NEOAG_NORMAL_PROTEOME_FASTA")
-    lengths = parse_peptide_lengths(
+    lengths = resolve_mhc1_peptide_lengths(
         args.lengths,
         length_min=args.length_min,
         length_max=args.length_max,
+        high_recall_12mer=args.high_recall_12mer,
     )
     filter_normal = bool(args.filter_normal_proteome)
     if normal_proteome_fasta and not args.annotate_normal_proteome_only:
@@ -525,6 +533,7 @@ def cmd_sv_build_raw(args):
         merge_distance_bp=args.merge_distance_bp,
         allow_tier2=not args.tier1_only,
         capture_bed=getattr(args, "capture_bed", None),
+        peptide_lengths=_mhc1_lengths_from_args(args),
     )
     print("SV Phase 1 raw inputs completed.")
     for k, v in out.items():
@@ -536,6 +545,13 @@ def _sv_optional_path(val):
         return None
     p = Path(val)
     return p if p.is_file() else None
+
+
+def _mhc1_lengths_from_args(args):
+    return resolve_mhc1_peptide_lengths(
+        getattr(args, "peptide_lengths", ""),
+        high_recall_12mer=bool(getattr(args, "high_recall_12mer", False)),
+    )
 
 
 def cmd_sv_score(args):
@@ -594,6 +610,7 @@ def cmd_sv_run_full(args):
         capture_bed=getattr(args, "capture_bed", None),
         capture_near_bp=getattr(args, "capture_near_bp", 250),
         capture_slop_bp=getattr(args, "capture_slop_bp", 1000),
+        peptide_lengths=_mhc1_lengths_from_args(args),
     )
     score_out = run_sv_score(
         outdir=args.outdir,
@@ -642,6 +659,7 @@ def _sv_build_raw_common(args, *, wes: bool):
         normal_hla_ligands_tsv=args.normal_hla_ligands,
         merge_distance_bp=args.merge_distance_bp,
         allow_tier2=not args.tier1_only,
+        peptide_lengths=_mhc1_lengths_from_args(args),
         **({
             "capture_bed": getattr(args, "capture_bed", None),
             "capture_near_bp": getattr(args, "capture_near_bp", 250),
@@ -683,6 +701,7 @@ def cmd_sv_run_full_wes(args):
         capture_bed=getattr(args, "capture_bed", None),
         capture_near_bp=getattr(args, "capture_near_bp", 250),
         capture_slop_bp=getattr(args, "capture_slop_bp", 1000),
+        peptide_lengths=_mhc1_lengths_from_args(args),
     )
     score_out = run_sv_score(
         outdir=args.outdir,
@@ -889,6 +908,7 @@ def cmd_run_full(args):
         "netmhcpan": upstream.get("netmhcpan"),
         "mhcflurry": upstream.get("mhcflurry"),
         "netmhcstabpan": upstream.get("netmhcstabpan"),
+        "netchop": upstream.get("netchop"),
         "vep_appm": upstream.get("vep_appm"),
         "expression": upstream.get("expression"),
         "transcript_expression": upstream.get("transcript_expression") or inputs.get("transcript_expression_tsv") or inputs.get("transcript_expression"),
@@ -1158,21 +1178,26 @@ def build_parser():
     vp.set_defaults(func=cmd_validation_plan)
 
     rp = sub.add_parser("report")
-    rp.add_argument("--profile", default="default")
+    rp.add_argument("--profile", default=DEFAULT_REPORT_PROFILE)
     rp.add_argument("--ranked-events", required=True)
     rp.add_argument("--ranked-peptides", required=True)
     rp.add_argument("--appm-summary")
     rp.add_argument("--validation-plan")
     rp.add_argument("--outdir", help="Run output dir; loads APPM/safety/escape/CCF sidecars for technical report")
     rp.add_argument("--provenance", help="provenance.json for tool versions and file paths")
+    rp.add_argument("--patient-inputs", help="JSON containing input_files with patient data file or directory paths; overrides provenance input_files")
     rp.add_argument("--sample-id")
     rp.add_argument("--audience", choices=["both", "patient", "technical"], default="both",
                     help="Patient communication, research/technical, or both HTML reports")
+    rp.add_argument("--event-top-n", type=int, default=10,
+                    help="Number of event representatives shown per event type in the patient report (default: 10)")
+    rp.add_argument("--candidate-top-n", type=int, default=50,
+                    help="Number of cross-track event-deduplicated peptide candidates shown in the patient report (default: 50)")
     rp.add_argument("--out", required=True, help="Output path; with --audience both, also writes sibling patient/technical files")
     rp.set_defaults(func=cmd_report)
 
     rp41 = sub.add_parser("report-v041", help="Build v0.4.1 APPM/escape/safety/CCF evidence HTML report")
-    rp41.add_argument("--profile", default="default")
+    rp41.add_argument("--profile", default=DEFAULT_REPORT_PROFILE)
     rp41.add_argument("--ranked-events", required=True)
     rp41.add_argument("--ranked-peptides", required=True)
     rp41.add_argument("--appm-summary")
@@ -1229,9 +1254,10 @@ def build_parser():
     evp.add_argument("--sample-id", default="SAMPLE", help="Prefix for peptide_id")
     evp.add_argument(
         "--lengths",
-        default="8,9,10,11",
-        help="Peptide lengths, comma-separated (default: 8,9,10,11)",
+        default="",
+        help="Explicit peptide lengths; default 8,9,10,11 (overrides --high-recall-12mer)",
     )
+    evp.add_argument("--high-recall-12mer", action="store_true", help="Use 8,9,10,11,12 unless explicit lengths are provided")
     evp.add_argument(
         "--length-min",
         type=int,
@@ -1389,6 +1415,8 @@ def build_parser():
     sv.add_argument("--normal-hla-ligands")
     sv.add_argument("--merge-distance-bp", type=int, default=200)
     sv.add_argument("--tier1-only", action="store_true", help="Only export Tier1 SV events")
+    sv.add_argument("--peptide-lengths", default="", help="Explicit MHC-I peptide lengths (default: 8,9,10,11)")
+    sv.add_argument("--high-recall-12mer", action="store_true", help="Use 8,9,10,11,12 unless --peptide-lengths is explicit")
     sv.set_defaults(func=cmd_sv_build_raw)
 
     svs = sub.add_parser(
@@ -1444,6 +1472,8 @@ def build_parser():
     svf.add_argument("--cnv")
     svf.add_argument("--merge-distance-bp", type=int, default=200)
     svf.add_argument("--tier1-only", action="store_true")
+    svf.add_argument("--peptide-lengths", default="", help="Explicit MHC-I peptide lengths (default: 8,9,10,11)")
+    svf.add_argument("--high-recall-12mer", action="store_true", help="Use 8,9,10,11,12 unless --peptide-lengths is explicit")
     svf.add_argument("--binding-stub", action="store_true")
     svf.add_argument("--immunogenicity-stub", action="store_true", default=False)
     svf.add_argument("--no-immunogenicity-stub", action="store_false", dest="immunogenicity_stub")
@@ -1473,6 +1503,8 @@ def build_parser():
     svw.add_argument("--capture-slop-bp", type=int, default=1000)
     svw.add_argument("--merge-distance-bp", type=int, default=200)
     svw.add_argument("--tier1-only", action="store_true", help="Only export WES_Tier1 SV events")
+    svw.add_argument("--peptide-lengths", default="", help="Explicit MHC-I peptide lengths (default: 8,9,10,11)")
+    svw.add_argument("--high-recall-12mer", action="store_true", help="Use 8,9,10,11,12 unless --peptide-lengths is explicit")
     svw.set_defaults(func=cmd_sv_build_raw_wes)
 
     svfw = sub.add_parser(
@@ -1504,6 +1536,8 @@ def build_parser():
     svfw.add_argument("--cnv")
     svfw.add_argument("--merge-distance-bp", type=int, default=200)
     svfw.add_argument("--tier1-only", action="store_true")
+    svfw.add_argument("--peptide-lengths", default="", help="Explicit MHC-I peptide lengths (default: 8,9,10,11)")
+    svfw.add_argument("--high-recall-12mer", action="store_true", help="Use 8,9,10,11,12 unless --peptide-lengths is explicit")
     svfw.add_argument("--binding-stub", action="store_true")
     svfw.add_argument("--immunogenicity-stub", action="store_true", default=False)
     svfw.add_argument("--no-immunogenicity-stub", action="store_false", dest="immunogenicity_stub")

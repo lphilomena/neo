@@ -59,7 +59,7 @@ def main() -> int:
         "missing_prediction_rows": len(missing),
         "longrna_supported_rows": sum(row.get("longrna_support") == "true" for row in output),
         "presentation_grade_counts": dict(Counter(row.get("presentation_evidence_grade", "") for row in output)),
-        "netmhcstabpan_policy": "skipped_by_request",
+        "netmhcstabpan_policy": "required_for_production",
         "output": str(args.output),
     }
     args.summary.parent.mkdir(parents=True, exist_ok=True)

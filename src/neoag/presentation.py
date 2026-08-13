@@ -25,12 +25,16 @@ def build_presentation_evidence(
     profile,
     out=None,
     netmhcstabpan=None,
+    netchop=None,
     provenance_registry: ProvenanceRegistry | None = None,
 ):
     peptides = read_tsv(raw_peptides)
     net = by_key(read_tsv(netmhcpan)) if netmhcpan else {}
     mhc = by_key(read_tsv(mhcflurry)) if mhcflurry else {}
     stab = by_key(read_tsv(netmhcstabpan)) if netmhcstabpan else {}
+    chop_rows = read_tsv(netchop) if netchop else []
+    chop_by_id = {row.get("peptide_id", ""): row for row in chop_rows if row.get("peptide_id")}
+    chop_by_peptide = {row.get("peptide", ""): row for row in chop_rows if row.get("peptide")}
     w = profile.get("presentation_weights", {})
     w_ba = float(w.get("netmhcpan_ba", 0.25))
     w_el = float(w.get("netmhcpan_el", 0.35))
@@ -42,6 +46,7 @@ def build_presentation_evidence(
         n = net.get(key, {})
         m = mhc.get(key, {})
         s = stab.get(key, {})
+        c = chop_by_id.get(p.get("peptide_id", ""), {}) or chop_by_peptide.get(p.get("peptide", ""), {})
         ba = n.get("netmhcpan_ba_rank", "")
         el = n.get("netmhcpan_el_rank", "")
         pct = m.get("mhcflurry_affinity_percentile", "")
@@ -81,6 +86,10 @@ def build_presentation_evidence(
             "netmhcpan_wt_rank_el": evidence_value("netmhcpan_wt_rank_el"),
             "netmhcstabpan_score": str(to_float(s.get("netmhcstabpan_score"), 0.0)) if s else "",
             "netmhcstabpan_rank": str(to_float(s.get("netmhcstabpan_rank"), 99.0)) if s else "",
+            "netchop_31d_max_score": c.get("netchop_31d_max_score", ""),
+            "netchop_31d_mean_score": c.get("netchop_31d_mean_score", ""),
+            "netchop_31d_cleavage_sites": c.get("netchop_31d_cleavage_sites", ""),
+            "netchop_processing_status": c.get("netchop_processing_status", "ASSESSED" if c else "UNASSESSED"),
             "mhcflurry_affinity_percentile": str(to_float(pct, 99.0)),
             "mhcflurry_processing_score": str(to_float(proc, 0.0)),
             "mhcflurry_presentation_score": str(to_float(pres, 0.0)),
@@ -102,6 +111,8 @@ def build_presentation_evidence(
         registry.register_passthrough("mhcflurry", mhcflurry)
     if netmhcstabpan and not registry.has("netmhcstabpan"):
         registry.register_passthrough("netmhcstabpan", netmhcstabpan)
+    if netchop and not registry.has("netchop"):
+        registry.register_passthrough("netchop", netchop)
     if out:
         summary = registry.tool_summary_fields()
         composite = provenance_derived(

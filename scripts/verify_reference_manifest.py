@@ -161,7 +161,7 @@ def main() -> int:
         if not raw_path:
             issue("FAIL" if required else "WARN", f"{name}: missing path field")
             continue
-        path = Path(str(raw_path))
+        path = Path(os.path.expanduser(os.path.expandvars(str(raw_path))))
         exists = path.exists()
         if exists:
             issue("OK", f"{name}: path exists: {path}")
@@ -171,7 +171,7 @@ def main() -> int:
 
         marker = str(entry.get("marker", "") or "").strip()
         if marker and marker != "-":
-            mpath = marker_path(path, marker)
+            mpath = marker_path(path, os.path.expanduser(os.path.expandvars(marker)))
             if mpath.exists():
                 issue("OK", f"{name}: marker exists: {mpath}")
             else:

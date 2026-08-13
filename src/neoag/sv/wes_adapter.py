@@ -29,6 +29,7 @@ def build_sv_wes_phase1_5_raw(
     capture_bed: str | Path | None = None,
     capture_near_bp: int = 250,
     capture_slop_bp: int = 1000,
+    peptide_lengths: tuple[int, ...] = (8, 9, 10, 11),
 ) -> dict[str, str]:
     """Build raw_events/raw_peptides using WES Phase 1.5 filters and profile."""
     return build_sv_phase1_raw(
@@ -52,6 +53,7 @@ def build_sv_wes_phase1_5_raw(
         capture_bed=capture_bed,
         capture_near_bp=capture_near_bp,
         capture_slop_bp=capture_slop_bp,
+        peptide_lengths=peptide_lengths,
     )
 
 

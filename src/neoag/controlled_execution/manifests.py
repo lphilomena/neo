@@ -163,6 +163,31 @@ def validate_tools_manifest(data: dict[str, Any]) -> list[dict[str, str]]:
             rows.append({"manifest": "tools", "field": name, "status": "WARN", "message": "neither executable nor image declared"})
         if name.lower() in {"netmhcpan", "netmhcstabpan"} and not spec.get("license_required"):
             rows.append({"manifest": "tools", "field": f"{name}.license_required", "status": "WARN", "message": "licensed tool should declare license_required: true"})
+    requirements = data.get("production_requirements", {})
+    domains = requirements.get("domains", {}) if isinstance(requirements, dict) else {}
+    if requirements and not isinstance(domains, dict):
+        rows.append({"manifest": "tools", "field": "production_requirements.domains", "status": "FAIL", "message": "domains must be a mapping"})
+    for domain, rule in domains.items() if isinstance(domains, dict) else []:
+        field = f"production_requirements.domains.{domain}"
+        if not isinstance(rule, dict):
+            rows.append({"manifest": "tools", "field": field, "status": "FAIL", "message": "domain rule must be a mapping"})
+            continue
+        required = rule.get("required_tools", [])
+        crosscheck = rule.get("crosscheck_tools", [])
+        if not isinstance(required, list) or not isinstance(crosscheck, list):
+            rows.append({"manifest": "tools", "field": field, "status": "FAIL", "message": "required_tools and crosscheck_tools must be lists"})
+            continue
+        declared = required + crosscheck
+        missing = [str(name) for name in declared if str(name) not in tools]
+        if missing:
+            rows.append({"manifest": "tools", "field": field, "status": "FAIL", "message": f"undeclared tools: {', '.join(missing)}"})
+        else:
+            rows.append({"manifest": "tools", "field": field, "status": "OK", "message": f"declares {len(required)} required and {len(crosscheck)} cross-check tools"})
+        minimum = rule.get("min_successful_tools", len(required))
+        if not isinstance(minimum, int) or minimum < 0 or minimum > len(declared):
+            rows.append({"manifest": "tools", "field": f"{field}.min_successful_tools", "status": "FAIL", "message": "must be an integer between 0 and the number of declared tools"})
+        elif minimum < len(required) and domain not in {"purity_cnv", "processing_stability"}:
+            rows.append({"manifest": "tools", "field": f"{field}.min_successful_tools", "status": "WARN", "message": "minimum is lower than required_tools count"})
     return rows
 
 

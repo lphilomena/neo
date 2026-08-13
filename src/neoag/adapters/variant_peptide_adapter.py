@@ -136,13 +136,14 @@ def variant_peptide_rows_to_raw_tables(
 
 
 def resolve_variant_peptide_options(cfg: dict[str, Any], *, root: Path | None = None) -> dict[str, Any]:
-    from ..vep.extract_peptides import parse_peptide_lengths
+    from ..vep.extract_peptides import resolve_mhc1_peptide_lengths
 
     inputs = cfg.get("inputs") or {}
-    lengths = parse_peptide_lengths(
+    lengths = resolve_mhc1_peptide_lengths(
         str(inputs.get("variant_peptide_lengths") or inputs.get("peptide_lengths") or ""),
         length_min=inputs.get("variant_peptide_length_min"),
         length_max=inputs.get("variant_peptide_length_max"),
+        high_recall_12mer=bool(inputs.get("mhc1_high_recall_12mer", False)),
     )
     normal_fasta = (
         inputs.get("normal_proteome_fasta")

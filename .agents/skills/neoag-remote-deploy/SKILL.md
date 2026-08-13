@@ -175,7 +175,7 @@ portable container wrapper automatically; it does not download licensed payloads
 
 `13_install_readme_tools.sh --run-real-vcf-smoke` runs an explicitly supplied
 VCF smoke test after installation. The smoke test runs
-MHCflurry by default, skips NetMHCstabpan by default because it is slow,
+MHCflurry and NetMHCstabpan by default; NetMHCstabpan may be skipped only for debugging because production evidence requires it,
 and accepts `--real-vcf-smoke-top-n <N>` for a smaller or larger test.
 Use `--skip-real-vcf-mhcflurry` only as a temporary fallback on hosts with
 unresolved TensorFlow/Keras compatibility issues.

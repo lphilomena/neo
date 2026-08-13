@@ -33,6 +33,7 @@ def run(
     netmhcpan=None,
     mhcflurry=None,
     netmhcstabpan=None,
+    netchop=None,
     vep_appm=None,
     expression=None,
     hla_loh=None,
@@ -129,7 +130,7 @@ def run(
 
     pres_path = pres / "presentation_evidence.tsv"
     build_presentation_evidence(
-        raw_peptides_path, net_path, mhc_path, profile, pres_path, stab_path,
+        raw_peptides_path, net_path, mhc_path, profile, pres_path, stab_path, netchop,
         provenance_registry=provenance_registry,
     )
     pres_rows = read_tsv(pres_path)

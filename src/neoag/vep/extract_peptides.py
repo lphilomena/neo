@@ -42,6 +42,7 @@ _REVERSE_CODON = {
 MIN_PEPTIDE_LENGTH = 5
 MAX_PEPTIDE_LENGTH = 50
 DEFAULT_PEPTIDE_LENGTHS = (8, 9, 10, 11)
+HIGH_RECALL_PEPTIDE_LENGTHS = (8, 9, 10, 11, 12)
 DEFAULT_MINIGENE_FLANK = 10
 DEFAULT_MINIGENE_TOTAL_LEN: int | None = None
 
@@ -154,6 +155,23 @@ def parse_peptide_lengths(
                 f"[{MIN_PEPTIDE_LENGTH}, {MAX_PEPTIDE_LENGTH}]"
             )
     return parsed
+
+
+def resolve_mhc1_peptide_lengths(
+    lengths_str: str = "",
+    *,
+    length_min: int | None = None,
+    length_max: int | None = None,
+    high_recall_12mer: bool = False,
+) -> tuple[int, ...]:
+    """Resolve MHC-I lengths; explicit length settings override high-recall mode."""
+    if lengths_str.strip() or length_min is not None or length_max is not None:
+        return parse_peptide_lengths(
+            lengths_str,
+            length_min=length_min,
+            length_max=length_max,
+        )
+    return HIGH_RECALL_PEPTIDE_LENGTHS if high_recall_12mer else DEFAULT_PEPTIDE_LENGTHS
 
 
 def generation_method_for(

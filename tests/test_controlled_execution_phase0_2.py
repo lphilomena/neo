@@ -6,6 +6,7 @@ from pathlib import Path
 
 from neoag.controlled_execution.doctor import run_doctor
 from neoag.controlled_execution.pipeline_runner import run_pipeline_full, plan_pipeline
+from neoag.controlled_execution.manifests import validate_tools_manifest
 from neoag.controlled_execution.release_audit import scan_release_boundary
 
 
@@ -38,6 +39,51 @@ def test_pipeline_full_dry_run_outputs(tmp_path):
     assert (out / "run_manifest.json").is_file()
     assert (out / "pipeline_plan.md").is_file()
     assert any(s.name == "recommendation-ranking" for s in run.steps)
+
+
+def test_tools_manifest_validates_production_crosscheck_requirements():
+    manifest = {
+        "tools": {
+            "facets": {"executable": "runFACETS.R"},
+            "sequenza": {"executable": "sequenza-utils"},
+            "purple": {"executable": "purple"},
+            "lohhla": {"executable": "LOHHLA"},
+            "spechla": {"executable": "SpecHLA.py"},
+        },
+        "production_requirements": {"domains": {
+            "purity_cnv": {
+                "required_tools": ["facets", "sequenza", "purple"],
+                "crosscheck_tools": [],
+                "min_successful_tools": 2,
+            },
+            "hla_loh": {
+                "required_tools": ["lohhla", "spechla"],
+                "crosscheck_tools": [],
+                "min_successful_tools": 2,
+            },
+        }},
+    }
+    rows = validate_tools_manifest(manifest)
+    statuses = {row["field"]: row["status"] for row in rows}
+    assert statuses["production_requirements.domains.purity_cnv"] == "OK"
+    assert statuses["production_requirements.domains.hla_loh"] == "OK"
+
+
+def test_tools_manifest_rejects_undeclared_production_tool():
+    manifest = {
+        "tools": {"lohhla": {"executable": "LOHHLA"}},
+        "production_requirements": {"domains": {
+            "hla_loh": {
+                "required_tools": ["lohhla", "spechla"],
+                "crosscheck_tools": [],
+                "min_successful_tools": 2,
+            },
+        }},
+    }
+    rows = validate_tools_manifest(manifest)
+    status = next(row for row in rows if row["field"] == "production_requirements.domains.hla_loh")
+    assert status["status"] == "FAIL"
+    assert "spechla" in status["message"]
 
 
 def test_release_audit_detects_private_path(tmp_path):

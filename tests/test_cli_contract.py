@@ -16,6 +16,66 @@ def _parse(argv: list[str]):
     return build_parser().parse_args(argv)
 
 
+def test_report_commands_default_to_sarcoma_v3_source_chain_profile():
+    expected = ROOT / "configs" / "ranking" / "sarcoma_evidence_consensus_v3_source_chain.toml"
+    for command in ("report", "report-v041"):
+        args = _parse([
+            command,
+            "--ranked-events", "ranked_events.tsv",
+            "--ranked-peptides", "ranked_peptides.tsv",
+            "--out", "report.html",
+        ])
+        assert Path(args.profile) == expected
+
+
+def test_report_profile_can_still_be_overridden():
+    args = _parse([
+        "report", "--profile", "default",
+        "--ranked-events", "ranked_events.tsv",
+        "--ranked-peptides", "ranked_peptides.tsv",
+        "--out", "report.html",
+    ])
+    assert args.profile == "default"
+
+
+def test_report_accepts_explicit_patient_input_manifest():
+    args = _parse([
+        "report", "--patient-inputs", "patient_inputs.json",
+        "--ranked-events", "ranked_events.tsv",
+        "--ranked-peptides", "ranked_peptides.tsv",
+        "--out", "report.html",
+    ])
+    assert args.patient_inputs == "patient_inputs.json"
+
+
+def test_report_top_limits_have_defaults_and_accept_overrides():
+    required = [
+        "--ranked-events", "ranked_events.tsv",
+        "--ranked-peptides", "ranked_peptides.tsv",
+        "--out", "report.html",
+    ]
+    defaults = _parse(["report", *required])
+    assert defaults.event_top_n == 10
+    assert defaults.candidate_top_n == 50
+    custom = _parse(["report", *required, "--event-top-n", "20", "--candidate-top-n", "100"])
+    assert custom.event_top_n == 20
+    assert custom.candidate_top_n == 100
+
+
+def test_mhc1_high_recall_12mer_flags_are_available():
+    variant = _parse([
+        "extract-variant-peptides", "--input-vcf", "in.vcf", "--output", "out.tsv",
+        "--high-recall-12mer",
+    ])
+    assert variant.high_recall_12mer is True
+    sv = _parse([
+        "sv-build-raw", "--sample-id", "S", "--sv-vcf", "sv.vcf",
+        "--reference-fasta", "ref.fa", "--gencode-gtf", "genes.gtf",
+        "--hla", "hla.txt", "--outdir", "out", "--high-recall-12mer",
+    ])
+    assert sv.high_recall_12mer is True
+
+
 NEXTFLOW_COMMANDS = [
     ["appm-2", "--sample-id", "S", "--profile", "default", "--vep-tsv", "vep.tsv", "--expression", "expr.tsv", "--hla-loh", "hla.tsv", "--cnv", "cnv.tsv", "--raw-peptides", "raw_peptides.tsv", "--tumor-purity", "purity.tsv", "--outdir", "out"],
     ["appm-lite", "--sample-id", "S", "--profile", "default", "--vep-tsv", "vep.tsv", "--expression", "expr.tsv", "--hla-loh", "hla.tsv", "--outdir", "out"],

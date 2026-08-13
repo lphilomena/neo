@@ -7,10 +7,100 @@ policy:
   download_policy: "Network downloads require --allow-download and official/user-approved URLs. License-protected tools are never auto-downloaded from unofficial mirrors."
   path_policy: "New machines should resolve paths through install skill variables and asset manifests, not through old-machine symlinks."
 
+production_requirements:
+  description: "Minimum tool evidence required before a production patient report can be released. Installation alone does not satisfy a run requirement."
+  failure_policy: "A missing required result blocks release. A declared conflict is retained and lowers confidence; it is never silently resolved by choosing one tool."
+  domains:
+    sample_identity:
+      required_tools:
+        - samtools
+        - bam_matcher
+      min_successful_tools: 2
+      applies_when: "paired tumor and normal DNA are available"
+    hla_typing:
+      required_tools:
+        - optitype
+        - spechla
+      crosscheck_tools:
+        - hla_la
+      min_successful_tools: 2
+      applies_when: "no validated external HLA consensus is supplied"
+    purity_cnv:
+      required_tools:
+        - facets
+        - sequenza
+        - purple
+      min_successful_tools: 2
+      consensus_rule: "Use the median only when valid estimates are concordant. Preserve every value and mark purity/CCF LOW_CONFIDENCE when estimates materially disagree."
+      applies_when: "paired tumor and normal DNA are available"
+    hla_loh:
+      required_tools:
+        - lohhla
+        - spechla
+      min_successful_tools: 2
+      consensus_rule: "Compare normalized HLA-I allele-level calls. Retain LOST, RETAINED, UNASSESSED, and DISCORDANT states; never select a preferred tool silently."
+      depends_on:
+        - hla_typing
+        - purity_cnv
+      applies_when: "paired tumor and normal DNA are available"
+    variant_annotation:
+      required_tools:
+        - vep
+      min_successful_tools: 1
+      applies_when: "SNV or InDel input is present"
+    rna_expression:
+      required_tools:
+        - salmon
+      crosscheck_tools:
+        - rsem
+      min_successful_tools: 1
+      applies_when: "short-read RNA-seq is available"
+    fusion:
+      required_tools:
+        - easyfuse
+        - star_fusion
+      crosscheck_tools:
+        - fusioncatcher
+        - arriba
+      min_successful_tools: 2
+      applies_when: "short-read RNA-seq is available"
+    splice:
+      required_tools:
+        - snaf
+        - splicemutr
+      crosscheck_tools:
+        - regtools
+        - pvacsplice
+      min_successful_tools: 2
+      applies_when: "short-read RNA-seq is available"
+    mhc_i_presentation:
+      required_tools:
+        - netmhcpan
+        - mhcflurry
+      min_successful_tools: 2
+      consensus_rule: "Both core predictors must have a result for patient-facing priority candidates."
+      applies_when: "candidate peptides are generated"
+    immunogenicity:
+      required_tools:
+        - prime
+        - bigmhc_im
+      crosscheck_tools:
+        - deepimmuno
+      min_successful_tools: 2
+      applies_when: "candidate peptides are generated"
+    processing_stability:
+      required_tools:
+        - netmhcstabpan
+        - netchop
+      min_successful_tools: 2
+      consensus_rule: "NetMHCstabpan stability and NetChop cleavage results are both required for production candidates; a missing or skipped result blocks production release."
+      applies_when: "candidate peptides are generated"
+
 profiles:
   standard:
     description: "Default production install for SNV/InDel, immunogenicity, HLA LOH, CNV, and fusion smoke tests."
     tools:
+      - samtools
       - pvacseq
       - pvacfuse
       - pvacsplice
@@ -24,6 +114,8 @@ profiles:
       - mixmhcpred
       - bigmhc_im
       - deepimmuno
+      - netmhcstabpan
+      - netchop
       - lohhla
       - facets
       - ascat
@@ -41,6 +133,7 @@ profiles:
       - hla_la
       - sequenza
       - purple
+      - snaf
       - splicemutr
   licensed:
     description: "Tools requiring registration, institutional license, or non-redistributable assets."
@@ -63,6 +156,15 @@ profiles:
       - pvacbind
 
 tools:
+  samtools:
+    category: input_qc
+    executable: samtools
+    env: env.neoag-tools
+    required: true
+    license_required: false
+    distributable: true
+    smoke_command: "samtools --version"
+
   pvacseq:
     category: neoantigen
     executable: pvacseq
@@ -275,10 +377,22 @@ tools:
     container: neoag-netmhcstabpan:1.0-ubuntu22.04
     asset: netmhcstabpan_install
     target_path: ${OPEN_NEO_LICENSED_ROOT}/netMHCstabpan
-    required: false
+    required: true
     license_required: true
     distributable: false
     smoke_command: "netMHCstabpan -h"
+
+  netchop:
+    category: antigen_processing
+    executable: netChop
+    env: env.neoag-mhc
+    asset: netchop_install
+    target_path: ${OPEN_NEO_LICENSED_ROOT}/netchop
+    required: true
+    license_required: true
+    distributable: false
+    smoke_command: "netChop -h"
+    source_policy: "Use the authorized DTU NetChop 3.1d Linux package staged by the institution."
 
   prime:
     category: immunogenicity

@@ -67,6 +67,8 @@ def test_production_runner_merges_all_sources_and_ranks(tmp_path):
     assert result.source_status == "COMPLETE"
     assert set(result.detected_sources) == {"pVACseq", "pVACfuse", "pVACsplice"}
     assert (tmp_path / "run/final/scoring/ranked_peptides.tsv").is_file()
+    assert (tmp_path / "run/final/reports/evidence_report.patient.html").is_file()
+    assert (tmp_path / "run/final/reports/evidence_report.technical.html").is_file()
     coverage = read_tsv(tmp_path / "run/peptide_source_coverage.tsv")[0]
     assert coverage["status"] == "COMPLETE"
 
@@ -128,3 +130,33 @@ def test_production_runner_reuses_declared_outputs(tmp_path):
     assert result.stages[0].status == "REUSED"
     assert result.stages[-1].status == "SKIPPED"
     assert (tmp_path / "run/merged/raw_peptides.tsv").is_file()
+
+
+def test_production_runner_blocks_incomplete_cross_tool_group(tmp_path):
+    hla = tmp_path / "hla.txt"; hla.write_text("HLA-A*02:01\n")
+    result_file = tmp_path / "result.tsv"; result_file.write_text("status\nPASS\n")
+    manifest = tmp_path / "gate.toml"
+    manifest.write_text(f'''[run]
+sample_id = "GATE"
+hla_file = "{hla}"
+
+[run.required_tool_groups.purity_cnv]
+tools = ["facets", "sequenza", "purple"]
+min_successful = 2
+require_all_declared = true
+
+[stages.purity_facets]
+required = false
+[stages.purity_facets.outputs]
+facets_result = "{result_file}"
+
+[stages.purity_sequenza]
+required = false
+[stages.purity_sequenza.outputs]
+sequenza_result = "{result_file}"
+''')
+    result = run_production(manifest, outdir=tmp_path / "run", project_root=ROOT, execute=True)
+    assert result.status == "BLOCKED"
+    gate = read_tsv(tmp_path / "run/production_release_gate.tsv")[0]
+    assert gate["status"] == "FAIL"
+    assert "purple" in gate["reason"]

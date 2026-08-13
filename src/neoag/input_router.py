@@ -12,7 +12,7 @@ from .adapters.easyfuse_variant_peptide import (
     resolve_easyfuse_peptide_config,
     write_easyfuse_qc_tables,
 )
-from .vep.extract_peptides import parse_peptide_lengths
+from .vep.extract_peptides import resolve_mhc1_peptide_lengths
 from .adapters.event_catalog import parse_fusion_catalog, parse_splice_catalog, write_event_catalog
 from .adapters.peptide_input import build_raw_events_from_peptides, convert_peptide_input
 from .adapters.pvactools_parser import parse_pvactools_outputs
@@ -75,7 +75,12 @@ def _ingest_fusion_table(
     if is_easyfuse_table(fusion_path):
         cfg = cfg or {}
         inputs = cfg.get("inputs") or {}
-        lengths = parse_peptide_lengths(str(inputs.get("variant_peptide_lengths", "8,9,10,11")))
+        lengths = resolve_mhc1_peptide_lengths(
+            str(inputs.get("variant_peptide_lengths") or inputs.get("peptide_lengths") or ""),
+            length_min=inputs.get("variant_peptide_length_min"),
+            length_max=inputs.get("variant_peptide_length_max"),
+            high_recall_12mer=bool(inputs.get("mhc1_high_recall_12mer", False)),
+        )
         result = build_easyfuse_catalog(
             fusion_path,
             sample_id,

@@ -350,6 +350,7 @@ def build_sv_phase1_raw(
     capture_bed: str | Path | None = None,
     capture_near_bp: int = 250,
     capture_slop_bp: int = 1000,
+    peptide_lengths: tuple[int, ...] = (8, 9, 10, 11),
 ) -> dict[str, str]:
     outdir = Path(outdir)
     parsed_dir = outdir / "parsed"
@@ -418,7 +419,9 @@ def build_sv_phase1_raw(
             validation_designs.append(design)
         raw_event = _raw_event_from_sv(svrow, protein, expr, normal_expr, profile_name)
         raw_events.append(raw_event)
-        cands = build_mhc1_peptides([protein], hla_alleles, normal_ligands=normal_ligands)
+        cands = build_mhc1_peptides(
+            [protein], hla_alleles, lengths=peptide_lengths, normal_ligands=normal_ligands,
+        )
         sidecar_peptides.extend(cands)
         gene_label = raw_event["gene"]
         for cand in cands:
@@ -448,6 +451,7 @@ def build_sv_phase1_raw(
         "reference_fasta": str(reference_fasta),
         "gencode_gtf": str(gencode_gtf),
         "hla_alleles": hla_alleles,
+        "mhc1_peptide_lengths": list(peptide_lengths),
         "records_parsed": len(records),
         "clusters": len(clusters),
         "sv_events_written": len(sv_rows),

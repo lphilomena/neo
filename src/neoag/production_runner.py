@@ -85,6 +85,49 @@ def _outputs_ready(outputs: dict[str, Any]) -> bool:
     return bool(paths) and all(path.exists() for path in paths)
 
 
+def _tool_group_audit(requirements, stages, results, output):
+    """Audit cross-tool production requirements against sample outputs."""
+    by_name = {row.name: row for row in results}
+    rows = []
+    passed = True
+    for domain, raw_rule in requirements.items():
+        rule = raw_rule if isinstance(raw_rule, dict) else {}
+        tools = [str(value) for value in rule.get("tools", [])]
+        minimum = int(rule.get("min_successful", len(tools)))
+        successful, declared = [], []
+        for tool in tools:
+            key = tool.lower().replace("-", "_")
+            matches = []
+            for name, spec in stages.items():
+                result = by_name.get(name)
+                if not result:
+                    continue
+                configured = str(spec.get("tool") or "").lower().replace("-", "_")
+                output_keys = {str(value).lower().replace("-", "_") for value in result.outputs}
+                if configured == key or key in name.lower().replace("-", "_") or any(key in value for value in output_keys):
+                    matches.append(result)
+            if matches:
+                declared.append(tool)
+            for result in matches:
+                if result.status not in {"PASS", "REUSED"}:
+                    continue
+                matching = {name: value for name, value in result.outputs.items() if key in str(name).lower().replace("-", "_")}
+                if _outputs_ready(matching or result.outputs):
+                    successful.append(tool)
+                    break
+        reasons = []
+        undeclared = [tool for tool in tools if tool not in declared]
+        if bool(rule.get("require_all_declared", True)) and undeclared:
+            reasons.append("undeclared=" + ",".join(undeclared))
+        if len(successful) < minimum:
+            reasons.append(f"successful={len(successful)}<{minimum}")
+        status = "FAIL" if reasons else "PASS"
+        passed = passed and status == "PASS"
+        rows.append({"domain": str(domain), "status": status, "required_tools": ",".join(tools), "declared_tools": ",".join(declared), "successful_tools": ",".join(successful), "min_successful": str(minimum), "reason": "; ".join(reasons) or "cross-tool requirement satisfied"})
+    write_tsv(output, rows, ["domain", "status", "required_tools", "declared_tools", "successful_tools", "min_successful", "reason"])
+    return passed, rows
+
+
 def _ordered_stages(stages: dict[str, dict[str, Any]]) -> list[str]:
     ordered: list[str] = []
     visiting: set[str] = set()
@@ -354,6 +397,8 @@ def _write_final_config(
     allowed_evidence = {
         "vep_appm",
         "expression",
+        "transcript_expression",
+        "rna_vaf",
         "rna_junction_tsv",
         "hla_loh",
         "purity",
@@ -364,6 +409,8 @@ def _write_final_config(
         "normal_junctions",
         "netmhcpan",
         "mhcflurry",
+        "netmhcstabpan",
+        "netchop",
     }
     for key, value in evidence.items():
         if key in allowed_evidence and value and Path(str(value)).exists():
@@ -449,6 +496,17 @@ def run_production(
         _write_result(result, run_outdir)
         return result
 
+    requirements = expanded_run.get("required_tool_groups") or {}
+    if requirements:
+        gate_path = run_outdir / "production_release_gate.tsv"
+        gate_ok, gate_rows = _tool_group_audit(requirements, stage_specs, stage_results, gate_path)
+        gate = StageResult("production_release_gate", "PASS" if gate_ok else "FAILED", True, outputs={"release_gate": str(gate_path)}, message="" if gate_ok else "; ".join(f"{row['domain']}:{row['reason']}" for row in gate_rows if row["status"] == "FAIL"))
+        stage_results.append(gate)
+        if not gate_ok:
+            result = ProductionResult(sample_id, "BLOCKED", str(run_outdir), False, stage_results)
+            _write_result(result, run_outdir)
+            return result
+
     normalized_dir = run_outdir / "normalized_sources"
     all_events: list[dict[str, str]] = []
     all_peptides: list[dict[str, str]] = []
@@ -533,6 +591,28 @@ def run_production(
 
     enabled_predictors = [str(tool) for tool in (expanded_run.get("presentation_predictors") or ["netmhcpan", "mhcflurry"])]
     required_predictors = [str(tool) for tool in (expanded_run.get("required_presentation_predictors") or enabled_predictors)]
+    if "netchop" in enabled_predictors:
+        netchop_path = Path(str(expanded_evidence.get("netchop") or run_outdir / "processing/netchop_evidence.tsv"))
+        if netchop_path.is_file() and not force:
+            netchop_stage = StageResult("netchop_processing", "REUSED", "netchop" in required_predictors, outputs={"netchop": str(netchop_path)})
+        else:
+            binary = str(expanded_run.get("netchop_executable") or os.environ.get("NEOAG_NETCHOP_BIN") or "netChop")
+            home = str(expanded_run.get("netchop_home") or os.environ.get("NETCHOP_HOME") or "")
+            command = [sys.executable, str(root / "scripts/run_netchop_evidence.py"), "--raw-peptides", str(merged_peptides), "--output", str(netchop_path), "--binary", binary]
+            if home:
+                command += ["--home", home]
+            proc = subprocess.run(command, cwd=root, text=True, capture_output=True)
+            log_path = logs_dir / "netchop_processing.log"
+            logs_dir.mkdir(parents=True, exist_ok=True)
+            log_path.write_text(proc.stdout + ("\n--- STDERR ---\n" if proc.stderr else "") + proc.stderr, encoding="utf-8")
+            ok = proc.returncode == 0 and netchop_path.is_file()
+            netchop_stage = StageResult("netchop_processing", "PASS" if ok else "FAILED", "netchop" in required_predictors, command=shlex.join(command), log=str(log_path), outputs={"netchop": str(netchop_path)}, message="" if ok else f"NetChop returned {proc.returncode}")
+        stage_results.append(netchop_stage)
+        if netchop_stage.required and netchop_stage.status == "FAILED":
+            result = ProductionResult(sample_id, "BLOCKED", str(run_outdir), False, stage_results)
+            _write_result(result, run_outdir)
+            return result
+        expanded_evidence["netchop"] = str(netchop_path)
     tools_stub = bool(expanded_run.get("tools_stub", False))
     immunogenicity_stub = bool(expanded_run.get("immunogenicity_stub", False))
     config_path = run_outdir / "run.production.generated.toml"
@@ -558,7 +638,7 @@ def run_production(
             f"source {shlex.quote(str(root / 'conf/tools.env.sh'))}; "
             f"{shlex.quote(sys.executable)} -m neoag.cli run-full "
             f"--config {shlex.quote(str(config_path))} --outdir {shlex.quote(str(final_outdir))} "
-            f"--reports technical"
+            f"--reports {shlex.quote(str(expanded_run.get('reports') or 'patient,technical'))}"
         )
         log_path = logs_dir / "unified_ranking.log"
         proc = subprocess.run(["bash", "-lc", command], cwd=root, text=True, capture_output=True)

@@ -12,6 +12,7 @@ ARCHIVE="${NEOAG_SPLICEMUTR_ARCHIVE:-${TOOLS_ROOT}/sources/SpliceMutr-${REF}.tar
 GENOMEINFO_ARCHIVE="${NEOAG_GENOMEINFODBDATA_ARCHIVE:-${TOOLS_ROOT}/sources/GenomeInfoDbData_1.2.11.tar.gz}"
 GENOMEINFO_URL="${NEOAG_GENOMEINFODBDATA_URL:-https://mghp.osn.xsede.org/bir190004-bucket01/archive.bioconductor.org/packages/3.18/data/annotation/src/contrib/GenomeInfoDbData_1.2.11.tar.gz}"
 GENOMEINFO_MD5="2a4cbfc2031992fed3c9445f450890a2"
+BSGENOME_PACKAGE="${NEOAG_SPLICEMUTR_BSGENOME_PACKAGE:-${NEOAG_REFERENCE_ROOT:-/opt/neoag/refs}/data/splice/splicemutr/r_library/BSgenome.Hsapiens.UCSC.hg38}"
 HOME_DIR="${NEOAG_SPLICEMUTR_HOME:-${TOOLS_ROOT}/tools/SpliceMutr}"
 YML="${ROOT}/conda/env.neoag-splicemutr.yml"
 BIN_DIR="${ROOT}/bin"
@@ -111,6 +112,17 @@ else
   "${CONDA_RUNNER}" env create -n "${ENV_NAME}" -f "${YML}" -y
 fi
 
+R_LIBRARY="$(conda_safe run -n "${ENV_NAME}" Rscript -e 'cat(.libPaths()[1])')"
+if ! conda_safe run -n "${ENV_NAME}" Rscript -e 'stopifnot(nzchar(system.file(package="BSgenome.Hsapiens.UCSC.hg38")))' >/dev/null 2>&1; then
+  [[ -f "${BSGENOME_PACKAGE}/DESCRIPTION" ]] || {
+    echo "ERROR: synchronized BSgenome.Hsapiens.UCSC.hg38 asset missing: ${BSGENOME_PACKAGE}" >&2
+    exit 45
+  }
+  mkdir -p "${R_LIBRARY}/BSgenome.Hsapiens.UCSC.hg38"
+  rsync -a "${BSGENOME_PACKAGE}/" "${R_LIBRARY}/BSgenome.Hsapiens.UCSC.hg38/"
+fi
+conda_safe run -n "${ENV_NAME}" Rscript -e 'p <- system.file(package="BSgenome.Hsapiens.UCSC.hg38"); d <- read.dcf(file.path(p, "DESCRIPTION")); stopifnot(d[1,"genome"] == "hg38", file.exists(file.path(p, "extdata", "single_sequences.2bit"))); cat("SpliceMutr hg38 BSgenome", d[1,"Version"], "OK\n")'
+
 mkdir -p "$(dirname "${ARCHIVE}")" "$(dirname "${HOME_DIR}")" "${BIN_DIR}" "${ROOT}/conf"
 if [[ ! -s "${ARCHIVE}" ]]; then
   command -v curl >/dev/null 2>&1 || { echo "ERROR: curl is required to download SpliceMutr" >&2; exit 43; }
@@ -144,7 +156,7 @@ case "\${1:-doctor}" in
   doctor)
     test -f "\${HOME_DIR}/NEOAG_PINNED_REF"
     "\${CONDA}" run -n "\${ENV_NAME}" python -c 'import Bio, numpy, pandas, sklearn; print("SpliceMutr Python runtime OK")'
-    "\${CONDA}" run -n "\${ENV_NAME}" Rscript -e 'suppressPackageStartupMessages({library(BSgenome); library(GenomicFeatures); library(optparse)}); cat("SpliceMutr R runtime OK\\n")'
+    "\${CONDA}" run -n "\${ENV_NAME}" Rscript -e 'suppressPackageStartupMessages({library(BSgenome); library(GenomicFeatures); library(optparse)}); p <- system.file(package="BSgenome.Hsapiens.UCSC.hg38"); d <- read.dcf(file.path(p, "DESCRIPTION")); stopifnot(d[1,"genome"] == "hg38", file.exists(file.path(p, "extdata", "single_sequences.2bit"))); cat("SpliceMutr R runtime OK\\n")'
     "\${CONDA}" run -n "\${ENV_NAME}" snakemake --version
     ;;
   workflow)
@@ -177,7 +189,7 @@ for assignment in \
   "NEOAG_SPLICEMUTR_ENV=${ENV_NAME}" \
   "NEOAG_SPLICEMUTR_HOME=${HOME_DIR}" \
   "NEOAG_SPLICEMUTR_BIN=${BIN_DIR}/splicemutr-neoag" \
-+  "SPLICEMUTR_WORKFLOW=${HOME_DIR}/simulation/running_splicemutr/run_splicemutr.smk"; do
+  "SPLICEMUTR_WORKFLOW=${HOME_DIR}/simulation/running_splicemutr/run_splicemutr.smk"; do
   key="${assignment%%=*}"; value="${assignment#*=}"
   if grep -q "^export ${key}=" "${TOOLS_ENV}" 2>/dev/null; then
     sed -i "s|^export ${key}=.*|export ${key}=\"${value}\"|" "${TOOLS_ENV}"
@@ -189,4 +201,4 @@ done
 echo "==> SpliceMutr smoke"
 "${BIN_DIR}/splicemutr-neoag" doctor
 echo "==> SpliceMutr installed at ${HOME_DIR} (${REF})"
-echo "NOTE: a genome-specific BSgenome package/2bit, GTF/TxDb, STAR index, and cohort junction inputs are runtime assets."
+echo "NOTE: hg38 BSgenome was validated; GTF/TxDb, STAR index, and cohort junction inputs remain runtime assets."

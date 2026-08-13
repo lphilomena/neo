@@ -330,10 +330,15 @@ def run_upstream(config_path: str | Path, outdir: str | Path | None = None) -> d
         run_tool("netmhcstabpan", ctx, p)
         outputs["netmhcstabpan"] = str(p)
 
+    cached_netchop = _path_or_none(_cfg_get(cfg, "inputs", "netchop"))
+    if cached_netchop and cached_netchop.is_file():
+        outputs["netchop"] = str(cached_netchop)
+
     for tool_key, input_key in (
         ("netmhcpan", "netmhcpan"),
         ("mhcflurry", "mhcflurry"),
         ("netmhcstabpan", "netmhcstabpan"),
+        ("netchop", "netchop"),
     ):
         if tool_key in outputs:
             continue

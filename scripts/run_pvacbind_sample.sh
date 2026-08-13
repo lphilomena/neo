@@ -22,6 +22,7 @@ Options:
   --algorithms LIST            Comma-separated algorithms (default: MHCflurry)
   --threads N                  Prediction threads (default: 4)
   --class-i-lengths LIST       Default: 8,9,10,11
+  --high-recall-12mer          Use 8,9,10,11,12 unless --class-i-lengths is explicit
   --class-ii-lengths LIST      Default: 12,13,14,15,16,17,18
   --iedb-install-directory DIR Local IEDB installation
   --reference-proteome FASTA   Enable pVACbind reference-proteome similarity
@@ -38,6 +39,7 @@ FASTA=""; SAMPLE_ID=""; HLA=""; HLA_FILE=""; OUTDIR=""
 ALGORITHMS="${NEOAG_PVACBIND_ALGORITHMS:-MHCflurry}"
 THREADS="${NEOAG_PVACBIND_THREADS:-4}"
 CLASS_I_LENGTHS="${NEOAG_PVACBIND_CLASS_I_LENGTHS:-8,9,10,11}"
+CLASS_I_LENGTHS_EXPLICIT=0
 CLASS_II_LENGTHS="${NEOAG_PVACBIND_CLASS_II_LENGTHS:-12,13,14,15,16,17,18}"
 IEDB_DIR=""; REFERENCE_PROTEOME=""; PVACBIND_BIN="${NEOAG_PVACBIND_BIN:-}"
 EXTRA_ARGS=()
@@ -50,7 +52,8 @@ while [[ $# -gt 0 ]]; do
     --outdir) OUTDIR="$2"; shift 2 ;;
     --algorithms) ALGORITHMS="$2"; shift 2 ;;
     --threads) THREADS="$2"; shift 2 ;;
-    --class-i-lengths) CLASS_I_LENGTHS="$2"; shift 2 ;;
+    --class-i-lengths) CLASS_I_LENGTHS="$2"; CLASS_I_LENGTHS_EXPLICIT=1; shift 2 ;;
+    --high-recall-12mer) [[ "$CLASS_I_LENGTHS_EXPLICIT" -eq 1 ]] || CLASS_I_LENGTHS="8,9,10,11,12"; shift ;;
     --class-ii-lengths) CLASS_II_LENGTHS="$2"; shift 2 ;;
     --iedb-install-directory) IEDB_DIR="$2"; shift 2 ;;
     --reference-proteome) REFERENCE_PROTEOME="$2"; shift 2 ;;
@@ -107,13 +110,13 @@ LIST="$OUTDIR/pvacbind_all_epitopes.list"
 find "$OUTDIR" -type f -name '*.all_epitopes.tsv' ! -name '*.aggregated.tsv' -print | LC_ALL=C sort > "$LIST"
 [[ -s "$LIST" ]] || { echo "ERROR: pVACbind completed but no *.all_epitopes.tsv was found" >&2; exit 4; }
 
-python - "$FASTA" "$SAMPLE_ID" "$HLA" "$ALGORITHMS" "$OUTDIR" "$PVACBIND_BIN" "$LIST" <<'PY'
+python - "$FASTA" "$SAMPLE_ID" "$HLA" "$ALGORITHMS" "$OUTDIR" "$PVACBIND_BIN" "$LIST" "$CLASS_I_LENGTHS" "$CLASS_II_LENGTHS" <<'PY'
 from __future__ import annotations
 import hashlib, json, subprocess, sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-fasta, sample, hla, algorithms, outdir, executable, list_path = sys.argv[1:]
+fasta, sample, hla, algorithms, outdir, executable, list_path, class_i_lengths, class_ii_lengths = sys.argv[1:]
 def sha(path: Path) -> str:
     h = hashlib.sha256()
     with path.open('rb') as fh:
@@ -131,6 +134,8 @@ payload = {
     'sample_id': sample,
     'hla_alleles': hla.split(','),
     'algorithms': [x for x in algorithms.split(',') if x],
+    'mhc1_peptide_lengths': [int(x) for x in class_i_lengths.split(',') if x],
+    'mhc2_peptide_lengths': [int(x) for x in class_ii_lengths.split(',') if x],
     'executable': executable,
     'version': version or 'UNASSESSED',
     'input_fasta': {'path': str(Path(fasta).resolve()), 'sha256': sha(Path(fasta))},

@@ -214,3 +214,9 @@ if [[ -n "${OPTITYPE_ENV:-}" && -x "${OPTITYPE_ENV}/bin/optitype" ]]; then
   export OPTITYPE_REFERENCE="${OPTITYPE_ENV}/share/optitype/data"
   export PATH="${OPTITYPE_ENV}/bin:${PATH}"
 fi
+
+# NetChop 3.1d
+export NETCHOP_HOME="/root/neo/licensed_tools/netchop/netchop-3.1"
+export NETCHOP="/root/neo/licensed_tools/netchop/netchop-3.1/Linux_x86_64"
+export NETCHOP_BIN="/root/neo/env_tool/bin/netChop"
+export PATH="/root/neo/env_tool/bin:${PATH}"

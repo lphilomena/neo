@@ -23,6 +23,7 @@ INSTALL_IMMUNOGENICITY=0
 INSTALL_DEEPIMMUNO=0
 INSTALL_SHERPA=0
 INSTALL_NETMHCSTABPAN=0
+INSTALL_NETCHOP=0
 INSTALL_LOHHLA=0
 INSTALL_POLYSOLVER=0
 INSTALL_OPTITYPE=0
@@ -73,6 +74,7 @@ MIXMHCPRED_URL=""
 NETMHCSTABPAN_DIR=""
 NETMHCSTABPAN_ARCHIVE=""
 NETMHCSTABPAN_URL=""
+NETCHOP_ARCHIVE=""
 POLYSOLVER_HOME_ARG=""
 NOVOALIGN_LICENSE_FILE_ARG=""
 DEEPIMMUNO_SOURCE=""
@@ -119,7 +121,8 @@ Tool groups:
   --immunogenicity           PRIME + MixMHCpred + BigMHC via scripts/install_immunogenicity_tools.sh
   --deepimmuno               DeepImmuno via scripts/install_deepimmuno.sh
   --sherpa                   Register/install SHERPA-Presentation from a local authorized source/archive/container
-  --netmhcstabpan            NetMHCstabpan or IEDB shim via scripts/install_netmhcstabpan.sh (explicit opt-in; skipped by --all/--all-open)
+  --netmhcstabpan            NetMHCstabpan or IEDB shim via scripts/install_netmhcstabpan.sh (included by --all/--all-open)
+  --netchop                  NetChop 3.1d from an authorized local/synchronized archive (included by --all/--all-open)
   --lohhla                   LOHHLA source wrapper via scripts/install_lohhla.sh
   --polysolver               Configure existing Polysolver; requires --polysolver-home
   --optitype                 OptiType via scripts/install_optitype.sh
@@ -140,8 +143,8 @@ Tool groups:
   --claude-code-channel V    stable, latest, or exact X.Y.Z version (default: stable)
   --claude-code-installer-url URL
                               Override only with an explicitly approved official URL
-  --all-open                 Install open/conda/git tools except very large VEP cache, licensed packages, and NetMHCstabpan
-  --all                      Install supported default groups, including VEP cache; NetMHCstabpan remains explicit opt-in
+  --all-open                 Install open/conda/git tools except very large VEP cache and other licensed packages; includes the approved NetMHCstabpan installer/shim
+  --all                      Install supported default groups, including VEP cache and NetMHCstabpan
   --verify                   Run scripts/verify_all_tools_and_refs.sh after installs
   --strict-verify            Treat optional missing tools as failure during verify
   --run-real-vcf-smoke       Run an explicitly configured real VCF top-N smoke test
@@ -172,6 +175,7 @@ Licensed/restricted source options:
   --netmhcstabpan-dir DIR    Existing NetMHCstabpan directory to copy
   --netmhcstabpan-archive FILE
   --netmhcstabpan-url URL    Approved NetMHCstabpan archive URL
+  --netchop-archive FILE     Authorized netchop-3.1d.Linux.tar.gz
   --polysolver-home DIR      Existing Polysolver distribution
   --novoalign-license-file FILE
   --deepimmuno-source DIR    Existing DeepImmuno checkout; otherwise script clones official repo
@@ -226,6 +230,7 @@ while [[ $# -gt 0 ]]; do
     --deepimmuno) INSTALL_DEEPIMMUNO=1; shift ;;
     --sherpa) INSTALL_SHERPA=1; shift ;;
     --netmhcstabpan) INSTALL_NETMHCSTABPAN=1; shift ;;
+    --netchop) INSTALL_NETCHOP=1; shift ;;
     --lohhla) INSTALL_LOHHLA=1; shift ;;
     --polysolver) INSTALL_POLYSOLVER=1; shift ;;
     --optitype) INSTALL_OPTITYPE=1; shift ;;
@@ -247,14 +252,14 @@ while [[ $# -gt 0 ]]; do
     --claude-code-installer-url) CLAUDE_CODE_INSTALLER_URL="$2"; INSTALL_CLAUDE_CODE=1; shift 2 ;;
     --all-open)
       INSTALL_CORE_ENV=1; INSTALL_VEP=1; INSTALL_GATK=1; INSTALL_RNA_EXPRESSION=1; INSTALL_IMMUNOGENICITY=1
-      INSTALL_DEEPIMMUNO=1; INSTALL_LOHHLA=1
+      INSTALL_DEEPIMMUNO=1; INSTALL_NETMHCSTABPAN=1; INSTALL_NETCHOP=1; INSTALL_LOHHLA=1
       INSTALL_OPTITYPE=1; INSTALL_BAM_MATCHER=1; INSTALL_FACETS=1; INSTALL_ASCAT_PYCLONE=1; INSTALL_FUSION=1; INSTALL_SPLICE=1
       INSTALL_SPECHLA=1; INSTALL_HLALA=1; INSTALL_SEQUENZA=1; INSTALL_HMF_PURPLE=1
       SKIP_TORCH_INSTALL=0
       shift ;;
     --all)
       INSTALL_CORE_ENV=1; INSTALL_VEP=1; INSTALL_VEP_CACHE=1; INSTALL_GATK=1; INSTALL_RNA_EXPRESSION=1; INSTALL_IMMUNOGENICITY=1
-      INSTALL_DEEPIMMUNO=1; INSTALL_LOHHLA=1
+      INSTALL_DEEPIMMUNO=1; INSTALL_NETMHCSTABPAN=1; INSTALL_NETCHOP=1; INSTALL_LOHHLA=1
       INSTALL_OPTITYPE=1; INSTALL_BAM_MATCHER=1; INSTALL_FACETS=1; INSTALL_ASCAT_PYCLONE=1; INSTALL_FUSION=1; INSTALL_SPLICE=1
       INSTALL_SPECHLA=1; INSTALL_HLALA=1; INSTALL_SEQUENZA=1; INSTALL_HMF_PURPLE=1
       SKIP_TORCH_INSTALL=0
@@ -286,6 +291,7 @@ while [[ $# -gt 0 ]]; do
     --netmhcstabpan-dir) NETMHCSTABPAN_DIR="$2"; shift 2 ;;
     --netmhcstabpan-archive) NETMHCSTABPAN_ARCHIVE="$2"; shift 2 ;;
     --netmhcstabpan-url) NETMHCSTABPAN_URL="$2"; shift 2 ;;
+    --netchop-archive) NETCHOP_ARCHIVE="$2"; INSTALL_NETCHOP=1; shift 2 ;;
     --polysolver-home) POLYSOLVER_HOME_ARG="$2"; shift 2 ;;
     --novoalign-license-file) NOVOALIGN_LICENSE_FILE_ARG="$2"; shift 2 ;;
     --deepimmuno-source) DEEPIMMUNO_SOURCE="$2"; shift 2 ;;
@@ -765,13 +771,14 @@ install_miniforge_if_needed() {
 cd "$PROJECT_ROOT"
 [[ -f "pyproject.toml" || -f "setup.py" ]] || { echo "PROJECT_ROOT_INVALID: $PROJECT_ROOT" >&2; exit 30; }
 
-if [[ "$INSTALL_CORE_ENV$INSTALL_VEP$INSTALL_GATK$INSTALL_RNA_EXPRESSION$INSTALL_IMMUNOGENICITY$INSTALL_DEEPIMMUNO$INSTALL_SHERPA$INSTALL_NETMHCSTABPAN$INSTALL_LOHHLA$INSTALL_POLYSOLVER$INSTALL_OPTITYPE$INSTALL_BAM_MATCHER$INSTALL_FACETS$INSTALL_ASCAT_PYCLONE$INSTALL_FUSION$INSTALL_SPLICE$INSTALL_SPECHLA$INSTALL_HLALA$INSTALL_SEQUENZA$INSTALL_HMF_PURPLE" =~ 1 ]]; then
+if [[ "$INSTALL_CORE_ENV$INSTALL_VEP$INSTALL_GATK$INSTALL_RNA_EXPRESSION$INSTALL_IMMUNOGENICITY$INSTALL_DEEPIMMUNO$INSTALL_SHERPA$INSTALL_NETMHCSTABPAN$INSTALL_NETCHOP$INSTALL_LOHHLA$INSTALL_POLYSOLVER$INSTALL_OPTITYPE$INSTALL_BAM_MATCHER$INSTALL_FACETS$INSTALL_ASCAT_PYCLONE$INSTALL_FUSION$INSTALL_SPLICE$INSTALL_SPECHLA$INSTALL_HLALA$INSTALL_SEQUENZA$INSTALL_HMF_PURPLE" =~ 1 ]]; then
   install_miniforge_if_needed
   export NEOAG_CONDA_BASE="$CONDA_BASE"
   export PATH="$CONDA_BASE/bin:$PATH"
 fi
 
 export NEOAG_TOOLS_ROOT="$TOOLS_ROOT"
+export NEOAG_REFERENCE_ROOT="$REFERENCE_ROOT"
 export NEOAG_REF_BUNDLE="$REFERENCE_ROOT"
 if [[ -f "$REFERENCE_ROOT/data/normal/junctions/normal_junctions.GRCh38.tsv.gz" ]]; then
   export NEOAG_NORMAL_JUNCTIONS="$REFERENCE_ROOT/data/normal/junctions/normal_junctions.GRCh38.tsv.gz"
@@ -855,6 +862,11 @@ IMMUNO_PYTHON="${CONDA_BASE}/envs/neoag-tools/bin/python"
 [[ "$INSTALL_IMMUNOGENICITY" == "1" ]] && run "install PRIME/MixMHCpred/BigMHC" env NEOAG_SKIP_TORCH_INSTALL="$SKIP_TORCH_INSTALL" NEOAG_IMMUNO_PYTHON="$IMMUNO_PYTHON" bash scripts/install_immunogenicity_tools.sh
 ensure_bigmhc_torch_runtime
 register_netmhcstabpan_if_requested
+if [[ "$INSTALL_NETCHOP" == "1" ]]; then
+  [[ -n "$NETCHOP_ARCHIVE" ]] || NETCHOP_ARCHIVE="$LICENSED_ROOT/netchop/netchop-3.1d.Linux.tar.gz"
+  [[ -f "$NETCHOP_ARCHIVE" ]] || { echo "NETCHOP_ARCHIVE_MISSING: $NETCHOP_ARCHIVE" >&2; exit 46; }
+  run "install NetChop 3.1d" bash scripts/install_netchop.sh "$NETCHOP_ARCHIVE"
+fi
 install_sherpa_if_requested
 if [[ "$INSTALL_DEEPIMMUNO" == "1" ]]; then
   if [[ -z "$DEEPIMMUNO_SOURCE" && -f "$TOOLS_ROOT/tools/DeepImmuno/deepimmuno-cnn.py" ]]; then
@@ -962,7 +974,7 @@ fi
   for item in \
     "core-env:$INSTALL_CORE_ENV" "core-env-lite:$CORE_ENV_LITE" "skip-torch-install:$SKIP_TORCH_INSTALL" "vep:$INSTALL_VEP" "vep-cache:$INSTALL_VEP_CACHE" "vep-version:$VEP_VERSION" \
     "gatk:$INSTALL_GATK" "rna-expression:$INSTALL_RNA_EXPRESSION" "immunogenicity:$INSTALL_IMMUNOGENICITY" \
-    "netmhcstabpan:$INSTALL_NETMHCSTABPAN" "deepimmuno:$INSTALL_DEEPIMMUNO" "sherpa:$INSTALL_SHERPA" \
+    "netmhcstabpan:$INSTALL_NETMHCSTABPAN" "netchop:$INSTALL_NETCHOP" "deepimmuno:$INSTALL_DEEPIMMUNO" "sherpa:$INSTALL_SHERPA" \
     "lohhla:$INSTALL_LOHHLA" "polysolver:$INSTALL_POLYSOLVER" "optitype:$INSTALL_OPTITYPE" "bam-matcher:$INSTALL_BAM_MATCHER" \
     "facets:$INSTALL_FACETS" "ascat-pyclone:$INSTALL_ASCAT_PYCLONE" "fusion:$INSTALL_FUSION" "splice:$INSTALL_SPLICE" \
     "spechla:$INSTALL_SPECHLA" "hla-la:$INSTALL_HLALA" "sequenza:$INSTALL_SEQUENZA" "hmf-purple:$INSTALL_HMF_PURPLE" \

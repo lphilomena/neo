@@ -383,6 +383,35 @@ Use this path when you have a somatic SNV/InDel VCF and want to generate mutant 
 
 If the VCF already contains VEP `CSQ` annotations, the pipeline uses it directly. If `CSQ` is missing, `run-full` will run VEP annotation first when VEP, cache, reference FASTA, and plugins are configured.
 
+MHC-I short-peptide generation defaults to `8,9,10,11` for SNV/InDel, fusion,
+splice, and reconstructed SV events. To add 12-mers as a secondary high-recall
+layer without changing the default, set the shared run-config switch:
+
+```toml
+[inputs]
+mhc1_high_recall_12mer = true
+```
+
+Explicit `variant_peptide_lengths` or CLI length lists take precedence. For
+standalone commands use `--high-recall-12mer`, for example:
+
+```bash
+neoag extract-variant-peptides \
+  --input-vcf sample.vep.vcf.gz --output variant_peptides.tsv \
+  --high-recall-12mer
+neoag sv-build-raw \
+  --sample-id SAMPLE --sv-vcf sample.sv.vcf.gz \
+  --reference-fasta GRCh38.fa --gencode-gtf gencode.gtf \
+  --hla hla.txt --outdir results/sv --high-recall-12mer
+bash scripts/run_pvacbind_sample.sh ... --high-recall-12mer
+python scripts/build_longrna_unique_splice_peptides.py ... --high-recall-12mer
+```
+
+SNAF-native peptide lengths remain tool-defined. NeoAg-generated 12-mer splice
+candidates are recorded as downstream junction/ORF translation and must not be
+described as native SNAF 12-mer output. Run manifests record the actual MHC-I
+length list used.
+
 ```bash
 cat > conf/run.sliding.private.toml <<'TOML'
 [sample]
@@ -613,7 +642,7 @@ Tools are optional for the fixture demo but required by specific real-data modes
 | pVACtools (`pvacseq`, `pvacfuse`, `pvacsplice`) | Upstream SNV/fusion/splice candidate generation | Optional unless using pVAC upstream modes | `bash scripts/setup_tools_env.sh` | `NEOAG_PVAC_DOCKER`, `NEOAG_PVAC_WORKDIR` | `neoag check-tools` |
 | NetMHCpan 4.2 | Binding/presentation prediction | Required for real local NetMHCpan runs unless using fallback/stub | `bash scripts/install_netmhcpan.sh /path/to/netMHCpan-4.2*.tar.gz` | `NETMHCPAN_HOME`, `NETMHCpan`, `NEOAG_NETMHCPAN_BIN`, `NEOAG_NETMHCPAN_BACKEND` | `neoag check-tools` |
 | MHCflurry | Binding/presentation prediction | Optional alternative/complement to NetMHCpan | `bash scripts/setup_tools_env.sh`; then `mhcflurry-downloads fetch` if needed | `NEOAG_CONDA_ENV`, `NEOAG_FORCE_CPU` | `neoag check-tools` |
-| NetMHCstabpan | pMHC stability evidence | Optional; skipped by default, including `--all`/`--all-open` | Explicit opt-in: `bash scripts/install_netmhcstabpan.sh --iedb` or licensed tarball install / install skill `--netmhcstabpan` | `NETMHCSTABPAN_HOME` | `neoag check-tools` |
+| NetMHCstabpan | pMHC stability evidence | Required for production; installed by `--standard`, `--all`, and `--all-open` | `bash scripts/install_netmhcstabpan.sh --iedb` or licensed tarball install / install skill `--netmhcstabpan` | `NETMHCSTABPAN_HOME` | `neoag check-tools` |
 | PRIME / MixMHCpred / BigMHC | Immunogenicity evidence | Optional | `bash scripts/install_immunogenicity_tools.sh` | `PRIME_HOME`, `MIXMHCPRED_HOME`, `BIGMHC_DIR`, `NEOAG_PRIME_JOBS` | `neoag check-tools` |
 | DeepImmuno | Optional immunogenicity evidence | Optional | `bash scripts/install_deepimmuno.sh` | `DEEPIMMUNO_DIR` | `neoag check-tools` |
 | SHERPA-Presentation | MHC-I presentation ranking; restricted/authorized asset required | Optional | `bash .agents/skills/neoag-remote-deploy/scripts/13_install_readme_tools.sh --sherpa --sherpa-source /path/to/SHERPA-Presentation --execute` | `SHERPA_PRESENTATION_HOME`, `SHERPA_PRESENTATION_BIN` | `scripts/verify_all_tools_and_refs.sh` |
@@ -765,7 +794,7 @@ The table below lists the highest-priority reference files by tool/module. Put l
 | NetMHCpan | Licensed NetMHCpan executable and its `data/` directory | None | `NETMHCPAN_HOME=$NEOAG_TOOLS_ROOT/tools/netMHCpan`; `NETMHCpan=$NETMHCPAN_HOME`; `NEOAG_NETMHCPAN_BIN=$NETMHCPAN_HOME/netMHCpan` | Primary peptide-HLA binding and presentation prediction. |
 | MHCflurry | Installed MHCflurry environment and downloaded models | Custom model cache | `NEOAG_MHCFLURRY_ENV`; model cache managed by MHCflurry | Optional binding/presentation cross-check. |
 | PRIME / MixMHCpred / BigMHC / DeepImmuno | Tool-specific executables or model directories | Model/version-specific data files | `PRIME_HOME`, `MIXMHCPRED_HOME`, `BIGMHC_DIR`, `DEEPIMMUNO_DIR` | Immunogenicity and presentation evidence layers. |
-| NetMHCstabpan / IEDB shim | Licensed NetMHCstabpan executable or configured IEDB-compatible shim | None | `NETMHCSTABPAN_HOME=$NEOAG_TOOLS_ROOT/tools/netMHCstabpan` | Optional peptide stability evidence. |
+| NetMHCstabpan / IEDB shim | Licensed NetMHCstabpan executable or configured IEDB-compatible shim | None | `NETMHCSTABPAN_HOME=$NEOAG_TOOLS_ROOT/tools/netMHCstabpan` | Required peptide stability evidence for production ranking. |
 | FACETS | Common biallelic SNP/dbSNP VCF + `.tbi` matching the BAM reference build | Downsampled SNP pileups or curated SNP-only panels such as Omni2.5/common SNP resources | `NEOAG_DBSNP_VCF=$NEOAG_TOOLS_ROOT/data/facets/reference/common_snp.hg38.vcf.gz` | Tumor purity, ploidy, CNV, and LOH evidence. |
 | ASCAT | hg38 loci and alleles resources; GC and RT correction files for ASCAT v3/prepareHTS modes | Platform-specific SNP panels | Site variables or run config paths such as `ASCAT_LOCI_PREFIX`, `ASCAT_ALLELES_PREFIX`, `ASCAT_GC_FILE`, `ASCAT_RT_FILE` | Independent purity/ploidy/CNV/LOH cross-check. |
 | Sequenza | GRCh38 FASTA, GC wiggle/file, matched tumor/normal BAMs | Precomputed per-chromosome `.seqz.gz` blocks | Run script arguments and Sequenza config paths | Independent purity, ploidy, and CNV estimation. |

@@ -34,6 +34,8 @@ vep_cache	/srv/neoag-assets/source/data/vep	/srv/neoag-assets/install/data/vep	d
 deepimmuno_source	/srv/neoag-assets/source/data/predictors/DeepImmuno	/srv/neoag-tools/tools/DeepImmuno	dir	1	-	deepimmuno-cnn.py
 netmhcpan_install	/srv/neoag-assets/source/data/predictors/netMHCpan	/srv/neoag-licensed/netMHCpan	dir	0	-	netMHCpan
 netmhcstabpan_install	/srv/neoag-assets/source/data/predictors/netMHCstabpan	/srv/neoag-licensed/netMHCstabpan	dir	0	-	netMHCstabpan
+netchop_install	/srv/neoag-assets/source/data/predictors/netchop/netchop-3.1d.Linux.tar.gz	/srv/neoag-licensed/netchop/netchop-3.1d.Linux.tar.gz	file	1	393143b4aeccde60344b3ee37342781b378c7f8da823997adc0ce98191865107	-
+netchop_license	/srv/neoag-assets/source/data/predictors/netchop/netchop-3.1_license.txt	/srv/neoag-licensed/netchop/netchop-3.1_license.txt	file	1	0a51e4215b0438b5e1a0e8053bea19a9f86d22fe961242d1c67d0b3cefdcda70	-
 polysolver_distribution	/srv/neoag-assets/source/data/lohhla/polysolver	/srv/neoag-licensed/polysolver	dir	1	-	shell_call_hla_type
 novoalign_license	/srv/neoag-assets/source/data/lohhla/novoalign.lic	/srv/neoag-licensed/novoalign/novoalign.lic	file	0	-	-
 vep_plugins	/srv/neoag-assets/source/work/vep_plugins	/srv/neoag-assets/install/work/vep_plugins	dir	0	-	Wildtype.pm
@@ -51,3 +53,4 @@ salmon_tx2gene	/srv/neoag-assets/source/data/rna/gencode_v49/tx2gene.tsv	/srv/ne
 salmon_tx2gene_gencode_v49	/srv/neoag-assets/source/data/rna/gencode_v49/tx2gene.tsv	/srv/neoag-assets/install/data/rna/gencode_v49/tx2gene.tsv	file	1	-	-
 rsem_reference	/srv/neoag-assets/source/data/rna/rsem_reference	/srv/neoag-assets/install/data/rna/rsem_reference	dir	0	-	grp
 sherpa_presentation	/srv/neoag-assets/source/data/predictors/SHERPA-Presentation	/srv/neoag-tools/tools/SHERPA-Presentation	dir	0	-	-
+splicemutr_bsgenome_hg38	/srv/neoag-assets/source/data/splice/splicemutr/r_library/BSgenome.Hsapiens.UCSC.hg38	/srv/neoag-assets/install/data/splice/splicemutr/r_library/BSgenome.Hsapiens.UCSC.hg38	dir	1	-	DESCRIPTION

@@ -14,6 +14,7 @@ from neoag.vep.extract_peptides import (
     classify_multi_aa_flag,
     extract_variant_peptides_from_vcf,
     parse_peptide_lengths,
+    resolve_mhc1_peptide_lengths,
     peptide_in_normal_proteome,
     pick_csq_transcript,
     sliding_full_mutant_mode,
@@ -246,6 +247,12 @@ def test_build_minigene_missense():
 def test_parse_peptide_lengths_range():
     assert parse_peptide_lengths(length_min=8, length_max=11) == (8, 9, 10, 11)
     assert parse_peptide_lengths("9,11") == (9, 11)
+
+
+def test_high_recall_12mer_is_opt_in_and_explicit_lengths_win():
+    assert resolve_mhc1_peptide_lengths() == (8, 9, 10, 11)
+    assert resolve_mhc1_peptide_lengths(high_recall_12mer=True) == (8, 9, 10, 11, 12)
+    assert resolve_mhc1_peptide_lengths("9,10", high_recall_12mer=True) == (9, 10)
 
 
 def test_open_text_maybe_gz_plain_vcf_with_gz_suffix(tmp_path):

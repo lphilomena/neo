@@ -94,7 +94,15 @@ def main() -> int:
     parser.add_argument("--shortread-comparisons", required=True, type=Path)
     parser.add_argument("--hla", required=True, type=Path)
     parser.add_argument("--outdir", required=True, type=Path)
+    parser.add_argument("--peptide-lengths", default="", help="Explicit comma-separated MHC-I lengths")
+    parser.add_argument("--high-recall-12mer", action="store_true", help="Use 8,9,10,11,12 unless explicit lengths are provided")
     args = parser.parse_args()
+    if args.peptide_lengths:
+        peptide_lengths = tuple(sorted({int(value) for value in args.peptide_lengths.split(",") if value.strip()}))
+    else:
+        peptide_lengths = (8, 9, 10, 11, 12) if args.high_recall_12mer else (8, 9, 10, 11)
+    if not peptide_lengths or any(length < 8 or length > 14 for length in peptide_lengths):
+        parser.error("--peptide-lengths must contain comma-separated values from 8 through 14")
 
     shortread_keys = {row.get("junction_key", "") for row in rows(args.shortread_comparisons)}
     classes = {
@@ -188,7 +196,7 @@ def main() -> int:
         coding_nt_before = tx_boundary - cds_start + 1
         aa_cut = coding_nt_before // 3
         starts_by_length = defaultdict(set)
-        for length in range(8, 12):
+        for length in peptide_lengths:
             for start in range(max(0, aa_cut - length + 1), min(aa_cut + 1, len(protein) - length + 1)):
                 end = start + length
                 if start < aa_cut + 1 and end > max(0, aa_cut - 1):
@@ -214,6 +222,7 @@ def main() -> int:
                             "event_type": "FUSION" if item["structural_category"] == "fusion" else "SPLICE",
                             "mutation_source": "long_read_rna",
                             "source_tool": "IsoQuant+SQANTI3+TD2",
+                            "generation_method": f"neoag_junction_spanning_mhc1_{','.join(map(str, peptide_lengths))}mer",
                             "isoform": isoform,
                             "gene": item["associated_gene"],
                             "structural_category": item["structural_category"],
@@ -264,6 +273,8 @@ def main() -> int:
         "junction_peptide_hla_rows": len(peptide_rows),
         "unique_peptides": len({row["peptide"] for row in peptide_rows}),
         "unique_peptide_hla_pairs": len(prediction_pairs),
+        "mhc1_peptide_lengths": list(peptide_lengths),
+        "high_recall_12mer": 12 in peptide_lengths,
         "selection_policy": "novel junction (fusion excepted), unique coverage >=3, canonical, complete CDS, PSAURON >=0.8, non-NMD",
         "excluded_reasons": dict(reason_counts),
     }

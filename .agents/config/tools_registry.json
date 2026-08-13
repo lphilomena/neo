@@ -788,7 +788,7 @@
     ]
   },
   "netmhcstabpan": {
-    "description": "NetMHCstabpan peptide-MHC stability predictor; optional stage and can be skipped when unavailable.",
+    "description": "NetMHCstabpan peptide-MHC stability predictor; required for production candidate ranking.",
     "env": [
       "NETMHCSTABPAN_HOME"
     ],

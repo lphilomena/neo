@@ -14,7 +14,7 @@ HLA_ALLELES=""
 HLA_FILE=""
 SKIP_MHCFLURRY=0
 SKIP_BIGMHC_IM=0
-SKIP_STABPAN=1
+SKIP_STABPAN=0
 SKIP_EXTRACTION=0
 
 usage() {
@@ -41,10 +41,11 @@ Options:
   --skip-extraction        Reuse outdir/variant_peptides.annotated.tsv
   --skip-mhcflurry         Skip MHCflurry
   --skip-bigmhc-im         Skip BigMHC_IM when torch/model runtime is not ready
-  --run-stabpan            Do not skip NetMHCstabpan
+  --skip-stabpan           Skip mandatory NetMHCstabpan only for debugging/triage
+  --run-stabpan            Deprecated compatibility alias; NetMHCstabpan now runs by default
   -h, --help               Show help
 
-Defaults run MHCflurry and skip NetMHCstabpan: NetMHCstabpan IEDB smoke tests are slow.
+Defaults run MHCflurry and NetMHCstabpan. Production evidence requires NetMHCstabpan.
 Use --skip-mhcflurry if this host has TensorFlow compatibility issues.
 USAGE
 }
@@ -65,6 +66,7 @@ while [[ $# -gt 0 ]]; do
     --skip-extraction) SKIP_EXTRACTION=1; shift ;;
     --skip-mhcflurry) SKIP_MHCFLURRY=1; shift ;;
     --skip-bigmhc-im) SKIP_BIGMHC_IM=1; shift ;;
+    --skip-stabpan) SKIP_STABPAN=1; shift ;;
     --run-stabpan) SKIP_STABPAN=0; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "ERROR: unknown option: $1" >&2; usage >&2; exit 2 ;;

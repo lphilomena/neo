@@ -4,6 +4,13 @@ created_at: 2026-07-16
 owner: neoag
 
 references:
+  splicemutr_bsgenome_hg38:
+    path: ${OPEN_NEO_REFERENCE_ROOT}/data/splice/splicemutr/r_library/BSgenome.Hsapiens.UCSC.hg38
+    source: UCSC/Bioconductor BSgenome
+    version: 1.4.5_hg38_GRCh38.p14
+    marker: DESCRIPTION
+    required: true
+
   reference_fasta:
     path: ${OPEN_NEO_REFERENCE_ROOT}/data/ref/hg38/Homo_sapiens_assembly38.fasta
     source: Ensembl/EasyFuse reference bundle

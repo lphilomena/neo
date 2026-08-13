@@ -141,6 +141,13 @@ def test_catalog_rows_to_raw_peptides_links_fusion_events():
     assert peptides[0]["crosses_junction"] == "yes"
 
 
+def test_easyfuse_catalog_supports_optional_12mer():
+    windows = sliding_fusion_neo_peptides("ACDEFGHIKLMNPQRST", (12,), bp_pos=8)
+    assert windows and all(len(row["mutant_peptide"]) == 12 for row in windows)
+    result = build_easyfuse_catalog(FIXTURE, "S1", "default", lengths=(8, 9, 10, 11, 12))
+    assert result.summary_qc["peptide_lengths"] == "8,9,10,11,12"
+
+
 def test_run_variant_peptide_upstream_merges_easyfuse(tmp_path):
     vcf = tmp_path / "mini.vcf"
     _write_mini_vcf(vcf)

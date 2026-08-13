@@ -12,8 +12,19 @@ hla_file = "results/SAMPLE001_production/hla/hla_consensus.txt"
 tools_stub = false
 immunogenicity_stub = false
 expected_peptide_sources = ["pVACseq", "pVACfuse", "pVACsplice"]
-presentation_predictors = ["netmhcpan", "mhcflurry"]
-required_presentation_predictors = ["netmhcpan", "mhcflurry"]
+presentation_predictors = ["netmhcpan", "mhcflurry", "netmhcstabpan", "netchop"]
+required_presentation_predictors = ["netmhcpan", "mhcflurry", "netmhcstabpan", "netchop"]
+reports = "patient,technical"
+
+[run.required_tool_groups.purity_cnv]
+tools = ["facets", "sequenza", "purple"]
+min_successful = 2
+require_all_declared = true
+
+[run.required_tool_groups.hla_loh]
+tools = ["lohhla", "spechla"]
+min_successful = 2
+require_all_declared = true
 
 # Each command is site-editable. Empty commands reuse precomputed outputs.
 # Required stages stop on failure. Optional stages continue as LOW_CONFIDENCE.
