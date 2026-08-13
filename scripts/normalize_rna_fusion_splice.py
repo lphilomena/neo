@@ -33,6 +33,11 @@ def main() -> int:
         action="store_true",
         help="fail when a primary junction row cannot be normalized",
     )
+    parser.add_argument(
+        "--candidate-only",
+        action="store_true",
+        help="emit only neoantigen candidates and their exact linked primary junction evidence",
+    )
     args = parser.parse_args()
 
     normalize_splice_sources(
@@ -49,6 +54,7 @@ def main() -> int:
         splicemutr_coordinate_system=args.splicemutr_coordinate_system,
         normal_coordinate_system=args.normal_coordinate_system,
         strict=args.strict,
+        candidate_only=args.candidate_only,
     )
     return 0
 

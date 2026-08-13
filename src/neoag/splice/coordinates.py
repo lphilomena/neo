@@ -405,9 +405,18 @@ def detect_coordinate_system(
         return "bed12"
     if tool == "regtools" or {"splice_site", "known_junction"} <= keys:
         return "regtools_annotated"
-    # SNAF commonly emits chr:start-end(strand) UIDs as outer splice boundaries.
+    # SNAF emits outer exon splice-boundary coordinates.  This also applies to
+    # normalized candidate tables where chrom/start/end are separate columns
+    # and event_id contains the exon-pair UID rather than genomic coordinates.
     uid = first(row, ["uid", "junction", "junction_id"], "")
-    if tool == "snaf" and re.search(r":\d+-\d+\([+-]\)$", uid):
+    if tool == "snaf" and (
+        re.search(r":\d+-\d+\([+-]\)$", uid)
+        or (
+            first(row, ["chrom", "chromosome", "chr"], "")
+            and first(row, ["start", "junction_start"], "")
+            and first(row, ["end", "junction_end"], "")
+        )
+    ):
         return "snaf_uid"
     # Generic normalized tables are treated as direct intron coordinates. The
     # source system remains explicit in the emitted provenance table.

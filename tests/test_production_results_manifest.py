@@ -36,6 +36,43 @@ def test_generator_builds_all_three_upstream_consensus_stages(tmp_path):
     assert manifest["evidence"]["hla_loh"].endswith("evidence/hla_loh/hla_loh_consensus.tsv")
 
 
+def test_generator_filters_splice_candidates_before_production_scoring(tmp_path):
+    hla = write(tmp_path / "hla.txt", "HLA-A*02:01\n")
+    facets = write(tmp_path / "facets/facets_purity.txt", "purity\t0.60\n").parent
+    ascat = write(tmp_path / "ascat/ascat_summary.tsv", "sample_id\tpurity\tploidy\nS1\t0.64\t2.1\n").parent
+    lohhla = write(tmp_path / "lohhla/hla_loh.tsv", "hla_allele\tloh_status\nHLA-A*02:01\tretained\n")
+    spechla_loh = write(tmp_path / "spechla_loh/hla_loh.tsv", "hla_allele\tloh_status\nHLA-A*02:01\tretained\n")
+    junctions = write(tmp_path / "junctions.tsv", "chrom\tstart\tend\tstrand\tjunction_reads\nchr1\t10\t20\t+\t12\n")
+    snaf = write(tmp_path / "snaf.tsv", "event_id\tpeptide\thla_allele\tbinding_rank\nE1\tACDEFGHIK\tHLA-A*02:01\t0.8\n")
+    output = tmp_path / "production.toml"
+    subprocess.run([sys.executable, str(ROOT / "scripts/generate_production_from_results_manifest.py"), "--project-root", str(ROOT), "--sample-id", "S1", "--outdir", str(tmp_path / "run"), "--output", str(output), "--hla-file", str(hla), "--facets", str(facets), "--ascat", str(ascat), "--lohhla", str(lohhla), "--spechla-loh", str(spechla_loh), "--junctions", str(junctions), "--snaf", str(snaf)], check=True)
+    manifest = tomllib.loads(output.read_text(encoding="utf-8"))
+    splice = manifest["stages"]["splice_candidates"]
+    assert "filter_splice_production_candidates.py" in splice["command"]
+    assert splice["outputs"]["raw_peptides"].endswith("production_selected/raw_peptides.tsv")
+
+
+def test_generator_accepts_facets_and_ascat_when_other_purity_tools_failed(tmp_path):
+    hla = write(tmp_path / "hla.txt", "HLA-A*02:01\n")
+    fasta = write(tmp_path / "GRCh38.fa", ">chr1\nACGT\n")
+    facets = write(tmp_path / "facets/facets_purity.txt", "purity\t0.60\n").parent
+    ascat = write(tmp_path / "ascat/ascat_summary.tsv", "sample_id\tpurity\tploidy\nS1\t0.64\t2.1\n").parent
+    lohhla = write(tmp_path / "lohhla/hla_loh.tsv", "hla_allele\tloh_status\nHLA-A*02:01\tretained\n")
+    spechla_loh = write(tmp_path / "spechla_loh/hla_loh.tsv", "hla_allele\tloh_status\nHLA-A*02:01\tretained\n")
+    star = write(tmp_path / "star/star-fusion.fusion_predictions.tsv", "#FusionName\tJunctionReadCount\nEWSR1--WT1\t20\n")
+    output = tmp_path / "production.toml"
+    command = [sys.executable, str(ROOT / "scripts/generate_production_from_results_manifest.py"), "--project-root", str(ROOT), "--sample-id", "S1", "--outdir", str(tmp_path / "run"), "--output", str(output), "--hla-file", str(hla), "--reference-fasta", str(fasta), "--facets", str(facets), "--ascat", str(ascat), "--lohhla", str(lohhla), "--spechla-loh", str(spechla_loh), "--somatic-vcf", str(star), "--star-fusion", str(star)]
+    subprocess.run(command, check=True)
+    manifest = tomllib.loads(output.read_text(encoding="utf-8"))
+    assert manifest["run"]["required_tool_groups"]["purity_cnv"]["tools"] == ["facets", "ascat"]
+    assert "purity_facets" in manifest["stages"]
+    assert "purity_ascat" in manifest["stages"]
+    assert "purity_sequenza" not in manifest["stages"]
+    assert "purity_purple" not in manifest["stages"]
+    assert manifest["run"]["profile"].endswith("configs/ranking/sarcoma_evidence_consensus_v3_source_chain.toml")
+    assert f'NEOAG_REFERENCE_FASTA="{fasta}"' in manifest["stages"]["snv_indel_candidates"]["command"]
+
+
 def test_fusion_union_keeps_event_only_callers_and_provided_peptides(tmp_path):
     hla = write(tmp_path / "hla.txt", "HLA-A*02:01\n")
     star = write(tmp_path / "star.tsv", "#FusionName\tLeftBreakpoint\tRightBreakpoint\tJunctionReadCount\nEWSR1--WT1\tchr22:1:+\tchr11:2:-\t20\n")

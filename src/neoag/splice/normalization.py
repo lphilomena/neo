@@ -461,6 +461,7 @@ def normalize_splice_sources(
     splicemutr_coordinate_system: str = "auto",
     normal_coordinate_system: str = "auto",
     strict: bool = False,
+    candidate_only: bool = False,
 ) -> dict[str, str]:
     """Normalize splice sources and emit canonical entities plus full provenance."""
 
@@ -555,7 +556,18 @@ def normalize_splice_sources(
                 )
             )
 
-    tumor_items = [item for item in normalized if item.role != "normal_background"]
+    all_tumor_items = [item for item in normalized if item.role != "normal_background"]
+    if candidate_only:
+        candidate_items = [item for item in all_tumor_items if item.role == "neoantigen"]
+        candidate_event_ids = {item.event_id for item in candidate_items}
+        tumor_items = [
+            item
+            for item in all_tumor_items
+            if item.role == "neoantigen" or item.event_id in candidate_event_ids
+        ]
+    else:
+        tumor_items = all_tumor_items
+        candidate_event_ids = {item.event_id for item in tumor_items}
     event_source_rows: list[dict[str, str]] = []
     for item in tumor_items:
         status = _normal_status(
@@ -615,21 +627,28 @@ def normalize_splice_sources(
         _merge_conflict_to_public(row, "splice_peptide_merge") for row in peptide_merge_conflicts
     )
 
-    tool_evidence = [_tool_evidence_row(item) for item in normalized]
-    entity_rows = registry.entity_rows(sample_id=sample_id, primary_tools=primary_tools)
+    output_records = (
+        [item for item in normalized if item.role != "normal_background" and item.event_id in candidate_event_ids]
+        if candidate_only
+        else normalized
+    )
+    tool_evidence = [_tool_evidence_row(item) for item in output_records]
+    entity_rows = [
+        registry.entities[event_id].as_dict(sample_id=sample_id, primary_tools=primary_tools)
+        for event_id in sorted(candidate_event_ids & set(registry.entities))
+    ]
+
+    peptide_tools_by_event: dict[str, set[str]] = {}
+    for item in tumor_items:
+        if peptide_metadata(item.record)["peptide"]:
+            peptide_tools_by_event.setdefault(item.event_id, set()).add(item.record.source_tool)
 
     consensus_rows: list[dict[str, str]] = []
-    for event_id in sorted(registry.entities):
+    for event_id in sorted(candidate_event_ids & set(registry.entities)):
         entity = registry.entities[event_id]
         tools = sorted(entity.source_tools)
         primary_present = any(tool.casefold() in {x.casefold() for x in primary_tools} for tool in tools)
-        peptide_tools = sorted(
-            {
-                item.record.source_tool
-                for item in tumor_items
-                if item.event_id == event_id and peptide_metadata(item.record)["peptide"]
-            }
-        )
+        peptide_tools = sorted(peptide_tools_by_event.get(event_id, set()))
         if primary_present and peptide_tools:
             status = "CROSS_DOMAIN_CONFIRMED_EXACT_JUNCTION"
         elif primary_present and len(tools) >= 2:
@@ -681,6 +700,7 @@ def normalize_splice_sources(
             "alias_status": "UNIQUE" if len(event_ids) == 1 else "AMBIGUOUS",
         }
         for alias, event_ids in sorted(registry.alias_to_ids.items())
+        if event_ids & candidate_event_ids
     ]
 
     domain_by_role = {
@@ -703,7 +723,7 @@ def normalize_splice_sources(
             "coordinate_warning": item.resolution.warning or item.record.coordinate_warning,
             "peptide_present": "yes" if peptide_metadata(item.record)["peptide"] else "no",
         }
-        for item in normalized
+        for item in output_records
     ]
 
     rna_evidence_rows: list[dict[str, str]] = []
@@ -737,6 +757,8 @@ def normalize_splice_sources(
     )
     qc_rows = [
         {"metric": "primary_junction_records", "value": str(sum(item.role == "rna_junction" for item in normalized))},
+        {"metric": "candidate_only_output", "value": str(candidate_only).lower()},
+        {"metric": "candidate_linked_output_records", "value": str(len(output_records))},
         {"metric": "resolved_junction_entities", "value": str(len(registry.entities))},
         {"metric": "unresolved_tumor_records", "value": str(len(unresolved_tumor))},
         {"metric": "peptide_rows_before_merge", "value": str(len(peptide_source_rows))},

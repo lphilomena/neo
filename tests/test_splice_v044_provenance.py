@@ -67,6 +67,28 @@ def test_regtools_bed12_uses_blocks_to_derive_intron(tmp_path: Path):
     assert record.junction.junction_id == "SJ|GRCh38|chr2|151|210|+"
 
 
+def test_snaf_separate_boundary_columns_match_regtools_bed12(tmp_path: Path):
+    regtools = _write(
+        tmp_path / "junctions.bed",
+        "chr11\t124872999\t124873391\tJUNC1\t54\t?\t124872999\t124873391\t0\t2\t90,82\t0,310\n",
+    )
+    snaf = _write(
+        tmp_path / "snaf.tsv",
+        "sample_id\tevent_id\tgene\tchrom\tstart\tend\tjunction_reads\tpeptide\thla_allele\tbinding_rank\n"
+        "S1\tENSG00000154134:E9.1-E10.1\tROBO3\tchr11\t124873089\t124873310\t54\tIANVQEMDM\tHLA-C*02:02\t1.19\n",
+    )
+    outputs = normalize_splice_sources(
+        sample_id="S1",
+        junctions=regtools,
+        snaf=snaf,
+        outdir=tmp_path / "normalized",
+    )
+    consensus = read_tsv(outputs["splice_consensus"])
+    assert len(consensus) == 1
+    assert consensus[0]["event_id"] == "SJ|GRCh38|chr11|124873090|124873309|."
+    assert consensus[0]["status"] == "CROSS_DOMAIN_CONFIRMED_EXACT_JUNCTION"
+
+
 def test_same_gene_read_leakage_is_forbidden(tmp_path: Path):
     primary = _write(
         tmp_path / "regtools.tsv",
@@ -178,6 +200,34 @@ def test_normalizer_keeps_exact_schema_and_multitool_provenance(tmp_path: Path):
     }
     assert Path(outputs["splice_consensus_conflicts"]).is_file()
     assert Path(outputs["evidence_conflicts"]).is_file()
+
+
+def test_candidate_only_emits_linked_primary_records_not_unrelated_junctions(tmp_path: Path):
+    primary = _write(
+        tmp_path / "regtools.tsv",
+        "chrom\tstart\tend\tname\tscore\tstrand\tgene_names\n"
+        "chr1\t99\t200\tJ1\t7\t+\tGENE1\n"
+        "chr1\t299\t400\tJ2\t50\t+\tGENE2\n",
+    )
+    snaf = _write(
+        tmp_path / "snaf.tsv",
+        "source_junction_id\tgene\tpeptide\thla_allele\tbinding_rank\n"
+        "J1\tGENE1\tACDEFGHIK\tHLA-A*02:01\t0.8\n",
+    )
+    outputs = normalize_splice_sources(
+        sample_id="S1",
+        junctions=primary,
+        snaf=snaf,
+        outdir=tmp_path / "candidate_only",
+        candidate_only=True,
+    )
+    events = read_tsv(outputs["raw_events"])
+    evidence = read_tsv(outputs["splice_tool_evidence"])
+    assert {row["source_junction_id"] for row in events} == {"J1"}
+    assert {row["source_junction_id"] for row in evidence} == {"J1"}
+    qc = {row["metric"]: row["value"] for row in read_tsv(outputs["splice_qc"])}
+    assert qc["primary_junction_records"] == "2"
+    assert qc["candidate_only_output"] == "true"
 
 
 def test_tool_consensus_does_not_confirm_same_gene_different_junction(tmp_path: Path):
