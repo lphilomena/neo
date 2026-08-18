@@ -28,6 +28,9 @@ Usage:
     [--rna-fastq2 <R2.fq.gz[,lane2_R2.fq.gz]>] \
     [--rna-bam <sorted_rna.bam> | --rna-vaf <rna_alt_vaf.tsv>] \
     [--star-index <GRCh38_STAR_index>] \
+    [--easyfuse-star-index <EasyFuse_STAR_index>] \
+    [--star-index-build-dir <new_STAR_index_dir>] \
+    [--star-sjdb-overhang <N>] \
     [--star-executable <STAR>] \
     [--samtools-executable <samtools>] \
     [--rna-threads <N>] \
@@ -38,7 +41,8 @@ Usage:
 
 Environment defaults may be supplied through conf/tools.env.local.sh or:
   NEOAG_PYTHON, NEOAG_ASSET_ROOT, NEOAG_PREDICTOR_DEPS,
-  NETMHCPAN_HOME, and NETMHCSTABPAN_HOME.
+  NETMHCPAN_HOME, NETMHCSTABPAN_HOME, EASYFUSE_STAR_INDEX,
+  and NEOAG_EASYFUSE_REF.
 EOF
 }
 
@@ -68,6 +72,9 @@ RNA_FASTQ2=""
 RNA_BAM=""
 RNA_VAF=""
 STAR_INDEX=""
+EASYFUSE_STAR_INDEX="${EASYFUSE_STAR_INDEX:-}"
+STAR_INDEX_BUILD_DIR=""
+STAR_SJDB_OVERHANG=149
 STAR_EXECUTABLE=""
 SAMTOOLS_EXECUTABLE="samtools"
 RNA_THREADS=16
@@ -91,6 +98,9 @@ while [[ $# -gt 0 ]]; do
     --rna-bam) RNA_BAM="$2"; shift 2 ;;
     --rna-vaf) RNA_VAF="$2"; shift 2 ;;
     --star-index) STAR_INDEX="$2"; shift 2 ;;
+    --easyfuse-star-index) EASYFUSE_STAR_INDEX="$2"; shift 2 ;;
+    --star-index-build-dir) STAR_INDEX_BUILD_DIR="$2"; shift 2 ;;
+    --star-sjdb-overhang) STAR_SJDB_OVERHANG="$2"; shift 2 ;;
     --star-executable) STAR_EXECUTABLE="$2"; shift 2 ;;
     --samtools-executable) SAMTOOLS_EXECUTABLE="$2"; shift 2 ;;
     --rna-threads) RNA_THREADS="$2"; shift 2 ;;
@@ -110,6 +120,7 @@ done
 [[ -x "$PY" ]] || { echo "python not executable: $PY" >&2; exit 2; }
 [[ -d "$PROJECT_ROOT" ]] || { echo "project root missing: $PROJECT_ROOT" >&2; exit 2; }
 [[ "$RNA_THREADS" =~ ^[1-9][0-9]*$ ]] || { echo "--rna-threads must be a positive integer" >&2; exit 2; }
+[[ "$STAR_SJDB_OVERHANG" =~ ^[1-9][0-9]*$ ]] || { echo "--star-sjdb-overhang must be a positive integer" >&2; exit 2; }
 [[ -z "$RNA_FASTQ1" && -z "$RNA_FASTQ2" ]] || {
   [[ -n "$RNA_FASTQ1" && -n "$RNA_FASTQ2" ]] || {
     echo "--rna-fastq1 and --rna-fastq2 must be supplied together" >&2
@@ -125,7 +136,6 @@ rna_input_modes=0
   exit 2
 }
 if [[ -n "$RNA_FASTQ1" ]]; then
-  [[ -n "$STAR_INDEX" ]] || { echo "RNA FASTQ mode requires --star-index" >&2; exit 2; }
   [[ -n "$GENCODE_GTF" ]] || { echo "RNA FASTQ mode requires --gencode-gtf" >&2; exit 2; }
 fi
 
@@ -151,6 +161,21 @@ NETMHCSTABPAN_HOME="${NETMHCSTABPAN_HOME:-}"
 [[ -n "$CLI_PRED_DEPS" ]] && PRED_DEPS="$CLI_PRED_DEPS"
 [[ -n "$CLI_NETMHCPAN_HOME" ]] && NETMHCPAN_HOME_DEFAULT="$CLI_NETMHCPAN_HOME"
 [[ -n "$CLI_NETMHCSTABPAN_HOME" ]] && NETMHCSTABPAN_HOME="$CLI_NETMHCSTABPAN_HOME"
+
+if [[ -z "$EASYFUSE_STAR_INDEX" && -n "${NEOAG_EASYFUSE_REF:-}" ]]; then
+  for candidate in \
+    "$NEOAG_EASYFUSE_REF/starfusion_index/ref_genome.fa.star.idx" \
+    "$NEOAG_EASYFUSE_REF/star_index"; do
+    if [[ -d "$candidate" ]]; then EASYFUSE_STAR_INDEX="$candidate"; break; fi
+  done
+fi
+if [[ -z "$EASYFUSE_STAR_INDEX" && -n "$ASSET" ]]; then
+  for candidate in \
+    "$ASSET/data/easyfuse/easyfuse_ref_v4/starfusion_index/ref_genome.fa.star.idx" \
+    "$ASSET/data/ref/ctat/current/ctat_genome_lib_build_dir/ref_genome.fa.star.idx"; do
+    if [[ -d "$candidate" ]]; then EASYFUSE_STAR_INDEX="$candidate"; break; fi
+  done
+fi
 
 PROFILE_PATH="$PROFILE"
 [[ "$PROFILE_PATH" = /* ]] || PROFILE_PATH="$PROJECT_ROOT/$PROFILE"
@@ -221,6 +246,9 @@ fi
 [[ -n "$RNA_BAM" ]] && GEN_ARGS+=(--rna-bam "$RNA_BAM")
 [[ -n "$RNA_VAF" ]] && GEN_ARGS+=(--rna-vaf "$RNA_VAF")
 [[ -n "$STAR_INDEX" ]] && GEN_ARGS+=(--star-index "$STAR_INDEX")
+[[ -n "$EASYFUSE_STAR_INDEX" ]] && GEN_ARGS+=(--easyfuse-star-index "$EASYFUSE_STAR_INDEX")
+[[ -n "$STAR_INDEX_BUILD_DIR" ]] && GEN_ARGS+=(--star-index-build-dir "$STAR_INDEX_BUILD_DIR")
+GEN_ARGS+=(--star-sjdb-overhang "$STAR_SJDB_OVERHANG")
 [[ -n "$STAR_EXECUTABLE" ]] && GEN_ARGS+=(--star-executable "$STAR_EXECUTABLE")
 GEN_ARGS+=(--samtools-executable "$SAMTOOLS_EXECUTABLE" --rna-threads "$RNA_THREADS")
 

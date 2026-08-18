@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 import tomllib
@@ -14,6 +15,14 @@ ROOT = Path(__file__).resolve().parents[1]
 def write(path: Path, text: str) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
+    return path
+
+
+def make_star_index(path: Path) -> Path:
+    path.mkdir(parents=True, exist_ok=True)
+    for name in ("Genome", "SA", "SAindex"):
+        write(path / name, "fixture\n")
+    write(path / "genomeParameters.txt", "versionGenome 2.7.11b\nsjdbOverhang 149\n")
     return path
 
 
@@ -89,8 +98,7 @@ def test_generator_builds_star_and_rna_allele_count_stages_from_fastq(tmp_path):
     vcf = write(tmp_path / "somatic.vcf", "##fileformat=VCFv4.2\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\nchr1\t10\t.\tA\tT\t.\tPASS\t.\n")
     fastq1 = write(tmp_path / "rna_R1.fastq", "@r1\nACGT\n+\nFFFF\n")
     fastq2 = write(tmp_path / "rna_R2.fastq", "@r1\nTGCA\n+\nFFFF\n")
-    star_index = tmp_path / "star_index"
-    star_index.mkdir()
+    star_index = make_star_index(tmp_path / "star_index")
     gtf = write(tmp_path / "gencode.gtf", 'chr1\ttest\tgene\t1\t100\t.\t+\t.\tgene_id "ENSG1";\n')
     output = tmp_path / "production.toml"
     subprocess.run([
@@ -105,10 +113,75 @@ def test_generator_builds_star_and_rna_allele_count_stages_from_fastq(tmp_path):
     ], check=True)
     manifest = tomllib.loads(output.read_text(encoding="utf-8"))
     assert "rna_star_alignment" in manifest["stages"]
+    assert manifest["stages"]["rna_star_index"]["source"] == "STAR_INDEX_REUSE_EXPLICIT"
+    assert manifest["stages"]["rna_star_alignment"]["depends_on"] == ["rna_star_index"]
     assert "run_star_rna_fastq.sh" in manifest["stages"]["rna_star_alignment"]["command"]
     assert manifest["stages"]["rna_alt_vaf"]["depends_on"] == ["rna_star_alignment"]
     assert "rna_allele_counts_pysam.py" in manifest["stages"]["rna_alt_vaf"]["command"]
     assert manifest["evidence"]["rna_vaf"] == "{outdir}/rna/rna_alt_vaf.tsv"
+
+
+def test_generator_reuses_valid_easyfuse_star_index(tmp_path):
+    hla = write(tmp_path / "hla.txt", "HLA-A*02:01\n")
+    purity = write(tmp_path / "purity.tsv", "sample_id\tpurity\tploidy\nS1\t0.60\t2.0\n")
+    cnv = write(tmp_path / "cnv.tsv", "chrom\tstart\tend\ttotal_cn\nchr1\t1\t1000\t2\n")
+    lohhla = write(tmp_path / "lohhla.tsv", "hla_allele\tloh_status\nHLA-A*02:01\tretained\n")
+    spechla_loh = write(tmp_path / "spechla_loh.tsv", "hla_allele\tloh_status\nHLA-A*02:01\tretained\n")
+    vcf = write(tmp_path / "somatic.vcf", "##fileformat=VCFv4.2\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n")
+    fastq1 = write(tmp_path / "rna_R1.fastq", "@r1\nACGT\n+\nFFFF\n")
+    fastq2 = write(tmp_path / "rna_R2.fastq", "@r1\nTGCA\n+\nFFFF\n")
+    easyfuse_index = make_star_index(tmp_path / "easyfuse/ref_genome.fa.star.idx")
+    gtf = write(tmp_path / "gencode.gtf", 'chr1\ttest\tgene\t1\t100\t.\t+\t.\tgene_id "ENSG1";\n')
+    output = tmp_path / "manifest/production.toml"
+
+    subprocess.run([
+        sys.executable, str(ROOT / "scripts/generate_production_from_results_manifest.py"),
+        "--project-root", str(ROOT), "--sample-id", "S1", "--outdir", str(tmp_path / "run"),
+        "--output", str(output), "--hla-file", str(hla), "--purity", str(purity), "--cnv", str(cnv),
+        "--lohhla", str(lohhla), "--spechla-loh", str(spechla_loh), "--somatic-vcf", str(vcf),
+        "--rna-fastq1", str(fastq1), "--rna-fastq2", str(fastq2),
+        "--easyfuse-star-index", str(easyfuse_index), "--gencode-gtf", str(gtf),
+    ], check=True)
+
+    manifest = tomllib.loads(output.read_text(encoding="utf-8"))
+    index_stage = manifest["stages"]["rna_star_index"]
+    assert index_stage["source"] == "STAR_INDEX_REUSE_EASYFUSE"
+    assert index_stage["outputs"]["star_index"] == str(easyfuse_index.resolve())
+    validation = json.loads((output.parent / "star_index_validation.json").read_text())
+    assert validation["status"] == "VALIDATED_REUSE"
+    assert validation["selected_source"] == "EASYFUSE"
+
+
+def test_generator_plans_star_index_rebuild_when_reuse_is_invalid(tmp_path):
+    hla = write(tmp_path / "hla.txt", "HLA-A*02:01\n")
+    purity = write(tmp_path / "purity.tsv", "sample_id\tpurity\tploidy\nS1\t0.60\t2.0\n")
+    cnv = write(tmp_path / "cnv.tsv", "chrom\tstart\tend\ttotal_cn\nchr1\t1\t1000\t2\n")
+    lohhla = write(tmp_path / "lohhla.tsv", "hla_allele\tloh_status\nHLA-A*02:01\tretained\n")
+    spechla_loh = write(tmp_path / "spechla_loh.tsv", "hla_allele\tloh_status\nHLA-A*02:01\tretained\n")
+    vcf = write(tmp_path / "somatic.vcf", "##fileformat=VCFv4.2\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n")
+    fastq1 = write(tmp_path / "rna_R1.fastq", "@r1\nACGT\n+\nFFFF\n")
+    fastq2 = write(tmp_path / "rna_R2.fastq", "@r1\nTGCA\n+\nFFFF\n")
+    invalid_index = tmp_path / "easyfuse/incomplete"
+    invalid_index.mkdir(parents=True)
+    fasta = write(tmp_path / "GRCh38.fa", ">chr1\nACGT\n")
+    gtf = write(tmp_path / "gencode.gtf", 'chr1\ttest\tgene\t1\t4\t.\t+\t.\tgene_id "ENSG1";\n')
+    output = tmp_path / "manifest/production.toml"
+
+    subprocess.run([
+        sys.executable, str(ROOT / "scripts/generate_production_from_results_manifest.py"),
+        "--project-root", str(ROOT), "--sample-id", "S1", "--outdir", str(tmp_path / "run"),
+        "--output", str(output), "--hla-file", str(hla), "--purity", str(purity), "--cnv", str(cnv),
+        "--lohhla", str(lohhla), "--spechla-loh", str(spechla_loh), "--somatic-vcf", str(vcf),
+        "--rna-fastq1", str(fastq1), "--rna-fastq2", str(fastq2), "--reference-fasta", str(fasta),
+        "--easyfuse-star-index", str(invalid_index), "--gencode-gtf", str(gtf),
+    ], check=True)
+
+    manifest = tomllib.loads(output.read_text(encoding="utf-8"))
+    index_stage = manifest["stages"]["rna_star_index"]
+    assert index_stage["source"] == "STAR_INDEX_BUILD"
+    assert "build_star_index.sh" in index_stage["command"]
+    validation = json.loads((output.parent / "star_index_validation.json").read_text())
+    assert validation["status"] == "PLANNED_BUILD"
 
 
 def test_generator_reuses_existing_rna_vaf_without_star(tmp_path):

@@ -6,6 +6,13 @@ ROOT = Path(__file__).resolve().parents[1]
 WRAPPER = ROOT / "scripts" / "run_production_case.sh"
 
 
+def make_star_index(path: Path) -> Path:
+    path.mkdir(parents=True)
+    for name in ("Genome", "SA", "SAindex", "genomeParameters.txt"):
+        (path / name).write_text("fixture\n")
+    return path
+
+
 def test_wrapper_uses_v2_baseline_and_v3_consensus_and_passes_production_inputs(tmp_path):
     project = tmp_path / "project"
     profile = project / "profiles/sarcoma_rna_supported_v2_provisional.toml"
@@ -34,8 +41,7 @@ def test_wrapper_uses_v2_baseline_and_v3_consensus_and_passes_production_inputs(
         path = tmp_path / name
         path.write_text("fixture\n")
         paths[name] = path
-    star_index = tmp_path / "star_index"
-    star_index.mkdir()
+    star_index = make_star_index(tmp_path / "star_index")
     star = tmp_path / "STAR"
     samtools = tmp_path / "samtools"
     for executable in (star, samtools):

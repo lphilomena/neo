@@ -5,8 +5,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
+
+
+STAR_INDEX_REQUIRED_FILES = ("Genome", "SA", "SAindex", "genomeParameters.txt")
 
 
 def q(value) -> str:
@@ -39,6 +43,62 @@ def resolve_result_file(path: str | None, label: str, names: tuple[str, ...]) ->
     raise SystemExit(f"{label} has no recognized result file below {resolved}: {', '.join(names)}")
 
 
+def inspect_star_index(path: str | Path | None, reference_fasta: str = "") -> dict[str, object]:
+    """Validate a reusable STAR index without modifying it."""
+    index = Path(str(path or "")).expanduser()
+    missing = [name for name in STAR_INDEX_REQUIRED_FILES if not (index / name).is_file() or (index / name).stat().st_size == 0]
+    result: dict[str, object] = {
+        "path": str(index),
+        "status": "VALID" if index.is_dir() and not missing else "INVALID",
+        "missing_files": missing,
+        "reference_check": "UNASSESSED",
+        "parameters": {},
+    }
+    parameters = index / "genomeParameters.txt"
+    if parameters.is_file():
+        parsed: dict[str, str] = {}
+        for line in parameters.read_text(encoding="utf-8", errors="replace").splitlines():
+            if not line.strip() or line.lstrip().startswith("#"):
+                continue
+            fields = line.split(None, 1)
+            if len(fields) == 2:
+                parsed[fields[0]] = fields[1].strip()
+        result["parameters"] = parsed
+    fasta = Path(reference_fasta) if reference_fasta else None
+    fai = Path(str(fasta) + ".fai") if fasta else None
+    chr_lengths = index / "chrNameLength.txt"
+    if result["status"] == "VALID" and fai and fai.is_file() and chr_lengths.is_file():
+        expected = {
+            row.split("\t", 2)[0]: row.split("\t", 2)[1]
+            for row in fai.read_text(encoding="utf-8").splitlines()
+            if row.count("\t") >= 1
+        }
+        observed = {
+            row.split("\t", 2)[0]: row.split("\t", 2)[1]
+            for row in chr_lengths.read_text(encoding="utf-8").splitlines()
+            if row.count("\t") >= 1
+        }
+        if expected == observed:
+            result["reference_check"] = "CONTIG_LENGTHS_MATCH"
+        else:
+            result["reference_check"] = "CONTIG_LENGTHS_MISMATCH"
+            result["status"] = "INVALID"
+    elif result["status"] == "VALID":
+        result["reference_check"] = "CORE_FILES_ONLY"
+    return result
+
+
+def easyfuse_star_candidates(explicit: str | None) -> list[str]:
+    candidates = [explicit or "", os.environ.get("EASYFUSE_STAR_INDEX", "")]
+    for root in (os.environ.get("NEOAG_EASYFUSE_REF", ""), os.environ.get("EASYFUSE_REF", "")):
+        if root:
+            candidates.extend([
+                str(Path(root) / "starfusion_index/ref_genome.fa.star.idx"),
+                str(Path(root) / "star_index"),
+            ])
+    return list(dict.fromkeys(value for value in candidates if value))
+
+
 def stage(lines, name, *, outputs, source="", command="", required=True, depends=None):
     lines += ["", f"[stages.{name}]", f"required = {str(required).lower()}"]
     if source: lines.append(f"source = {q(source)}")
@@ -69,6 +129,9 @@ def main() -> int:
     ap.add_argument("--rna-bam", help="Existing coordinate-sorted tumor RNA BAM")
     ap.add_argument("--rna-vaf", help="Existing RNA ref/alt/depth/VAF table to reuse")
     ap.add_argument("--star-index", help="GRCh38 STAR index used when RNA FASTQ is supplied")
+    ap.add_argument("--easyfuse-star-index", help="Reusable EasyFuse/STAR-Fusion STAR index; used only after validation")
+    ap.add_argument("--star-index-build-dir", help="Destination for a newly built STAR index when reusable indexes fail validation")
+    ap.add_argument("--star-sjdb-overhang", type=int, default=149)
     ap.add_argument("--gencode-gtf", help="GENCODE GTF matching the STAR index and somatic VCF build")
     ap.add_argument("--star-executable", default="", help="Optional explicit STAR executable")
     ap.add_argument("--samtools-executable", default="samtools", help="samtools used to index RNA BAM")
@@ -87,6 +150,8 @@ def main() -> int:
         raise SystemExit("--rna-fastq1 and --rna-fastq2 must be supplied together")
     if args.rna_threads < 1:
         raise SystemExit("--rna-threads must be a positive integer")
+    if args.star_sjdb_overhang < 1:
+        raise SystemExit("--star-sjdb-overhang must be a positive integer")
     root = Path(args.project_root).resolve()
     profile_path = Path(args.profile)
     if not profile_path.is_absolute():
@@ -212,10 +277,75 @@ def main() -> int:
             raise SystemExit("RNA FASTQ allele counting requires --somatic-vcf")
         fastq1 = require_path_list(args.rna_fastq1, "RNA FASTQ R1")
         fastq2 = require_path_list(args.rna_fastq2, "RNA FASTQ R2")
-        star_index = require(args.star_index, "STAR index")
-        if not Path(star_index).is_dir():
-            raise SystemExit(f"STAR index is not a directory: {star_index}")
         gencode_gtf = require(args.gencode_gtf, "GENCODE GTF")
+        inspected: list[dict[str, object]] = []
+        star_index = ""
+        star_index_source = ""
+        candidates = []
+        if args.star_index:
+            candidates.append(("EXPLICIT", args.star_index))
+        candidates.extend(("EASYFUSE", path) for path in easyfuse_star_candidates(args.easyfuse_star_index))
+        for source, candidate in candidates:
+            check = inspect_star_index(candidate, reference_fasta)
+            check["source"] = source
+            inspected.append(check)
+            if check["status"] == "VALID":
+                star_index = str(Path(candidate).resolve())
+                star_index_source = source
+                break
+
+        validation_path = Path(args.output).resolve().parent / "star_index_validation.json"
+        star_index_dependency: list[str] = []
+        if not star_index:
+            if not reference_fasta:
+                detail = "; ".join(f"{row['source']}={row['path']}:{row['status']}" for row in inspected) or "no candidates"
+                raise SystemExit(
+                    "No valid STAR index was found and --reference-fasta was not supplied for rebuilding: " + detail
+                )
+            build_dir = args.star_index_build_dir or "{outdir}/rna/star_index"
+            star_index = build_dir
+            star_index_source = "BUILT_FOR_RUN"
+            star_env = f"NEOAG_STAR_BIN={q(require(args.star_executable, 'STAR executable'))} " if args.star_executable else ""
+            build_command = (
+                f"{star_env}bash {q(root / 'scripts/build_star_index.sh')} "
+                f"--reference-fasta {q(reference_fasta)} --gtf {q(gencode_gtf)} "
+                f"--star-index {q(star_index)} --threads {args.rna_threads} "
+                f"--sjdb-overhang {args.star_sjdb_overhang}"
+            )
+            stage(
+                lines,
+                "rna_star_index",
+                source="STAR_INDEX_BUILD",
+                command=build_command,
+                outputs={
+                    "star_index": star_index,
+                    "genome_parameters": f"{star_index}/genomeParameters.txt",
+                    "validation": str(validation_path),
+                },
+                required=True,
+            )
+            star_index_dependency = ["rna_star_index"]
+
+        validation_path.parent.mkdir(parents=True, exist_ok=True)
+        validation_payload = {
+            "selected_path": star_index,
+            "selected_source": star_index_source,
+            "status": "PLANNED_BUILD" if star_index_source == "BUILT_FOR_RUN" else "VALIDATED_REUSE",
+            "reference_fasta": reference_fasta,
+            "gencode_gtf": gencode_gtf,
+            "sjdb_overhang": args.star_sjdb_overhang,
+            "candidates": inspected,
+        }
+        validation_path.write_text(json.dumps(validation_payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        if star_index_source != "BUILT_FOR_RUN":
+            stage(
+                lines,
+                "rna_star_index",
+                source=f"STAR_INDEX_REUSE_{star_index_source}",
+                outputs={"star_index": star_index, "validation": str(validation_path)},
+                required=True,
+            )
+            star_index_dependency = ["rna_star_index"]
         star_dir = "{outdir}/rna/star"
         rna_bam = f"{star_dir}/Aligned.sortedByCoord.out.bam"
         rna_bai = f"{rna_bam}.bai"
@@ -234,6 +364,7 @@ def main() -> int:
             command=star_command,
             outputs={"rna_bam": rna_bam, "rna_bai": rna_bai},
             required=True,
+            depends=star_index_dependency,
         )
         rna_vaf = "{outdir}/rna/rna_alt_vaf.tsv"
         allele_command = (
