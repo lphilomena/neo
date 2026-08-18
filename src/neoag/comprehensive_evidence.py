@@ -50,7 +50,8 @@ EXPRESSION_FIELDS = {
     "rna_evidence_score",
 }
 RNA_FIELDS = {
-    "rna_support_status", "rna_vaf", "rna_alt_reads", "rna_depth", "rna_vaf_source",
+    "rna_support_status", "rna_ref_reads", "rna_alt_reads", "rna_depth", "rna_vaf",
+    "rna_vaf_source",
     "rna_junction_reads", "rna_junction_source", "rna_frame_status", "junction_reads",
     "junction_source", "junction_status",
 }

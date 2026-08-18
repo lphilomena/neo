@@ -13,6 +13,7 @@ from .ccf_v2 import build_ccf_2
 from .scoring import score
 from .validation import make_validation_plan
 from .reports_dual import load_report_bundle, make_patient_report, make_technical_report
+from .report_from_final import materialize_hla_loh_layout
 from .evidence_provenance import ProvenanceRegistry
 from .evidence_layer import build_standard_evidence_layer
 from .peptide_safety_gate import build_peptide_safety_gate
@@ -240,6 +241,36 @@ def run(
         weighted_baseline_tsv=ranked_peptides,
     )
     evidence_consensus_path = Path(evidence_consensus_summary["ranked_peptides"])
+    consensus_events_path = Path(evidence_consensus_summary["ranked_events"])
+    report_events = read_tsv(consensus_events_path) if consensus_events_path.is_file() else evs
+    report_peptides = read_tsv(evidence_consensus_path) if evidence_consensus_path.is_file() else peps
+    if hla_loh:
+        materialize_hla_loh_layout(outdir, hla_loh=hla_loh)
+    input_files = {
+        key: str(value)
+        for key, value in {
+            "raw_events": raw_events_path,
+            "raw_peptides": raw_peptides_path,
+            "expression": expression,
+            "transcript_expression": transcript_expression,
+            "purity": purity,
+            "cnv": cnv,
+            "hla_loh": hla_loh,
+            "netchop": netchop,
+        }.items()
+        if value
+    }
+    purity_tools = []
+    if purity:
+        purity_rows = read_tsv(purity)
+        if purity_rows:
+            purity_tools.append({
+                "tool": str(purity_rows[0].get("evidence_tool") or "FACETS").upper(),
+                "purity": str(purity_rows[0].get("purity") or ""),
+                "ploidy": str(purity_rows[0].get("ploidy") or ""),
+                "status": str(purity_rows[0].get("evidence_status") or "ASSESSED"),
+                "note": "评分输入纯度表；完整多工具并列可在生产 evidence 层补充",
+            })
     prov_payload = {
         "created_at": datetime.datetime.now(datetime.UTC).isoformat().replace("+00:00", "Z"),
         "sample_id": sample_id,
@@ -247,6 +278,19 @@ def run(
         "entry_mode": entry_mode,
         "tools": provenance_registry.to_json(),
         "warning": "Computational prototype only.",
+        "input_files": input_files,
+        "pairing_status": (
+            "已使用肿瘤和配对正常样本相关输入（纯度/HLA LOH）；指纹未评估"
+            if purity or hla_loh else ""
+        ),
+        "purity_cnv_tools": purity_tools,
+        "purity_cnv_consensus": {
+            "recommended_purity": purity_tools[0]["purity"],
+            "recommended_ploidy": purity_tools[0]["ploidy"],
+            "selected_tool": purity_tools[0]["tool"],
+            "status": "SINGLE_TOOL_NO_CROSSCHECK",
+            "basis": "run-full 仅接收一份纯度表；生产层可并列 FACETS/ASCAT/Sequenza/PURPLE。",
+        } if len(purity_tools) == 1 else {},
         "parallel_rankings": {
             "legacy_weighted": str(ranked_peptides),
             "evidence_consensus": str(evidence_consensus_path),
@@ -268,6 +312,11 @@ def run(
             "rules_status": consensus_rules.get("metadata", {}).get("status", "PROVISIONAL_RESEARCH_ONLY"),
             "legacy_ranking_modified": evidence_consensus_summary["legacy_ranking_modified"],
         },
+        "evidence_consensus": {
+            "rules_name": consensus_rules.get("metadata", {}).get("name", ""),
+            "rules_version": consensus_rules.get("metadata", {}).get("version", ""),
+            "rules_status": consensus_rules.get("metadata", {}).get("status", "PROVISIONAL_RESEARCH_ONLY"),
+        },
     }
     selected_reports = {"patient", "technical"}
     if report_types is not None:
@@ -280,8 +329,8 @@ def run(
             raise ValueError("unsupported report type(s): " + ",".join(sorted(unknown)))
     report_bundle = load_report_bundle(
         profile=profile,
-        events=evs,
-        peptides=peps,
+        events=report_events,
+        peptides=report_peptides,
         appm_summary=appm_summary,
         validation_rows=val_rows,
         outdir=outdir,

@@ -562,6 +562,135 @@ def _run_netmhcstabpan_iedb(pairs: list[tuple[str, str]], out_tsv: Path) -> None
             fh.write("\t".join(row.get(col, "") for col in header) + "\n")
 
 
+def _resolve_netmhcstabpan_home() -> Path | None:
+    """Return DTU NetMHCstabpan home when a real local install is configured."""
+    candidates: list[Path] = []
+    for key in ("NETMHCSTABPAN_HOME", "NETMHCSTABPAN_BIN"):
+        raw = (os.environ.get(key) or "").strip()
+        if not raw:
+            continue
+        p = Path(raw)
+        if p.is_file():
+            candidates.append(p.parent)
+        else:
+            candidates.append(p)
+    tools_root = (os.environ.get("NEOAG_TOOLS_ROOT") or "").strip()
+    if tools_root:
+        candidates.append(Path(tools_root) / "tools" / "netMHCstabpan")
+    for home in candidates:
+        if not home.is_dir():
+            continue
+        frontend = home / "netMHCstabpan"
+        binary = home / f"Linux_{os.uname().machine}" / "bin" / "netMHCstabpan"
+        data_dir = home / "data"
+        if not frontend.is_file() or not binary.is_file() or not data_dir.is_dir():
+            continue
+        # Reject the IEDB Python shim (no Linux_x86_64 tree / "IEDB" marker).
+        try:
+            head = frontend.read_text(encoding="utf-8", errors="ignore")[:400]
+        except OSError:
+            head = ""
+        if "IEDB" in head or "neoag-iedb-shim" in head:
+            continue
+        return home.resolve()
+    return None
+
+
+def _stabpan_allele_cli(allele: str) -> str:
+    # NetMHCstabpan CLI expects HLA-A02:01 (no '*').
+    return allele.replace("*", "").replace("HLA-", "HLA-") if allele.startswith("HLA-") else allele.replace("*", "")
+
+
+def _parse_netmhcstabpan_local_stdout(text: str, fallback_allele: str) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    for line in text.splitlines():
+        if not line.strip() or line.startswith("#") or line.startswith("-"):
+            continue
+        parts = line.split()
+        # Typical: pos HLA peptide Identity Pred Thalf %Rank_Stab Exp_stab [BindLevel...]
+        if len(parts) < 7:
+            continue
+        if parts[0] == "pos" or not parts[0].isdigit():
+            continue
+        peptide = parts[2]
+        if not peptide.isalpha():
+            continue
+        rows.append(
+            {
+                "Peptide": peptide,
+                "HLA": fallback_allele,
+                "score": parts[4],
+                "percentile_rank": parts[6],
+            }
+        )
+    return rows
+
+
+def _run_netmhcstabpan_local(pairs: list[tuple[str, str]], out_tsv: Path, *, home: Path) -> None:
+    from collections import defaultdict
+
+    exe = str(home / "netMHCstabpan")
+    work = out_tsv.parent / "netmhcstabpan"
+    work.mkdir(parents=True, exist_ok=True)
+    tmpdir = Path(os.environ.get("NEOAG_NETMHCSTABPAN_TMPDIR") or (work / "tmp"))
+    tmpdir.mkdir(parents=True, exist_ok=True)
+
+    grouped: dict[tuple[str, int], list[str]] = defaultdict(list)
+    seen: set[tuple[str, str]] = set()
+    for peptide, allele in pairs:
+        key = (peptide, allele)
+        if key in seen:
+            continue
+        seen.add(key)
+        grouped[(allele, len(peptide))].append(peptide)
+
+    env = os.environ.copy()
+    env["NETMHCSTABPAN_HOME"] = str(home)
+    env["TMPDIR"] = str(tmpdir)
+    env["PATH"] = f"{home}:{env.get('PATH', '')}"
+
+    all_rows: list[dict[str, str]] = []
+    total_groups = len(grouped)
+    for idx, ((allele, length), peptides) in enumerate(sorted(grouped.items()), start=1):
+        pep_path = work / f"{allele.replace('*', '').replace(':', '')}.L{length}.pep"
+        pep_path.write_text("\n".join(peptides) + "\n", encoding="utf-8")
+        allele_cli = _stabpan_allele_cli(allele)
+        cmd = [exe, "-p", "-a", allele_cli, "-l", str(length), "-f", str(pep_path)]
+        print(
+            f"netmhcstabpan local: group {idx}/{total_groups} allele={allele} len={length} n={len(peptides)}",
+            flush=True,
+        )
+        proc = _run_cmd(cmd, work, env=env)
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"NetMHCstabpan local failed ({proc.returncode}) for {allele} len={length}: {' '.join(cmd)}\n"
+                f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
+            )
+        parsed = _parse_netmhcstabpan_local_stdout(proc.stdout, allele)
+        # Prefer caller allele (starred) for join keys.
+        for row in parsed:
+            row["HLA"] = allele
+        all_rows.extend(parsed)
+        if not parsed:
+            raise RuntimeError(
+                f"NetMHCstabpan local produced no parseable rows for {allele} len={length}. "
+                f"stdout head:\n{proc.stdout[:2000]}"
+            )
+
+    header = ["Peptide", "HLA", "score", "percentile_rank"]
+    out_tsv.parent.mkdir(parents=True, exist_ok=True)
+    with out_tsv.open("w", encoding="utf-8", newline="") as fh:
+        fh.write("\t".join(header) + "\n")
+        for row in all_rows:
+            fh.write("\t".join(row.get(col, "") for col in header) + "\n")
+
+
+def resolve_netmhcstabpan_backend() -> str:
+    """local = DTU binary; iedb = IEDB API."""
+    mode = os.environ.get("NEOAG_NETMHCSTABPAN_BACKEND", "local").strip().lower()
+    return "iedb" if mode in {"iedb", "api", "remote"} else "local"
+
+
 def run_netmhcstabpan(ctx: RunContext, out_tsv: Path) -> Path:
     spec = TOOL_REGISTRY["netmhcstabpan"]
     if not ctx.raw_peptides:
@@ -573,9 +702,28 @@ def run_netmhcstabpan(ctx: RunContext, out_tsv: Path) -> Path:
     if ctx.stub:
         _write_stabpan_stub(pairs, out_tsv)
         return out_tsv
+    if resolve_netmhcstabpan_backend() != "iedb":
+        home = _resolve_netmhcstabpan_home()
+        if home is not None:
+            try:
+                _run_netmhcstabpan_local(pairs, out_tsv, home=home)
+                return out_tsv
+            except Exception as exc:
+                allow = os.environ.get("NEOAG_NETMHCSTABPAN_ALLOW_IEDB_FALLBACK", "").strip().lower() in {
+                    "1",
+                    "true",
+                    "yes",
+                }
+                if not allow:
+                    raise RuntimeError(
+                        "NetMHCstabpan local mode failed and IEDB fallback is disabled by default. "
+                        "Set NEOAG_NETMHCSTABPAN_ALLOW_IEDB_FALLBACK=1 to allow remote fallback."
+                    ) from exc
+                print(f"netmhcstabpan: local failed ({exc}); falling back to IEDB API", flush=True)
+        else:
+            print("netmhcstabpan: no local DTU install found; using IEDB API", flush=True)
     _run_netmhcstabpan_iedb(pairs, out_tsv)
     return out_tsv
-
 
 def _netmhcpan_subprocess_env() -> dict[str, str]:
     env = os.environ.copy()
@@ -1246,6 +1394,15 @@ def _run_bigmhc_im_external(pairs: list[tuple[str, str]], out_tsv: Path, ctx: Ru
         f"-o={out_prd}",
         "-d=cpu",
     ]
+    bigmhc_jobs = os.environ.get("NEOAG_BIGMHC_JOBS", "").strip()
+    if bigmhc_jobs:
+        try:
+            jobs = int(bigmhc_jobs)
+        except ValueError as exc:
+            raise ValueError("NEOAG_BIGMHC_JOBS must be a positive integer") from exc
+        if jobs < 1:
+            raise ValueError("NEOAG_BIGMHC_JOBS must be a positive integer")
+        cmd.append(f"-j={jobs}")
     subprocess.run(cmd, check=True, cwd=bigmhc_dir / "src", env=os.environ.copy())
     from ..adapters.bigmhc_im import parse_bigmhc_im, write_bigmhc_im_evidence
 
@@ -1344,6 +1501,17 @@ def run_tool(name: str, ctx: RunContext, output: str | Path) -> Path:
         raise KeyError(f"No runner for tool '{name}'. Known: {sorted(RUNNERS)}")
     if ctx.stub:
         require_non_strict(f"stub mode for tool {name}")
+
+    out_path = Path(output)
+    force_rerun = os.environ.get("NEOAG_FORCE_TOOL_RERUN", "").strip().lower() in {"1", "true", "yes"}
+    if (
+        not force_rerun
+        and out_path.is_file()
+        and out_path.stat().st_size > 0
+        and name in {"netmhcpan", "mhcflurry", "netmhcstabpan", "prime", "bigmhc_im", "deepimmuno"}
+    ):
+        print(f"[runner] {name}: reuse existing {out_path}", flush=True)
+        return out_path.resolve()
 
     mode = _effective_mode(name)
     if mode == RunnerMode.DOCKER:

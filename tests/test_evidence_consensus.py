@@ -209,6 +209,46 @@ def test_all_biological_tracks_select_their_own_pareto_dimensions(
     assert expected_dimension in result["pareto_dimensions"]
 
 
+def test_dna_snv_with_splice_consequence_remains_missense_track():
+    row = complete_row()
+    row.update({
+        "event_type": "SNV",
+        "mutation_source": "SNV",
+        "consequence": "missense_variant&splice_region_variant",
+        "peptide_consequence": "splice_junction",
+        "source_chain_track": "SNV",
+    })
+    result = score_evidence_consensus(row)
+    assert result["biological_event_track"] == "MISSENSE"
+    assert result["evidence_track"] == "MISSENSE"
+
+
+def test_rna_splice_event_remains_splice_track():
+    row = complete_row()
+    row.update({
+        "event_type": "splice_junction",
+        "mutation_source": "RNA_SPLICE",
+        "peptide_consequence": "splice_junction",
+        "source_chain_track": "SPLICE",
+    })
+    result = score_evidence_consensus(row)
+    assert result["biological_event_track"] == "SPLICE"
+    assert result["evidence_track"] == "SPLICE"
+
+
+def test_dna_indel_with_frameshift_consequence_uses_frameshift_track():
+    row = complete_row()
+    row.update({
+        "event_type": "InDel",
+        "mutation_source": "InDel",
+        "consequence": "frameshift_variant",
+        "source_chain_track": "INDEL",
+    })
+    result = score_evidence_consensus(row)
+    assert result["biological_event_track"] == "FRAMESHIFT"
+    assert result["evidence_track"] == "FRAMESHIFT"
+
+
 def test_tie_break_is_deterministic_and_auditable(tmp_path: Path):
     first = complete_row("P_B")
     second = complete_row("P_A")
@@ -355,7 +395,14 @@ def test_first_phase_output_contract_and_aliases(tmp_path: Path):
     comprehensive = tmp_path / "comprehensive.tsv"
     weighted = tmp_path / "ranked_peptides.tsv"
     canonical_input = complete_row()
-    canonical_input.update({"peptide": "AAAAAAAAA", "hla_allele": "HLA-A*02:01"})
+    canonical_input.update({
+        "peptide": "AAAAAAAAA",
+        "hla_allele": "HLA-A*02:01",
+        "rna_ref_reads": "31",
+        "rna_alt_reads": "9",
+        "rna_depth": "40",
+        "rna_vaf": "0.225",
+    })
     write_tsv(comprehensive, [canonical_input])
     write_tsv(weighted, [{"peptide_id": "P1", "efficacy_score": "0.5"}])
     outdir = tmp_path / "scoring"
@@ -381,6 +428,10 @@ def test_first_phase_output_contract_and_aliases(tmp_path: Path):
     assert canonical["all_tool_results_schema_version"] == "1.0"
     assert canonical["canonical_record_type"] == "PEPTIDE_HLA_EVIDENCE"
     assert len(canonical["canonical_record_id"]) == 24
+    assert canonical["rna_ref_reads"] == "31"
+    assert canonical["rna_alt_reads"] == "9"
+    assert canonical["rna_depth"] == "40"
+    assert canonical["rna_vaf"] == "0.225"
     canonical_manifest = json.loads(Path(result["all_tool_results_manifest"]).read_text())
     assert canonical_manifest["canonical"] is True
     assert canonical_manifest["input"]["sha256"]
@@ -632,6 +683,20 @@ def test_clear_novel_junction_can_satisfy_specificity_without_dna_ccf(tmp_path: 
     })
     row = _rank_one(tmp_path, candidate)
     assert row["evidence_grade"] == "R1"
+
+
+def test_frameshift_without_matched_wt_is_assessed_as_novel_sequence():
+    state = derive_mutant_specificity({
+        "peptide": "NOVELTAIL",
+        "wildtype_peptide": "",
+        "event_type": "InDel",
+        "peptide_consequence": "frameshift",
+        "mutant_specificity_status": "UNASSESSED",
+    }, {})
+
+    assert state["state"] == "NOVEL_SEQUENCE"
+    assert state["grade"] == 3
+    assert state["assessed"] is True
 
 
 def test_rna_only_fusion_r3_recommends_orthogonal_confirmation(tmp_path: Path):

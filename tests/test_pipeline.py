@@ -39,6 +39,39 @@ def test_presentation_merges_netchop_by_peptide_id(tmp_path):
     assert float(rows[0]["presentation_evidence_score"]) == 0.8
     assert float(rows[0]["evidence_completeness"]) > 0
 
+
+def test_presentation_links_existing_wildtype_predictions(tmp_path):
+    pep = tmp_path / "peptides.tsv"
+    pep.write_text(
+        "peptide_id\tevent_id\tsample_id\tpeptide\twildtype_peptide\thla_allele\tmhc_class\n"
+        "P1\tE1\tS1\tMTPEPTID\tWTPEPTID\tHLA-A*02:01\tI\n",
+        encoding="utf-8",
+    )
+    net = tmp_path / "net.tsv"
+    net.write_text(
+        "sample_id\tpeptide\thla_allele\tpeptide_hla_key\tnetmhcpan_ba_rank\tnetmhcpan_el_rank\n"
+        "S1\tMTPEPTID\tHLA-A*02:01\tMTPEPTID_HLA_A_02_01\t0.5\t0.4\n"
+        "S1\tWTPEPTID\tHLA-A*02:01\tWTPEPTID_HLA_A_02_01\t2.5\t2.0\n",
+        encoding="utf-8",
+    )
+    mhc = tmp_path / "mhc.tsv"
+    mhc.write_text(
+        "sample_id\tpeptide\thla_allele\tpeptide_hla_key\tmhcflurry_affinity_percentile\t"
+        "mhcflurry_processing_score\tmhcflurry_presentation_score\n"
+        "S1\tMTPEPTID\tHLA-A*02:01\tMTPEPTID_HLA_A_02_01\t0.5\t0.7\t0.8\n"
+        "S1\tWTPEPTID\tHLA-A*02:01\tWTPEPTID_HLA_A_02_01\t2.5\t0.4\t0.3\n",
+        encoding="utf-8",
+    )
+
+    rows = build_presentation_evidence(pep, net, mhc, load_profile("default"))
+
+    assert rows[0]["wildtype_peptide"] == "WTPEPTID"
+    assert rows[0]["netmhcpan_wt_rank_ba"] == "2.5"
+    assert rows[0]["netmhcpan_wt_rank_el"] == "2.0"
+    assert rows[0]["mhcflurry_wt_affinity_percentile"] == "2.5"
+    assert rows[0]["mhcflurry_wt_processing_score"] == "0.4"
+    assert rows[0]["mhcflurry_wt_presentation_score"] == "0.3"
+
 def test_appm_and_ccf(tmp_path):
     profile = load_profile("leukemia")
     rows, summary = build_appm_lite("S1", ROOT/"data/fixtures/vep_appm.tsv", ROOT/"data/fixtures/gene_expression.tsv", ROOT/"data/fixtures/hla_loh.tsv", profile, tmp_path/"appm")

@@ -2,7 +2,7 @@ import hashlib
 import json
 from pathlib import Path
 
-from neoag.reports_dual import ReportBundle, _patient_event_grade_counts, _patient_evidence_summary, _patient_event_change, _patient_limitation, _patient_rna_measurements, _replace_gene_ids, load_report_bundle, make_dual_reports, make_patient_report, make_technical_report
+from neoag.reports_dual import ReportBundle, _patient_event_grade_counts, _patient_evidence_audit_rows, _patient_evidence_summary, _patient_event_change, _patient_limitation, _patient_rna_measurements, _replace_gene_ids, load_report_bundle, make_dual_reports, make_patient_report, make_technical_report
 from neoag.utils import write_tsv
 
 
@@ -455,6 +455,173 @@ def test_patient_limitation_keeps_hard_fail_and_missing_dimensions():
     assert "NetMHCstabpan未评估" in limitation
 
 
+def test_patient_limitation_describes_patient_specific_tool_conflict():
+    limitation = _patient_limitation({
+        "evidence_conflict_fields": "presentation_evidence_score,rna_alt_reads",
+        "evidence_conflict_details": json.dumps([
+            {
+                "field": "presentation_evidence_score",
+                "selected_source": "presentation_evidence",
+                "selected_value": "0.82",
+                "other_source": "ranked_peptides",
+                "other_value": "0.31",
+            },
+            {
+                "field": "rna_alt_reads",
+                "selected_source": "rna_junction_evidence",
+                "selected_value": "9",
+                "other_source": "raw_events",
+                "other_value": "0",
+            },
+        ]),
+    })
+    assert "具体证据冲突" in limitation
+    assert "旧主排序副本" not in limitation
+    assert "RNA突变等位基因reads：RNA位点/连接证据=9，原始事件表=0" in limitation
+
+
+def test_patient_limitation_does_not_treat_stale_ranking_copy_as_tool_conflict():
+    limitation = _patient_limitation({
+        "evidence_conflict_fields": "presentation_evidence_score",
+        "evidence_conflict_details": json.dumps([{
+            "field": "presentation_evidence_score",
+            "selected_source": "presentation_evidence",
+            "selected_value": "0.82",
+            "other_source": "ranked_peptides",
+            "other_value": "0.31",
+        }]),
+    })
+    assert "具体证据冲突" not in limitation
+    assert "旧主排序副本" not in limitation
+
+
+def test_patient_splice_change_uses_exon_path_and_coordinate():
+    change = _patient_event_change({
+        "event_type": "Splice",
+        "peptide_consequence": "splice_junction",
+        "source_event_id": "ENSG00000008300:E25.1_48645470-E30.3_48642042",
+        "canonical_junction_id": "SJ|GRCh38|chr3|48642043|48645469|.",
+        "event_name": "chr3:48642043",
+    })
+    assert "E25.1→E30.3" in change
+    assert "chr3:48642043-48645469" in change
+    assert "ORF/蛋白影响待确认" in change
+
+
+def test_new_patient_splice_gene_and_change_are_enriched_from_gtf(tmp_path, monkeypatch):
+    gtf = tmp_path / "gencode.gtf"
+    gtf.write_text(
+        'chr7\ttest\tgene\t100\t500\t.\t+\t.\tgene_id "ENSG00999999999"; gene_name "GENE_NEW";\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("GENCODE_GTF", str(gtf))
+    event_id = "SJ|GRCh38|chr7|200|300|+"
+    source_event_id = "ENSG00999999999:E2.1_199-E4.1_301"
+    bundle = load_report_bundle(
+        profile={},
+        events=[{
+            "event_id": event_id,
+            "event_type": "Splice",
+            "canonical_junction_id": event_id,
+            "source_event_id": source_event_id,
+        }],
+        peptides=[{
+            "peptide_id": "P_NEW",
+            "event_id": event_id,
+            "event_type": "Splice",
+            "canonical_junction_id": event_id,
+            "source_event_id": source_event_id,
+            "peptide": "AAAAAAAAA",
+            "hla_allele": "HLA-A*02:01",
+        }],
+        outdir=tmp_path,
+        sample_id="NEW_PATIENT",
+    )
+    assert bundle.events[0]["gene"] == "GENE_NEW"
+    assert bundle.peptides[0]["gene"] == "GENE_NEW"
+    assert "E2.1→E4.1" in _patient_event_change(bundle.peptides[0])
+
+
+def test_consensus_report_streams_source_labels_for_unresolved_new_patient_gene(tmp_path, monkeypatch):
+    gtf = tmp_path / "gencode.gtf"
+    gtf.write_text(
+        'chr7\ttest\tgene\t100\t500\t.\t+\t.\tgene_id "ENSG00999999999"; gene_name "GENE_NEW";\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("GENCODE_GTF", str(gtf))
+    event_id = "SJ|GRCh38|chr7|200|300|+"
+    source_event_id = "ENSG00999999999:E2.1_199-E4.1_301"
+    scoring = tmp_path / "scoring"
+    scoring.mkdir()
+    write_tsv(scoring / "all_tool_results.tsv", [{
+        "event_id": event_id,
+        "peptide_id": "P_NEW",
+        "hla_allele": "HLA-A*02:01",
+        "gene": "chr7:200",
+        "canonical_junction_id": event_id,
+        "source_record_id": source_event_id,
+    }])
+    bundle = load_report_bundle(
+        profile={},
+        events=[{
+            "event_id": event_id,
+            "event_type": "Splice",
+            "gene": "chr7:200",
+            "evidence_grade": "R3",
+            "representative_1_peptide_id": "P_NEW",
+        }],
+        peptides=[{
+            "peptide_id": "P_NEW",
+            "event_id": event_id,
+            "event_type": "Splice",
+            "gene": "chr7:200",
+            "peptide": "AAAAAAAAA",
+            "hla_allele": "HLA-A*02:01",
+            "evidence_grade": "R3",
+        }],
+        outdir=tmp_path,
+        sample_id="NEW_PATIENT",
+    )
+    assert bundle.events[0]["gene"] == "GENE_NEW"
+    assert bundle.peptides[0]["gene"] == "GENE_NEW"
+    assert "E2.1→E4.1" in _patient_event_change(bundle.peptides[0])
+
+
+def test_consensus_report_backfills_specific_protein_change_for_new_patient(tmp_path):
+    scoring = tmp_path / "scoring"
+    scoring.mkdir()
+    write_tsv(scoring / "all_tool_results.tsv", [{
+        "event_id": "chr1:100:A:T",
+        "peptide_id": "P_SNV",
+        "hla_allele": "HLA-A*02:01",
+        "gene": "GENE1",
+        "combined_protein_change": "ENST0001:p.Gly12Asp",
+    }])
+    bundle = load_report_bundle(
+        profile={},
+        events=[{
+            "event_id": "chr1:100:A:T",
+            "event_type": "SNV",
+            "gene": "GENE1",
+            "evidence_grade": "R3",
+            "representative_1_peptide_id": "P_SNV",
+        }],
+        peptides=[{
+            "peptide_id": "P_SNV",
+            "event_id": "chr1:100:A:T",
+            "event_type": "SNV",
+            "gene": "GENE1",
+            "peptide": "AAAAAAAAA",
+            "hla_allele": "HLA-A*02:01",
+            "evidence_grade": "R3",
+        }],
+        outdir=tmp_path,
+        sample_id="NEW_PATIENT",
+    )
+    assert _patient_event_change(bundle.events[0]) == "p.Gly12Asp"
+    assert _patient_event_change(bundle.peptides[0]) == "p.Gly12Asp"
+
+
 def test_patient_report_contains_evidence_source_audit(tmp_path):
     bundle = _bundle()
     bundle.evidence_source_status = "CANONICAL_ALL_TOOL_RESULTS"
@@ -466,8 +633,23 @@ def test_patient_report_contains_evidence_source_audit(tmp_path):
     text = out.read_text(encoding="utf-8")
     assert "证据来源审计" in text
     assert "Top候选逐行匹配" in text
-    assert "Top 100证据维度完整性" in text
+    assert "Top 1证据维度可用性" in text
+    assert "可作为当前分层证据" in text
+    assert "尚不能作为可靠证据" in text
     assert "NetMHCstabpan" in text
+
+
+def test_patient_ccf_audit_separates_reliable_low_confidence_and_unresolved():
+    rows = [
+        {"ccf_estimate": "0.82", "ccf_confidence_state": "CCF_HIGH_CONFIDENCE"},
+        {"ccf_estimate": "0.21", "ccf_confidence_state": "CCF_LOW_CONFIDENCE"},
+        {"ccf_estimate": "", "ccf_status": "RNA_ONLY_UNRESOLVED"},
+    ]
+    ccf_row = next(row for row in _patient_evidence_audit_rows(rows) if row["证据维度"] == "克隆性/CCF")
+    assert ccf_row["可作为当前分层证据"] == "1（可靠估计）"
+    assert "已计算但低置信 1" in ccf_row["尚不能作为可靠证据"]
+    assert "未形成数值或不适用 1" in ccf_row["尚不能作为可靠证据"]
+    assert "不作为正向加分或阴性结论" in ccf_row["判定口径"]
 
 
 def test_patient_report_lists_input_files_and_purity_consensus(tmp_path):
@@ -574,3 +756,48 @@ def test_ensembl_gene_ids_are_replaced_with_symbols():
         "GENE|ENSG00000101871": "MID1",
     }) == "ARHGAP6::MID1"
     assert _replace_gene_ids("CPSF6::ENSG00000170846", {}) == "CPSF6::MRFAP1L2"
+
+
+def test_scoring_all_tool_results_counts_as_canonical(tmp_path):
+    scoring = tmp_path / "scoring"
+    scoring.mkdir()
+    evidence = scoring / "all_tool_results.tsv"
+    write_tsv(evidence, [{"peptide_id": "P1", "hla_allele": "HLA-A*02:01", "netmhcpan_el_rank": "0.2"}])
+    digest = hashlib.sha256(evidence.read_bytes()).hexdigest()
+    (scoring / "all_tool_results.manifest.json").write_text(
+        json.dumps({"output": {"sha256": digest}, "canonical": True}), encoding="utf-8"
+    )
+    base = _bundle()
+    bundle = load_report_bundle(profile=base.profile, events=base.events, peptides=base.peptides, outdir=tmp_path)
+    assert bundle.evidence_source_status == "CANONICAL_ALL_TOOL_RESULTS"
+    assert bundle.evidence_integrity["status"] == "PASS"
+
+
+def test_hla_loh_consensus_tsv_is_expanded_into_tool_rows(tmp_path):
+    consensus_dir = tmp_path / "hla_loh_consensus"
+    consensus_dir.mkdir()
+    write_tsv(consensus_dir / "hla_loh_consensus.tsv", [
+        {"hla_allele": "HLA-A*02:01", "lohhla_status": "loh", "spechla_status": "no"},
+        {"hla_allele": "HLA-B*07:02", "lohhla_status": "no", "spechla_status": "no"},
+    ])
+    base = _bundle()
+    base.peptides[0]["hla_allele"] = "HLA-A*02:01"
+    bundle = load_report_bundle(profile=base.profile, events=base.events, peptides=base.peptides, outdir=tmp_path)
+    assert any(row.get("_report_tool") == "LOHHLA" for row in bundle.hla_loh_tool_results)
+    assert any(row.get("_report_tool") == "SpecHLA" for row in bundle.hla_loh_tool_results)
+    out = tmp_path / "patient_loh.html"
+    make_patient_report(out, bundle)
+    text = out.read_text(encoding="utf-8")
+    assert "未提供逐等位基因HLA LOH结果" not in text
+    assert "检出LOH" in text or "未见LOH" in text or "冲突" in text
+
+
+def test_release_metadata_reads_parallel_ranking_rules_version():
+    from neoag.reports_dual import _patient_release_metadata
+
+    bundle = _bundle()
+    bundle.provenance["parallel_rankings"] = {"rules_version": "2.1"}
+    bundle.evidence_integrity = {"actual_sha256": "abc1234567890"}
+    meta = _patient_release_metadata(bundle)
+    assert meta["rules_version"] == "2.1"
+    assert meta["run_id"].startswith("S1-")

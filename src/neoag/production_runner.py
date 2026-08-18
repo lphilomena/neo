@@ -407,6 +407,7 @@ def _write_final_config(
         "normal_hla_ligands",
         "reference_proteome",
         "normal_junctions",
+        "evidence_consensus_rules",
         "netmhcpan",
         "mhcflurry",
         "netmhcstabpan",
@@ -439,6 +440,7 @@ def run_production(
     execute: bool = False,
     force: bool = False,
     skip_ranking: bool = False,
+    reports_only: bool = False,
 ) -> ProductionResult:
     manifest = load_production_manifest(manifest_path)
     run_cfg = manifest.get("run") or {}
@@ -455,6 +457,28 @@ def run_production(
     }
     expanded_run = _expand_value(run_cfg, context)
     expanded_evidence = _expand_value(manifest.get("evidence") or {}, context)
+    if reports_only:
+        from .report_from_final import materialize_hla_loh_layout, write_reports_from_final
+
+        final_outdir = run_outdir / "final"
+        materialize_hla_loh_layout(
+            final_outdir,
+            hla_loh=str(expanded_evidence.get("hla_loh") or ""),
+            manifest=manifest,
+        )
+        outputs = write_reports_from_final(final_outdir)
+        stage = StageResult("rebuild_reports", "PASS", True, outputs=outputs)
+        result = ProductionResult(
+            sample_id=sample_id,
+            status="PASS",
+            outdir=str(run_outdir),
+            dry_run=False,
+            stages=[stage],
+            generated_config=str(run_outdir / "run.production.generated.toml"),
+            final_outdir=str(final_outdir),
+        )
+        _write_result(result, run_outdir)
+        return result
     stage_specs = manifest.get("stages") or {}
     logs_dir = run_outdir / "logs"
     stage_results: list[StageResult] = []
@@ -682,6 +706,19 @@ def run_production(
             outputs={"ranked_peptides": str(expected_ranked), "config": str(config_path)},
             message="" if final_status == "PASS" else f"run-full returned {proc.returncode}",
         )
+        if final_status == "PASS":
+            from .report_from_final import materialize_hla_loh_layout, write_reports_from_final
+
+            materialize_hla_loh_layout(
+                final_outdir,
+                hla_loh=str(expanded_evidence.get("hla_loh") or ""),
+                manifest=manifest,
+            )
+            try:
+                write_reports_from_final(final_outdir)
+                final_stage.message = (final_stage.message + "; reports rebuilt from consensus tables").strip("; ")
+            except Exception as exc:  # pragma: no cover - keep production PASS if ranking succeeded
+                final_stage.message = f"{final_stage.message}; report rebuild warning: {exc}".strip("; ")
     stage_results.append(final_stage)
     status = "PASS" if final_status == "PASS" and source_status == "COMPLETE" else (
         "LOW_CONFIDENCE" if final_status == "PASS" else final_status
@@ -711,6 +748,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--execute", action="store_true", help="Execute stages; default is dry-run")
     parser.add_argument("--force", action="store_true", help="Rerun stages even when declared outputs exist")
     parser.add_argument("--skip-ranking", action="store_true")
+    parser.add_argument("--reports-only", action="store_true", help="Rebuild patient/technical reports from existing final/ outputs")
     args = parser.parse_args(argv)
     result = run_production(
         args.manifest,
@@ -719,6 +757,7 @@ def main(argv: list[str] | None = None) -> int:
         execute=args.execute,
         force=args.force,
         skip_ranking=args.skip_ranking,
+        reports_only=args.reports_only,
     )
     print(json.dumps(asdict(result), indent=2, ensure_ascii=False))
     return 0 if result.status in {"PASS", "LOW_CONFIDENCE", "PARTIAL", "DRY_RUN"} else 1

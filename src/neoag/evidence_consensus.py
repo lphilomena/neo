@@ -76,11 +76,14 @@ ALL_TOOL_RESULTS_REQUIRED_FIELDS = [
     "evidence_source_precedence_version", "evidence_field_sources",
     "evidence_conflict_fields",
 ]
+ALL_TOOL_RESULTS_RNA_ALLELE_FIELDS = [
+    "rna_ref_reads", "rna_alt_reads", "rna_depth", "rna_vaf",
+]
 ALL_TOOL_RESULTS_CORE_FIELDS = ALL_TOOL_RESULTS_REQUIRED_FIELDS + [
     "sample_id", "gene", "event_type", "peptide_consequence", "mhc_class",
     "comprehensive_evidence_schema_version", "comprehensive_evidence_status",
     "comprehensive_evidence_sources", "evidence_conflict_count",
-]
+] + ALL_TOOL_RESULTS_RNA_ALLELE_FIELDS
 
 BASE_DIMENSIONS = [
     "event_authenticity_grade",
@@ -389,8 +392,14 @@ def _format_tiebreak_number(value: float | None) -> str:
 def _is_clear_novel_sequence(source: Mapping[str, Any]) -> bool:
     novel = str(source.get("contains_novel_aa", "")).strip().lower() in {"true", "yes", "1"}
     junction = str(source.get("crosses_junction", "")).strip().lower() in {"true", "yes", "1"}
-    consequence = " ".join(str(source.get(field, "")).upper() for field in ("peptide_consequence", "event_type"))
-    return novel or junction or any(token in consequence for token in ("NOVEL_TAIL", "NOVEL JUNCTION", "FRAMESHIFT_NOVEL"))
+    consequence = " ".join(
+        str(source.get(field, "")).upper()
+        for field in ("peptide_consequence", "variant_consequence", "consequence", "event_type", "evidence_track")
+    )
+    return novel or junction or any(
+        token in consequence
+        for token in ("NOVEL_TAIL", "NOVEL JUNCTION", "FRAMESHIFT_NOVEL", "FRAMESHIFT")
+    )
 
 
 def _uncapped_grade(
@@ -1079,6 +1088,8 @@ def _write_canonical_all_tool_results(
         canonical.setdefault("evidence_source_precedence_version", "")
         canonical.setdefault("evidence_field_sources", "{}")
         canonical.setdefault("evidence_conflict_fields", "")
+        for field in ALL_TOOL_RESULTS_RNA_ALLELE_FIELDS:
+            canonical.setdefault(field, "")
         canonical["all_tool_results_schema_version"] = ALL_TOOL_RESULTS_SCHEMA_VERSION
         canonical["canonical_record_type"] = "PEPTIDE_HLA_EVIDENCE"
         canonical["canonical_record_id"] = hashlib.sha256(identity.encode()).hexdigest()[:24]

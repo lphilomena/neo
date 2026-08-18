@@ -48,6 +48,9 @@ expected_peptide_sources = ["pVACseq", "pVACfuse", "pVACsplice"]
 presentation_predictors = ["netmhcpan", "mhcflurry"]
 required_presentation_predictors = ["netmhcpan", "mhcflurry"]
 
+[evidence]
+evidence_consensus_rules = "{ROOT / 'configs/ranking/sarcoma_evidence_consensus_v3_source_chain.toml'}"
+
 {''.join(stages)}
 ''',
         encoding="utf-8",
@@ -130,6 +133,9 @@ def test_production_runner_reuses_declared_outputs(tmp_path):
     assert result.stages[0].status == "REUSED"
     assert result.stages[-1].status == "SKIPPED"
     assert (tmp_path / "run/merged/raw_peptides.tsv").is_file()
+    generated = (tmp_path / "run/run.production.generated.toml").read_text(encoding="utf-8")
+    assert "evidence_consensus_rules" in generated
+    assert "sarcoma_evidence_consensus_v3_source_chain.toml" in generated
 
 
 def test_production_runner_blocks_incomplete_cross_tool_group(tmp_path):

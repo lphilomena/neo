@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import html
 import hashlib
+import csv
 import json
+import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -57,6 +59,8 @@ PATIENT_STATUS_LABELS = {
     "UNASSESSED": "未评估",
     "UNSPECIFIED": "未明确",
     "PARTIAL": "证据部分完整",
+    "LOW": "证据完整度低",
+    "MHC_I_CAUTION": "MHC-I存在谨慎信号",
     "IFNG_RESPONSE_CAUTION": "IFNG/JAK-STAT应答存在谨慎信号",
     "MHC_II_INTACT": "现有结果未见MHC-II呈递系统整体完全丧失",
 }
@@ -78,32 +82,111 @@ def _read_optional(path: str | Path | None) -> list[dict[str, str]]:
     return read_tsv(p) if p.is_file() else []
 
 
-def _read_hla_loh_tool_results(root: Path | None) -> list[dict[str, str]]:
-    """Load allele-level LOHHLA and SpecHLA evidence from supported layouts."""
+def _report_relpath(path: Path, root: Path | None) -> str:
     if not root:
-        return []
+        return str(path)
+    try:
+        return str(path.resolve().relative_to(root.resolve()))
+    except ValueError:
+        return str(path)
+
+
+def _first_existing(paths: list[Path | None]) -> Path | None:
+    for path in paths:
+        if path and path.is_file():
+            return path
+    return None
+
+
+def _hla_loh_search_roots(root: Path | None, provenance: Mapping[str, Any] | None = None) -> list[Path]:
+    roots: list[Path] = []
+    if root:
+        roots.extend([root, root.parent, root.parent / "evidence", root.parent / "evidence" / "hla_loh"])
+    for value in (
+        (provenance or {}).get("hla_loh"),
+        ((provenance or {}).get("tools") or {}).get("hla_loh", {}).get("file") if isinstance((provenance or {}).get("tools"), Mapping) else None,
+    ):
+        if value:
+            path = Path(str(value))
+            roots.append(path.parent if path.suffix else path)
+    seen: set[str] = set()
+    ordered: list[Path] = []
+    for item in roots:
+        key = str(item)
+        if key not in seen:
+            seen.add(key)
+            ordered.append(item)
+    return ordered
+
+
+def _expand_hla_loh_consensus(path: Path, root: Path | None) -> list[dict[str, str]]:
+    results: list[dict[str, str]] = []
+    source = _report_relpath(path, root)
+    for row in _read_optional(path):
+        allele = str(row.get("hla_allele") or row.get("allele") or "").strip()
+        if not allele:
+            continue
+        for tool, field in (("LOHHLA", "lohhla_status"), ("SpecHLA", "spechla_status")):
+            status = str(row.get(field) or "").strip()
+            if not status:
+                continue
+            results.append({
+                **dict(row),
+                "hla_allele": allele,
+                "loh_status": status,
+                "tool": tool,
+                "_report_tool": tool,
+                "_report_source": source,
+            })
+    return results
+
+
+def _read_hla_loh_tool_results(root: Path | None, provenance: Mapping[str, Any] | None = None) -> list[dict[str, str]]:
+    """Load allele-level LOHHLA and SpecHLA evidence from supported layouts."""
+    search_roots = _hla_loh_search_roots(root, provenance)
     candidates = {
         "LOHHLA": [
-            root / "hla_loh" / "lohhla" / "hla_loh.tsv",
-            root / "hla_loh_consensus" / "lohhla_hla_loh.tsv",
+            "hla_loh/lohhla/hla_loh.tsv",
+            "hla_loh_consensus/lohhla_hla_loh.tsv",
+            "lohhla/hla_loh.tsv",
+            "hla_loh.tsv",
         ],
         "SpecHLA": [
-            root / "hla_loh" / "spechla" / "hla_loh.tsv",
-            root / "hla_loh_consensus" / "spechla_sequenza012_hla_loh.tsv",
-            root / "hla_loh_consensus" / "spechla_hla_loh.tsv",
+            "hla_loh/spechla/hla_loh.tsv",
+            "hla_loh_consensus/spechla_sequenza012_hla_loh.tsv",
+            "hla_loh_consensus/spechla_hla_loh.tsv",
+            "spechla/hla_loh.tsv",
+            "hla_loh.spechla.tsv",
         ],
     }
     results: list[dict[str, str]] = []
-    for tool, paths in candidates.items():
-        selected = next((path for path in paths if path.is_file()), None)
+    for tool, relative_paths in candidates.items():
+        selected = _first_existing([base / rel for base in search_roots for rel in relative_paths])
+        if selected is None and tool == "LOHHLA":
+            selected = _first_existing([
+                Path(str(((provenance or {}).get("tools") or {}).get("lohhla", {}).get("file") or "")),
+            ])
         if not selected:
+            continue
+        if selected.name.endswith("spechla.tsv") and tool != "SpecHLA":
             continue
         for row in _read_optional(selected):
             record = dict(row)
             record["_report_tool"] = tool
-            record["_report_source"] = str(selected.relative_to(root))
+            record["_report_source"] = _report_relpath(selected, root)
             results.append(record)
-    return results
+    if results:
+        return results
+    consensus = _first_existing([
+        *(base / name for base in search_roots for name in (
+            "hla_loh_consensus.tsv",
+            "hla_loh_consensus/hla_loh_consensus.tsv",
+            "hla_loh/hla_loh_consensus.tsv",
+        )),
+        Path(str(((provenance or {}).get("tools") or {}).get("hla_loh", {}).get("file") or "")),
+        Path(str((provenance or {}).get("hla_loh") or "")),
+    ])
+    return _expand_hla_loh_consensus(consensus, root) if consensus else []
 
 
 def _read_tool_version_manifest(root: Path | None) -> dict[str, dict[str, str]]:
@@ -134,6 +217,64 @@ def _file_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _has_consensus_grades(events: list[Mapping[str, Any]], peptides: list[Mapping[str, Any]]) -> bool:
+    event_ok = any(str(row.get("best_evidence_grade") or row.get("event_evidence_grade") or "").strip() for row in events[:50])
+    peptide_ok = any(str(row.get("evidence_grade") or row.get("pipeline_r_grade") or "").strip() for row in peptides[:50])
+    return bool(events) and bool(peptides) and event_ok and peptide_ok
+
+
+def _numeric_median(values: list[float]) -> float | None:
+    if not values:
+        return None
+    ordered = sorted(values)
+    return ordered[len(ordered) // 2]
+
+
+def _depth_summary(rows: list[Mapping[str, Any]], *fields: str) -> str:
+    values: list[float] = []
+    for row in rows:
+        for field in fields:
+            try:
+                value = float(str(row.get(field) or "").strip())
+            except ValueError:
+                continue
+            if value > 0:
+                values.append(value)
+                break
+    median = _numeric_median(values)
+    if median is None:
+        return ""
+    return f"候选位点中位深度 {median:.0f}x（n={len(values)}）"
+
+
+def _purity_tools_from_provenance(prov: Mapping[str, Any]) -> list[dict[str, str]]:
+    declared = [dict(row) for row in (prov.get("purity_cnv_tools") or []) if isinstance(row, Mapping)]
+    if declared:
+        return declared
+    tools: list[dict[str, str]] = []
+    for name, record in (prov.get("tools") or {}).items() if isinstance(prov.get("tools"), Mapping) else []:
+        key = str(name).lower()
+        if key not in {"facets", "sequenza", "purple", "ascat"}:
+            continue
+        payload = record if isinstance(record, Mapping) else {}
+        purity = ""
+        ploidy = ""
+        source = Path(str(payload.get("file") or ""))
+        if source.is_file():
+            rows = _read_optional(source)
+            if rows:
+                purity = str(rows[0].get("purity") or rows[0].get("cellularity") or "")
+                ploidy = str(rows[0].get("ploidy") or "")
+        tools.append({
+            "tool": str(name).upper(),
+            "purity": purity,
+            "ploidy": ploidy,
+            "status": str(payload.get("status") or "ASSESSED"),
+            "note": "来自生产接口已转换的单一工具结果" if not declared else "",
+        })
+    return tools
+
+
 def _badge(text: str) -> str:
     t = str(text or "")
     cls = "UNASSESSED"
@@ -159,7 +300,11 @@ def _map_by(rows: list[Mapping[str, Any]], key: str) -> dict[str, dict[str, str]
     return {str(r.get(key, "")): dict(r) for r in rows if r.get(key)}
 
 
-def _read_longrna_junction_genes(root: Path | None, extra_gene_ids: set[str] | None = None) -> dict[str, str]:
+def _read_longrna_junction_genes(
+    root: Path | None,
+    extra_gene_ids: set[str] | None = None,
+    gtf_paths: list[Path] | None = None,
+) -> dict[str, str]:
     """Build junction-to-gene labels for four-tool splice events."""
     if not root:
         return {}
@@ -174,7 +319,10 @@ def _read_longrna_junction_genes(root: Path | None, extra_gene_ids: set[str] | N
     }
     gene_names: dict[str, str] = {}
     gene_intervals: list[tuple[str, int, int, str, str]] = []
-    gtf_candidates = [root.parents[2] / "data" / "ref" / "hg38" / "gencode.gtf", root.parents[2] / "data" / "ref" / "ctat" / "current" / "ctat_genome_lib_build_dir" / "ref_annot.gtf"]
+    gtf_candidates = list(gtf_paths or []) + [
+        root.parents[2] / "data" / "ref" / "hg38" / "gencode.gtf",
+        root.parents[2] / "data" / "ref" / "ctat" / "current" / "ctat_genome_lib_build_dir" / "ref_annot.gtf",
+    ]
     for gtf in gtf_candidates:
         if not gtf.is_file() or not (gene_ids or transcript_ids):
             continue
@@ -243,6 +391,61 @@ def _replace_gene_ids(value: Any, gene_map: Mapping[str, str]) -> str:
     return re.sub(r"ENSG\d+", lambda match: gene_map.get("GENE|" + match.group(0), GENE_SYMBOL_FALLBACKS.get(match.group(0), match.group(0))), text)
 
 
+def _gene_label_needs_enrichment(value: Any) -> bool:
+    text = str(value or "").strip()
+    return (
+        not text
+        or text.startswith(("SEV|", "SJ|", "JUNC"))
+        or bool(re.fullmatch(r"(?:chr)?[0-9XYM]+:\d+(?:[-:]\d+)?", text, re.IGNORECASE))
+        or bool(re.fullmatch(r"ENSG\d+", text))
+    )
+
+
+def _event_change_needs_enrichment(row: Mapping[str, Any]) -> bool:
+    event_type = str(row.get("event_type") or "").strip().lower()
+    protein_change = str(row.get("combined_protein_change") or "").strip()
+    if ":p." in protein_change or re.search(r"\bp\.[A-Za-z*]", protein_change):
+        return False
+    if event_type in {"splice", "fusion"}:
+        return not any(str(row.get(field_name) or "").strip() for field_name in (
+            "source_event_id", "source_record_id", "source_records", "canonical_junction_id",
+        ))
+    return event_type in {"snv", "indel", "missense", "frameshift"} and not protein_change
+
+
+def _read_report_enrichment_rows(
+    path: Path | None,
+    rows: list[dict[str, str]],
+) -> list[dict[str, str]]:
+    """Stream only source fields needed to label unresolved report events."""
+    if not path or not path.is_file():
+        return []
+    target_events = {
+        str(row.get("event_id") or "").removeprefix("EVENT:")
+        for row in rows
+        if _gene_label_needs_enrichment(row.get("gene")) or _event_change_needs_enrichment(row)
+    }
+    if not target_events:
+        return []
+    keep_fields = {
+        "event_id", "peptide_id", "hla_allele", "gene", "gene_pair", "event_name",
+        "canonical_junction_id", "source_event_id", "source_record_id", "source_records",
+        "source_junction_id", "source_tool", "source_tools", "splice_event_id",
+        "combined_protein_change", "consequence", "peptide_consequence", "transcript_id",
+        "orf_id", "transcript_orf_status", "independent_translation_generators",
+    }
+    selected: dict[str, dict[str, str]] = {}
+    with path.open("r", encoding="utf-8", errors="replace", newline="") as handle:
+        reader = csv.DictReader(handle, delimiter="\t")
+        for row in reader:
+            event_id = str(row.get("event_id") or "").removeprefix("EVENT:")
+            if event_id in target_events and event_id not in selected:
+                selected[event_id] = {field_name: str(row.get(field_name) or "") for field_name in keep_fields}
+                if len(selected) == len(target_events):
+                    break
+    return list(selected.values())
+
+
 def _enrich_rows_from_sources(
     rows: list[dict[str, str]], source_peptides: list[dict[str, str]], source_events: list[dict[str, str]],
     junction_genes: Mapping[str, str], evidence_source_label: str = "",
@@ -254,8 +457,14 @@ def _enrich_rows_from_sources(
         for row in source_peptides if row.get("peptide_id")
     }
     source_by_id = _map_by(source_events, "event_id")
+    source_by_id.update({
+        "EVENT:" + event_id.removeprefix("EVENT:"): row
+        for event_id, row in list(source_by_id.items())
+    })
     fields = (
         "gene", "combined_protein_change", "event_name", "consequence", "peptide_consequence",
+        "canonical_junction_id", "source_event_id", "source_record_id", "source_records",
+        "source_junction_id", "source_tool", "source_tools", "splice_event_id",
         "frame_evidence_grade", "orf_evidence_grade", "orf_id", "transcript_id",
         "transcript_orf_status", "independent_translation_generators", "rna_support_status",
         "rna_support_grade", "rna_support_reason", "rna_support_reason_code", "rna_support_state",
@@ -308,8 +517,18 @@ def _enrich_rows_from_sources(
         if not junction:
             event_id = str(row.get("event_id") or (representative or {}).get("event_id") or "")
             junction = "EVENT|" + event_id if event_id else ""
-        if (not row.get("gene") or str(row.get("gene", "")).startswith("SEV|")) and junction in junction_genes:
+        if _gene_label_needs_enrichment(row.get("gene")) and junction in junction_genes:
             row["gene"] = junction_genes[junction]
+        if _gene_label_needs_enrichment(row.get("gene")):
+            source_labels = " ".join(str(row.get(field_name) or "") for field_name in (
+                "source_event_id", "source_record_id", "source_records", "event_name",
+            ))
+            gene_ids = list(dict.fromkeys(re.findall(r"ENSG\d+", source_labels)))
+            if gene_ids:
+                row["gene"] = " / ".join(
+                    junction_genes.get("GENE|" + gene_id, GENE_SYMBOL_FALLBACKS.get(gene_id, gene_id))
+                    for gene_id in gene_ids
+                )
         for field_name in ("gene", "event_name", "combined_protein_change"):
             if row.get(field_name):
                 row[field_name] = _replace_gene_ids(row[field_name], junction_genes)
@@ -411,38 +630,95 @@ def load_report_bundle(
         return root / Path(*parts) if root else None
 
     source_events = _read_optional(p("inputs", "combined_raw_events.tsv") if root else None)
-    canonical_evidence_path = p("scoring", "evidence_consensus", "all_tool_results.tsv") if root else None
-    fallback_evidence_path = p("scoring", "all_tool_results.tsv") if root else None
-    if canonical_evidence_path and canonical_evidence_path.is_file():
-        source_peptides = _read_optional(canonical_evidence_path)
-        evidence_source_label = "scoring/evidence_consensus/all_tool_results.tsv"
+    nested_evidence_path = p("scoring", "evidence_consensus", "all_tool_results.tsv") if root else None
+    scoring_evidence_path = p("scoring", "all_tool_results.tsv") if root else None
+    canonical_evidence_path = _first_existing([nested_evidence_path, scoring_evidence_path])
+    if canonical_evidence_path:
+        evidence_source_label = _report_relpath(canonical_evidence_path, root)
         evidence_source_status = "CANONICAL_ALL_TOOL_RESULTS"
-    elif fallback_evidence_path and fallback_evidence_path.is_file():
-        source_peptides = _read_optional(fallback_evidence_path)
-        evidence_source_label = "scoring/all_tool_results.tsv"
-        evidence_source_status = "FALLBACK_ALL_TOOL_RESULTS"
+        load_tool_rows = not _has_consensus_grades(events, peptides)
+        source_peptides = _read_optional(canonical_evidence_path) if load_tool_rows else []
     else:
         source_peptides = []
         evidence_source_label = "ranked input (all_tool_results unavailable)"
         evidence_source_status = "RANKED_INPUT_ONLY"
+    if not prov.get("purity_cnv_consensus") and (prov.get("purity_cnv_tools") or _purity_tools_from_provenance(prov)):
+        tool_rows = [dict(row) for row in (prov.get("purity_cnv_tools") or _purity_tools_from_provenance(prov))]
+        if len(tool_rows) == 1:
+            row = tool_rows[0]
+            prov["purity_cnv_consensus"] = {
+                "recommended_purity": row.get("purity") or "",
+                "recommended_ploidy": row.get("ploidy") or "",
+                "selected_tool": row.get("tool") or "单一工具",
+                "status": "SINGLE_TOOL_NO_CROSSCHECK",
+                "basis": "仅载入单一纯度工具结果，未形成多工具交叉验证共识。",
+            }
+        elif len(tool_rows) > 1:
+            purities = [str(item.get("purity") or "") for item in tool_rows if str(item.get("purity") or "").strip()]
+            names = [str(item.get("tool") or "未记录") for item in tool_rows]
+            prov["purity_cnv_consensus"] = {
+                "recommended_purity": purities[0] if purities else "",
+                "recommended_ploidy": next((str(item.get("ploidy") or "") for item in tool_rows if str(item.get("ploidy") or "").strip()), ""),
+                "selected_tool": "多工具并列",
+                "status": "MULTI_TOOL_REVIEW",
+                "basis": "已并列保留 " + "、".join(names) + " 结果，不静默选择单一工具。",
+            }
+    if not prov.get("tumor_dna_depth"):
+        prov["tumor_dna_depth"] = _depth_summary(events + peptides, "tumor_depth", "wes_tumor_depth")
+    if not prov.get("normal_dna_depth"):
+        prov["normal_dna_depth"] = _depth_summary(events + peptides, "normal_depth")
+    if not prov.get("genome_build"):
+        for row in events + peptides:
+            build = str(row.get("genome_build") or "").strip()
+            if build and build.upper() not in {"UNASSESSED", "NA", "N/A"}:
+                prov["genome_build"] = build
+                break
+    if not prov.get("rna_qc_status"):
+        if any(str(row.get("gene_expression_tpm") or row.get("transcript_expression_tpm") or "").strip() for row in events + peptides):
+            prov["rna_qc_status"] = "已载入基因/转录本表达；位点级RNA pileup未评估"
+
+    if canonical_evidence_path and not source_peptides:
+        report_enrichment_rows = _read_report_enrichment_rows(
+            canonical_evidence_path,
+            events[:250] + peptides[:500],
+        )
+        source_events.extend(report_enrichment_rows)
+
     extra_gene_ids = {
         gene_id
-        for source in source_events + source_peptides
-        for field_name in ("gene", "gene_pair", "event_name", "combined_protein_change")
+        for source in source_events + source_peptides + events + peptides
+        for field_name in (
+            "gene", "gene_pair", "event_name", "combined_protein_change",
+            "source_event_id", "source_record_id", "source_records",
+        )
         for gene_id in re.findall(r"ENSG\d+", str(source.get(field_name) or ""))
     }
-    junction_genes = _read_longrna_junction_genes(root, extra_gene_ids)
+    gtf_candidates: list[Path] = []
+    for payload in (prov, prov.get("references") or {}, prov.get("reference_manifest") or {}):
+        if not isinstance(payload, Mapping):
+            continue
+        for key in ("gencode_gtf", "annotation_gtf", "gtf", "gene_annotation"):
+            value = str(payload.get(key) or "").strip()
+            if value:
+                gtf_candidates.append(Path(value))
+    for env_key in ("GENCODE_GTF", "NEOAG_GENCODE_GTF", "REFERENCE_GTF"):
+        value = os.environ.get(env_key, "").strip()
+        if value:
+            gtf_candidates.append(Path(value))
+    junction_genes = _read_longrna_junction_genes(root, extra_gene_ids, gtf_candidates)
     enriched_peptides = _enrich_rows_from_sources(
         peptides, source_peptides or peptides, source_events, junction_genes, evidence_source_label,
     )
     enriched_events = _enrich_rows_from_sources(
         events, source_peptides or enriched_peptides, source_events, junction_genes, evidence_source_label,
     )
-    evidence_manifest = _read_json_optional(
-        p("scoring", "evidence_consensus", "all_tool_results.manifest.json") if root else None
-    )
+    evidence_manifest = _read_json_optional(_first_existing([
+        canonical_evidence_path.with_name("all_tool_results.manifest.json") if canonical_evidence_path else None,
+        p("scoring", "evidence_consensus", "all_tool_results.manifest.json") if root else None,
+        p("scoring", "all_tool_results.manifest.json") if root else None,
+    ]))
     evidence_integrity = {"status": "UNASSESSED", "expected_sha256": "", "actual_sha256": ""}
-    if source_peptides and canonical_evidence_path and canonical_evidence_path.is_file() and evidence_manifest:
+    if canonical_evidence_path and canonical_evidence_path.is_file() and evidence_manifest:
         expected_sha256 = str(
             (evidence_manifest.get("output") or {}).get("sha256")
             or (evidence_manifest.get("input") or {}).get("sha256")
@@ -487,14 +763,15 @@ def load_report_bundle(
             )
         ),
         evidence_manifest=evidence_manifest,
-        evidence_conflicts=_read_optional(
-            p("scoring", "evidence_consensus", "evidence_conflicts.tsv") if root else None
-        ),
+        evidence_conflicts=_read_optional(_first_existing([
+            p("scoring", "evidence_consensus", "evidence_conflicts.tsv") if root else None,
+            p("scoring", "evidence_conflicts.tsv") if root else None,
+        ])),
         evidence_source_status=evidence_source_status,
         evidence_integrity=evidence_integrity,
-        purity_tools=[dict(row) for row in (prov.get("purity_cnv_tools") or []) if isinstance(row, Mapping)],
+        purity_tools=_purity_tools_from_provenance(prov),
         purity_consensus=dict(prov.get("purity_cnv_consensus") or {}),
-        hla_loh_tool_results=_read_hla_loh_tool_results(root),
+        hla_loh_tool_results=_read_hla_loh_tool_results(root, prov),
         tool_versions=_read_tool_version_manifest(root),
     )
 
@@ -574,18 +851,32 @@ def _patient_rna_label(peptide: Mapping[str, Any]) -> str:
 
 
 def _patient_event_change(event: Mapping[str, Any]) -> str:
-    change = str(event.get("combined_protein_change") or event.get("event_name") or event.get("consequence") or "")
-    if ":p." in change:
-        change = "p." + change.split(":p.", 1)[1]
-    if change:
-        return change.replace("%3D", "=")
     consequence = str(event.get("peptide_consequence") or "").strip().lower()
     event_type = str(event.get("event_type") or "").strip()
     peptide = str(event.get("peptide") or "").strip()
+    protein_change = str(event.get("combined_protein_change") or "").strip()
+    if ":p." in protein_change:
+        return ("p." + protein_change.split(":p.", 1)[1]).replace("%3D", "=")
     if event_type == "Splice" or consequence in {"novel_junction", "splice_junction", "exon_deletion_junction"}:
-        return f"异常剪接肽段 {peptide}" if peptide else "异常剪接事件（完整蛋白改变未形成）"
+        source_label = next((
+            str(event.get(field_name) or "").strip()
+            for field_name in ("source_event_id", "source_record_id", "source_records")
+            if str(event.get(field_name) or "").strip()
+        ), "")
+        match = re.search(r":([A-Za-z]+\d+(?:\.\d+)?)_\d+-([A-Za-z]+\d+(?:\.\d+)?)_\d+", source_label)
+        junction_path = f"{match.group(1)}→{match.group(2)}" if match else "精确异常junction"
+        junction = str(event.get("canonical_junction_id") or "").strip()
+        parts = junction.split("|")
+        coordinate = f"{parts[2]}:{parts[3]}-{parts[4]}" if len(parts) >= 5 else str(event.get("event_name") or "").strip()
+        if not source_label and not coordinate and peptide:
+            return f"异常剪接肽段 {peptide}"
+        detail = f"（{coordinate}）" if coordinate else ""
+        return f"异常剪接 {junction_path}{detail}；ORF/蛋白影响待确认"
     if event_type == "Fusion" and peptide:
         return f"融合肽段 {peptide}"
+    change = str(event.get("event_name") or event.get("consequence") or protein_change or "")
+    if change:
+        return change.replace("%3D", "=")
     if consequence in CONSEQUENCE_PATIENT:
         return CONSEQUENCE_PATIENT[consequence]
     return "蛋白改变待确认"
@@ -1211,6 +1502,95 @@ def _patient_evidence_summary(row: Mapping[str, Any], bundle: ReportBundle | Non
     ])
 
 
+_PATIENT_CONFLICT_FIELD_LABELS = {
+    "gene": "基因标识",
+    "event_type": "事件类型",
+    "protein_change": "蛋白改变",
+    "hgvsp": "蛋白改变",
+    "presentation_evidence_grade": "呈递证据等级",
+    "presentation_evidence_score": "呈递综合评分",
+    "netmhcpan_el_rank": "NetMHCpan EL rank",
+    "mhcflurry_presentation_score": "MHCflurry呈递评分",
+    "gene_expression_tpm": "基因表达TPM",
+    "transcript_expression_tpm": "转录本表达TPM",
+    "rna_ref_reads": "RNA参考等位基因reads",
+    "rna_alt_reads": "RNA突变等位基因reads",
+    "rna_depth": "RNA位点深度",
+    "rna_vaf": "RNA VAF",
+    "ccf_estimate": "CCF估计",
+    "clonality_status": "克隆性状态",
+    "purity": "肿瘤纯度",
+    "restricting_hla_lost": "限制性HLA丢失状态",
+    "hla_loh_status": "HLA LOH状态",
+    "escape_status": "免疫逃逸状态",
+    "appm_integrity_status": "APPM完整性状态",
+    "safety_status": "安全性状态",
+    "reference_proteome_exact_match": "正常蛋白组精确匹配",
+}
+
+_PATIENT_CONFLICT_SOURCE_LABELS = {
+    "raw_events": "原始事件表",
+    "raw_peptides": "原始肽段表",
+    "annotated_peptides": "注释肽段表",
+    "presentation_evidence": "呈递工具结果",
+    "expression_evidence": "表达证据",
+    "rna_junction_evidence": "RNA位点/连接证据",
+    "ccf_2": "CCF/拷贝数证据",
+    "appm_peptide_modifiers": "APPM证据",
+    "peptide_escape_flags": "HLA LOH/免疫逃逸证据",
+    "peptide_safety": "肽段安全性证据",
+    "event_safety": "事件安全性证据",
+    "ranked_peptides": "旧主排序副本",
+    "validation_plan": "验证计划",
+}
+
+
+def _patient_conflict_summary(row: Mapping[str, Any], max_items: int = 4) -> str:
+    """Describe source disagreements using this candidate's own provenance fields."""
+    raw_details = str(row.get("evidence_conflict_details") or "").strip()
+    details: list[Mapping[str, Any]] = []
+    if raw_details:
+        try:
+            parsed = json.loads(raw_details)
+            if isinstance(parsed, list):
+                details = [item for item in parsed if isinstance(item, Mapping)]
+        except json.JSONDecodeError:
+            details = []
+
+    summaries: list[str] = []
+    has_structured_details = bool(details)
+    derived_sources = {"ranked_peptides", "validation_plan"}
+    for detail in details:
+        field_name = str(detail.get("field") or "").strip()
+        if not field_name:
+            continue
+        field_label = _PATIENT_CONFLICT_FIELD_LABELS.get(field_name, field_name)
+        selected_source = str(detail.get("selected_source") or "权威来源")
+        other_source = str(detail.get("other_source") or "其他来源")
+        # Differences against downstream ranking/validation copies are audit
+        # synchronization issues, not independent biological-tool conflicts.
+        if selected_source in derived_sources or other_source in derived_sources:
+            continue
+        selected_label = _PATIENT_CONFLICT_SOURCE_LABELS.get(selected_source, selected_source)
+        other_label = _PATIENT_CONFLICT_SOURCE_LABELS.get(other_source, other_source)
+        selected_value = str(detail.get("selected_value") or "未提供")
+        other_value = str(detail.get("other_value") or "未提供")
+        summary = f"{field_label}：{selected_label}={selected_value}，{other_label}={other_value}"
+        if summary not in summaries:
+            summaries.append(summary)
+
+    if not summaries and not has_structured_details:
+        fields = [item.strip() for item in str(row.get("evidence_conflict_fields") or "").split(",") if item.strip()]
+        summaries = [_PATIENT_CONFLICT_FIELD_LABELS.get(field, field) for field in fields]
+
+    if not summaries:
+        return ""
+    shown = summaries[:max_items]
+    if len(summaries) > max_items:
+        shown.append(f"另有{len(summaries) - max_items}项，详见evidence_conflicts.tsv")
+    return "；".join(shown)
+
+
 def _patient_limitation(row: Mapping[str, Any], bundle: ReportBundle | None = None) -> str:
     limitations: list[str] = []
     for field_name in ("hard_failure_codes", "priority_cap_reason_codes", "reason_codes"):
@@ -1234,8 +1614,9 @@ def _patient_limitation(row: Mapping[str, Any], bundle: ReportBundle | None = No
     integrity_ok, integrity_missing = _patient_candidate_integrity(row)
     if not integrity_ok:
         limitations.append("候选完整性检查未通过：" + "、".join(integrity_missing))
-    if str(row.get("evidence_conflict_fields") or "").strip():
-        limitations.append("影响候选的来源字段存在冲突，需按冲突记录人工解释")
+    conflict_summary = _patient_conflict_summary(row)
+    if conflict_summary:
+        limitations.append("具体证据冲突：" + conflict_summary)
     if _patient_value(row, "safety_state", "safety_status", default="").upper() in {"SAFETY_PARTIAL", "PARTIAL"}:
         limitations.append("安全性证据不完整")
     hla_status = _patient_candidate_hla_status(bundle)
@@ -1310,13 +1691,48 @@ def _patient_evidence_audit_rows(rows: list[dict[str, str]], bundle: ReportBundl
     result = []
     for label, fields in dimensions:
         assessed = sum(1 for row in rows if _patient_assessed(row, *fields))
-        result.append({"证据维度": label, "已评估": str(assessed), "未评估": str(total - assessed), "范围": f"Top {total}"})
+        result.append({
+            "证据维度": label,
+            "可作为当前分层证据": str(assessed),
+            "尚不能作为可靠证据": str(total - assessed),
+            "判定口径": f"Top {total}；缺失或未评估不按阴性处理",
+        })
     hla_assessed = total if _patient_candidate_hla_status(bundle) != "未评估" else 0
     appm_assessed = total if _patient_candidate_appm_status(bundle) != "未评估" else 0
-    ccf_assessed = sum(1 for row in rows if _patient_ccf_assessment(row, bundle)[0])
-    result.insert(5, {"证据维度": "克隆性/CCF", "已评估": str(ccf_assessed), "未评估": str(total - ccf_assessed), "范围": f"Top {total}（需数值与可靠置信度）"})
-    result.insert(6, {"证据维度": "限制性HLA状态", "已评估": str(hla_assessed), "未评估": str(total - hla_assessed), "范围": f"Top {total}（样本级LOH共识）"})
-    result.insert(7, {"证据维度": "APPM状态", "已评估": str(appm_assessed), "未评估": str(total - appm_assessed), "范围": f"Top {total}（样本级APPM评估）"})
+    ccf_reliable = 0
+    ccf_low_confidence = 0
+    ccf_unresolved = 0
+    for row in rows:
+        reliable, _ = _patient_ccf_assessment(row, bundle)
+        if reliable:
+            ccf_reliable += 1
+            continue
+        _, ccf_value = _patient_numeric_value(row, "ccf_estimate", "ccf_best", "raw_ccf")
+        if ccf_value is not None:
+            ccf_low_confidence += 1
+        else:
+            ccf_unresolved += 1
+    result.insert(5, {
+        "证据维度": "克隆性/CCF",
+        "可作为当前分层证据": f"{ccf_reliable}（可靠估计）",
+        "尚不能作为可靠证据": (
+            f"{ccf_low_confidence + ccf_unresolved}"
+            f"（已计算但低置信 {ccf_low_confidence}；未形成数值或不适用 {ccf_unresolved}）"
+        ),
+        "判定口径": f"Top {total}；低置信CCF保留数值用于审阅，但不作为正向加分或阴性结论",
+    })
+    result.insert(6, {
+        "证据维度": "限制性HLA状态",
+        "可作为当前分层证据": str(hla_assessed),
+        "尚不能作为可靠证据": str(total - hla_assessed),
+        "判定口径": f"Top {total}；依据样本级LOH共识",
+    })
+    result.insert(7, {
+        "证据维度": "APPM状态",
+        "可作为当前分层证据": str(appm_assessed),
+        "尚不能作为可靠证据": str(total - appm_assessed),
+        "判定口径": f"Top {total}；依据样本级APPM评估",
+    })
     return result
 
 
@@ -1473,8 +1889,9 @@ def _patient_key_gaps(row: Mapping[str, Any], bundle: ReportBundle) -> list[str]
     safety = _patient_value(row, "safety_state", "safety_status", default="").upper()
     if safety in {"SAFETY_PARTIAL", "PARTIAL", "UNASSESSED", ""}:
         gaps.append("安全性证据不完整")
-    if str(row.get("evidence_conflict_fields") or "").strip():
-        gaps.append("影响候选的证据字段存在冲突")
+    conflict_summary = _patient_conflict_summary(row)
+    if conflict_summary:
+        gaps.append("具体证据冲突：" + conflict_summary)
     integrity_ok, integrity_missing = _patient_candidate_integrity(row)
     if not integrity_ok:
         gaps.append("完整性缺口：" + "、".join(integrity_missing))
@@ -1802,6 +2219,7 @@ def _patient_release_metadata(bundle: ReportBundle) -> dict[str, str]:
         or bundle.profile.get("version")
         or bundle.profile.get("_profile_version")
         or (bundle.provenance.get("evidence_consensus") or {}).get("rules_version")
+        or (bundle.provenance.get("parallel_rankings") or {}).get("rules_version")
         or "未记录"
     )
     run_id = str(bundle.provenance.get("run_id") or bundle.provenance.get("analysis_id") or "")
@@ -2087,7 +2505,15 @@ def make_patient_report(
         {"审计项": "证据冲突记录", "结果": str(len(bundle.evidence_conflicts)), "说明": "冲突保留在evidence_conflicts.tsv，不静默覆盖"},
     ]
     out.append("<h3>证据来源审计</h3>" + _table(source_rows, ["审计项", "结果", "说明"]))
-    out.append("<h3>Top 100证据维度完整性</h3>" + _table(_patient_evidence_audit_rows(top, bundle), ["证据维度", "已评估", "未评估", "范围"]))
+    out.append(
+        f"<h3>Top {len(top)}证据维度可用性</h3>"
+        "<p>本表区分可用于当前分层的证据、已计算但置信度不足的结果，以及尚未形成数值或不适用的项目。"
+        "低置信或无法估计不等同于阴性。</p>"
+        + _table(
+            _patient_evidence_audit_rows(top, bundle),
+            ["证据维度", "可作为当前分层证据", "尚不能作为可靠证据", "判定口径"],
+        )
+    )
     out.append("</div>")
 
     out.append("<div class='section'><h2>8. 局限性与总体结论</h2><ul>")

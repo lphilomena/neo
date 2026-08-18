@@ -237,6 +237,10 @@ def merge_prime(
         prime = prime_by_pair.get(key, {})
         row["prime_score"] = prime.get("prime_score", "")
         row["prime_rank"] = prime.get("prime_rank", "")
+        wt_key = (row.get("wildtype_peptide", ""), row.get("hla_allele", ""))
+        wt_prime = prime_by_pair.get(wt_key, {}) if wt_key[0] else {}
+        row["prime_wt_score"] = wt_prime.get("prime_score", "")
+        row["prime_wt_rank"] = wt_prime.get("prime_rank", "")
 
 
 def merge_bigmhc_im(
@@ -247,6 +251,9 @@ def merge_bigmhc_im(
         key = (row.get("peptide", ""), row.get("hla_allele", ""))
         hit = bigmhc_by_pair.get(key, {})
         row["bigmhc_im_score"] = hit.get("bigmhc_im_score", "")
+        wt_key = (row.get("wildtype_peptide", ""), row.get("hla_allele", ""))
+        wt_hit = bigmhc_by_pair.get(wt_key, {}) if wt_key[0] else {}
+        row["bigmhc_im_wt_score"] = wt_hit.get("bigmhc_im_score", "")
 
 
 def merge_deepimmuno(

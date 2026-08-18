@@ -75,6 +75,7 @@ def test_comprehensive_evidence_preserves_annotation_and_adds_all_layers(tmp_pat
     }])
     write_tsv(rna, [{
         "event_id": "E1", "junction_reads": "22", "rna_support_status": "supported",
+        "rna_ref_reads": "31", "rna_alt_reads": "9", "rna_depth": "40", "rna_vaf": "0.225",
     }])
 
     summary = build_comprehensive_peptide_evidence(
@@ -102,6 +103,10 @@ def test_comprehensive_evidence_preserves_annotation_and_adds_all_layers(tmp_pat
     assert row["ccf_best"] == "0.85"
     assert row["expression_tpm"] == "12.5"
     assert row["junction_reads"] == "22"
+    assert row["rna_ref_reads"] == "31"
+    assert row["rna_alt_reads"] == "9"
+    assert row["rna_depth"] == "40"
+    assert row["rna_vaf"] == "0.225"
     assert row["safety_tier"] == "PASS"
     assert row["escape_status"] == "PASS"
     assert row["validation_mode"] == "short_peptide"

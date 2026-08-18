@@ -34,6 +34,10 @@ def test_generator_builds_all_three_upstream_consensus_stages(tmp_path):
     assert {"hla_typing_consensus", "purity_cnv_consensus", "hla_loh_consensus", "fusion_candidates"} <= set(manifest["stages"])
     assert manifest["evidence"]["purity"].endswith("evidence/purity_cnv/recommended_purity.tsv")
     assert manifest["evidence"]["hla_loh"].endswith("evidence/hla_loh/hla_loh_consensus.tsv")
+    assert manifest["run"]["profile"].endswith("profiles/sarcoma_rna_supported_v2_provisional.toml")
+    assert manifest["evidence"]["evidence_consensus_rules"].endswith(
+        "configs/ranking/sarcoma_evidence_consensus_v3_source_chain.toml"
+    )
 
 
 def test_generator_filters_splice_candidates_before_production_scoring(tmp_path):
@@ -69,8 +73,65 @@ def test_generator_accepts_facets_and_ascat_when_other_purity_tools_failed(tmp_p
     assert "purity_ascat" in manifest["stages"]
     assert "purity_sequenza" not in manifest["stages"]
     assert "purity_purple" not in manifest["stages"]
-    assert manifest["run"]["profile"].endswith("configs/ranking/sarcoma_evidence_consensus_v3_source_chain.toml")
+    assert manifest["run"]["profile"].endswith("profiles/sarcoma_rna_supported_v2_provisional.toml")
+    assert manifest["evidence"]["evidence_consensus_rules"].endswith(
+        "configs/ranking/sarcoma_evidence_consensus_v3_source_chain.toml"
+    )
     assert f'NEOAG_REFERENCE_FASTA="{fasta}"' in manifest["stages"]["snv_indel_candidates"]["command"]
+
+
+def test_generator_builds_star_and_rna_allele_count_stages_from_fastq(tmp_path):
+    hla = write(tmp_path / "hla.txt", "HLA-A*02:01\n")
+    purity = write(tmp_path / "purity.tsv", "sample_id\tpurity\tploidy\nS1\t0.60\t2.0\n")
+    cnv = write(tmp_path / "cnv.tsv", "chrom\tstart\tend\ttotal_cn\nchr1\t1\t1000\t2\n")
+    lohhla = write(tmp_path / "lohhla.tsv", "hla_allele\tloh_status\nHLA-A*02:01\tretained\n")
+    spechla_loh = write(tmp_path / "spechla_loh.tsv", "hla_allele\tloh_status\nHLA-A*02:01\tretained\n")
+    vcf = write(tmp_path / "somatic.vcf", "##fileformat=VCFv4.2\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\nchr1\t10\t.\tA\tT\t.\tPASS\t.\n")
+    fastq1 = write(tmp_path / "rna_R1.fastq", "@r1\nACGT\n+\nFFFF\n")
+    fastq2 = write(tmp_path / "rna_R2.fastq", "@r1\nTGCA\n+\nFFFF\n")
+    star_index = tmp_path / "star_index"
+    star_index.mkdir()
+    gtf = write(tmp_path / "gencode.gtf", 'chr1\ttest\tgene\t1\t100\t.\t+\t.\tgene_id "ENSG1";\n')
+    output = tmp_path / "production.toml"
+    subprocess.run([
+        sys.executable, str(ROOT / "scripts/generate_production_from_results_manifest.py"),
+        "--project-root", str(ROOT), "--sample-id", "S1",
+        "--outdir", str(tmp_path / "run"), "--output", str(output),
+        "--hla-file", str(hla), "--purity", str(purity), "--cnv", str(cnv),
+        "--lohhla", str(lohhla), "--spechla-loh", str(spechla_loh),
+        "--somatic-vcf", str(vcf), "--rna-fastq1", str(fastq1),
+        "--rna-fastq2", str(fastq2), "--star-index", str(star_index),
+        "--gencode-gtf", str(gtf), "--rna-threads", "8",
+    ], check=True)
+    manifest = tomllib.loads(output.read_text(encoding="utf-8"))
+    assert "rna_star_alignment" in manifest["stages"]
+    assert "run_star_rna_fastq.sh" in manifest["stages"]["rna_star_alignment"]["command"]
+    assert manifest["stages"]["rna_alt_vaf"]["depends_on"] == ["rna_star_alignment"]
+    assert "rna_allele_counts_pysam.py" in manifest["stages"]["rna_alt_vaf"]["command"]
+    assert manifest["evidence"]["rna_vaf"] == "{outdir}/rna/rna_alt_vaf.tsv"
+
+
+def test_generator_reuses_existing_rna_vaf_without_star(tmp_path):
+    hla = write(tmp_path / "hla.txt", "HLA-A*02:01\n")
+    purity = write(tmp_path / "purity.tsv", "sample_id\tpurity\tploidy\nS1\t0.60\t2.0\n")
+    cnv = write(tmp_path / "cnv.tsv", "chrom\tstart\tend\ttotal_cn\nchr1\t1\t1000\t2\n")
+    lohhla = write(tmp_path / "lohhla.tsv", "hla_allele\tloh_status\nHLA-A*02:01\tretained\n")
+    spechla_loh = write(tmp_path / "spechla_loh.tsv", "hla_allele\tloh_status\nHLA-A*02:01\tretained\n")
+    vcf = write(tmp_path / "somatic.vcf", "##fileformat=VCFv4.2\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n")
+    rna_vaf = write(tmp_path / "rna_alt_vaf.tsv", "chrom\tpos\tref\talt\trna_depth\trna_alt_reads\trna_vaf\nchr1\t10\tA\tT\t20\t5\t0.25\n")
+    output = tmp_path / "production.toml"
+    subprocess.run([
+        sys.executable, str(ROOT / "scripts/generate_production_from_results_manifest.py"),
+        "--project-root", str(ROOT), "--sample-id", "S1",
+        "--outdir", str(tmp_path / "run"), "--output", str(output),
+        "--hla-file", str(hla), "--purity", str(purity), "--cnv", str(cnv),
+        "--lohhla", str(lohhla), "--spechla-loh", str(spechla_loh),
+        "--somatic-vcf", str(vcf), "--rna-vaf", str(rna_vaf),
+    ], check=True)
+    manifest = tomllib.loads(output.read_text(encoding="utf-8"))
+    assert "rna_alt_vaf_input" in manifest["stages"]
+    assert "rna_star_alignment" not in manifest["stages"]
+    assert manifest["evidence"]["rna_vaf"] == str(rna_vaf.resolve())
 
 
 def test_fusion_union_keeps_event_only_callers_and_provided_peptides(tmp_path):
