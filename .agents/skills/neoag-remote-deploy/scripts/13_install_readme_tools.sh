@@ -74,7 +74,7 @@ MIXMHCPRED_URL=""
 NETMHCSTABPAN_DIR=""
 NETMHCSTABPAN_ARCHIVE=""
 NETMHCSTABPAN_URL=""
-NETCHOP_ARCHIVE=""
+NETCHOP_ARCHIVE="${NEOAG_NETCHOP_ARCHIVE:-}"
 POLYSOLVER_HOME_ARG=""
 NOVOALIGN_LICENSE_FILE_ARG=""
 DEEPIMMUNO_SOURCE=""
@@ -143,7 +143,7 @@ Tool groups:
   --claude-code-channel V    stable, latest, or exact X.Y.Z version (default: stable)
   --claude-code-installer-url URL
                               Override only with an explicitly approved official URL
-  --all-open                 Install open/conda/git tools except very large VEP cache and other licensed packages; includes the approved NetMHCstabpan installer/shim
+  --all-open                 Install open/conda/git tools except very large VEP cache; registers supplied NetMHCstabpan/NetChop assets when present
   --all                      Install supported default groups, including VEP cache and NetMHCstabpan
   --verify                   Run scripts/verify_all_tools_and_refs.sh after installs
   --strict-verify            Treat optional missing tools as failure during verify
@@ -175,7 +175,7 @@ Licensed/restricted source options:
   --netmhcstabpan-dir DIR    Existing NetMHCstabpan directory to copy
   --netmhcstabpan-archive FILE
   --netmhcstabpan-url URL    Approved NetMHCstabpan archive URL
-  --netchop-archive FILE     Authorized netchop-3.1d.Linux.tar.gz
+  --netchop-archive FILE     Authorized netchop-3.1d.Linux.tar.gz; if omitted, search licensed-root/netchop and shared-asset-root
   --polysolver-home DIR      Existing Polysolver distribution
   --novoalign-license-file FILE
   --deepimmuno-source DIR    Existing DeepImmuno checkout; otherwise script clones official repo
@@ -400,8 +400,8 @@ EOF
   fi
 
   if [[ -x "$LICENSED_ROOT/netMHCstabpan/netMHCstabpan" ]]; then
-    TOOLS_ENV="$PROJECT_ROOT/conf/tools.env.sh"
-    run "register synced NetMHCstabpan asset" bash -lc "mkdir -p '$PROJECT_ROOT/conf'; if ! grep -q 'NETMHCSTABPAN_HOME' '$TOOLS_ENV' 2>/dev/null; then printf '\n# NetMHCstabpan (licensed or shim)\nexport NETMHCSTABPAN_HOME=\"$LICENSED_ROOT/netMHCstabpan\"\nexport PATH=\"$LICENSED_ROOT/netMHCstabpan:\$PATH\"\n' >> '$TOOLS_ENV'; fi"
+    log "NetMHCstabpan asset present: $LICENSED_ROOT/netMHCstabpan/netMHCstabpan"
+    write_presentation_tool_env_overrides
   fi
 
   if [[ -d "$LICENSED_ROOT/polysolver" && -z "$POLYSOLVER_HOME_ARG" ]]; then
@@ -455,6 +455,51 @@ load_container_image_if_present() {
     return 0
   fi
   run "load $label container image" docker load -i "$tarball"
+}
+
+write_presentation_tool_env_overrides() {
+  local stab_home="$LICENSED_ROOT/netMHCstabpan"
+  local netchop_home="$LICENSED_ROOT/netchop/netchop-3.1"
+  local netchop_bin="$TOOLS_ROOT/bin/netChop"
+  [[ -x "$stab_home/netMHCstabpan" || -x "$netchop_bin" ]] || return 0
+  local local_env="$PROJECT_ROOT/conf/tools.env.local.sh"
+  local start="# BEGIN NEOAG LICENSED PRESENTATION TOOLS"
+  local end="# END NEOAG LICENSED PRESENTATION TOOLS"
+  mkdir -p "$PROJECT_ROOT/conf"
+  if [[ -f "$local_env" ]]; then
+    sed "/$start/,/$end/d" "$local_env" > "${local_env}.tmp"
+    mv "${local_env}.tmp" "$local_env"
+  fi
+  cat >> "$local_env" <<EOF
+$start
+export NETMHCSTABPAN_HOME="$stab_home"
+export NEOAG_NETMHCSTABPAN_BIN="\${NETMHCSTABPAN_HOME}/netMHCstabpan"
+if [[ -x "\${NEOAG_NETMHCSTABPAN_BIN}" ]]; then
+  export PATH="\${NETMHCSTABPAN_HOME}:\${PATH}"
+fi
+export NETCHOP_HOME="$netchop_home"
+export NETCHOP="\${NETCHOP_HOME}/Linux_x86_64"
+export NEOAG_NETCHOP_BIN="$netchop_bin"
+export NETCHOP_BIN="\${NEOAG_NETCHOP_BIN}"
+if [[ -x "\${NEOAG_NETCHOP_BIN}" ]]; then
+  export PATH="$(dirname "$netchop_bin"):\${PATH}"
+fi
+$end
+EOF
+  log "Presentation tool runtime overrides written: $local_env"
+}
+
+discover_netchop_archive() {
+  local candidate=""
+  for candidate in \
+    "$LICENSED_ROOT/netchop/netchop-3.1d.Linux.tar.gz" \
+    "$TOOLS_ROOT/netchop-3.1d.Linux.tar.gz" \
+    "$TOOLS_ROOT/tools/netchop-3.1d.Linux.tar.gz"; do
+    [[ -f "$candidate" ]] && { printf '%s\n' "$candidate"; return 0; }
+  done
+  if [[ -n "$SHARED_ASSET_ROOT" && -d "$SHARED_ASSET_ROOT" ]]; then
+    find "$SHARED_ASSET_ROOT" -maxdepth 6 -type f -iname 'netchop-3.1d.Linux.tar.gz' -print -quit 2>/dev/null
+  fi
 }
 
 register_netmhcstabpan_if_requested() {
@@ -884,9 +929,14 @@ IMMUNO_PYTHON="${CONDA_BASE}/envs/neoag-tools/bin/python"
 ensure_bigmhc_torch_runtime
 register_netmhcstabpan_if_requested
 if [[ "$INSTALL_NETCHOP" == "1" ]]; then
-  [[ -n "$NETCHOP_ARCHIVE" ]] || NETCHOP_ARCHIVE="$LICENSED_ROOT/netchop/netchop-3.1d.Linux.tar.gz"
-  [[ -f "$NETCHOP_ARCHIVE" ]] || { echo "NETCHOP_ARCHIVE_MISSING: $NETCHOP_ARCHIVE" >&2; exit 46; }
-  run "install NetChop 3.1d" bash scripts/install_netchop.sh "$NETCHOP_ARCHIVE"
+  [[ -n "$NETCHOP_ARCHIVE" ]] || NETCHOP_ARCHIVE="$(discover_netchop_archive)"
+  [[ -n "$NETCHOP_ARCHIVE" && -f "$NETCHOP_ARCHIVE" ]] || { echo "NETCHOP_ARCHIVE_MISSING: provide --netchop-archive or place netchop-3.1d.Linux.tar.gz under $LICENSED_ROOT/netchop or --shared-asset-root" >&2; exit 46; }
+  if [[ "$NETCHOP_ARCHIVE" != "$LICENSED_ROOT/netchop/netchop-3.1d.Linux.tar.gz" ]]; then
+    run "stage NetChop archive into licensed root" bash -lc "mkdir -p '$LICENSED_ROOT/netchop' && cp -f '$NETCHOP_ARCHIVE' '$LICENSED_ROOT/netchop/netchop-3.1d.Linux.tar.gz'"
+    NETCHOP_ARCHIVE="$LICENSED_ROOT/netchop/netchop-3.1d.Linux.tar.gz"
+  fi
+  run "install NetChop 3.1d" env NEOAG_LICENSED_ROOT="$LICENSED_ROOT" NEOAG_TOOLS_ROOT="$TOOLS_ROOT" bash scripts/install_netchop.sh "$NETCHOP_ARCHIVE"
+  write_presentation_tool_env_overrides
 fi
 install_sherpa_if_requested
 if [[ "$INSTALL_DEEPIMMUNO" == "1" ]]; then
