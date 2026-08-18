@@ -19,7 +19,7 @@ The canonical stage order, critical/evidence-missing behavior, RNA FASTQ product
 
 Preferred: `sample_manifest.yaml`.
 
-Supported direct entries include tumor/normal DNA BAM or FASTQ, tumor RNA BAM or FASTQ, somatic VCF, fusion caller table, splice junction table, WGS/WES SV VCF, peptide-HLA table, standard raw intermediates, a production manifest, an input directory, or an existing result directory.
+Supported direct entries include tumor/normal DNA BAM or FASTQ, tumor RNA BAM or FASTQ, somatic VCF, fusion caller table, splice junction table, WGS/WES SV VCF, peptide-HLA table, standard raw intermediates, a production manifest, an input directory, an existing result directory, or a case-root directory containing completed upstream tool results.
 
 When raw DNA/RNA BAM or paired FASTQ inputs are supplied without an explicit
 production manifest, Skill2 generates a capability-aware production profile.
@@ -56,6 +56,19 @@ confidence intervals, coverage support, and SpecHLA call evidence are retained
 in the two-field allele-level cross-check. Consensus states are
 `CONSENSUS_LOST`, `CONSENSUS_RETAINED`, `DISCORDANT`, and `UNASSESSED`.
 
+
+When a request supplies a completed `case_root` plus `somatic_vcf`, Skill2 uses
+the repository-owned `scripts/run_production_case.sh` wrapper as the preferred
+production-case entrypoint. This wrapper discovers standard completed outputs
+under the case root, generates `manifest/production.results.toml` with
+`scripts/generate_production_from_results_manifest.py`, then runs
+`neoag.production_runner --execute` with the sarcoma RNA-supported v2 weighted
+profile and v3 Evidence-consensus rules. It accepts explicit overrides for
+Sequenza/PURPLE, RNA FASTQ/BAM/VAF, STAR/GTF/reference assets, predictor
+dependency roots, NetMHCpan, NetMHCstabpan, and RNA threads. The wrapper is for
+existing upstream results and ranking/report production; it must not replace
+the raw-input Gateway DAG for new heavy DNA/RNA tool execution.
+
 ## Modes
 
 - `plan`: inspect and write a route/run plan.
@@ -71,7 +84,7 @@ in the two-field allele-level cross-check. Consensus states are
 3. For tumor-normal BAM input, verify genotype identity with BAM-matcher when configured. Never use the bundled hg19 panel with GRCh38 BAMs.
 4. Route to the existing fine-grained internal Skills and generate `capability_aware.production.toml` for raw inputs.
 5. Run Doctor/preflight.
-6. Use `pipeline-full` for the dry-run DAG and submit approved execute/resume requests through NeoAg Gateway to the production runner.
+6. Use `pipeline-full` for the dry-run DAG and submit approved execute/resume requests through NeoAg Gateway to the production runner. For existing completed case roots, prefer `scripts/run_production_case.sh` after explicit approval; it creates `manifest/production.results.toml` and invokes the production runner directly with fixed profiles and predictor environment pins.
 7. Reuse existing gene/transcript TPM and RNA alt/VAF tables, or plan/run Salmon/RSEM gene plus transcript quantification from tumor RNA FASTQ and RNA ref/alt counting from tumor RNA BAM plus somatic VCF. When multiple paired RNA FASTQ batches are supplied, merge R1 files and R2 files first and pass the merged pair to all downstream RNA tools. Retain fusion/splice junction read evidence.
    For the automatic RNA profile, require HLA, FASTA/GTF, STAR index,
    EasyFuse reference, Salmon index plus tx2gene or RSEM reference before execute. Standalone STAR-Fusion/FusionCatcher/Arriba references are fallback-only when EasyFuse is not configured.
@@ -80,7 +93,7 @@ in the two-field allele-level cross-check. Consensus states are
    SNAF and SpliceMutr are default splice stages. Their database/workflow
    assets must be present before execution; missing assets block the splice
    branch and are reported explicitly.
-8. Cross-check HLA typing, LOHHLA/SpecHLA HLA LOH, fusion, splice, presentation and FACETS/Sequenza/PURPLE/ASCAT purity/CNV/CCF evidence by domain; missing evidence remains `UNASSESSED`.
+8. Cross-check HLA typing, LOHHLA/SpecHLA HLA LOH, fusion, splice, presentation and FACETS/Sequenza/PURPLE/ASCAT purity/CNV/CCF evidence by domain; missing evidence remains `UNASSESSED`. When using the production-case wrapper, preserve its single-RNA-input-mode rule: choose one of RNA FASTQ, RNA BAM, or existing RNA VAF.
 9. Build `all_tool_results.tsv`, long-form tool evidence and explicit consensus/conflict outputs.
 10. Preserve the weighted baseline, generate independent Evidence consensus rankings, compare both rankings, and write run/audit manifests.
 11. Generate the technical Pipeline report by default. Do not generate a patient-facing report unless explicitly requested; the final patient report belongs to `open-neo-review`.
@@ -89,6 +102,7 @@ in the two-field allele-level cross-check. Consensus states are
 
 - `input_status.json`, `route_plan.json`
 - `capability_plan.json`, `capability_decisions.tsv`, `capability_aware.production.toml`
+- `manifest/production.results.toml` when using `scripts/run_production_case.sh`
 - `rna_preprocessing_status.tsv`, `rna_preprocessing_summary.json`
 - `gene_tpm.tsv`, `transcript_tpm.tsv`, `rna_alt_vaf.tsv` when generated
 - `all_tool_results.tsv`
@@ -108,7 +122,7 @@ in the two-field allele-level cross-check. Consensus states are
 
 ## Safety boundary
 
-`execute` and `resume` require approval and Gateway dispatch. The Skill must not silently convert missing evidence to a negative result or overwrite the weighted baseline. Generated commands are restricted to repository-owned runners or administrator-reviewed `command_template` entries in the tools manifest.
+`execute` and `resume` require approval. Raw heavy execution requires Gateway dispatch. The existing-results production-case path may use the repository-owned `scripts/run_production_case.sh` wrapper directly after approval because it consumes completed upstream outputs, validates required files, and calls the production runner with pinned profiles. The Skill must not silently convert missing evidence to a negative result or overwrite the weighted baseline. Generated commands are restricted to repository-owned runners or administrator-reviewed `command_template` entries in the tools manifest.
 
 The automatic RNA FASTQ profile is itself the reviewed repository-owned
 production manifest generator. Execution still requires Gateway approval and

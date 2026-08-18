@@ -20,6 +20,21 @@ existing modules and fine-grained Skills.
 10. Immutable weighted baseline plus independent Evidence-consensus ranking.
 11. Output manifest, run manifest, `run_state.json` and audit log.
 
+## Production Case Wrapper
+
+For a completed case root plus somatic VCF, Skill2 should use
+`scripts/run_production_case.sh` to convert standard upstream results into a
+production manifest and run the final production runner. The wrapper requires
+`--sample-id`, `--case-root`, `--outdir`, `--somatic-vcf`, and an approved local
+NetMHCstabpan tree, then applies the sarcoma RNA-supported v2 weighted profile
+and v3 Evidence-consensus rules by default. Optional overrides include
+Sequenza/PURPLE paths, RNA FASTQ/BAM/VAF, STAR index, GTF, reference FASTA,
+predictor dependency roots, NetMHCpan, NetMHCstabpan, and `--rna-threads`.
+Exactly one RNA allele-evidence mode may be used: FASTQ pair, RNA BAM, or
+existing RNA VAF. This path is for reusing completed upstream results and
+producing final rankings/reports; raw heavy tool execution remains in the
+Gateway-backed production DAG.
+
 ## RNA FASTQ profile
 
 The built-in profile includes multi-batch paired FASTQ merging, FASTQ QC, STAR, Salmon gene/transcript TPM,
