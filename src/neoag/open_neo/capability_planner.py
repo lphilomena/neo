@@ -76,6 +76,10 @@ RAW_INPUT_KEYS = {
     "tumor_dna_fastq", "normal_dna_fastq", "tumor_rna_fastq",
 }
 
+DEFAULT_PRODUCTION_PROFILE = "profiles/sarcoma_rna_supported_v2_provisional.toml"
+DEFAULT_EVIDENCE_CONSENSUS_RULES = "configs/ranking/sarcoma_evidence_consensus_v3_source_chain.toml"
+WRAPPER_REQUIRED_PRESENTATION = ["netmhcpan", "mhcflurry", "netmhcstabpan", "netchop"]
+
 
 @dataclass
 class CapabilityDecision:
@@ -690,34 +694,36 @@ def build_automatic_production_plan(
 
     presentation_predictors = []
     required_predictors = []
-    for tool in ("netmhcpan", "mhcflurry", "netmhcstabpan", "netchop", "prime", "bigmhc", "deepimmuno"):
+    for tool in (*WRAPPER_REQUIRED_PRESENTATION, "prime", "bigmhc", "deepimmuno"):
         available, executable, _ = _tool_info(tool, tools)
         if not permitted(tool):
             decide("presentation", tool, "POLICY_SKIPPED", f"excluded by {policy} policy", executable=executable)
             continue
         if available:
             presentation_predictors.append(tool)
-            if tool in {"netmhcpan", "mhcflurry", "netmhcstabpan", "netchop"}:
+            if tool in WRAPPER_REQUIRED_PRESENTATION:
                 required_predictors.append(tool)
             decide("presentation", tool, "SELECTED", "predictor available and compatible with peptide-HLA candidates", executable=executable)
         else:
             decide("presentation", tool, "UNAVAILABLE", "predictor not available")
-    for tool in ("netmhcpan", "mhcflurry", "netmhcstabpan", "netchop"):
+    for tool in WRAPPER_REQUIRED_PRESENTATION:
         if tool not in presentation_predictors:
             missing_required.append(tool)
 
     expected_sources = [str(spec.get("source")) for spec in stages.values() if spec.get("source")]
+    profile_value = str(inputs.get("profile") or (root / DEFAULT_PRODUCTION_PROFILE))
+    evidence_consensus_rules = str(inputs.get("evidence_consensus_rules") or (root / DEFAULT_EVIDENCE_CONSENSUS_RULES))
     run = {
         "sample_id": sample_id,
-        "profile": str(inputs.get("profile") or "default"),
+        "profile": profile_value,
         "outdir": str(target),
         "hla_file": hla_file,
         "hla_alleles": hla_alleles,
         "tools_stub": False,
         "immunogenicity_stub": False,
         "expected_peptide_sources": list(dict.fromkeys(expected_sources)),
-        "presentation_predictors": presentation_predictors or ["netmhcpan", "mhcflurry"],
-        "required_presentation_predictors": required_predictors or ["netmhcpan"],
+        "presentation_predictors": presentation_predictors or WRAPPER_REQUIRED_PRESENTATION,
+        "required_presentation_predictors": required_predictors or WRAPPER_REQUIRED_PRESENTATION,
         "reports": "patient,technical",
         "automatic_tool_policy": policy,
     }
@@ -728,6 +734,7 @@ def build_automatic_production_plan(
         }
     if tumor_rna_fastq:
         run["rna_profile"] = "rna_fusion_splice_v1"
+    evidence["evidence_consensus_rules"] = evidence_consensus_rules
     for key in ("normal_expression", "normal_hla_ligands", "reference_proteome", "normal_junctions"):
         if refs.get(key):
             evidence[key] = refs[key]

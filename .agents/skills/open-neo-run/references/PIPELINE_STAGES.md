@@ -57,3 +57,14 @@ only the remaining merge/binning/R-fit steps. `SEQUENZA_BIN_WINDOW` or
 reusable only when its previous status is reusable and all declared file
 signatures still match. Large files use size and nanosecond mtime instead of rehashing.
 Production stages additionally verify their declared outputs before reuse.
+
+## Raw Heavy Finalization
+
+Raw DNA/RNA Gateway DAGs must converge on the same final production standards as
+`scripts/run_production_case.sh`: sarcoma RNA-supported v2 weighted profile,
+v3 Evidence-consensus rules, required NetMHCpan/MHCflurry/NetMHCstabpan/NetChop
+presentation predictors, and `patient,technical` reports. The raw DAG still
+owns heavy upstream execution, but the generated production manifest should be
+usable as the final production-results manifest shape once upstream stages have
+completed. RNA allele evidence remains mutually exclusive across FASTQ-derived
+STAR pileup, supplied RNA BAM pileup, and an existing RNA VAF table.

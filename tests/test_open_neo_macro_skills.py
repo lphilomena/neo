@@ -908,6 +908,25 @@ def test_open_neo_run_auto_generates_rna_profile_in_plan_mode(tmp_path: Path):
     assert "rna_fusion_splice_v1" in manifest.read_text(encoding="utf-8")
 
 
+def test_open_neo_run_blocks_multiple_rna_allele_evidence_modes(tmp_path: Path):
+    rna_bam = tmp_path / "rna.bam"
+    rna_bam.write_bytes(b"bam")
+    rna_vaf = tmp_path / "rna_vaf.tsv"
+    rna_vaf.write_text("event_id\trna_vaf\nE1\t0.1\n", encoding="utf-8")
+    result = run_open_neo({
+        "sample_id": "RNA_CONFLICT",
+        "tumor_rna_bam": str(rna_bam),
+        "rna_evidence_tsv": str(rna_vaf),
+        "mode": "plan",
+        "doctor": False,
+        "project_root": str(Path.cwd()),
+        "outdir": str(tmp_path / "openneo"),
+    })
+    assert result["status"] == "BLOCKED"
+    assert FailureCode.AMBIGUOUS_INPUT.value in result["blocking_issues"]
+    assert "RNA allele-evidence input mode" in result["steps"][0]["detail"]
+
+
 def _automatic_plan_inputs(tmp_path: Path) -> tuple[dict[str, object], Path, Path]:
     tumor = tmp_path / "tumor.bam"; tumor.write_bytes(b"bam")
     normal = tmp_path / "normal.bam"; normal.write_bytes(b"bam")
@@ -927,7 +946,8 @@ def _automatic_plan_inputs(tmp_path: Path) -> tuple[dict[str, object], Path, Pat
         "spechla": {"executable": "/bin/true"}, "purple": {"executable": "/bin/true"},
         "optitype": {"executable": "/bin/true"}, "hla_la": {"executable": "/bin/true"},
         "lohhla": {"executable": "/bin/true"}, "netmhcpan": {"executable": "/bin/true"},
-        "mhcflurry": {"executable": "/bin/true"},
+        "mhcflurry": {"executable": "/bin/true"}, "netmhcstabpan": {"executable": "/bin/true"},
+        "netchop": {"executable": "/bin/true"},
     }}), encoding="utf-8")
     refs = tmp_path / "refs.json"
     refs.write_text(json.dumps({"references": {
@@ -967,6 +987,9 @@ def test_capability_planner_builds_dna_hla_purity_loh_and_ranking_dag(tmp_path: 
     assert "FACETS_CVAL_PROC=300" in text
     assert "BIN_WINDOW=${SEQUENZA_BIN_WINDOW:-500}" in text
     assert 'hla_loh = "{outdir}/hla_loh/recommended_hla_loh.tsv"' in text
+    assert "profiles/sarcoma_rna_supported_v2_provisional.toml" in text
+    assert "configs/ranking/sarcoma_evidence_consensus_v3_source_chain.toml" in text
+    assert 'required_presentation_predictors = ["netmhcpan", "mhcflurry", "netmhcstabpan", "netchop"]' in text
     assert set(["facets", "sequenza", "purple", "lohhla", "spechla", "netmhcpan", "mhcflurry"]) <= set(plan.selected_tools)
     rows = list(csv.DictReader(Path(plan.outputs["capability_decisions"]).open(), delimiter="\t"))
     assert any(row["domain"] == "purity_cnv" and row["status"] == "SELECTED" for row in rows)

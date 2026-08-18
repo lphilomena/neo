@@ -301,6 +301,23 @@ def run_open_neo(args: dict[str, Any]) -> dict[str, Any]:
         result.provenance["resume_reuse_steps"] = sum(1 for row in resume_plan if row["decision"] == "REUSE")
     audit(layout, "open_neo_run.start", "START", mode=mode, routes=[r.route for r in routing.routes])
 
+    rna_modes = [
+        label for label, present in (
+            ("RNA_FASTQ", bool(routing.inputs.get("tumor_rna_fastq"))),
+            ("RNA_BAM", bool(routing.inputs.get("tumor_rna_bam"))),
+            ("RNA_VAF", bool(routing.inputs.get("rna_evidence_tsv"))),
+        ) if present
+    ]
+    if len(rna_modes) > 1:
+        result.steps.append(MacroStep(
+            "00", "rna-evidence-input-mode", "BLOCKED",
+            "Use only one RNA allele-evidence input mode: FASTQ pair, RNA BAM, or existing RNA VAF; observed=" + ",".join(rna_modes),
+            failure_code=FailureCode.AMBIGUOUS_INPUT.value,
+        ))
+        result.blocking_issues.append(FailureCode.AMBIGUOUS_INPUT.value)
+        result.finish("BLOCKED").write(layout.skill_result)
+        return result.to_dict()
+
     route_outputs = write_routing_outputs(routing, layout.input_qc)
     result.outputs.update(route_outputs)
     automatic_candidate = is_automatic_production_candidate(routing.inputs)
@@ -371,6 +388,7 @@ def run_open_neo(args: dict[str, Any]) -> dict[str, Any]:
         )
         routing.inputs["production_manifest"] = automatic_plan.manifest
         result.outputs.update(automatic_plan.outputs)
+        result.outputs["production_results_manifest"] = automatic_plan.manifest
         generated_domains = {
             decision.domain for decision in automatic_plan.decisions
             if decision.status == "SELECTED"
