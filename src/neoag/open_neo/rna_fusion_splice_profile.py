@@ -20,22 +20,53 @@ class ProfileRequirement:
     detail: str
 
 
-def _pair(value: Any) -> tuple[str, str] | None:
+def _fastq_values(value: Any) -> list[str]:
     values = value if isinstance(value, list) else ([value] if value else [])
-    values = [str(item) for item in values if str(item)]
-    return (values[0], values[1]) if len(values) == 2 else None
+    return [str(item) for item in values if str(item)]
+
+
+def _read_number(path: str) -> int | None:
+    name = Path(path).name.lower()
+    read1_tokens = ("_r1", ".r1", "-r1", "_1.f", ".1.f", "-1.f")
+    read2_tokens = ("_r2", ".r2", "-r2", "_2.f", ".2.f", "-2.f")
+    if any(token in name for token in read1_tokens):
+        return 1
+    if any(token in name for token in read2_tokens):
+        return 2
+    return None
+
+
+def _fastq_batches(value: Any) -> list[tuple[str, str]]:
+    values = _fastq_values(value)
+    if len(values) < 2 or len(values) % 2:
+        return []
+    read1 = [item for item in values if _read_number(item) == 1]
+    read2 = [item for item in values if _read_number(item) == 2]
+    if len(read1) == len(read2) and len(read1) + len(read2) == len(values):
+        return list(zip(read1, read2))
+    return [(values[i], values[i + 1]) for i in range(0, len(values), 2)]
+
+
+def _pair(value: Any) -> tuple[str, str] | None:
+    batches = _fastq_batches(value)
+    return batches[0] if len(batches) == 1 else None
+
+
+def _safe_id(value: Any) -> str:
+    safe = "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in str(value or "sample"))
+    return safe.strip("._-") or "sample"
 
 
 def is_rna_fastq_profile_candidate(inputs: dict[str, Any]) -> bool:
-    pair = _pair(inputs.get("tumor_rna_fastq"))
+    batches = _fastq_batches(inputs.get("tumor_rna_fastq"))
     dna_inputs = any(inputs.get(key) for key in (
         "tumor_dna_bam", "normal_dna_bam", "tumor_dna_fastq", "normal_dna_fastq"
     ))
-    return pair is not None and not dna_inputs and not inputs.get("production_manifest")
+    return bool(batches) and not dna_inputs and not inputs.get("production_manifest")
 
 
 def profile_requirements(inputs: dict[str, Any]) -> list[ProfileRequirement]:
-    pair = _pair(inputs.get("tumor_rna_fastq"))
+    batches = _fastq_batches(inputs.get("tumor_rna_fastq"))
     rows: list[ProfileRequirement] = []
 
     def add(field: str, value: Any, *, required: bool, detail: str) -> None:
@@ -48,7 +79,14 @@ def profile_requirements(inputs: dict[str, Any]) -> list[ProfileRequirement]:
             present = bool(value) and Path(str(value)).exists()
         rows.append(ProfileRequirement(field, "READY" if present else ("MISSING" if required else "UNASSESSED"), required, detail))
 
-    add("tumor_rna_fastq_pair", list(pair or ()), required=True, detail="exactly two non-empty paired-end RNA FASTQ files")
+    fastqs = _fastq_values(inputs.get("tumor_rna_fastq"))
+    fastqs_present = bool(batches) and all(Path(item).exists() for item in fastqs)
+    rows.append(ProfileRequirement(
+        "tumor_rna_fastq_pair",
+        "READY" if fastqs_present else "MISSING",
+        True,
+        "one or more paired-end tumor RNA FASTQ batches, supplied as R1/R2 pairs",
+    ))
     add("hla_alleles_or_hla_file", None, required=True, detail="required for peptide-HLA prediction")
     add("reference_fasta", inputs.get("reference_fasta"), required=True, detail="GRCh38 FASTA used by STAR/Arriba and downstream reconstruction")
     add("gencode_gtf", inputs.get("gencode_gtf"), required=True, detail="GENCODE GTF matching the FASTA and indexes")
@@ -114,12 +152,18 @@ def generate_rna_fusion_splice_manifest(
     project_root: str | Path,
     outdir: str | Path,
 ) -> dict[str, Any]:
-    pair = _pair(inputs.get("tumor_rna_fastq"))
-    if pair is None:
-        raise ValueError("rna_fusion_splice profile requires exactly two tumor RNA FASTQ files")
+    batches = _fastq_batches(inputs.get("tumor_rna_fastq"))
+    if not batches:
+        raise ValueError("rna_fusion_splice profile requires paired tumor RNA FASTQ files supplied as R1/R2 pairs")
     requirements = profile_requirements(inputs)
     missing_required = [row.field for row in requirements if row.required and row.status != "READY"]
     sample_id = str(inputs.get("sample_id") or "SAMPLE001")
+    safe_sample_id = _safe_id(sample_id)
+    merge_fastq = len(batches) > 1
+    pair = (
+        (f"{{outdir}}/rna/merged_fastq/{safe_sample_id}_R1.fq.gz", f"{{outdir}}/rna/merged_fastq/{safe_sample_id}_R2.fq.gz")
+        if merge_fastq else batches[0]
+    )
     hla_file = str(inputs.get("hla_file") or "")
     hla_alleles = [str(value) for value in inputs.get("hla_alleles") or []]
     threads = int(inputs.get("rna_threads") or 16)
@@ -152,12 +196,28 @@ def generate_rna_fusion_splice_manifest(
         'reports = "patient,technical"',
     ]
 
+    if merge_fastq:
+        merge_args = " ".join(
+            f"--fastq1 {_q(r1)} --fastq2 {_q(r2)}" for r1, r2 in batches
+        )
+        merge_command = (
+            f"bash {script('run_merge_paired_fastq.sh')} --sample-id {_q(safe_sample_id)} "
+            f"--outdir {{outdir}}/rna/merged_fastq {merge_args}"
+        )
+        _stage(lines, "fastq_merge", required=True, command=merge_command,
+               outputs={
+                   "fastq1": f"{{outdir}}/rna/merged_fastq/{safe_sample_id}_R1.fq.gz",
+                   "fastq2": f"{{outdir}}/rna/merged_fastq/{safe_sample_id}_R2.fq.gz",
+                   "summary": "{outdir}/rna/merged_fastq/merge_fastq.summary.tsv",
+               })
+
     qc_command = (
         f"bash {script('run_rna_fastq_qc.sh')} --fastq1 {_q(pair[0])} --fastq2 {_q(pair[1])} "
         f"--sample-id {_q(sample_id)} --threads {threads} --outdir {{outdir}}/rna/qc"
     )
     _stage(lines, "fastq_qc", required=True, command=qc_command,
-           outputs={"qc_complete": "{outdir}/rna/qc/qc.complete.json"})
+           outputs={"qc_complete": "{outdir}/rna/qc/qc.complete.json"},
+           depends_on=["fastq_merge"] if merge_fastq else None)
 
     star_command = ""
     if inputs.get("star_index") and inputs.get("gencode_gtf"):
@@ -175,13 +235,15 @@ def generate_rna_fusion_splice_manifest(
 
     expression_command = ""
     quant_method = str(inputs.get("rna_quant_method") or "auto")
-    if quant_method in {"auto", "salmon"} and inputs.get("salmon_index") and inputs.get("tx2gene"):
+    salmon_primary = quant_method in {"auto", "salmon"} and inputs.get("salmon_index") and inputs.get("tx2gene")
+    rsem_available = bool(inputs.get("rsem_reference"))
+    if salmon_primary:
         expression_command = (
             f"bash {script('run_salmon_fastq_to_tpm.sh')} --fastq1 {_q(pair[0])} --fastq2 {_q(pair[1])} "
             f"--sample-id {_q(sample_id)} --threads {threads} --salmon-index {_q(inputs['salmon_index'])} "
             f"--tx2gene {_q(inputs['tx2gene'])} --outdir {{outdir}}/rna/expression"
         )
-    elif quant_method in {"auto", "rsem"} and inputs.get("rsem_reference"):
+    elif quant_method in {"auto", "rsem"} and rsem_available:
         expression_command = (
             f"bash {script('run_rsem_fastq_to_tpm.sh')} --fastq1 {_q(pair[0])} --fastq2 {_q(pair[1])} "
             f"--sample-id {_q(sample_id)} --threads {threads} --rsem-reference {_q(inputs['rsem_reference'])} "
@@ -192,6 +254,18 @@ def generate_rna_fusion_splice_manifest(
                "expression": "{outdir}/rna/expression/gene_tpm.tsv",
                "transcript_expression": "{outdir}/rna/expression/transcript_tpm.tsv",
            }, depends_on=["fastq_qc"])
+
+    if salmon_primary and rsem_available and quant_method == "auto":
+        rsem_crosscheck_command = (
+            f"bash {script('run_rsem_fastq_to_tpm.sh')} --fastq1 {_q(pair[0])} --fastq2 {_q(pair[1])} "
+            f"--sample-id {_q(sample_id)} --threads {threads} --rsem-reference {_q(inputs['rsem_reference'])} "
+            "--outdir {outdir}/rna/rsem_expression"
+        )
+        _stage(lines, "rsem_expression_crosscheck", required=False, command=rsem_crosscheck_command,
+               outputs={
+                   "rsem_expression": "{outdir}/rna/rsem_expression/gene_tpm.tsv",
+                   "rsem_transcript_expression": "{outdir}/rna/rsem_expression/transcript_tpm.tsv",
+               }, depends_on=["fastq_qc"])
 
     easyfuse_command = ""
     if inputs.get("easyfuse_ref"):
@@ -332,6 +406,13 @@ def generate_rna_fusion_splice_manifest(
         "",
         "[evidence]",
         'expression = "{outdir}/rna/expression/gene_tpm.tsv"',
+    ]
+    if salmon_primary and rsem_available and quant_method == "auto":
+        lines += [
+            'rsem_expression = "{outdir}/rna/rsem_expression/gene_tpm.tsv"',
+            'rsem_transcript_expression = "{outdir}/rna/rsem_expression/transcript_tpm.tsv"',
+        ]
+    lines += [
         'rna_junction_tsv = "{outdir}/branches/splice/intermediates/rna_junction_evidence.tsv"',
         f"normal_junctions = {_toml(str(inputs.get('normal_junctions') or ''))}",
         f"normal_expression = {_toml(str(inputs.get('normal_expression') or ''))}",

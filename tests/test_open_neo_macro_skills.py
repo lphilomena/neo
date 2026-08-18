@@ -751,6 +751,9 @@ def _rna_profile_inputs(tmp_path: Path) -> dict[str, object]:
         path = tmp_path / name
         path.mkdir()
         files[name] = path
+    rsem_prefix = tmp_path / "rsem" / "reference"
+    rsem_prefix.parent.mkdir()
+    Path(str(rsem_prefix) + ".grp").write_text("fixture\n", encoding="utf-8")
     snaf_db = tmp_path / "snaf_db"
     (snaf_db / "controls").mkdir(parents=True, exist_ok=True)
     (snaf_db / "Alt91_db").mkdir(exist_ok=True)
@@ -767,6 +770,7 @@ def _rna_profile_inputs(tmp_path: Path) -> dict[str, object]:
         "easyfuse_ref": str(files["easyfuse_ref"]),
         "ctat_genome_lib": str(files["ctat"]),
         "salmon_index": str(files["salmon_index"]),
+        "rsem_reference": str(rsem_prefix),
         "snaf_db": str(snaf_db),
         "splicemutr_workflow": str(splicemutr_workflow),
         "tx2gene": str(files["tx2gene.tsv"]),
@@ -786,7 +790,7 @@ def test_rna_fastq_profile_generator_emits_full_dag(tmp_path: Path):
     assert result["ready_for_execute"] is True
     text = Path(result["manifest"]).read_text(encoding="utf-8")
     for stage in (
-        "fastq_qc", "rna_alignment", "rna_expression", "easyfuse_discovery",
+        "fastq_qc", "rna_alignment", "rna_expression", "rsem_expression_crosscheck", "easyfuse_discovery",
         "star_fusion_discovery", "arriba_discovery", "junction_extraction",
         "fusion_cross_validation",
         "snaf_discovery", "splicemutr_discovery", "fusion_peptide_generation",
@@ -794,6 +798,8 @@ def test_rna_fastq_profile_generator_emits_full_dag(tmp_path: Path):
     ):
         assert f"[stages.{stage}]" in text
     assert "run_star_rna_fastq.sh" in text
+    assert "run_rsem_fastq_to_tpm.sh" in text
+    assert "--outdir {outdir}/rna/rsem_expression" in text
     assert "normalize_rna_fusion_splice.py" in text
     assert (tmp_path / "rna_fusion_splice.hla.txt").is_file()
     parsed = load_production_manifest(result["manifest"])
@@ -806,14 +812,35 @@ def test_rna_fastq_profile_generator_emits_full_dag(tmp_path: Path):
     }
 
 
+
+def test_rna_fastq_profile_merges_multi_batch_fastq(tmp_path: Path):
+    inputs = _rna_profile_inputs(tmp_path)
+    for name in ("tumor_batch2_R1.fastq.gz", "tumor_batch2_R2.fastq.gz"):
+        path = tmp_path / name
+        path.write_bytes(b"fixture")
+    inputs["tumor_rna_fastq"] = [
+        str(tmp_path / "tumor_R1.fastq.gz"),
+        str(tmp_path / "tumor_batch2_R1.fastq.gz"),
+        str(tmp_path / "tumor_R2.fastq.gz"),
+        str(tmp_path / "tumor_batch2_R2.fastq.gz"),
+    ]
+    result = generate_rna_fusion_splice_manifest(
+        inputs, tmp_path / "multi-batch-profile.toml", project_root=Path.cwd(), outdir=tmp_path / "run",
+    )
+    assert result["ready_for_execute"] is True
+    text = Path(result["manifest"]).read_text(encoding="utf-8")
+    assert "[stages.fastq_merge]" in text
+    assert "run_merge_paired_fastq.sh" in text
+    assert text.count("{outdir}/rna/merged_fastq/RNA_PROFILE_R1.fq.gz") >= 4
+    assert text.count("{outdir}/rna/merged_fastq/RNA_PROFILE_R2.fq.gz") >= 4
+    assert "depends_on = [\"fastq_merge\"]" in text
+
+
 def test_rna_fastq_profile_accepts_rsem_expression_reference(tmp_path: Path):
     inputs = _rna_profile_inputs(tmp_path)
     inputs.pop("salmon_index")
     inputs.pop("tx2gene")
-    prefix = tmp_path / "rsem/reference"
-    prefix.parent.mkdir()
-    Path(str(prefix) + ".grp").write_text("fixture\n", encoding="utf-8")
-    inputs["rsem_reference"] = str(prefix)
+    prefix = Path(str(inputs["rsem_reference"]))
     inputs["rna_quant_method"] = "rsem"
     result = generate_rna_fusion_splice_manifest(
         inputs, tmp_path / "rsem-profile.toml", project_root=Path.cwd(), outdir=tmp_path / "run",

@@ -253,6 +253,8 @@ def _register_production_tool_outputs(inputs: dict[str, Any], production_result:
         "purity_sequenza": ("purity_cnv", "sequenza"),
         "purity_purple": ("purity_cnv", "purple"),
         "purity_ascat": ("purity_cnv", "ascat"),
+        "rna_expression": ("rna_expression", "primary"),
+        "rsem_expression_crosscheck": ("rna_expression", "rsem"),
         "easyfuse_discovery": ("fusion", "easyfuse"),
         "star_fusion_discovery": ("fusion", "star-fusion"),
         "arriba_discovery": ("fusion", "arriba"),

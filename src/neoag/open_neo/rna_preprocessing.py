@@ -8,10 +8,36 @@ from typing import Any
 from neoag.controlled_execution.io_utils import write_json, write_tsv
 
 
-def _fastq_pair(value: Any) -> tuple[str, str] | None:
+def _fastq_values(value: Any) -> list[str]:
     values = value if isinstance(value, list) else ([value] if value else [])
-    values = [str(item) for item in values if item]
-    return (values[0], values[1]) if len(values) >= 2 else None
+    return [str(item) for item in values if item]
+
+
+def _read_number(path: str) -> int | None:
+    name = Path(path).name.lower()
+    read1_tokens = ("_r1", ".r1", "-r1", "_1.f", ".1.f", "-1.f")
+    read2_tokens = ("_r2", ".r2", "-r2", "_2.f", ".2.f", "-2.f")
+    if any(token in name for token in read1_tokens):
+        return 1
+    if any(token in name for token in read2_tokens):
+        return 2
+    return None
+
+
+def _fastq_batches(value: Any) -> list[tuple[str, str]]:
+    values = _fastq_values(value)
+    if len(values) < 2 or len(values) % 2:
+        return []
+    read1 = [item for item in values if _read_number(item) == 1]
+    read2 = [item for item in values if _read_number(item) == 2]
+    if len(read1) == len(read2) and len(read1) + len(read2) == len(values):
+        return list(zip(read1, read2))
+    return [(values[i], values[i + 1]) for i in range(0, len(values), 2)]
+
+
+def _safe_id(value: Any) -> str:
+    safe = "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in str(value or "sample"))
+    return safe.strip("._-") or "sample"
 
 
 def prepare_rna_evidence(
@@ -36,7 +62,24 @@ def prepare_rna_evidence(
             outputs[label] = path
             rows.append({"stage": label, "status": "REUSED", "command_preview": "", "output": path, "message": "declared evidence reused"})
 
-    pair = _fastq_pair(inputs.get("tumor_rna_fastq"))
+    batches = _fastq_batches(inputs.get("tumor_rna_fastq"))
+    pair = batches[0] if len(batches) == 1 else None
+    if len(batches) > 1:
+        merge_dir = od / "merged_fastq"
+        sample = _safe_id(inputs.get("sample_id") or "sample")
+        pair = (str(merge_dir / f"{sample}_R1.fq.gz"), str(merge_dir / f"{sample}_R2.fq.gz"))
+        merge_command = ["bash", str(root / "scripts/run_merge_paired_fastq.sh"), "--outdir", str(merge_dir), "--sample-id", sample]
+        for r1, r2 in batches:
+            merge_command.extend(["--fastq1", r1, "--fastq2", r2])
+        if not execute:
+            rows.append({"stage": "rna_fastq_merge", "status": "PLANNED", "command_preview": " ".join(merge_command), "output": str(merge_dir), "message": "merge multi-batch paired RNA FASTQ before quantification"})
+        else:
+            proc = subprocess.run(merge_command, cwd=root, text=True, capture_output=True, timeout=timeout)
+            (od / "rna_fastq_merge.log").write_text(proc.stdout + ("\n--- STDERR ---\n" if proc.stderr else "") + proc.stderr, encoding="utf-8")
+            status = "PASS" if proc.returncode == 0 and Path(pair[0]).is_file() and Path(pair[1]).is_file() else "FAILED"
+            rows.append({"stage": "rna_fastq_merge", "status": status, "command_preview": " ".join(merge_command), "output": str(merge_dir), "message": "merged R1/R2 FASTQ" if status == "PASS" else f"returncode={proc.returncode}"})
+            if status != "PASS":
+                pair = None
     quant_method = method
     if quant_method == "auto":
         quant_method = "salmon" if inputs.get("salmon_index") and inputs.get("tx2gene") else ("rsem" if inputs.get("rsem_reference") else "")

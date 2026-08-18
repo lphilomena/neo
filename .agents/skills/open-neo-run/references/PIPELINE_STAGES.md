@@ -22,8 +22,9 @@ existing modules and fine-grained Skills.
 
 ## RNA FASTQ profile
 
-The built-in profile includes FASTQ QC, STAR, Salmon, EasyFuse, STAR-Fusion,
-Arriba, RegTools, optional reviewed SNAF/SpliceMutr workflows, fusion/splice
+The built-in profile includes multi-batch paired FASTQ merging, FASTQ QC, STAR, Salmon gene/transcript TPM,
+RSEM expression cross-check when a matching RSEM reference is available,
+EasyFuse, STAR-Fusion, Arriba, RegTools, optional reviewed SNAF/SpliceMutr workflows, fusion/splice
 cross-validation, candidate peptide generation and downstream ranking.
 Missing optional evidence remains `UNASSESSED` or `SAFETY_PARTIAL`.
 

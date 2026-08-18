@@ -23,8 +23,10 @@ Supported direct entries include tumor/normal DNA BAM or FASTQ, tumor RNA BAM or
 
 When raw DNA/RNA BAM or paired FASTQ inputs are supplied without an explicit
 production manifest, Skill2 generates a capability-aware production profile.
-For RNA it includes FASTQ QC, STAR
-alignment, Salmon gene/transcript TPM, EasyFuse, STAR-Fusion, Arriba, RegTools,
+For RNA it includes multi-batch paired FASTQ merging when more than one R1/R2
+batch is supplied, FASTQ QC, STAR alignment, Salmon gene/transcript TPM plus
+RSEM expression cross-check when a matching RSEM reference is available,
+EasyFuse, STAR-Fusion, Arriba, RegTools,
 SNAF and SpliceMutr, cross-tool splice normalization, fusion/splice peptide
 generation, presentation, evidence integration, and dual ranking. For DNA it
 can include BWA/samtools alignment, Mutect2, OptiType or command-template HLA
@@ -68,9 +70,11 @@ in the two-field allele-level cross-check. Consensus states are
 4. Route to the existing fine-grained internal Skills and generate `capability_aware.production.toml` for raw inputs.
 5. Run Doctor/preflight.
 6. Use `pipeline-full` for the dry-run DAG and submit approved execute/resume requests through NeoAg Gateway to the production runner.
-7. Reuse existing gene/transcript TPM and RNA alt/VAF tables, or plan/run Salmon/RSEM gene plus transcript quantification from tumor RNA FASTQ and RNA ref/alt counting from tumor RNA BAM plus somatic VCF. Retain fusion/splice junction read evidence.
+7. Reuse existing gene/transcript TPM and RNA alt/VAF tables, or plan/run Salmon/RSEM gene plus transcript quantification from tumor RNA FASTQ and RNA ref/alt counting from tumor RNA BAM plus somatic VCF. When multiple paired RNA FASTQ batches are supplied, merge R1 files and R2 files first and pass the merged pair to all downstream RNA tools. Retain fusion/splice junction read evidence.
    For the automatic RNA profile, require HLA, FASTA/GTF, STAR index,
-   EasyFuse reference, CTAT library, Salmon index, and tx2gene before execute.
+   EasyFuse reference, CTAT library, Salmon index plus tx2gene or RSEM reference before execute.
+   When Salmon and RSEM are both configured in auto mode, Salmon remains the
+   primary expression handoff and RSEM is scheduled as an expression cross-check.
    SNAF and SpliceMutr are default splice stages. Their database/workflow
    assets must be present before execution; missing assets block the splice
    branch and are reported explicitly.

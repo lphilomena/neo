@@ -29,6 +29,7 @@ TOOL_EXECUTABLES = {
     "lohhla": "LOHHLA",
     "star": "STAR",
     "salmon": "salmon",
+    "rsem": "rsem-calculate-expression",
     "easyfuse": "easyfuse",
     "star_fusion": "STAR-Fusion",
     "arriba": "arriba",
@@ -60,6 +61,7 @@ REFERENCE_ALIASES = {
     "easyfuse_ref": ("easyfuse_ref",),
     "salmon_index": ("salmon_index",),
     "tx2gene": ("tx2gene",),
+    "rsem_reference": ("rsem_reference",),
     "normal_expression": ("normal_expression",),
     "normal_hla_ligands": ("normal_hla_ligands", "normal_ligandome"),
     "reference_proteome": ("reference_proteome", "normal_proteome"),
@@ -243,7 +245,7 @@ def build_automatic_production_plan(
     normal_id = str(inputs.get("normal_sample_id") or inputs.get("normal_id") or f"{sample_id}_N")
     threads = int(inputs.get("threads") or inputs.get("rna_threads") or 16)
 
-    minimal_tools = {"bwa", "samtools", "gatk", "bam_matcher", "optitype", "facets", "netmhcpan", "mhcflurry", "star", "salmon", "easyfuse", "regtools"}
+    minimal_tools = {"bwa", "samtools", "gatk", "bam_matcher", "optitype", "facets", "netmhcpan", "mhcflurry", "star", "salmon", "rsem", "easyfuse", "regtools"}
     balanced_exclusions = {"ascat", "deepimmuno", "netmhcstabpan"}
 
     def permitted(tool: str) -> bool:
@@ -627,18 +629,23 @@ def build_automatic_production_plan(
                 stages[name] = spec
         evidence.update(rna_cfg.get("evidence") or {})
         for name, tool in (
-            ("rna_expression", "salmon"), ("easyfuse_discovery", "easyfuse"),
+            ("rna_expression", "salmon"), ("rsem_expression_crosscheck", "rsem"),
+            ("easyfuse_discovery", "easyfuse"),
             ("star_fusion_discovery", "star_fusion"), ("arriba_discovery", "arriba"),
             ("junction_extraction", "regtools"), ("snaf_discovery", "snaf"),
             ("splicemutr_discovery", "splicemutr"),
         ):
             spec = stages.get(name) or {}
-            if not permitted(tool):
+            command_text = str(spec.get("command") or "")
+            decision_tool = tool
+            if name == "rna_expression" and "run_rsem_fastq_to_tpm.sh" in command_text:
+                decision_tool = "rsem"
+            if not permitted(decision_tool):
                 spec["command"] = ""
-                decide("rna" if name == "rna_expression" else "fusion_splice", tool, "POLICY_SKIPPED", f"excluded by {policy} policy")
+                decide("rna" if name in {"rna_expression", "rsem_expression_crosscheck"} else "fusion_splice", decision_tool, "POLICY_SKIPPED", f"excluded by {policy} policy")
                 continue
             status = "SELECTED" if spec.get("command") else "UNASSESSED"
-            decide("rna" if name == "rna_expression" else "fusion_splice", tool, status, "RNA FASTQ profile selected" if status == "SELECTED" else "runner/reference/workflow not configured", stage=name if status == "SELECTED" else "")
+            decide("rna" if name in {"rna_expression", "rsem_expression_crosscheck"} else "fusion_splice", decision_tool, status, "RNA FASTQ profile selected" if status == "SELECTED" else "runner/reference/workflow not configured", stage=name if status == "SELECTED" else "")
         if somatic_vcf and "rna_alignment" in stages:
             add_stage(
                 "rna_alt_vaf",
