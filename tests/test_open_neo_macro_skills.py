@@ -792,16 +792,21 @@ def test_rna_fastq_profile_generator_emits_full_dag(tmp_path: Path):
     text = Path(result["manifest"]).read_text(encoding="utf-8")
     for stage in (
         "fastq_qc", "rna_alignment", "rna_expression", "rsem_expression_crosscheck", "easyfuse_discovery",
-        "star_fusion_discovery", "fusioncatcher_discovery", "arriba_discovery", "junction_extraction",
-        "fusion_cross_validation",
+        "junction_extraction", "fusion_cross_validation",
         "snaf_discovery", "splicemutr_discovery", "fusion_peptide_generation",
         "splice_candidate_normalization",
     ):
         assert f"[stages.{stage}]" in text
     assert "run_star_rna_fastq.sh" in text
     assert "run_rsem_fastq_to_tpm.sh" in text
-    assert "run_fusioncatcher_sample.sh" in text
-    assert "--fusioncatcher" in text
+    assert "run_fusioncatcher_sample.sh" not in text
+    assert "--fusioncatcher" not in text
+    assert "[stages.star_fusion_discovery]" not in text
+    assert "[stages.fusioncatcher_discovery]" not in text
+    assert "[stages.arriba_discovery]" not in text
+    assert "--star-fusion" not in text
+    assert "--arriba" not in text
+    assert "--easyfuse" in text
     assert "--outdir {outdir}/rna/rsem_expression" in text
     assert "normalize_rna_fusion_splice.py" in text
     assert (tmp_path / "rna_fusion_splice.hla.txt").is_file()
@@ -811,7 +816,7 @@ def test_rna_fastq_profile_generator_emits_full_dag(tmp_path: Path):
         result["manifest"], project_root=Path.cwd(), outdir=tmp_path / "production-plan"
     )
     assert {stage.name for stage in planned.stages} >= {
-        "rna_alignment", "easyfuse_discovery", "fusioncatcher_discovery", "splice_candidate_normalization"
+        "rna_alignment", "easyfuse_discovery", "splice_candidate_normalization"
     }
 
 
@@ -851,8 +856,14 @@ def test_rna_fastq_profile_accepts_rsem_expression_reference(tmp_path: Path):
     assert result["ready_for_execute"] is True
     text = Path(result["manifest"]).read_text(encoding="utf-8")
     assert "run_rsem_fastq_to_tpm.sh" in text
-    assert "run_fusioncatcher_sample.sh" in text
-    assert "--fusioncatcher" in text
+    assert "run_fusioncatcher_sample.sh" not in text
+    assert "--fusioncatcher" not in text
+    assert "[stages.star_fusion_discovery]" not in text
+    assert "[stages.fusioncatcher_discovery]" not in text
+    assert "[stages.arriba_discovery]" not in text
+    assert "--star-fusion" not in text
+    assert "--arriba" not in text
+    assert "--easyfuse" in text
     assert "run_salmon_fastq_to_tpm.sh" not in text
 
 

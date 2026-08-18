@@ -269,60 +269,63 @@ def generate_rna_fusion_splice_manifest(
                    "rsem_transcript_expression": "{outdir}/rna/rsem_expression/transcript_tpm.tsv",
                }, depends_on=["fastq_qc"])
 
-    easyfuse_command = ""
-    if inputs.get("easyfuse_ref"):
+    fusion_inputs: list[str] = []
+    fusion_depends: list[str] = []
+    easyfuse_ref = str(inputs.get("easyfuse_ref") or "")
+    if easyfuse_ref:
         easyfuse_command = (
             f"EASYFUSE_SAMPLE_ID={_q(sample_id)} EASYFUSE_FQ1={_q(pair[0])} EASYFUSE_FQ2={_q(pair[1])} "
-            f"NEOAG_EASYFUSE_REF={_q(inputs['easyfuse_ref'])} OUTDIR={{outdir}}/branches/fusion/easyfuse "
+            f"NEOAG_EASYFUSE_REF={_q(easyfuse_ref)} OUTDIR={{outdir}}/branches/fusion/easyfuse "
             f"bash {script('run_easyfuse_sample.sh')}"
         )
-    _stage(lines, "easyfuse_discovery", required=True, command=easyfuse_command,
-           outputs={"fusion_tsv": f"{{outdir}}/branches/fusion/easyfuse/{sample_id}/fusions.pass.csv"},
-           depends_on=["fastq_qc"])
+        _stage(lines, "easyfuse_discovery", required=True, command=easyfuse_command,
+               outputs={"fusion_tsv": f"{{outdir}}/branches/fusion/easyfuse/{sample_id}/fusions.pass.csv"},
+               depends_on=["fastq_qc"])
+        fusion_inputs.append(f"--easyfuse {{outdir}}/branches/fusion/easyfuse/{_q(sample_id)}/fusions.pass.csv")
+        fusion_depends.append("easyfuse_discovery")
+    else:
+        ctat = str(inputs.get("ctat_genome_lib") or "")
+        if ctat:
+            star_fusion_command = (
+                f"bash {script('run_star_fusion_sample.sh')} --fastq1 {_q(pair[0])} --fastq2 {_q(pair[1])} "
+                f"--ctat-genome-lib {_q(ctat)} --sample-id {_q(sample_id)} --threads {threads} "
+                f"--outdir {{outdir}}/branches/fusion/star-fusion"
+            )
+            _stage(lines, "star_fusion_discovery", required=False, command=star_fusion_command,
+                   outputs={"fusion_tsv": "{outdir}/branches/fusion/star-fusion/star-fusion.fusion_predictions.tsv"},
+                   depends_on=["fastq_qc"])
+            fusion_inputs.append("--star-fusion {outdir}/branches/fusion/star-fusion/star-fusion.fusion_predictions.tsv")
+            fusion_depends.append("star_fusion_discovery")
 
-    ctat = str(inputs.get("ctat_genome_lib") or "")
-    star_fusion_command = ""
-    if ctat:
-        star_fusion_command = (
-            f"bash {script('run_star_fusion_sample.sh')} --fastq1 {_q(pair[0])} --fastq2 {_q(pair[1])} "
-            f"--ctat-genome-lib {_q(ctat)} --sample-id {_q(sample_id)} --threads {threads} "
-            f"--outdir {{outdir}}/branches/fusion/star-fusion"
-        )
-    _stage(lines, "star_fusion_discovery", required=False, command=star_fusion_command,
-           outputs={"fusion_tsv": "{outdir}/branches/fusion/star-fusion/star-fusion.fusion_predictions.tsv"},
-           depends_on=["fastq_qc"])
+        fusioncatcher_ref = str(inputs.get("fusioncatcher_ref") or "")
+        if fusioncatcher_ref:
+            fusioncatcher_command = (
+                f"bash {script('run_fusioncatcher_sample.sh')} --fastq1 {_q(pair[0])} --fastq2 {_q(pair[1])} "
+                f"--sample-id {_q(sample_id)} --fusioncatcher-ref {_q(fusioncatcher_ref)} "
+                f"--outdir {{outdir}}/branches/fusion/fusioncatcher"
+            )
+            _stage(lines, "fusioncatcher_discovery", required=False, command=fusioncatcher_command,
+                   outputs={"fusion_tsv": "{outdir}/branches/fusion/fusioncatcher/fusioncatcher.final-list.txt"},
+                   depends_on=["fastq_qc"])
+            fusion_inputs.append("--fusioncatcher {outdir}/branches/fusion/fusioncatcher/fusioncatcher.final-list.txt")
+            fusion_depends.append("fusioncatcher_discovery")
 
-    fusioncatcher_ref = str(inputs.get("fusioncatcher_ref") or "")
-    if not fusioncatcher_ref and inputs.get("easyfuse_ref"):
-        fusioncatcher_ref = str(Path(str(inputs["easyfuse_ref"])) / "fusioncatcher_index")
-    fusioncatcher_command = ""
-    if fusioncatcher_ref:
-        fusioncatcher_command = (
-            f"bash {script('run_fusioncatcher_sample.sh')} --fastq1 {_q(pair[0])} --fastq2 {_q(pair[1])} "
-            f"--sample-id {_q(sample_id)} --fusioncatcher-ref {_q(fusioncatcher_ref)} "
-            f"--outdir {{outdir}}/branches/fusion/fusioncatcher"
-        )
-    _stage(lines, "fusioncatcher_discovery", required=False, command=fusioncatcher_command,
-           outputs={"fusion_tsv": "{outdir}/branches/fusion/fusioncatcher/fusioncatcher.final-list.txt"},
-           depends_on=["fastq_qc"])
+        if inputs.get("reference_fasta") and inputs.get("gencode_gtf"):
+            arriba_command = (
+                f"PATIENT_ID={_q(sample_id)} INPUT_BAM={{outdir}}/rna/star/Aligned.sortedByCoord.out.bam "
+                f"REF_FASTA={_q(inputs['reference_fasta'])} GTF={_q(inputs['gencode_gtf'])} "
+                f"OUTDIR={{outdir}}/branches/fusion/arriba bash {script('run_arriba_sample.sh')}"
+            )
+            _stage(lines, "arriba_discovery", required=False, command=arriba_command,
+                   outputs={"fusion_tsv": f"{{outdir}}/branches/fusion/arriba/{sample_id}.fusions.tsv"},
+                   depends_on=["rna_alignment"])
+            fusion_inputs.append(f"--arriba {{outdir}}/branches/fusion/arriba/{_q(sample_id)}.fusions.tsv")
+            fusion_depends.append("arriba_discovery")
 
-    arriba_command = ""
-    if inputs.get("reference_fasta") and inputs.get("gencode_gtf"):
-        arriba_command = (
-            f"PATIENT_ID={_q(sample_id)} INPUT_BAM={{outdir}}/rna/star/Aligned.sortedByCoord.out.bam "
-            f"REF_FASTA={_q(inputs['reference_fasta'])} GTF={_q(inputs['gencode_gtf'])} "
-            f"OUTDIR={{outdir}}/branches/fusion/arriba bash {script('run_arriba_sample.sh')}"
-        )
-    _stage(lines, "arriba_discovery", required=False, command=arriba_command,
-           outputs={"fusion_tsv": f"{{outdir}}/branches/fusion/arriba/{sample_id}.fusions.tsv"},
-           depends_on=["rna_alignment"])
-
+    fusion_args = " ".join(fusion_inputs)
     fusion_consensus_command = (
         f"{_q(Path(sys.executable))} {script('review_rna_fusions.py')} "
-        f"--easyfuse {{outdir}}/branches/fusion/easyfuse/{_q(sample_id)}/fusions.pass.csv "
-        f"--star-fusion {{outdir}}/branches/fusion/star-fusion/star-fusion.fusion_predictions.tsv "
-        f"--arriba {{outdir}}/branches/fusion/arriba/{_q(sample_id)}.fusions.tsv "
-        f"--fusioncatcher {{outdir}}/branches/fusion/fusioncatcher/fusioncatcher.final-list.txt "
+        f"{fusion_args} "
         f"--normal-readthrough {_q(inputs.get('normal_readthrough') or '')} "
         f"--outdir {{outdir}}/branches/fusion/consensus"
     )
@@ -331,7 +334,7 @@ def generate_rna_fusion_splice_manifest(
                "fusion_consensus": "{outdir}/branches/fusion/consensus/fusion_consensus.tsv",
                "fusion_background_review": "{outdir}/branches/fusion/consensus/fusion_background_review.tsv",
            },
-           depends_on=["easyfuse_discovery", "star_fusion_discovery", "arriba_discovery", "fusioncatcher_discovery"])
+           depends_on=fusion_depends)
 
     regtools_command = (
         f"bash {script('run_regtools_junctions.sh')} --bam {{outdir}}/rna/star/Aligned.sortedByCoord.out.bam "

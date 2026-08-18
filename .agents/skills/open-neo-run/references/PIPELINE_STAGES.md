@@ -24,7 +24,7 @@ existing modules and fine-grained Skills.
 
 The built-in profile includes multi-batch paired FASTQ merging, FASTQ QC, STAR, Salmon gene/transcript TPM,
 RSEM expression cross-check when a matching RSEM reference is available,
-EasyFuse, STAR-Fusion, FusionCatcher, Arriba, RegTools, optional reviewed SNAF/SpliceMutr workflows, fusion/splice
+EasyFuse as the primary fusion meta-workflow, standalone STAR-Fusion/FusionCatcher/Arriba only as fallback when EasyFuse is not configured, RegTools, optional reviewed SNAF/SpliceMutr workflows, fusion/splice
 cross-validation, candidate peptide generation and downstream ranking.
 Missing optional evidence remains `UNASSESSED` or `SAFETY_PARTIAL`.
 
