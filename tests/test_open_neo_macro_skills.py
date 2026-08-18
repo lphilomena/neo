@@ -204,7 +204,10 @@ def test_install_check_rejects_unsafe_release_member(tmp_path: Path):
 
 
 def test_prediction_tier_requires_complete_reference_manifest(tmp_path: Path):
-    tools = ["python", "neoag", "neoag-skill", "vep", "netmhcpan", "mhcflurry", "pvacseq", "prime"]
+    tools = [
+        "python", "neoag", "neoag-skill", "vep", "netmhcpan", "mhcflurry",
+        "netmhcstabpan", "netchop", "pvacseq", "prime",
+    ]
     rows = [CheckRow("tool", name, "OK") for name in tools]
     status, requirements = _assess_tier("prediction", rows, None)
     assert status == "PARTIAL"
@@ -228,6 +231,14 @@ def test_prediction_tier_requires_complete_reference_manifest(tmp_path: Path):
     status, _ = _assess_tier("prediction", rows, manifest)
     assert status == "PARTIAL"
 
+
+def test_prediction_tier_requires_all_production_presentation_tools():
+    base_tools = ["python", "neoag", "neoag-skill", "vep", "netmhcpan", "mhcflurry", "pvacseq", "prime"]
+    rows = [CheckRow("tool", name, "OK") for name in base_tools]
+    status, requirements = _assess_tier("prediction", rows, None)
+    missing_tools = {row["requirement"] for row in requirements if row["kind"] == "tool" and row["status"] == "MISSING"}
+    assert status == "PARTIAL"
+    assert {"netmhcstabpan", "netchop"} <= missing_tools
 
 def test_install_check_writes_comprehensive_local_manifests(tmp_path: Path):
     layout = RunLayout.create(tmp_path / "install")

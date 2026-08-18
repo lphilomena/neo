@@ -54,10 +54,13 @@ def _apply_default_asset_source(args: dict[str, Any]) -> dict[str, Any]:
 TIER_REQUIRED_TOOLS = {
     "review": ["python", "neoag", "neoag-skill"],
     "core": ["python", "neoag", "neoag-skill"],
-    "prediction": ["python", "neoag", "neoag-skill", "vep", "netmhcpan", "mhcflurry", "pvacseq"],
+    "prediction": [
+        "python", "neoag", "neoag-skill", "vep", "netmhcpan", "mhcflurry",
+        "netmhcstabpan", "netchop", "pvacseq",
+    ],
     "full": [
         "python", "neoag", "neoag-skill", "vep", "netmhcpan", "mhcflurry",
-        "pvacseq", "java", "nextflow", "bwa", "star", "gatk",
+        "netmhcstabpan", "netchop", "pvacseq", "java", "nextflow", "bwa", "star", "gatk",
     ],
 }
 
