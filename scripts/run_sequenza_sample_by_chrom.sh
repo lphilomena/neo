@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Run Sequenza for one tumor-normal WGS sample by chromosome chunks.
+# Resume order: binned seqz -> merged seqz -> chromosome seqz -> bam2seqz.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -11,19 +12,24 @@ CONDA_SH="${NEOAG_CONDA_BASE}/etc/profile.d/conda.sh"
 source "${CONDA_SH}"
 
 SAMPLE_ID="${SAMPLE_ID:?ERROR: set SAMPLE_ID}"
-TUMOR_BAM="${TUMOR_BAM:?ERROR: set TUMOR_BAM}"
-NORMAL_BAM="${NORMAL_BAM:?ERROR: set NORMAL_BAM}"
+TUMOR_BAM="${TUMOR_BAM:-}"
+NORMAL_BAM="${NORMAL_BAM:-}"
 REF="${REF_FASTA:-${SEQUENZA_FASTA:-${NEOAG_TOOLS_ROOT:-${ROOT}}/data/sequenza/reference/GRCh38.primary_assembly.chr.fa}}"
 OUTDIR="${OUTDIR:-${ROOT}/results/sequenza/${SAMPLE_ID}}"
 GC="${GC_WIGGLE:-${SEQUENZA_GC_WIG:-${ROOT}/work/sequenza/reference/gc${GC_WINDOW:-50}.wig.gz}}"
 CHROMS="${CHROMS:-chr1 chr2 chr3 chr4 chr5 chr6 chr7 chr8 chr9 chr10 chr11 chr12 chr13 chr14 chr15 chr16 chr17 chr18 chr19 chr20 chr21 chr22 chrX chrY}"
 CHUNK_JOBS="${CHUNK_JOBS:-3}"
-BIN_WINDOW="${BIN_WINDOW:-50}"
+BIN_WINDOW="${BIN_WINDOW:-${SEQUENZA_BIN_WINDOW:-500}}"
 GC_WINDOW="${GC_WINDOW:-50}"
 QLIMIT="${QLIMIT:-20}"
 MIN_DEPTH_N="${MIN_DEPTH_N:-20}"
 HOM="${HOM:-0.9}"
 HET="${HET:-0.25}"
+FORCE="${FORCE:-0}"
+REUSE_MERGED="${REUSE_MERGED:-1}"
+REUSE_BINNED="${REUSE_BINNED:-1}"
+MERGED_SEQZ="${MERGED_SEQZ:-}"
+BINNED_SEQZ="${BINNED_SEQZ:-}"
 
 SAMTOOLS="${NEOAG_CONDA_BASE}/envs/${ENV}/bin/samtools"
 TABIX="${NEOAG_CONDA_BASE}/envs/${ENV}/bin/tabix"
@@ -41,18 +47,30 @@ echo "    gc=${GC}"
 echo "    outdir=${OUTDIR}"
 echo "    chroms=${CHROMS}"
 echo "    chunk_jobs=${CHUNK_JOBS}"
+echo "    bin_window=${BIN_WINDOW}"
+echo "    merged_seqz=${MERGED_SEQZ}"
+echo "    binned_seqz=${BINNED_SEQZ}"
 
-for f in "${TUMOR_BAM}" "${NORMAL_BAM}" "${REF}"; do [[ -s "$f" ]] || { echo "ERROR missing $f" >&2; exit 1; }; done
-for bai in "${TUMOR_BAM}.bai" "${NORMAL_BAM}.bai"; do [[ -s "$bai" ]] || echo "WARN missing BAI by .bam.bai convention: $bai"; done
-if [[ ! -s "${GC}" ]]; then
+require_bam_inputs() {
+  [[ -n "${TUMOR_BAM}" ]] || { echo "ERROR set TUMOR_BAM unless BINNED_SEQZ or MERGED_SEQZ is provided" >&2; exit 1; }
+  [[ -n "${NORMAL_BAM}" ]] || { echo "ERROR set NORMAL_BAM unless BINNED_SEQZ or MERGED_SEQZ is provided" >&2; exit 1; }
+  for f in "${TUMOR_BAM}" "${NORMAL_BAM}" "${REF}"; do [[ -s "$f" ]] || { echo "ERROR missing $f" >&2; exit 1; }; done
+  for bai in "${TUMOR_BAM}.bai" "${NORMAL_BAM}.bai"; do [[ -s "$bai" ]] || echo "WARN missing BAI by .bam.bai convention: $bai"; done
+}
+
+if [[ -z "${BINNED_SEQZ}" && -z "${MERGED_SEQZ}" ]]; then
+  require_bam_inputs
+fi
+
+if [[ -z "${BINNED_SEQZ}" && ! -s "${GC}" ]]; then
   mkdir -p "$(dirname "${GC}")"
   echo "[$(date -Is)] generating GC wiggle"
   run_env sequenza-utils gc_wiggle -f "${REF}" -w "${GC_WINDOW}" -o "${GC}"
 fi
 
 cat > "${OUTDIR}/run_parameters.tsv" <<EOF
-sample_id	tumor_bam	normal_bam	reference	gc_wiggle	chroms	chunk_jobs	qlimit	min_depth_N	hom	het	gc_window	bin_window
-${SAMPLE_ID}	${TUMOR_BAM}	${NORMAL_BAM}	${REF}	${GC}	${CHROMS}	${CHUNK_JOBS}	${QLIMIT}	${MIN_DEPTH_N}	${HOM}	${HET}	${GC_WINDOW}	${BIN_WINDOW}
+sample_id	tumor_bam	normal_bam	reference	gc_wiggle	chroms	chunk_jobs	qlimit	min_depth_N	hom	het	gc_window	bin_window	merged_seqz	binned_seqz	force
+${SAMPLE_ID}	${TUMOR_BAM}	${NORMAL_BAM}	${REF}	${GC}	${CHROMS}	${CHUNK_JOBS}	${QLIMIT}	${MIN_DEPTH_N}	${HOM}	${HET}	${GC_WINDOW}	${BIN_WINDOW}	${MERGED_SEQZ}	${BINNED_SEQZ}	${FORCE}
 EOF
 
 run_chrom() {
@@ -79,29 +97,56 @@ run_chrom() {
 }
 export -f run_chrom
 export SAMPLE_ID TUMOR_BAM NORMAL_BAM REF GC OUTDIR ENV NEOAG_CONDA_BASE SAMTOOLS TABIX QLIMIT MIN_DEPTH_N HOM HET
-printf "%s\n" ${CHROMS} | xargs -I{} -P "${CHUNK_JOBS}" bash -c "run_chrom \"{}\""
 
-echo "[$(date -Is)] merge chrom seqz"
-MERGED="${OUTDIR}/${SAMPLE_ID}.merged.seqz.gz"
-{
-  first=1
-  for chrom in ${CHROMS}; do
-    f="${OUTDIR}/chrom/${SAMPLE_ID}.${chrom}.seqz.gz"
-    [[ -s "$f" ]] || { echo "ERROR missing chrom seqz $f" >&2; exit 1; }
-    if [[ "$first" == 1 ]]; then
-      zcat "$f"
-      first=0
-    else
-      zcat "$f" | tail -n +2
-    fi
-  done
-} | gzip -c > "${MERGED}.tmp"
-mv "${MERGED}.tmp" "${MERGED}"
+if [[ -n "${BINNED_SEQZ}" ]]; then
+  [[ -s "${BINNED_SEQZ}" ]] || { echo "ERROR missing BINNED_SEQZ ${BINNED_SEQZ}" >&2; exit 1; }
+  BINNED="${BINNED_SEQZ}"
+  echo "[$(date -Is)] reuse provided binned seqz ${BINNED}"
+else
+  MERGED="${MERGED_SEQZ:-${OUTDIR}/${SAMPLE_ID}.merged.seqz.gz}"
+  if [[ -n "${MERGED_SEQZ}" ]]; then
+    [[ -s "${MERGED}" ]] || { echo "ERROR missing MERGED_SEQZ ${MERGED}" >&2; exit 1; }
+    echo "[$(date -Is)] reuse provided merged seqz ${MERGED}"
+  elif [[ "${FORCE}" != 1 && "${REUSE_MERGED}" == 1 && -s "${MERGED}" ]]; then
+    echo "[$(date -Is)] reuse merged seqz ${MERGED}"
+  else
+    require_bam_inputs
+    printf "%s\n" ${CHROMS} | xargs -I{} -P "${CHUNK_JOBS}" bash -c "run_chrom \"{}\""
 
-BINNED="${OUTDIR}/${SAMPLE_ID}.small.seqz.gz"
-echo "[$(date -Is)] seqz_binning"
-run_env sequenza-utils seqz_binning -s "${MERGED}" -w "${BIN_WINDOW}" -T "${TABIX}" -o "${BINNED}"
+    echo "[$(date -Is)] merge chrom seqz"
+    {
+      first=1
+      for chrom in ${CHROMS}; do
+        f="${OUTDIR}/chrom/${SAMPLE_ID}.${chrom}.seqz.gz"
+        [[ -s "$f" ]] || { echo "ERROR missing chrom seqz $f" >&2; exit 1; }
+        if [[ "$first" == 1 ]]; then
+          zcat "$f"
+          first=0
+        else
+          zcat "$f" | tail -n +2
+        fi
+      done
+    } | gzip -c > "${MERGED}.tmp"
+    mv "${MERGED}.tmp" "${MERGED}"
+  fi
 
-echo "[$(date -Is)] R fit"
-run_env Rscript "${ROOT}/scripts/run_sequenza_fit.R" "${BINNED}" "${OUTDIR}/sequenza_fit" "${SAMPLE_ID}"
+  BINNED="${OUTDIR}/${SAMPLE_ID}.w${BIN_WINDOW}.seqz.gz"
+  if [[ "${FORCE}" != 1 && "${REUSE_BINNED}" == 1 && -s "${BINNED}" ]]; then
+    echo "[$(date -Is)] reuse binned seqz ${BINNED}"
+  else
+    echo "[$(date -Is)] seqz_binning window=${BIN_WINDOW}"
+    TMP_BINNED="${BINNED}.tmp.gz"
+    run_env sequenza-utils seqz_binning -s "${MERGED}" -w "${BIN_WINDOW}" -T "${TABIX}" -o "${TMP_BINNED}"
+    mv "${TMP_BINNED}" "${BINNED}"
+  fi
+  ln -sfn "$(basename "${BINNED}")" "${OUTDIR}/${SAMPLE_ID}.small.seqz.gz"
+fi
+
+SUMMARY="${OUTDIR}/sequenza_fit/${SAMPLE_ID}.sequenza_summary.tsv"
+if [[ "${FORCE}" != 1 && -s "${SUMMARY}" ]]; then
+  echo "[$(date -Is)] reuse Sequenza R fit ${SUMMARY}"
+else
+  echo "[$(date -Is)] R fit"
+  run_env Rscript "${ROOT}/scripts/run_sequenza_fit.R" "${BINNED}" "${OUTDIR}/sequenza_fit" "${SAMPLE_ID}"
+fi
 echo "[$(date -Is)] finished ${SAMPLE_ID}"

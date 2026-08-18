@@ -92,6 +92,8 @@ def profile_requirements(inputs: dict[str, Any]) -> list[ProfileRequirement]:
     add("gencode_gtf", inputs.get("gencode_gtf"), required=True, detail="GENCODE GTF matching the FASTA and indexes")
     add("star_index", inputs.get("star_index"), required=True, detail="STAR genome index matching FASTA/GTF")
     add("easyfuse_ref", inputs.get("easyfuse_ref"), required=True, detail="EasyFuse reference bundle")
+    fusioncatcher_ref = inputs.get("fusioncatcher_ref") or (str(Path(str(inputs.get("easyfuse_ref"))) / "fusioncatcher_index") if inputs.get("easyfuse_ref") else "")
+    add("fusioncatcher_ref", fusioncatcher_ref, required=False, detail="FusionCatcher reference/data directory; defaults to easyfuse_ref/fusioncatcher_index")
     add("ctat_genome_lib", inputs.get("ctat_genome_lib"), required=True, detail="CTAT genome library for STAR-Fusion")
     salmon_ready = bool(
         inputs.get("salmon_index") and Path(str(inputs["salmon_index"])).is_dir()
@@ -290,6 +292,20 @@ def generate_rna_fusion_splice_manifest(
            outputs={"fusion_tsv": "{outdir}/branches/fusion/star-fusion/star-fusion.fusion_predictions.tsv"},
            depends_on=["fastq_qc"])
 
+    fusioncatcher_ref = str(inputs.get("fusioncatcher_ref") or "")
+    if not fusioncatcher_ref and inputs.get("easyfuse_ref"):
+        fusioncatcher_ref = str(Path(str(inputs["easyfuse_ref"])) / "fusioncatcher_index")
+    fusioncatcher_command = ""
+    if fusioncatcher_ref:
+        fusioncatcher_command = (
+            f"bash {script('run_fusioncatcher_sample.sh')} --fastq1 {_q(pair[0])} --fastq2 {_q(pair[1])} "
+            f"--sample-id {_q(sample_id)} --fusioncatcher-ref {_q(fusioncatcher_ref)} "
+            f"--outdir {{outdir}}/branches/fusion/fusioncatcher"
+        )
+    _stage(lines, "fusioncatcher_discovery", required=False, command=fusioncatcher_command,
+           outputs={"fusion_tsv": "{outdir}/branches/fusion/fusioncatcher/fusioncatcher.final-list.txt"},
+           depends_on=["fastq_qc"])
+
     arriba_command = ""
     if inputs.get("reference_fasta") and inputs.get("gencode_gtf"):
         arriba_command = (
@@ -306,6 +322,7 @@ def generate_rna_fusion_splice_manifest(
         f"--easyfuse {{outdir}}/branches/fusion/easyfuse/{_q(sample_id)}/fusions.pass.csv "
         f"--star-fusion {{outdir}}/branches/fusion/star-fusion/star-fusion.fusion_predictions.tsv "
         f"--arriba {{outdir}}/branches/fusion/arriba/{_q(sample_id)}.fusions.tsv "
+        f"--fusioncatcher {{outdir}}/branches/fusion/fusioncatcher/fusioncatcher.final-list.txt "
         f"--normal-readthrough {_q(inputs.get('normal_readthrough') or '')} "
         f"--outdir {{outdir}}/branches/fusion/consensus"
     )
@@ -314,7 +331,7 @@ def generate_rna_fusion_splice_manifest(
                "fusion_consensus": "{outdir}/branches/fusion/consensus/fusion_consensus.tsv",
                "fusion_background_review": "{outdir}/branches/fusion/consensus/fusion_background_review.tsv",
            },
-           depends_on=["easyfuse_discovery", "star_fusion_discovery", "arriba_discovery"])
+           depends_on=["easyfuse_discovery", "star_fusion_discovery", "arriba_discovery", "fusioncatcher_discovery"])
 
     regtools_command = (
         f"bash {script('run_regtools_junctions.sh')} --bam {{outdir}}/rna/star/Aligned.sortedByCoord.out.bam "

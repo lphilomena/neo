@@ -751,6 +751,7 @@ def _rna_profile_inputs(tmp_path: Path) -> dict[str, object]:
         path = tmp_path / name
         path.mkdir()
         files[name] = path
+    (files["easyfuse_ref"] / "fusioncatcher_index").mkdir()
     rsem_prefix = tmp_path / "rsem" / "reference"
     rsem_prefix.parent.mkdir()
     Path(str(rsem_prefix) + ".grp").write_text("fixture\n", encoding="utf-8")
@@ -791,7 +792,7 @@ def test_rna_fastq_profile_generator_emits_full_dag(tmp_path: Path):
     text = Path(result["manifest"]).read_text(encoding="utf-8")
     for stage in (
         "fastq_qc", "rna_alignment", "rna_expression", "rsem_expression_crosscheck", "easyfuse_discovery",
-        "star_fusion_discovery", "arriba_discovery", "junction_extraction",
+        "star_fusion_discovery", "fusioncatcher_discovery", "arriba_discovery", "junction_extraction",
         "fusion_cross_validation",
         "snaf_discovery", "splicemutr_discovery", "fusion_peptide_generation",
         "splice_candidate_normalization",
@@ -799,6 +800,8 @@ def test_rna_fastq_profile_generator_emits_full_dag(tmp_path: Path):
         assert f"[stages.{stage}]" in text
     assert "run_star_rna_fastq.sh" in text
     assert "run_rsem_fastq_to_tpm.sh" in text
+    assert "run_fusioncatcher_sample.sh" in text
+    assert "--fusioncatcher" in text
     assert "--outdir {outdir}/rna/rsem_expression" in text
     assert "normalize_rna_fusion_splice.py" in text
     assert (tmp_path / "rna_fusion_splice.hla.txt").is_file()
@@ -808,7 +811,7 @@ def test_rna_fastq_profile_generator_emits_full_dag(tmp_path: Path):
         result["manifest"], project_root=Path.cwd(), outdir=tmp_path / "production-plan"
     )
     assert {stage.name for stage in planned.stages} >= {
-        "rna_alignment", "easyfuse_discovery", "splice_candidate_normalization"
+        "rna_alignment", "easyfuse_discovery", "fusioncatcher_discovery", "splice_candidate_normalization"
     }
 
 
@@ -848,6 +851,8 @@ def test_rna_fastq_profile_accepts_rsem_expression_reference(tmp_path: Path):
     assert result["ready_for_execute"] is True
     text = Path(result["manifest"]).read_text(encoding="utf-8")
     assert "run_rsem_fastq_to_tpm.sh" in text
+    assert "run_fusioncatcher_sample.sh" in text
+    assert "--fusioncatcher" in text
     assert "run_salmon_fastq_to_tpm.sh" not in text
 
 
@@ -949,6 +954,7 @@ def test_capability_planner_builds_dna_hla_purity_loh_and_ranking_dag(tmp_path: 
     assert "run_hla_loh_multi_tool.sh" in text
     assert "FACETS_CVAL_PRE=50" in text
     assert "FACETS_CVAL_PROC=300" in text
+    assert "BIN_WINDOW=${SEQUENZA_BIN_WINDOW:-500}" in text
     assert 'hla_loh = "{outdir}/hla_loh/recommended_hla_loh.tsv"' in text
     assert set(["facets", "sequenza", "purple", "lohhla", "spechla", "netmhcpan", "mhcflurry"]) <= set(plan.selected_tools)
     rows = list(csv.DictReader(Path(plan.outputs["capability_decisions"]).open(), delimiter="\t"))

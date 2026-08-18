@@ -30,8 +30,8 @@ def pair(row: dict[str, str]) -> str:
     combined = first(row, ["fusion", "fusion_name", "fusionname", "fusion_gene"])
     if combined:
         return combined.replace("--", "::")
-    left = first(row, ["gene1", "gene5", "left_gene"])
-    right = first(row, ["gene2", "gene3", "right_gene"])
+    left = first(row, ["gene1", "gene5", "left_gene", "gene_1_symbol(5end_fusion_partner)", "gene_1_symbol", "5end_fusion_partner"])
+    right = first(row, ["gene2", "gene3", "right_gene", "gene_2_symbol(3end_fusion_partner)", "gene_2_symbol", "3end_fusion_partner"])
     return f"{left}::{right}" if left and right else ""
 
 
@@ -48,13 +48,14 @@ def main() -> int:
     ap.add_argument("--easyfuse", type=Path)
     ap.add_argument("--star-fusion", type=Path)
     ap.add_argument("--arriba", type=Path)
+    ap.add_argument("--fusioncatcher", type=Path)
     ap.add_argument("--normal-readthrough", type=Path)
     ap.add_argument("--outdir", required=True, type=Path)
     args = ap.parse_args()
 
     normal_pairs = {pair(row).upper() for row in read_rows(args.normal_readthrough) if pair(row)}
     evidence: dict[str, dict[str, object]] = defaultdict(lambda: {"tools": set(), "frames": set(), "junction_reads": []})
-    for tool, path in (("EasyFuse", args.easyfuse), ("STAR-Fusion", args.star_fusion), ("Arriba", args.arriba)):
+    for tool, path in (("EasyFuse", args.easyfuse), ("STAR-Fusion", args.star_fusion), ("Arriba", args.arriba), ("FusionCatcher", args.fusioncatcher)):
         for row in read_rows(path):
             fusion = pair(row)
             if not fusion:
@@ -63,7 +64,7 @@ def main() -> int:
             frame = first(row, ["frame", "reading_frame", "in_frame"])
             if frame:
                 evidence[fusion]["frames"].add(frame)  # type: ignore[union-attr]
-            reads = first(row, ["junction_reads", "junctionreadcount", "split_reads", "supporting_reads", "junction_reads1"])
+            reads = first(row, ["junction_reads", "junctionreadcount", "split_reads", "supporting_reads", "junction_reads1", "spanning_pairs", "spanning_unique_reads"])
             if reads:
                 evidence[fusion]["junction_reads"].append(reads)  # type: ignore[union-attr]
 

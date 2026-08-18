@@ -24,9 +24,17 @@ existing modules and fine-grained Skills.
 
 The built-in profile includes multi-batch paired FASTQ merging, FASTQ QC, STAR, Salmon gene/transcript TPM,
 RSEM expression cross-check when a matching RSEM reference is available,
-EasyFuse, STAR-Fusion, Arriba, RegTools, optional reviewed SNAF/SpliceMutr workflows, fusion/splice
+EasyFuse, STAR-Fusion, FusionCatcher, Arriba, RegTools, optional reviewed SNAF/SpliceMutr workflows, fusion/splice
 cross-validation, candidate peptide generation and downstream ranking.
 Missing optional evidence remains `UNASSESSED` or `SAFETY_PARTIAL`.
+
+## Purity/CNV
+
+FACETS, Sequenza, PURPLE and ASCAT can run in parallel after BAM identity.
+Sequenza is resume-safe: it can restart from an existing binned seqz, an
+existing merged seqz, or completed per-chromosome seqz files before rerunning
+only the remaining merge/binning/R-fit steps. `SEQUENZA_BIN_WINDOW` or
+`BIN_WINDOW` controls the binning scale; the production default is 500.
 
 ## Resume
 

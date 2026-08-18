@@ -32,6 +32,7 @@ TOOL_EXECUTABLES = {
     "rsem": "rsem-calculate-expression",
     "easyfuse": "easyfuse",
     "star_fusion": "STAR-Fusion",
+    "fusioncatcher": "fusioncatcher-neoag",
     "arriba": "arriba",
     "regtools": "regtools",
     "snaf": "snaf",
@@ -59,6 +60,7 @@ REFERENCE_ALIASES = {
     "star_index": ("star_index",),
     "ctat_genome_lib": ("ctat_genome_lib", "ctat"),
     "easyfuse_ref": ("easyfuse_ref",),
+    "fusioncatcher_ref": ("fusioncatcher_ref",),
     "salmon_index": ("salmon_index",),
     "tx2gene": ("tx2gene",),
     "rsem_reference": ("rsem_reference",),
@@ -514,11 +516,11 @@ def build_automatic_production_plan(
         elif seq_available and (refs.get("sequenza_fasta") or refs.get("reference_fasta")) and refs.get("sequenza_gc_wiggle"):
             seq_ref = refs.get("sequenza_fasta") or refs["reference_fasta"]
             gc = refs["sequenza_gc_wiggle"]
-            command = f"SAMPLE_ID={sample_id} TUMOR_BAM={tumor_bam} NORMAL_BAM={normal_bam} REF_FASTA={seq_ref} GC_WIGGLE={gc} OUTDIR={{outdir}}/purity/sequenza bash {root / 'scripts/run_sequenza_sample_by_chrom.sh'}"
+            command = f"SAMPLE_ID={sample_id} TUMOR_BAM={tumor_bam} NORMAL_BAM={normal_bam} REF_FASTA={seq_ref} GC_WIGGLE={gc} OUTDIR={{outdir}}/purity/sequenza BIN_WINDOW=${{SEQUENZA_BIN_WINDOW:-500}} bash {root / 'scripts/run_sequenza_sample_by_chrom.sh'}"
             summary = f"{{outdir}}/purity/sequenza/sequenza_fit/{sample_id}.sequenza_summary.tsv"
             add_stage("purity_sequenza", command=command, outputs={"purity": summary}, depends=paired_analysis_deps)
             purity_dirs.append("{outdir}/purity/sequenza")
-            decide("purity_cnv", "sequenza", "SELECTED", "BAM pair and chr-prefixed Sequenza reference FASTA are available", stage="purity_sequenza", executable=seq_exe, references=["sequenza_fasta", "sequenza_gc_wiggle"])
+            decide("purity_cnv", "sequenza", "SELECTED", "BAM pair and chr-prefixed Sequenza reference FASTA are available; resume-safe binning defaults to SEQUENZA_BIN_WINDOW or 500", stage="purity_sequenza", executable=seq_exe, references=["sequenza_fasta", "sequenza_gc_wiggle"])
         else:
             decide("purity_cnv", "sequenza", "UNAVAILABLE", "Sequenza or reference FASTA is missing", references=["reference_fasta"])
 
@@ -631,7 +633,8 @@ def build_automatic_production_plan(
         for name, tool in (
             ("rna_expression", "salmon"), ("rsem_expression_crosscheck", "rsem"),
             ("easyfuse_discovery", "easyfuse"),
-            ("star_fusion_discovery", "star_fusion"), ("arriba_discovery", "arriba"),
+            ("star_fusion_discovery", "star_fusion"), ("fusioncatcher_discovery", "fusioncatcher"),
+            ("arriba_discovery", "arriba"),
             ("junction_extraction", "regtools"), ("snaf_discovery", "snaf"),
             ("splicemutr_discovery", "splicemutr"),
         ):

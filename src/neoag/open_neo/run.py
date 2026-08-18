@@ -257,6 +257,7 @@ def _register_production_tool_outputs(inputs: dict[str, Any], production_result:
         "rsem_expression_crosscheck": ("rna_expression", "rsem"),
         "easyfuse_discovery": ("fusion", "easyfuse"),
         "star_fusion_discovery": ("fusion", "star-fusion"),
+        "fusioncatcher_discovery": ("fusion", "fusioncatcher"),
         "arriba_discovery": ("fusion", "arriba"),
         "junction_extraction": ("splice_rna", "regtools"),
         "snaf_discovery": ("splice_neoantigen", "snaf"),

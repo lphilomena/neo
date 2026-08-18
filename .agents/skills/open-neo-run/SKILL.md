@@ -26,7 +26,7 @@ production manifest, Skill2 generates a capability-aware production profile.
 For RNA it includes multi-batch paired FASTQ merging when more than one R1/R2
 batch is supplied, FASTQ QC, STAR alignment, Salmon gene/transcript TPM plus
 RSEM expression cross-check when a matching RSEM reference is available,
-EasyFuse, STAR-Fusion, Arriba, RegTools,
+EasyFuse, STAR-Fusion, FusionCatcher, Arriba, RegTools,
 SNAF and SpliceMutr, cross-tool splice normalization, fusion/splice peptide
 generation, presentation, evidence integration, and dual ranking. For DNA it
 can include BWA/samtools alignment, Mutect2, OptiType or command-template HLA
@@ -41,7 +41,9 @@ and requires review rather than being treated as a mismatch.
 
 With the default `all-available` policy, paired GRCh38 DNA automatically uses
 the robust FACETS omni2p5 profile (`CVAL_PRE=50`, `CVAL_PROC=300`,
-`MIN_NHET=10`, `TARGET_ROWS=1000000`), Sequenza, and the repository-owned
+`MIN_NHET=10`, `TARGET_ROWS=1000000`), resume-safe Sequenza
+(`SEQUENZA_BIN_WINDOW`, default `500`, with support for existing chr/merged/binned
+seqz inputs), and the repository-owned
 PURPLE runner when their validated assets are present. The purity/CNV review
 emits recommended purity/ploidy and normalized CNV segments, plus a per-tool
 6p21 MHC-region CNV/LOH cross-check. ASCAT remains conditional on a validated
