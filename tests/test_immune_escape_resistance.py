@@ -3,10 +3,24 @@ from pathlib import Path
 from neoag.adapters.pvactools_parser import parse_pvactools_outputs
 from neoag.config import load_profile
 from neoag.immune_escape_resistance import build_immune_escape_resistance
+from neoag.immune_escape import _load_lost_hla_with_conf
 from neoag.scoring import score
 from neoag.utils import read_tsv, write_tsv
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_consensus_hla_loh_only_loads_confirmed_lost_alleles(tmp_path):
+    consensus = tmp_path / "hla_loh_consensus.tsv"
+    write_tsv(consensus, [
+        {"hla_allele": "HLA-A*01:01", "consensus_status": "CONSENSUS_RETAINED"},
+        {"hla_allele": "HLA-A*24:02", "consensus_status": "DISCORDANT"},
+        {"hla_allele": "HLA-B*27:05", "consensus_status": "CONSENSUS_LOST"},
+    ])
+
+    loaded = _load_lost_hla_with_conf(consensus)
+
+    assert set(loaded) == {"HLA-B*27:05"}
 
 
 def test_b2m_biallelic_rejects_mhc_i_peptides(tmp_path):

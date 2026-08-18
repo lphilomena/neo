@@ -70,8 +70,27 @@ def _load_lost_hla_with_conf(path: str | Path | None) -> dict[str, dict[str, str
     out: dict[str, dict[str, str]] = {}
     for r in read_tsv(path):
         allele = first(r, ["hla_allele", "allele", "HLA", "LossAllele", "loss_allele"], "")
-        status = first(r, ["loh_status", "LOH", "status", "loss", "Loss"], "")
-        if allele and (not status or status.lower() in {"loh", "loss", "lost", "yes", "true", "1"}):
+        status = first(
+            r,
+            ["consensus_status", "loh_status", "LOH", "status", "loss", "Loss"],
+            "",
+        )
+        normalized_status = status.strip().upper()
+        is_lost = normalized_status in {
+            "CONSENSUS_LOST",
+            "CONSENSUS_LOH",
+            "LOH",
+            "LOSS",
+            "LOST",
+            "YES",
+            "TRUE",
+            "1",
+        }
+        # A missing call is not evidence of loss. In particular, consensus
+        # tables contain every typed allele, including retained and discordant
+        # rows; treating a blank/unrecognized status as LOH globally rejects
+        # every peptide restricted by those alleles.
+        if allele and is_lost:
             h = normalize_hla_allele(allele)
             out[h] = {
                 "hla_allele": h,

@@ -178,17 +178,33 @@ def _assign_reason_code(
 
 
 def event_track(row: Mapping[str, Any]) -> str:
-    text = _text(row, "event_type", "mutation_source", "peptide_consequence")
-    if "FUSION" in text:
+    explicit = _text(row, "source_chain_track", "candidate_source_track")
+    for track in ("FUSION", "SPLICE", "DNA_SV", "FRAMESHIFT", "MISSENSE"):
+        if explicit == track:
+            return track
+
+    # Prefer the upstream event source. A DNA SNV/InDel may have a
+    # splice-related VEP consequence without being an independently observed
+    # RNA splice event.
+    source = _text(row, "mutation_source", "source_event_type", "variant_type")
+    event = _text(row, "event_type")
+    consequence = _text(row, "peptide_consequence", "consequence")
+    if "FUSION" in source or "FUSION" in event:
         return "FUSION"
-    if "SPLICE" in text or "JUNCTION" in text:
+    if any(token in source for token in ("INDEL", "INSERTION", "DELETION", "DUPLICATION", "FRAMESHIFT")):
+        return "FRAMESHIFT" if "FRAME" in source or "FRAME" in event or "FRAME" in consequence else "MISSENSE"
+    if any(token in source for token in ("SNV", "SNP", "MISSENSE", "SUBSTITUTION")):
+        return "FRAMESHIFT" if "FRAME" in event else "MISSENSE"
+    if "SPLICE" in source or "JUNCTION" in source:
         return "SPLICE"
-    if any(token in text for token in ("SV", "BND", "STRUCTURAL")):
+    if any(token in source or token in event for token in ("SV", "BND", "STRUCTURAL")):
         return "DNA_SV"
-    if any(token in text for token in ("FRAMESHIFT", "FRAME_SHIFT", "FS_VARIANT")):
+    if any(token in event for token in ("FRAMESHIFT", "FRAME_SHIFT", "FS_VARIANT")):
         return "FRAMESHIFT"
-    if any(token in text for token in ("SNV", "INDEL", "MISSENSE", "INFRAME", "IN_FRAME")):
+    if any(token in event for token in ("SNV", "INDEL", "MISSENSE", "INFRAME", "IN_FRAME")):
         return "MISSENSE"
+    if "SPLICE" in event or "JUNCTION" in event or "SPLICE" in consequence or "JUNCTION" in consequence:
+        return "SPLICE"
     return "OTHER"
 
 
@@ -328,6 +344,16 @@ def derive_mutant_specificity(row: Mapping[str, Any], rules: Mapping[str, Any]) 
     wildtype = str(row.get("wildtype_peptide") or "").strip().upper()
     novel = str(row.get("contains_novel_aa", "")).strip().lower()
     crosses = str(row.get("crosses_junction", "")).strip().lower()
+    consequence = " ".join(
+        str(row.get(field, "")).strip().upper()
+        for field in ("peptide_consequence", "variant_consequence", "consequence", "event_type", "evidence_track")
+    )
+    explicit_novel = (
+        novel in {"true", "yes", "1"}
+        or crosses in {"true", "yes", "1"}
+        or "NOVEL_TAIL" in consequence
+        or "FRAMESHIFT" in consequence
+    )
     if mutant and wildtype and mutant == wildtype:
         return _result("NON_MUTANT_SEQUENCE", 0, "mutant peptide equals wild-type peptide", hard_fail=True, hard_code="HARD_NON_MUTANT_SEQUENCE")
     if novel in {"false", "no", "0"} and crosses in {"false", "no", "0"} and not str(row.get("mutation_positions_in_peptide", "")).strip():
@@ -343,6 +369,12 @@ def derive_mutant_specificity(row: Mapping[str, Any], rules: Mapping[str, Any]) 
     if "MT_SPECIFIC" in gate or "PASS" in gate or "MT_BETTER" in gate:
         return _result("MT_SPECIFIC", 3, gate)
     if "UNASSESSED" in gate or not gate:
+        if mutant and not wildtype and explicit_novel:
+            return _result(
+                "NOVEL_SEQUENCE",
+                3,
+                "matched WT peptide is not applicable to an explicit novel-tail/junction sequence",
+            )
         return _result("UNASSESSED", 0, "mutant specificity unassessed", assessed=False)
     if any(token in gate for token in ("CAUTION", "REVIEW", "EQUIVALENT")):
         return _result("MARGINAL_MT_ADVANTAGE", 2, gate)

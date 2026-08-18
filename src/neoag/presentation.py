@@ -44,8 +44,12 @@ def build_presentation_evidence(
     rows = []
     for p in peptides:
         key = safe_id(f"{p.get('peptide','')}_{p.get('hla_allele','')}")
+        wt_peptide = p.get("wildtype_peptide", "")
+        wt_key = safe_id(f"{wt_peptide}_{p.get('hla_allele','')}") if wt_peptide else ""
         n = net.get(key, {})
         m = mhc.get(key, {})
+        wt_n = net.get(wt_key, {}) if wt_key else {}
+        wt_m = mhc.get(wt_key, {}) if wt_key else {}
         s = stab.get(key, {})
         c = chop_by_id.get(p.get("peptide_id", ""), {}) or chop_by_peptide.get(p.get("peptide", ""), {})
         ba = n.get("netmhcpan_ba_rank", "")
@@ -83,14 +87,18 @@ def build_presentation_evidence(
             "event_id": p.get("event_id",""),
             "sample_id": p.get("sample_id",""),
             "peptide": p.get("peptide",""),
+            # Retained in memory so downstream immunogenicity merges can look up
+            # the matched WT peptide. The canonical presentation schema stores
+            # the resulting WT scores rather than this helper field.
+            "wildtype_peptide": wt_peptide,
             "hla_allele": p.get("hla_allele",""),
             "mhc_class": p.get("mhc_class",""),
             "netmhcpan_ba_rank": str(to_float(ba, 99.0)),
             "netmhcpan_el_rank": str(to_float(el, 99.0)),
             "netmhcpan_mt_rank_ba": evidence_value("netmhcpan_mt_rank_ba", ba),
             "netmhcpan_mt_rank_el": evidence_value("netmhcpan_mt_rank_el", el),
-            "netmhcpan_wt_rank_ba": evidence_value("netmhcpan_wt_rank_ba"),
-            "netmhcpan_wt_rank_el": evidence_value("netmhcpan_wt_rank_el"),
+            "netmhcpan_wt_rank_ba": wt_n.get("netmhcpan_ba_rank") or evidence_value("netmhcpan_wt_rank_ba"),
+            "netmhcpan_wt_rank_el": wt_n.get("netmhcpan_el_rank") or evidence_value("netmhcpan_wt_rank_el"),
             "netmhcstabpan_score": str(to_float(s.get("netmhcstabpan_score"), 0.0)) if s else "",
             "netmhcstabpan_rank": str(to_float(s.get("netmhcstabpan_rank"), 99.0)) if s else "",
             "netchop_31d_max_score": c.get("netchop_31d_max_score", ""),
@@ -101,9 +109,9 @@ def build_presentation_evidence(
             "mhcflurry_affinity_percentile": str(to_float(pct, 99.0)),
             "mhcflurry_processing_score": str(to_float(proc, 0.0)),
             "mhcflurry_presentation_score": str(to_float(pres, 0.0)),
-            "mhcflurry_wt_affinity_percentile": evidence_value("mhcflurry_wt_affinity_percentile"),
-            "mhcflurry_wt_processing_score": evidence_value("mhcflurry_wt_processing_score"),
-            "mhcflurry_wt_presentation_score": evidence_value("mhcflurry_wt_presentation_score"),
+            "mhcflurry_wt_affinity_percentile": wt_m.get("mhcflurry_affinity_percentile") or evidence_value("mhcflurry_wt_affinity_percentile"),
+            "mhcflurry_wt_processing_score": wt_m.get("mhcflurry_processing_score") or evidence_value("mhcflurry_wt_processing_score"),
+            "mhcflurry_wt_presentation_score": wt_m.get("mhcflurry_presentation_score") or evidence_value("mhcflurry_wt_presentation_score"),
             "prime_wt_score": evidence_value("prime_wt_score"),
             "prime_wt_rank": evidence_value("prime_wt_rank"),
             "bigmhc_im_wt_score": evidence_value("bigmhc_im_wt_score"),
