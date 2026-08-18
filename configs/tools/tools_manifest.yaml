@@ -399,7 +399,8 @@ tools:
     executable: PRIME
     env: env.neoag-tools
     install_root: ${OPEN_NEO_TOOLS_ROOT}/tools/prime
-    required: true
+    required: false
+    recommended: true
     license_required: false
     distributable: true
     smoke_command: "PRIME --help"
@@ -409,7 +410,8 @@ tools:
     executable: MixMHCpred
     env: env.neoag-tools
     install_root: ${OPEN_NEO_TOOLS_ROOT}/tools/mixMHCpred_install
-    required: true
+    required: false
+    recommended: true
     license_required: false
     distributable: true
     smoke_command: "MixMHCpred -h"
@@ -421,7 +423,8 @@ tools:
     install_root: ${OPEN_NEO_TOOLS_ROOT}/tools/bigmhc
     model_dir: ${OPEN_NEO_TOOLS_ROOT}/tools/bigmhc/models
     asset: bigmhc_models
-    required: true
+    required: false
+    recommended: true
     license_required: false
     distributable: true
     smoke_command: "bigmhc_predict --help"
@@ -437,7 +440,8 @@ tools:
       - data/after_pca.txt
       - data/hla2paratopeTable_aligned.txt
       - models/cnn_model_331_3_7
-    required: true
+    required: false
+    recommended: true
     license_required: false
     distributable: true
     smoke_command: "deepimmuno-cnn.py --help"

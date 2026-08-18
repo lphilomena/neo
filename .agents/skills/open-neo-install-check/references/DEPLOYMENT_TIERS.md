@@ -4,7 +4,7 @@
 - **core**: run the Python core, fixtures, and evidence-consensus ranking on precomputed inputs.
 - **prediction**: additionally requires VEP, pVACseq, NetMHCpan, MHCflurry,
   NetMHCstabpan, NetChop 3.1d, GRCh38 FASTA plus indexes/dictionary, GENCODE GTF, VEP cache and normal
-  proteome. At least one immunogenicity-like implementation must be available.
+  proteome. PRIME, MixMHCpred, BigMHC and DeepImmuno are advisory immunogenicity support tools: install/check them when available, but do not block READY.
 - **full**: additionally requires Java/Nextflow, BWA, STAR and GATK; RNA
   alignment/quantification and safety references; and at least one working
   implementation in each HLA typing, HLA LOH, purity/CNV, fusion, splice and

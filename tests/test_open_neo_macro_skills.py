@@ -240,6 +240,30 @@ def test_prediction_tier_requires_all_production_presentation_tools():
     assert status == "PARTIAL"
     assert {"netmhcstabpan", "netchop"} <= missing_tools
 
+def test_prediction_tier_immunogenicity_support_is_advisory(tmp_path: Path):
+    tools = [
+        "python", "neoag", "neoag-skill", "vep", "netmhcpan", "mhcflurry",
+        "netmhcstabpan", "netchop", "pvacseq",
+    ]
+    rows = [CheckRow("tool", name, "OK") for name in tools]
+    fasta = tmp_path / "ref.fa"
+    fasta.write_text(">chr1\nA\n", encoding="utf-8")
+    Path(str(fasta) + ".fai").write_text("chr1\t1\t6\t1\t2\n", encoding="utf-8")
+    fasta.with_suffix(".dict").write_text("@HD\tVN:1.6\n", encoding="utf-8")
+    gtf = tmp_path / "gencode.gtf"; gtf.write_text("# gtf\n", encoding="utf-8")
+    vep = tmp_path / "vep"; vep.mkdir()
+    proteome = tmp_path / "normal.fa"; proteome.write_text(">P\nA\n", encoding="utf-8")
+    manifest = tmp_path / "references.json"
+    manifest.write_text(json.dumps({"references": {
+        "reference_fasta": {"path": str(fasta)}, "gencode_gtf": {"path": str(gtf)},
+        "vep_cache": {"path": str(vep)}, "normal_proteome": {"path": str(proteome)},
+    }}), encoding="utf-8")
+    status, requirements = _assess_tier("prediction", rows, manifest)
+    advisory = [row for row in requirements if row["requirement"] == "immunogenicity_support"]
+    assert status == "READY"
+    assert advisory and advisory[0]["required"] == "false"
+    assert advisory[0]["status"] == "WARN"
+
 def test_install_check_writes_comprehensive_local_manifests(tmp_path: Path):
     layout = RunLayout.create(tmp_path / "install")
     outputs = _write_local_manifest_templates(layout, Path.cwd(), {"deploy_root": tmp_path / "neoag"})

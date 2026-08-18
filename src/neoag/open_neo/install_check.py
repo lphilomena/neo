@@ -65,11 +65,8 @@ TIER_REQUIRED_TOOLS = {
 }
 
 TIER_TOOL_GROUPS = {
-    "prediction": {
-        "immunogenicity": ["prime", "bigmhc_im", "deepimmuno"],
-    },
+    "prediction": {},
     "full": {
-        "immunogenicity": ["prime", "bigmhc_im", "deepimmuno"],
         "hla_typing": ["optitype", "spechla", "hla_la"],
         "hla_loh": ["lohhla", "spechla"],
         "purity_cnv": ["facets", "purple", "ascat", "sequenza"],
@@ -94,6 +91,16 @@ TIER_REQUIRED_REFERENCES = {
         "salmon_tx2gene",
     ],
 }
+
+ADVISORY_TOOL_GROUPS = {
+    "prediction": {
+        "immunogenicity_support": ["prime", "mixmhcpred", "bigmhc_im", "deepimmuno"],
+    },
+    "full": {
+        "immunogenicity_support": ["prime", "mixmhcpred", "bigmhc_im", "deepimmuno"],
+    },
+}
+
 
 TIER_REFERENCE_GROUPS = {
     "full": {
@@ -428,12 +435,19 @@ tools:
   prime:
     executable: PRIME
     mode: local
+    recommended: true
+  mixmhcpred:
+    executable: MixMHCpred
+    mode: local
+    recommended: true
   bigmhc_im:
     executable: bigmhc_predict
     mode: conda
+    recommended: true
   deepimmuno:
     executable: deepimmuno-cnn.py
     mode: conda
+    recommended: true
   optitype:
     executable: OptiTypePipeline.py
     mode: conda
@@ -652,6 +666,11 @@ def _assess_tier(tier: str, doctor_rows: list[CheckRow], reference_manifest: str
     for group, members in TIER_TOOL_GROUPS.get(tier, {}).items():
         available = [name for name in members if tool_status.get(name) in OK_STATUSES]
         rows.append({"kind": "tool_group", "requirement": group, "required": "true", "status": "OK" if available else "MISSING", "evidence": ",".join(available) or "any of: " + ",".join(members)})
+    for group, members in ADVISORY_TOOL_GROUPS.get(tier, {}).items():
+        available = [name for name in members if tool_status.get(name) in OK_STATUSES]
+        missing = [name for name in members if name not in available]
+        evidence = ("available=" + ",".join(available) + "; missing=" + ",".join(missing)).strip("; ") if available else "optional support missing: " + ",".join(members)
+        rows.append({"kind": "tool_group", "requirement": group, "required": "false", "status": "OK" if available else "WARN", "evidence": evidence})
 
     ref_data: dict[str, Any] = {}
     if reference_manifest:
