@@ -953,6 +953,52 @@ def _production_run_readiness(args: dict[str, Any], project_root: Path, tier: st
             "bedtools not found", "Install bedtools or let install-check generate project bin/bedtools.",
         ))
 
+    lohhla_runner = project_root / "scripts/run_lohhla_sample.sh"
+    lohhla_runner_text = _read_text_if_small(lohhla_runner)
+    lohhla_runtime_ok = all(token in lohhla_runner_text for token in [
+        "LOHHLA_NAS_ROOT",
+        "LOHHLA_OUT",
+        "lohhla_out_abs",
+        "winners_abs",
+        "hla_fasta_abs",
+        "override_dir=\"FALSE\"",
+        "--cleanUp FALSE",
+        "resolve_bam_for_tools",
+        "ensure_bam_index",
+    ])
+    rows.append(_production_row(
+        "hla_loh", "lohhla_runtime_path_and_resume_safety",
+        "OK" if lohhla_runtime_ok else "BLOCKED",
+        "INFO" if lohhla_runtime_ok else "BLOCKER",
+        str(lohhla_runner if lohhla_runner_text else "run_lohhla_sample.sh not found"),
+        "Run LOHHLA in a fresh explicit LOHHLA_NAS_ROOT/LOHHLA_OUT, pass absolute HLA/FASTA/copy-number paths, keep cleanUp disabled, avoid overrideDir reuse bugs, and regenerate missing root mpileup files instead of reusing a partial failed directory.",
+    ))
+
+    polysolver_home = Path(str(os.environ.get("POLYSOLVER_HOME") or "")) if os.environ.get("POLYSOLVER_HOME") else None
+    polysolver_candidates = [
+        polysolver_home,
+        project_root.parent / "open-neo-deploy/licensed_tools/polysolver",
+        project_root.parent / "open-neo-deploy/env_tool/licensed_tools/polysolver",
+        tools_root / "polysolver",
+    ]
+    polysolver_root = next((
+        path for path in polysolver_candidates
+        if path and _safe_path_exists(path / "scripts/config.local.bash")
+    ), None)
+    polysolver_markers_ok = bool(polysolver_root and all(_safe_path_exists(polysolver_root / rel) for rel in [
+        "scripts/config.local.bash",
+        "scripts/novoindex",
+        "data/abc_complete.fasta",
+        "data/complete",
+    ]))
+    rows.append(_production_row(
+        "hla_loh", "lohhla_polysolver_assets",
+        "OK" if polysolver_markers_ok else "BLOCKED",
+        "INFO" if polysolver_markers_ok else "BLOCKER",
+        str(polysolver_root or "Polysolver markers not found"),
+        "Configure the licensed Polysolver tree with readable scripts/novoindex and HLA FASTA assets; install-check must not silently accept a partial rsync with permission-denied binaries.",
+    ))
+
     star_script = project_root / "scripts/run_star_rna_fastq.sh"
     star_text = _read_text_if_small(star_script)
     has_legacy_chim = "SeparateSAMold" in star_text or "SoftClip" in star_text
@@ -1026,6 +1072,51 @@ def _production_run_readiness(args: dict[str, Any], project_root: Path, tier: st
         "INFO" if easyfuse_home_fallback_ok else "BLOCKER",
         str(easyfuse_runner if easyfuse_runner_text else "run_easyfuse_sample.sh not found"),
         "Resolve EasyFuse to the deployed open-neo-deploy/env_tool/tools/EasyFuse directory when the default project-local tools/EasyFuse path is absent.",
+    ))
+
+    easyfuse_entrypoint_shim_ok = all(token in easyfuse_runner_text for token in [
+        "ensure_easyfuse_entrypoints",
+        "no working easy-fuse entrypoint",
+        "installed easy-fuse shim",
+        "STAR",
+        "bowtie-build",
+    ])
+    rows.append(_production_row(
+        "rna_fusion", "easyfuse_entrypoint_shims",
+        "OK" if easyfuse_entrypoint_shim_ok else "BLOCKED",
+        "INFO" if easyfuse_entrypoint_shim_ok else "BLOCKER",
+        str(easyfuse_runner if easyfuse_runner_text else "run_easyfuse_sample.sh not found"),
+        "Install easy-fuse shims into STAR/Bowtie-only Nextflow conda envs so EasyFuse requantification subprocesses do not fail with 'easy-fuse: command not found'.",
+    ))
+
+    easyfuse_star_env_ok = all(token in easyfuse_runner_text for token in [
+        "seed_easyfuse_conda_envs.sh",
+        "patch_easyfuse_star_avx2.sh",
+        "requantification_wo_easyfuse.yml",
+    ])
+    seed_script = project_root / "scripts/seed_easyfuse_conda_envs.sh"
+    seed_text = _read_text_if_small(seed_script)
+    seed_mentions_requant = "requantification_wo_easyfuse.yml" in seed_text and "STAR_CUSTOM" in seed_text
+    rows.append(_production_row(
+        "rna_fusion", "easyfuse_star_custom_env_consistency",
+        "OK" if easyfuse_star_env_ok and seed_mentions_requant else "BLOCKED",
+        "INFO" if easyfuse_star_env_ok and seed_mentions_requant else "BLOCKER",
+        f"{easyfuse_runner if easyfuse_runner_text else 'run_easyfuse_sample.sh not found'}; {seed_script if seed_text else 'seed_easyfuse_conda_envs.sh not found'}",
+        "Preseed/patch EasyFuse STAR_INDEX and STAR_CUSTOM conda envs so the STAR version that generates a transient index is compatible with the STAR version that reads it.",
+    ))
+
+    easyfuse_requant_module_text = _read_text_if_small((easyfuse_root / "modules/05_requantification.nf") if easyfuse_root else Path())
+    easyfuse_star_index_cleanup_ok = (
+        "genomeType" in easyfuse_requant_module_text
+        and "genomeTransform" in easyfuse_requant_module_text
+        and "genomeParameters.txt" in easyfuse_requant_module_text
+    )
+    rows.append(_production_row(
+        "rna_fusion", "easyfuse_requant_star_index_parameter_cleanup",
+        "OK" if easyfuse_star_index_cleanup_ok else "BLOCKED",
+        "INFO" if easyfuse_star_index_cleanup_ok else "BLOCKER",
+        str((easyfuse_root / "modules/05_requantification.nf") if easyfuse_root else "EasyFuse root not found"),
+        "Patch EasyFuse STAR_INDEX to remove STAR-version-specific genomeParameters entries such as genomeType and genomeTransform* before STAR_CUSTOM consumes the transient index.",
     ))
 
     easyfuse_ref_candidates = []

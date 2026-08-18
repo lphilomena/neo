@@ -157,6 +157,37 @@ YAML
   fi
 }
 
+
+ensure_easyfuse_entrypoints() {
+  local source=""
+  local candidate
+  for candidate in "${CONDA_CACHE}"/env-*/bin/easy-fuse; do
+    [[ -x "${candidate}" ]] || continue
+    if "${candidate}" --help >/dev/null 2>&1; then
+      source="${candidate}"
+      break
+    fi
+  done
+  [[ -n "${source}" ]] || {
+    echo "ERROR: no working easy-fuse entrypoint found in ${CONDA_CACHE}" >&2
+    exit 1
+  }
+
+  local prefix target
+  for prefix in "${CONDA_CACHE}"/env-*; do
+    [[ -d "${prefix}/bin" ]] || continue
+    target="${prefix}/bin/easy-fuse"
+    [[ -e "${target}" ]] && continue
+    [[ -x "${prefix}/bin/STAR" || -x "${prefix}/bin/bowtie-build" ]] || continue
+    cat > "${target}" <<EOF
+#!/usr/bin/env bash
+exec ${source} "\$@"
+EOF
+    chmod +x "${target}"
+    echo "    installed easy-fuse shim ${target} -> ${source}"
+  done
+}
+
 wait_for_mamba_free() {
   while pgrep -f 'mamba env create' >/dev/null 2>&1; do
     sleep 15
@@ -246,6 +277,7 @@ echo "==> alignment env ready"
 
 bash "${ROOT}/scripts/fix_easyfuse_pyeasyfuse_env.sh"
 bash "${ROOT}/scripts/seed_easyfuse_conda_envs.sh"
+ensure_easyfuse_entrypoints
 
 REQ_WO_ENV="${CONDA_CACHE}/env-requantification_wo_easyfuse"
 if [[ ! -x "${REQ_WO_ENV}/bin/STAR" ]]; then
@@ -258,6 +290,7 @@ if [[ ! -x "${REQ_WO_ENV}/bin/STAR" ]]; then
 fi
 
 bash "${ROOT}/scripts/patch_easyfuse_star_avx2.sh"
+ensure_easyfuse_entrypoints
 bash "${ROOT}/scripts/patch_easyfuse_fusioncatcher_compat.sh"
 bash "${ROOT}/scripts/fix_easyfuse_pyeasyfuse_env.sh"
 

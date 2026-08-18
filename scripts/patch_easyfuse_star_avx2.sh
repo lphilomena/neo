@@ -37,6 +37,30 @@ patch_star_runtime_libs() {
   fi
 }
 
+
+patch_starfusion_version_check() {
+  local prefix="$1"
+  local sf="${prefix}/lib/STAR-Fusion/STAR-Fusion"
+  [[ -f "${sf}" ]] || return 0
+  if grep -q '^(?:STAR_)?' "${sf}"; then
+    echo "    STAR-Fusion version check already patched ${prefix}"
+    return 0
+  fi
+  python3 - "${sf}" <<'PY'
+from pathlib import Path
+import sys
+p = Path(sys.argv[1])
+text = p.read_text(errors="ignore")
+old = r'if ($star_version_info =~ /^STAR_(\d+)\.(\d+)\./) {'
+new = r'if ($star_version_info =~ /^(?:STAR_)?(\d+)\.(\d+)(?:\.|[A-Za-z]|\s|$)/) {'
+if old not in text:
+    raise SystemExit(f"STAR-Fusion version check pattern not found in {p}")
+p.write_text(text.replace(old, new))
+PY
+  perl -c "${sf}" >/dev/null
+  echo "    patched STAR-Fusion version check ${prefix}"
+}
+
 patch_prefix() {
   local prefix="$1"
   [[ -d "${prefix}/bin" ]] || return 0
@@ -45,6 +69,7 @@ patch_prefix() {
   if [[ -f "${prefix}/bin/STAR.orig-bioconda" ]]; then
     echo "    already patched ${prefix}"
     patch_star_runtime_libs "${prefix}"
+    patch_starfusion_version_check "${prefix}"
     return 0
   fi
 
@@ -60,6 +85,7 @@ patch_prefix() {
   done
 
   patch_star_runtime_libs "${prefix}"
+  patch_starfusion_version_check "${prefix}"
   "${prefix}/bin/STAR" --version >/dev/null
   echo "    verified STAR wrapper -> $("${prefix}/bin/STAR" --version 2>&1 | head -1)"
 }
