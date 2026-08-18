@@ -1110,6 +1110,8 @@ def _production_run_readiness(args: dict[str, Any], project_root: Path, tier: st
         "genomeType" in easyfuse_requant_module_text
         and "genomeTransform" in easyfuse_requant_module_text
         and "genomeParameters.txt" in easyfuse_requant_module_text
+        and easyfuse_requant_module_text.count("genomeParameters.txt") >= 2
+        and "patch_easyfuse_requant_star_index_cleanup.sh" in easyfuse_runner_text
     )
     rows.append(_production_row(
         "rna_fusion", "easyfuse_requant_star_index_parameter_cleanup",

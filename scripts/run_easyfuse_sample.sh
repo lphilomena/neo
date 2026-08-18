@@ -290,6 +290,7 @@ if [[ ! -x "${REQ_WO_ENV}/bin/STAR" ]]; then
 fi
 
 bash "${ROOT}/scripts/patch_easyfuse_star_avx2.sh"
+bash "${ROOT}/scripts/patch_easyfuse_requant_star_index_cleanup.sh"
 ensure_easyfuse_entrypoints
 bash "${ROOT}/scripts/patch_easyfuse_fusioncatcher_compat.sh"
 bash "${ROOT}/scripts/fix_easyfuse_pyeasyfuse_env.sh"

@@ -4,13 +4,16 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck source=/dev/null
+source "${ROOT}/conf/tools.env.sh" 2>/dev/null || true
+
 CONDA_CACHE="${ROOT}/work/.nextflow_conda"
 STAR_SRC="${NEOAG_STAR_FUSION_HOME:-${ROOT}/tools/STAR-Fusion}"
-if [[ -x "${NEOAG_CONDA_BASE}/envs/${NEOAG_FUSION_ENV:-neoag-fusion}/bin/STAR-avx2" ]]; then
+if [[ -n "${NEOAG_CONDA_BASE:-}" && -x "${NEOAG_CONDA_BASE}/envs/${NEOAG_FUSION_ENV:-neoag-fusion}/bin/STAR-avx2" ]]; then
   STAR_SRC="${NEOAG_CONDA_BASE}/envs/${NEOAG_FUSION_ENV:-neoag-fusion}/bin"
 fi
 
-if [[ ! -x "${STAR_SRC}/STAR-avx2" && -x "${NEOAG_CONDA_BASE}/envs/neoag-fusion/bin/STAR-avx2" ]]; then
+if [[ -n "${NEOAG_CONDA_BASE:-}" && ! -x "${STAR_SRC}/STAR-avx2" && -x "${NEOAG_CONDA_BASE}/envs/neoag-fusion/bin/STAR-avx2" ]]; then
   STAR_SRC="${NEOAG_CONDA_BASE}/envs/neoag-fusion/bin"
 fi
 
@@ -54,11 +57,13 @@ text = p.read_text(errors="ignore")
 old = r'if ($star_version_info =~ /^STAR_(\d+)\.(\d+)\./) {'
 new = r'if ($star_version_info =~ /^(?:STAR_)?(\d+)\.(\d+)(?:\.|[A-Za-z]|\s|$)/) {'
 if old not in text:
-    raise SystemExit(f"STAR-Fusion version check pattern not found in {p}")
-p.write_text(text.replace(old, new))
+    print(f"STAR-Fusion version check pattern not found in {p}; leaving unchanged")
+else:
+    p.write_text(text.replace(old, new))
+    print(f"patched STAR-Fusion version check {p}")
 PY
   perl -c "${sf}" >/dev/null
-  echo "    patched STAR-Fusion version check ${prefix}"
+  echo "    verified STAR-Fusion version check ${prefix}"
 }
 
 patch_prefix() {
@@ -92,9 +97,6 @@ patch_prefix() {
 
 echo "==> patch_easyfuse_star_avx2 $(date -Is)"
 echo "    source=${STAR_SRC}"
-
-# shellcheck source=/dev/null
-source "${ROOT}/conf/tools.env.sh" 2>/dev/null || true
 
 shopt -s nullglob
 for prefix in "${CONDA_CACHE}"/env-*; do
