@@ -72,7 +72,7 @@ MIXMHCPRED_DIR=""
 MIXMHCPRED_ARCHIVE=""
 MIXMHCPRED_URL=""
 NETMHCSTABPAN_DIR=""
-NETMHCSTABPAN_ARCHIVE=""
+NETMHCSTABPAN_ARCHIVE="${NEOAG_NETMHCSTABPAN_ARCHIVE:-}"
 NETMHCSTABPAN_URL=""
 NETCHOP_ARCHIVE="${NEOAG_NETCHOP_ARCHIVE:-}"
 POLYSOLVER_HOME_ARG=""
@@ -174,6 +174,7 @@ Licensed/restricted source options:
   --mixmhcpred-url URL       Approved MixMHCpred archive URL
   --netmhcstabpan-dir DIR    Existing NetMHCstabpan directory to copy
   --netmhcstabpan-archive FILE
+                              Authorized NetMHCstabpan archive; if omitted, search licensed-root and shared-asset-root
   --netmhcstabpan-url URL    Approved NetMHCstabpan archive URL
   --netchop-archive FILE     Authorized netchop-3.1d.Linux.tar.gz; if omitted, search licensed-root/netchop and shared-asset-root
   --polysolver-home DIR      Existing Polysolver distribution
@@ -410,6 +411,12 @@ EOF
   if [[ -f "$LICENSED_ROOT/novoalign/novoalign.lic" && -z "$NOVOALIGN_LICENSE_FILE_ARG" ]]; then
     NOVOALIGN_LICENSE_FILE_ARG="$LICENSED_ROOT/novoalign/novoalign.lic"
   fi
+  if [[ -z "$NETMHCSTABPAN_ARCHIVE" ]]; then
+    NETMHCSTABPAN_ARCHIVE="$(discover_netmhcstabpan_archive)"
+  fi
+  if [[ -z "$NETCHOP_ARCHIVE" ]]; then
+    NETCHOP_ARCHIVE="$(discover_netchop_archive)"
+  fi
 }
 
 sync_assets_if_requested() {
@@ -466,6 +473,7 @@ write_presentation_tool_env_overrides() {
   local start="# BEGIN NEOAG LICENSED PRESENTATION TOOLS"
   local end="# END NEOAG LICENSED PRESENTATION TOOLS"
   mkdir -p "$PROJECT_ROOT/conf"
+  ensure_gawk_for_netmhcstabpan
   if [[ -f "$local_env" ]]; then
     sed "/$start/,/$end/d" "$local_env" > "${local_env}.tmp"
     mv "${local_env}.tmp" "$local_env"
@@ -475,7 +483,7 @@ $start
 export NETMHCSTABPAN_HOME="$stab_home"
 export NEOAG_NETMHCSTABPAN_BIN="\${NETMHCSTABPAN_HOME}/netMHCstabpan"
 if [[ -x "\${NEOAG_NETMHCSTABPAN_BIN}" ]]; then
-  export PATH="\${NETMHCSTABPAN_HOME}:\${PATH}"
+  export PATH="$(dirname "$netchop_bin"):\${NETMHCSTABPAN_HOME}:\${PATH}"
 fi
 export NETCHOP_HOME="$netchop_home"
 export NETCHOP="\${NETCHOP_HOME}/Linux_x86_64"
@@ -500,6 +508,32 @@ discover_netchop_archive() {
   if [[ -n "$SHARED_ASSET_ROOT" && -d "$SHARED_ASSET_ROOT" ]]; then
     find "$SHARED_ASSET_ROOT" -maxdepth 6 -type f -iname 'netchop-3.1d.Linux.tar.gz' -print -quit 2>/dev/null
   fi
+}
+
+discover_netmhcstabpan_archive() {
+  local candidate=""
+  for candidate in \
+    "$LICENSED_ROOT/netMHCstabpan/netMHCstabpan-1.0cstatic.Linux.tar.gz" \
+    "$LICENSED_ROOT/netMHCstabpan/netMHCstabpan-1.0a.Linux.tar.gz" \
+    "$TOOLS_ROOT/netMHCstabpan-1.0cstatic.Linux.tar.gz" \
+    "$TOOLS_ROOT/tools/netMHCstabpan-1.0cstatic.Linux.tar.gz"; do
+    [[ -f "$candidate" ]] && { printf '%s\n' "$candidate"; return 0; }
+  done
+  if [[ -n "$SHARED_ASSET_ROOT" && -d "$SHARED_ASSET_ROOT" ]]; then
+    find "$SHARED_ASSET_ROOT" -maxdepth 6 -type f \
+      \( -iname 'netMHCstabpan-*.Linux.tar.gz' -o -iname 'netmhcstabpan-*.Linux.tar.gz' \) \
+      -print -quit 2>/dev/null
+  fi
+}
+
+ensure_gawk_for_netmhcstabpan() {
+  command -v gawk >/dev/null 2>&1 && return 0
+  [[ -x "$TOOLS_ROOT/bin/gawk" ]] && return 0
+  local awk_bin="$(command -v awk || true)"
+  [[ -n "$awk_bin" ]] || return 0
+  mkdir -p "$TOOLS_ROOT/bin"
+  ln -sfn "$awk_bin" "$TOOLS_ROOT/bin/gawk"
+  log "Registered awk-compatible gawk shim for NetMHCstabpan: $TOOLS_ROOT/bin/gawk -> $awk_bin"
 }
 
 register_netmhcstabpan_if_requested() {
@@ -530,11 +564,18 @@ EOF
     return 0
   fi
 
+  [[ -n "$NETMHCSTABPAN_ARCHIVE" ]] || NETMHCSTABPAN_ARCHIVE="$(discover_netmhcstabpan_archive)"
   if [[ -n "$NETMHCSTABPAN_ARCHIVE" && -f "$NETMHCSTABPAN_ARCHIVE" ]]; then
-    run "install NetMHCstabpan from archive" bash scripts/install_netmhcstabpan.sh "$NETMHCSTABPAN_ARCHIVE"
+    if [[ "$NETMHCSTABPAN_ARCHIVE" != "$LICENSED_ROOT/netMHCstabpan/$(basename "$NETMHCSTABPAN_ARCHIVE")" ]]; then
+      run "stage NetMHCstabpan archive into licensed root" bash -lc "mkdir -p '$LICENSED_ROOT/netMHCstabpan' && cp -f '$NETMHCSTABPAN_ARCHIVE' '$LICENSED_ROOT/netMHCstabpan/'"
+      NETMHCSTABPAN_ARCHIVE="$LICENSED_ROOT/netMHCstabpan/$(basename "$NETMHCSTABPAN_ARCHIVE")"
+    fi
+    run "install NetMHCstabpan from archive" env NETMHCSTABPAN_HOME="$LICENSED_ROOT/netMHCstabpan" bash scripts/install_netmhcstabpan.sh "$NETMHCSTABPAN_ARCHIVE"
   else
-    run "install NetMHCstabpan IEDB shim" bash scripts/install_netmhcstabpan.sh --iedb
+    run "install NetMHCstabpan IEDB shim" env NETMHCSTABPAN_HOME="$LICENSED_ROOT/netMHCstabpan" bash scripts/install_netmhcstabpan.sh --iedb
   fi
+  ensure_gawk_for_netmhcstabpan
+  write_presentation_tool_env_overrides
 }
 
 register_spechla_if_requested() {

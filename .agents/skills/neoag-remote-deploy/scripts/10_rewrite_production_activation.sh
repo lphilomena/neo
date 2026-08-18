@@ -108,7 +108,7 @@ export NETMHCSTABPAN_HOME="$LICENSED_ROOT/netMHCstabpan"
 export NEOAG_NETMHCSTABPAN_BIN="\${NETMHCSTABPAN_HOME}/netMHCstabpan"
 export NEOAG_NETMHCSTABPAN_IMAGE="\${NEOAG_NETMHCSTABPAN_IMAGE:-neoag-netmhcstabpan:1.0-ubuntu22.04}"
 if [[ -x "\${NEOAG_NETMHCSTABPAN_BIN}" ]]; then
-  export PATH="\${NETMHCSTABPAN_HOME}:\${PATH}"
+  export PATH="$TOOLS_ROOT/bin:\${NETMHCSTABPAN_HOME}:\${PATH}"
 fi
 export NETCHOP_HOME="$LICENSED_ROOT/netchop/netchop-3.1"
 export NETCHOP="\${NETCHOP_HOME}/Linux_x86_64"
