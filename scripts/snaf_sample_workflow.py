@@ -88,7 +88,7 @@ def main() -> int:
     with source.open(encoding="utf-8", errors="replace", newline="") as handle:
         rows = list(csv.DictReader(handle, delimiter="\t"))
     fields = [
-        "sample_id", "event_id", "gene", "chrom", "start", "end",
+        "sample_id", "event_id", "gene", "chrom", "start", "end", "strand",
         "junction_reads", "peptide", "hla_allele", "binding_rank",
         "immunogenicity", "tumor_specificity_mean", "tumor_specificity_mle",
         "source_tool", "evidence_status",
@@ -101,6 +101,7 @@ def main() -> int:
             coord = str(row.get("coord", ""))
             chrom = coord.split(":", 1)[0] if ":" in coord else ""
             span = coord.split(":", 1)[1].split("(", 1)[0] if ":" in coord else ""
+            strand = coord.rsplit("(", 1)[1].rstrip(")") if "(" in coord else ""
             start, end = (span.split("-", 1) + [""])[:2] if span else ("", "")
             writer.writerow({
                 "sample_id": sample_id,
@@ -109,6 +110,7 @@ def main() -> int:
                 "chrom": chrom,
                 "start": start,
                 "end": end,
+                "strand": strand,
                 "junction_reads": row.get("junction_count", ""),
                 "peptide": row.get("peptide", ""),
                 "hla_allele": row.get("hla", ""),

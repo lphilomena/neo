@@ -89,6 +89,83 @@ def test_snaf_separate_boundary_columns_match_regtools_bed12(tmp_path: Path):
     assert consensus[0]["status"] == "CROSS_DOMAIN_CONFIRMED_EXACT_JUNCTION"
 
 
+def test_snaf_candidates_use_verified_star_sj_reads(tmp_path: Path):
+    star = _write(
+        tmp_path / "SJ.out.tab",
+        "8\t27598161\t27598587\t2\t2\t1\t68\t7\t26\n",
+    )
+    snaf = _write(
+        tmp_path / "snaf.tsv",
+        "sample_id\tevent_id\tgene\tchrom\tstart\tend\tjunction_reads\tpeptide\thla_allele\tbinding_rank\n"
+        "S1\tUID1\tGENE1\tchr8\t27598160\t27598588\t74\tRTFLPVSLS\tHLA-A*30:01\t0.423\n",
+    )
+    outputs = normalize_splice_sources(
+        sample_id="S1",
+        junctions=star,
+        junction_tool="STAR",
+        junction_coordinate_system="star_sj",
+        snaf=snaf,
+        outdir=tmp_path / "star_normalized",
+        candidate_only=True,
+    )
+    peptide = read_tsv(outputs["raw_peptides"])[0]
+    assert peptide["rna_junction_reads"] == "75"
+    assert peptide["provided_rna_junction_reads"] == "74"
+    assert peptide["rna_junction_source"] == "STAR"
+    assert peptide["junction_support_status"] == "SUPPORTED_EXACT_JUNCTION"
+    assert "PROVIDED_74_NE_RESOLVED_75" in peptide["junction_support_conflict"]
+
+
+def test_raw_snaf_coord_preserves_strand_when_matching_star(tmp_path: Path):
+    star = _write(
+        tmp_path / "SJ.out.tab",
+        "8\t27598161\t27598587\t2\t2\t1\t68\t7\t26\n",
+    )
+    snaf = _write(
+        tmp_path / "raw_snaf.tsv",
+        "sample\tpeptide\tuid\tjunction_count\thla\tbinding_affinity\tcoord\tsymbol\n"
+        "S1\tRTFLPVSLS\tUID1\t74\tHLA-A*30:01\t0.423\tchr8:27598160-27598588(-)\tGENE1\n",
+    )
+    outputs = normalize_splice_sources(
+        sample_id="S1",
+        junctions=star,
+        junction_tool="STAR",
+        junction_coordinate_system="star_sj",
+        snaf=snaf,
+        outdir=tmp_path / "raw_snaf_normalized",
+        candidate_only=True,
+    )
+    peptide = read_tsv(outputs["raw_peptides"])[0]
+    assert peptide["canonical_junction_id"] == "SJ|GRCh38|chr8|27598161|27598587|-"
+    assert peptide["rna_junction_reads"] == "75"
+    assert peptide["binding_rank"] == "0.423"
+
+
+def test_snaf_without_matching_star_junction_cannot_transfer_reads(tmp_path: Path):
+    star = _write(
+        tmp_path / "SJ.out.tab",
+        "8\t27598161\t27598587\t2\t2\t1\t68\t7\t26\n",
+    )
+    snaf = _write(
+        tmp_path / "snaf.tsv",
+        "sample_id\tevent_id\tgene\tchrom\tstart\tend\tjunction_reads\tpeptide\thla_allele\tbinding_rank\n"
+        "S1\tUID2\tGENE2\tchr8\t100\t200\t5000\tACDEFGHIK\tHLA-A*02:01\t0.2\n",
+    )
+    outputs = normalize_splice_sources(
+        sample_id="S1",
+        junctions=star,
+        junction_tool="STAR",
+        junction_coordinate_system="star_sj",
+        snaf=snaf,
+        outdir=tmp_path / "star_unmatched",
+        candidate_only=True,
+    )
+    peptide = read_tsv(outputs["raw_peptides"])[0]
+    assert peptide["rna_junction_reads"] == "0"
+    assert peptide["provided_rna_junction_reads"] == "5000"
+    assert peptide["junction_support_status"] == "RESOLVED_WITHOUT_PRIMARY_SUPPORT"
+
+
 def test_same_gene_read_leakage_is_forbidden(tmp_path: Path):
     primary = _write(
         tmp_path / "regtools.tsv",

@@ -64,7 +64,7 @@ def main() -> int:
             reasons.append("INVALID_HLA")
         status = str(consensus.get(event_id, {}).get("status") or "")
         if status != EXACT_STATUS:
-            reasons.append("NO_EXACT_REGTOOLS_JUNCTION_SUPPORT")
+            reasons.append("NO_EXACT_PRIMARY_JUNCTION_SUPPORT")
         source_tools = ";".join(
             str(row.get(key) or "") for key in ("source_tool", "source_tools")
         ).upper()

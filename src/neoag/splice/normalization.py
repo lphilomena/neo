@@ -62,7 +62,7 @@ class NormalizedRecord:
     event_id: str
 
 
-PRIMARY_JUNCTION_TOOLS = {"RegTools"}
+PRIMARY_JUNCTION_TOOLS = {"RegTools", "STAR"}
 
 CONSENSUS_PROVENANCE_FIELDS = [
     "event_id",
@@ -339,7 +339,7 @@ def _peptide_source_row(
             to_float(
                 first(
                     item.record.row,
-                    ["binding_rank", "Best MT Score", "Median MT Score", "MT %Rank", "%ile MT"],
+                    ["binding_rank", "binding_affinity", "Best MT Score", "Median MT Score", "MT %Rank", "%ile MT"],
                     "99",
                 ),
                 99.0,
@@ -347,7 +347,7 @@ def _peptide_source_row(
         ),
         "el_rank": str(
             to_float(
-                first(item.record.row, ["el_rank", "EL Rank", "Best MT EL Score"], "99"),
+                first(item.record.row, ["el_rank", "binding_affinity", "EL Rank", "Best MT EL Score"], "99"),
                 99.0,
             )
         ),
@@ -457,6 +457,7 @@ def normalize_splice_sources(
     normal_junctions: str | Path | None = None,
     genome_build: str = "GRCh38",
     junction_coordinate_system: str = "auto",
+    junction_tool: str = "RegTools",
     snaf_coordinate_system: str = "auto",
     splicemutr_coordinate_system: str = "auto",
     normal_coordinate_system: str = "auto",
@@ -471,8 +472,10 @@ def normalize_splice_sources(
     if not primary_path.is_file():
         raise FileNotFoundError(f"Missing primary splice junction table: {primary_path}")
 
+    if junction_tool not in PRIMARY_JUNCTION_TOOLS:
+        raise ValueError(f"Unsupported primary junction tool: {junction_tool}")
     sources = [
-        SpliceSource("RegTools", primary_path, "rna_junction", junction_coordinate_system),
+        SpliceSource(junction_tool, primary_path, "rna_junction", junction_coordinate_system),
     ]
     if snaf and Path(snaf).is_file():
         sources.append(SpliceSource("SNAF", Path(snaf), "neoantigen", snaf_coordinate_system))
@@ -481,7 +484,7 @@ def normalize_splice_sources(
             SpliceSource("SpliceMutr", Path(splicemutr), "neoantigen", splicemutr_coordinate_system)
         )
 
-    primary_tools = set(PRIMARY_JUNCTION_TOOLS)
+    primary_tools = {junction_tool}
     registry = JunctionRegistry()
     normalized: list[NormalizedRecord] = []
 

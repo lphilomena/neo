@@ -137,7 +137,7 @@ def main() -> int:
     ap.add_argument("--samtools-executable", default="samtools", help="samtools used to index RNA BAM")
     ap.add_argument("--rna-threads", type=int, default=16)
     ap.add_argument("--easyfuse"); ap.add_argument("--star-fusion"); ap.add_argument("--arriba")
-    ap.add_argument("--junctions"); ap.add_argument("--snaf"); ap.add_argument("--splicemutr"); ap.add_argument("--normal-junctions")
+    ap.add_argument("--junctions"); ap.add_argument("--star-sj"); ap.add_argument("--snaf"); ap.add_argument("--splicemutr"); ap.add_argument("--normal-junctions")
     ap.add_argument("--normal-expression"); ap.add_argument("--normal-hla-ligands"); ap.add_argument("--reference-proteome")
     ap.add_argument("--netchop-executable", default="netChop"); ap.add_argument("--netchop-home", default="")
     ap.add_argument(
@@ -402,8 +402,14 @@ def main() -> int:
         if args.arriba: review += f" --arriba {require(args.arriba, 'Arriba')}"
         review += " --outdir {outdir}/branches/fusion/consensus"
         stage(lines, "fusion_cross_validation", command=review, outputs={"fusion_consensus": "{outdir}/branches/fusion/consensus/fusion_consensus.tsv"}, required=True, depends=["fusion_candidates"])
-    if args.junctions and (args.snaf or args.splicemutr):
-        command = f"PYTHONPATH={q(root / 'src')} {q(sys.executable)} {q(root / 'scripts/normalize_rna_fusion_splice.py')} --sample-id {q(args.sample_id)} --profile {q(profile)} --junctions {q(require(args.junctions, 'junctions'))} --candidate-only"
+    if args.junctions and args.star_sj:
+        raise SystemExit("Use only one primary splice evidence input: --junctions or --star-sj")
+    if (args.junctions or args.star_sj) and (args.snaf or args.splicemutr):
+        if args.star_sj:
+            primary_arg = f"--star-sj {q(require(args.star_sj, 'STAR SJ.out.tab'))}"
+        else:
+            primary_arg = f"--junctions {q(require(args.junctions, 'junctions'))}"
+        command = f"PYTHONPATH={q(root / 'src')} {q(sys.executable)} {q(root / 'scripts/normalize_rna_fusion_splice.py')} --sample-id {q(args.sample_id)} --profile {q(profile)} {primary_arg} --candidate-only"
         if args.snaf: command += f" --snaf {require(args.snaf, 'SNAF')}"
         if args.splicemutr: command += f" --splicemutr {require(args.splicemutr, 'SpliceMutr')}"
         if args.normal_junctions: command += f" --normal-junctions {require(args.normal_junctions, 'normal junctions')}"

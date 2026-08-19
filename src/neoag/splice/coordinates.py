@@ -395,6 +395,8 @@ def detect_coordinate_system(
     explicit = first(row, ["source_coordinate_system", "coordinate_system"], "")
     if explicit:
         return explicit.strip().lower()
+    if tool == "star" or {"star_strand_code", "max_overhang"} <= keys:
+        return "star_sj"
     if {"intron_start_1based", "intron_end_1based"} <= keys:
         return "intron_1based_closed"
     if {"blockcount", "blocksizes", "blockstarts"} <= keys or {
@@ -408,7 +410,7 @@ def detect_coordinate_system(
     # SNAF emits outer exon splice-boundary coordinates.  This also applies to
     # normalized candidate tables where chrom/start/end are separate columns
     # and event_id contains the exon-pair UID rather than genomic coordinates.
-    uid = first(row, ["uid", "junction", "junction_id"], "")
+    uid = first(row, ["coord", "uid", "junction", "junction_id"], "")
     if tool == "snaf" and (
         re.search(r":\d+-\d+\([+-]\)$", uid)
         or (
@@ -529,7 +531,7 @@ def junction_record_from_row(
     if junction is None:
         # Coordinate-bearing UID is permitted, but only under an explicit or
         # tool-specific conversion convention. It is never matched by gene.
-        token = alias or first(raw, ["junction", "uid", "event_name"], "")
+        token = first(raw, ["coord"], "") or alias or first(raw, ["junction", "uid", "event_name"], "")
         token_system = system if system not in {"auto", "bed12"} else "intron_1based_closed"
         try:
             parsed_token = parse_coordinate_token(token, genome_build=build, coordinate_system=token_system)
@@ -638,8 +640,8 @@ def _looks_like_header(cells: list[str]) -> bool:
     return bool(folded & known)
 
 
-def read_source_rows(path: str | Path) -> Iterable[dict[str, str]]:
-    """Stream TSV/CSV or headerless RegTools BED/BED12 rows.
+def read_source_rows(path: str | Path, *, source_tool: str = "") -> Iterable[dict[str, str]]:
+    """Stream TSV/CSV, STAR SJ.out.tab, or headerless BED/BED12 rows.
 
     Normal-junction panels can exceed several gigabytes when decompressed.  The
     parser therefore opens gzip inputs transparently and never materializes the
@@ -671,6 +673,23 @@ def read_source_rows(path: str | Path) -> Iterable[dict[str, str]]:
                 yield next(csv.reader([line], delimiter=delimiter))
 
         for cells in parsed_lines():
+            if source_tool.strip().casefold() == "star" and len(cells) >= 9:
+                keys = [
+                    "chrom",
+                    "intron_start_1based",
+                    "intron_end_1based",
+                    "star_strand_code",
+                    "splice_motif",
+                    "known_junction",
+                    "unique_split_reads",
+                    "multi_split_reads",
+                    "max_overhang",
+                ]
+                row = {key: cells[index] if index < len(cells) else "" for index, key in enumerate(keys)}
+                row["strand"] = {"1": "+", "2": "-"}.get(row["star_strand_code"], ".")
+                row["source_coordinate_system"] = "star_sj"
+                yield row
+                continue
             if len(cells) >= 12:
                 keys = [
                     "chrom",
@@ -705,7 +724,7 @@ def iter_junction_records(
     source_tool_version: str = "UNASSESSED",
     strict: bool = False,
 ) -> Iterable[JunctionSourceRecord]:
-    for index, row in enumerate(read_source_rows(path), 1):
+    for index, row in enumerate(read_source_rows(path, source_tool=source_tool), 1):
         yield junction_record_from_row(
             row,
             sample_id=sample_id,

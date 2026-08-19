@@ -18,7 +18,9 @@ def main() -> int:
     )
     parser.add_argument("--sample-id", required=True)
     parser.add_argument("--profile", default="default")
-    parser.add_argument("--junctions", required=True, type=Path)
+    primary = parser.add_mutually_exclusive_group(required=True)
+    primary.add_argument("--junctions", type=Path, help="RegTools BED/TSV junction evidence")
+    primary.add_argument("--star-sj", type=Path, help="STAR SJ.out.tab from the matched sample")
     parser.add_argument("--snaf", type=Path)
     parser.add_argument("--splicemutr", type=Path)
     parser.add_argument("--normal-junctions", type=Path)
@@ -40,16 +42,21 @@ def main() -> int:
     )
     args = parser.parse_args()
 
+    junctions = args.star_sj or args.junctions
+    junction_tool = "STAR" if args.star_sj else "RegTools"
+    coordinate_system = "star_sj" if args.star_sj else args.junction_coordinate_system
+
     normalize_splice_sources(
         sample_id=args.sample_id,
         profile_name=args.profile,
-        junctions=args.junctions,
+        junctions=junctions,
+        junction_tool=junction_tool,
         snaf=args.snaf,
         splicemutr=args.splicemutr,
         normal_junctions=args.normal_junctions,
         outdir=args.outdir,
         genome_build=args.genome_build,
-        junction_coordinate_system=args.junction_coordinate_system,
+        junction_coordinate_system=coordinate_system,
         snaf_coordinate_system=args.snaf_coordinate_system,
         splicemutr_coordinate_system=args.splicemutr_coordinate_system,
         normal_coordinate_system=args.normal_coordinate_system,

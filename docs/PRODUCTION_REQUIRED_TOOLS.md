@@ -58,6 +58,14 @@ for completed tool outputs. It now performs the previously manual closure steps:
    an explicit reconstructed ORF/junction peptide generate MHC-I candidates;
    event-only calls are marked `ORF_PEPTIDE_UNAVAILABLE_REVIEW_ONLY` and are
    never assigned invented peptide sequences.
+5. SNAF and SpliceMutr candidates must be linked to matched-sample primary
+   junction evidence. Prefer `--star-sj /path/to/SJ.out.tab` for direct STAR
+   verification; use `--junctions /path/to/regtools.tsv` for RegTools evidence.
+   The two inputs are mutually exclusive. Caller-provided junction counts are
+   retained as provenance, while ranking uses only the exact canonical primary
+   junction count. Candidates without an exact build/chromosome/intron/strand
+   match are written to the rejected technical pool and cannot enter production
+   ranking.
 
 The generated manifest runs these closure stages before NetMHCpan, MHCflurry,
 NetMHCstabpan, NetChop, immunogenicity, evidence ranking, and patient/technical
