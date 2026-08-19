@@ -6,6 +6,20 @@ import csv
 from collections import defaultdict
 from pathlib import Path
 
+STAR_FUSION_PATTERNS = (
+    "**/star-fusion.fusion_predictions.abridged.tsv",
+    "**/star-fusion.fusion_predictions.tsv",
+    "**/*fusion_predictions.abridged.tsv",
+    "**/*fusion_predictions.tsv",
+)
+ARRIBA_PATTERNS = ("**/*.fusions.tsv", "**/fusions.tsv")
+FUSIONCATCHER_PATTERNS = (
+    "**/fusioncatcher.final-list.txt",
+    "**/final-list_candidate-fusion-genes*.txt",
+    "**/final-list_candidate-fusion-genes*",
+)
+EASYFUSE_PATTERNS = ("**/fusions.pass.csv",)
+
 
 def read_rows(path: Path | None) -> list[dict[str, str]]:
     if path is None or not path.is_file() or path.stat().st_size == 0:
@@ -15,6 +29,31 @@ def read_rows(path: Path | None) -> list[dict[str, str]]:
         handle.seek(0)
         delimiter = "\t" if "\t" in first_line else ","
         return [{str(key): str(value or "") for key, value in row.items()} for row in csv.DictReader(handle, delimiter=delimiter)]
+
+
+def existing(paths: list[Path | None]) -> list[Path]:
+    seen: set[Path] = set()
+    result: list[Path] = []
+    for path in paths:
+        if path and path.is_file() and path.stat().st_size > 0 and path not in seen:
+            seen.add(path)
+            result.append(path)
+    return result
+
+
+def discover_files(roots: list[Path], patterns: tuple[str, ...]) -> list[Path]:
+    found: list[Path] = []
+    seen: set[Path] = set()
+    for root in roots:
+        if not root or not root.exists():
+            continue
+        search_root = root if root.is_dir() else root.parent
+        for pattern in patterns:
+            for path in sorted(search_root.glob(pattern)):
+                if path.is_file() and path.stat().st_size > 0 and path not in seen:
+                    seen.add(path)
+                    found.append(path)
+    return found
 
 
 def first(row: dict[str, str], names: list[str]) -> str:
@@ -49,24 +88,33 @@ def main() -> int:
     ap.add_argument("--star-fusion", type=Path)
     ap.add_argument("--arriba", type=Path)
     ap.add_argument("--fusioncatcher", type=Path)
+    ap.add_argument("--caller-root", action="append", type=Path, default=[])
     ap.add_argument("--normal-readthrough", type=Path)
     ap.add_argument("--outdir", required=True, type=Path)
     args = ap.parse_args()
 
     normal_pairs = {pair(row).upper() for row in read_rows(args.normal_readthrough) if pair(row)}
     evidence: dict[str, dict[str, object]] = defaultdict(lambda: {"tools": set(), "frames": set(), "junction_reads": []})
-    for tool, path in (("EasyFuse", args.easyfuse), ("STAR-Fusion", args.star_fusion), ("Arriba", args.arriba), ("FusionCatcher", args.fusioncatcher)):
-        for row in read_rows(path):
-            fusion = pair(row)
-            if not fusion:
-                continue
-            evidence[fusion]["tools"].add(tool)  # type: ignore[union-attr]
-            frame = first(row, ["frame", "reading_frame", "in_frame"])
-            if frame:
-                evidence[fusion]["frames"].add(frame)  # type: ignore[union-attr]
-            reads = first(row, ["junction_reads", "junctionreadcount", "split_reads", "supporting_reads", "junction_reads1", "spanning_pairs", "spanning_unique_reads"])
-            if reads:
-                evidence[fusion]["junction_reads"].append(reads)  # type: ignore[union-attr]
+    roots = [root for root in args.caller_root if root]
+    caller_paths = [
+        ("EasyFuse", existing([args.easyfuse]) or discover_files(roots, EASYFUSE_PATTERNS)),
+        ("STAR-Fusion", existing([args.star_fusion]) + discover_files(roots, STAR_FUSION_PATTERNS)),
+        ("Arriba", existing([args.arriba]) + [path for path in discover_files(roots, ARRIBA_PATTERNS) if path.name != "fusions.pass.csv"]),
+        ("FusionCatcher", existing([args.fusioncatcher]) + discover_files(roots, FUSIONCATCHER_PATTERNS)),
+    ]
+    for tool, paths in caller_paths:
+        for path in existing(paths):
+            for row in read_rows(path):
+                fusion = pair(row)
+                if not fusion:
+                    continue
+                evidence[fusion]["tools"].add(tool)  # type: ignore[union-attr]
+                frame = first(row, ["frame", "reading_frame", "in_frame"])
+                if frame:
+                    evidence[fusion]["frames"].add(frame)  # type: ignore[union-attr]
+                reads = first(row, ["junction_reads", "junctionreadcount", "split_reads", "supporting_reads", "junction_reads1", "spanning_pairs", "spanning_unique_reads"])
+                if reads:
+                    evidence[fusion]["junction_reads"].append(reads)  # type: ignore[union-attr]
 
     rows: list[dict[str, str]] = []
     for fusion, item in evidence.items():

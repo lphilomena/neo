@@ -270,6 +270,7 @@ def generate_rna_fusion_splice_manifest(
                }, depends_on=["fastq_qc"])
 
     fusion_inputs: list[str] = []
+    fusion_union_inputs: list[str] = []
     fusion_depends: list[str] = []
     easyfuse_ref = str(inputs.get("easyfuse_ref") or "")
     if easyfuse_ref:
@@ -282,6 +283,11 @@ def generate_rna_fusion_splice_manifest(
                outputs={"fusion_tsv": f"{{outdir}}/branches/fusion/easyfuse/{sample_id}/fusions.pass.csv"},
                depends_on=["fastq_qc"])
         fusion_inputs.append(f"--easyfuse {{outdir}}/branches/fusion/easyfuse/{_q(sample_id)}/fusions.pass.csv")
+        fusion_union_inputs.extend([
+            f"--easyfuse {{outdir}}/branches/fusion/easyfuse/{_q(sample_id)}/fusions.pass.csv",
+            "--caller-root {outdir}/branches/fusion/easyfuse",
+            "--caller-root {outdir}/branches/fusion",
+        ])
         fusion_depends.append("easyfuse_discovery")
     else:
         ctat = str(inputs.get("ctat_genome_lib") or "")
@@ -295,6 +301,7 @@ def generate_rna_fusion_splice_manifest(
                    outputs={"fusion_tsv": "{outdir}/branches/fusion/star-fusion/star-fusion.fusion_predictions.tsv"},
                    depends_on=["fastq_qc"])
             fusion_inputs.append("--star-fusion {outdir}/branches/fusion/star-fusion/star-fusion.fusion_predictions.tsv")
+            fusion_union_inputs.append("--star-fusion {outdir}/branches/fusion/star-fusion/star-fusion.fusion_predictions.tsv")
             fusion_depends.append("star_fusion_discovery")
 
         fusioncatcher_ref = str(inputs.get("fusioncatcher_ref") or "")
@@ -308,6 +315,7 @@ def generate_rna_fusion_splice_manifest(
                    outputs={"fusion_tsv": "{outdir}/branches/fusion/fusioncatcher/fusioncatcher.final-list.txt"},
                    depends_on=["fastq_qc"])
             fusion_inputs.append("--fusioncatcher {outdir}/branches/fusion/fusioncatcher/fusioncatcher.final-list.txt")
+            fusion_union_inputs.append("--fusioncatcher {outdir}/branches/fusion/fusioncatcher/fusioncatcher.final-list.txt")
             fusion_depends.append("fusioncatcher_discovery")
 
         if inputs.get("reference_fasta") and inputs.get("gencode_gtf"):
@@ -320,7 +328,11 @@ def generate_rna_fusion_splice_manifest(
                    outputs={"fusion_tsv": f"{{outdir}}/branches/fusion/arriba/{sample_id}.fusions.tsv"},
                    depends_on=["rna_alignment"])
             fusion_inputs.append(f"--arriba {{outdir}}/branches/fusion/arriba/{_q(sample_id)}.fusions.tsv")
+            fusion_union_inputs.append(f"--arriba {{outdir}}/branches/fusion/arriba/{_q(sample_id)}.fusions.tsv")
             fusion_depends.append("arriba_discovery")
+
+    if not fusion_union_inputs:
+        fusion_union_inputs.append("--caller-root {outdir}/branches/fusion")
 
     fusion_args = " ".join(fusion_inputs)
     fusion_consensus_command = (
@@ -363,7 +375,7 @@ def generate_rna_fusion_splice_manifest(
             f"--hla-file {_q(hla_file)} --sample-id {_q(sample_id)} --db-dir {_q(snaf_db)} "
             f"--threads {threads} --outdir {{outdir}}/branches/splice/snaf"
         )
-    _stage(lines, "snaf_discovery", required=True, command=snaf_command,
+    _stage(lines, "snaf_discovery", required=bool(snaf_command), command=snaf_command,
            outputs={"candidate_table": "{outdir}/branches/splice/snaf/snaf_candidates.tsv"},
            depends_on=["junction_extraction", "rna_expression"])
 
@@ -377,20 +389,23 @@ def generate_rna_fusion_splice_manifest(
             f"splicemutr-neoag workflow {_q(splicemutr_workflow)} --cores {threads} && "
             f"test -s {{outdir}}/branches/splice/splicemutr/splicemutr_candidates.tsv"
         )
-    _stage(lines, "splicemutr_discovery", required=True, command=splicemutr_command,
+    _stage(lines, "splicemutr_discovery", required=bool(splicemutr_command), command=splicemutr_command,
            outputs={"candidate_table": "{outdir}/branches/splice/splicemutr/splicemutr_candidates.tsv"},
            depends_on=["junction_extraction", "rna_expression"])
 
+    fusion_union_args = " ".join(fusion_union_inputs)
     fusion_norm = (
-        f"PYTHONPATH={_q(root / 'src')} {_q(Path(sys.executable))} -m neoag.cli build-intermediates "
-        f"--entry-mode fusion --easyfuse-tsv {{outdir}}/branches/fusion/easyfuse/{_q(sample_id)}/fusions.pass.csv "
-        f"--sample-id {_q(sample_id)} --outdir {{outdir}}/branches/fusion/intermediates"
+        f"PYTHONPATH={_q(root / 'src')} {_q(Path(sys.executable))} {script('build_fusion_caller_union.py')} "
+        f"--sample-id {_q(sample_id)} --profile {_q(PROFILE_NAME)} --hla-file {_q(hla_file)} "
+        f"{fusion_union_args} --outdir {{outdir}}/branches/fusion/intermediates"
     )
-    _stage(lines, "fusion_peptide_generation", required=True, command=fusion_norm, source="EasyFuse",
+    _stage(lines, "fusion_peptide_generation", required=True, command=fusion_norm, source="fusion_caller_union",
            outputs={
                "raw_events": "{outdir}/branches/fusion/intermediates/parsed/raw_events.tsv",
                "raw_peptides": "{outdir}/branches/fusion/intermediates/parsed/raw_peptides.tsv",
-           }, depends_on=["easyfuse_discovery"])
+               "fusion_caller_union": "{outdir}/branches/fusion/intermediates/fusion_caller_union.tsv",
+               "fusion_consensus": "{outdir}/branches/fusion/intermediates/fusion_consensus.tsv",
+           }, depends_on=fusion_depends)
 
     splice_norm = (
         f"PYTHONPATH={_q(root / 'src')} {_q(Path(sys.executable))} "
@@ -402,7 +417,7 @@ def generate_rna_fusion_splice_manifest(
         f"--normal-junctions {_q(inputs.get('normal_junctions') or '')} "
         f"--outdir {{outdir}}/branches/splice/intermediates"
     )
-    _stage(lines, "splice_candidate_normalization", required=True, command=splice_norm, source="splice_consensus",
+    _stage(lines, "splice_candidate_normalization", required=bool(snaf_command and splicemutr_command), command=splice_norm, source="splice_consensus",
            outputs={
                "raw_events": "{outdir}/branches/splice/intermediates/raw_events.tsv",
                "raw_peptides": "{outdir}/branches/splice/intermediates/raw_peptides.tsv",
