@@ -32,6 +32,31 @@ def test_presentation_gate_fail_grade():
     assert "grade" in gate["presentation_gate_reason"]
 
 
+def test_presentation_gate_uses_stabpan_percentile_rank_when_available():
+    profile = load_profile("default")
+    pres = {
+        "presentation_evidence_grade": "A",
+        "netmhcpan_el_rank": "0.5",
+        "netmhcstabpan_score": "0.298",
+        "netmhcstabpan_rank": "1.4",
+    }
+    gate = evaluate_presentation_gate({}, {}, pres, profile)
+    assert gate["presentation_gate_status"] == "PASS"
+
+
+def test_presentation_gate_rejects_weak_stabpan_percentile_rank():
+    profile = load_profile("default")
+    pres = {
+        "presentation_evidence_grade": "A",
+        "netmhcpan_el_rank": "0.5",
+        "netmhcstabpan_score": "0.900",
+        "netmhcstabpan_rank": "2.0",
+    }
+    gate = evaluate_presentation_gate({}, {}, pres, profile)
+    assert gate["presentation_gate_status"] == "FAIL"
+    assert "stabpan_rank=2.00" in gate["presentation_gate_reason"]
+
+
 def test_immunogenicity_placeholder_redistribution():
     profile = load_profile("default")
     peptide = {"immunogenicity_score": "0.5"}

@@ -37,6 +37,50 @@ def _load_expression_map(path: str | Path | None, keys: tuple[str, ...]) -> dict
     return out
 
 
+def _load_transcript_expression_maps(
+    path: str | Path | None,
+) -> tuple[dict[str, float], dict[str, float]]:
+    """Load transcript TPM and, when possible, aggregate it by gene.
+
+    Salmon indexes built from GENCODE commonly emit a composite ``Name`` such
+    as ``ENST...|ENSG...|...|GENE_SYMBOL|...``.  Raw gene-level tables may use
+    Ensembl IDs while NeoAg events use gene symbols, so the composite metadata
+    is the most reliable portable bridge between the two namespaces.
+    """
+    if not path or not Path(path).is_file():
+        return {}, {}
+    transcript_map: dict[str, float] = {}
+    gene_map: dict[str, float] = {}
+    for row in read_tsv(path):
+        raw_key = first(
+            row,
+            ["transcript_id", "transcript", "target_id", "Name", "isoform_id"],
+            "",
+        ).strip()
+        raw_value = first(row, ["TPM", "tpm", "expression_tpm", "transcript_tpm"], "")
+        if not raw_key or raw_value == "":
+            continue
+        value = to_float(raw_value, 0.0)
+        parts = raw_key.split("|")
+        transcript_id = parts[0].split(".", 1)[0]
+        if transcript_id:
+            transcript_map[transcript_id] = max(transcript_map.get(transcript_id, 0.0), value)
+
+        aliases = {
+            first(row, ["gene", "gene_symbol", "symbol", "Gene"], "").strip(),
+            first(row, ["gene_id", "ensembl_gene_id"], "").strip().split(".", 1)[0],
+        }
+        # GENCODE transcript FASTA headers use fields 2 and 6 for gene ID and
+        # gene symbol, respectively.  Ignore absent/placeholder fields.
+        if len(parts) > 1:
+            aliases.add(parts[1].strip().split(".", 1)[0])
+        if len(parts) > 5:
+            aliases.add(parts[5].strip())
+        for alias in aliases - {"", "-"}:
+            gene_map[alias] = gene_map.get(alias, 0.0) + value
+    return transcript_map, gene_map
+
+
 def build_expression_evidence(
     raw_events: str | Path,
     out_path: str | Path,
@@ -51,9 +95,8 @@ def build_expression_evidence(
         expression_path,
         ("gene", "gene_symbol", "symbol", "Gene", "gene_id", "ensembl_gene_id"),
     )
-    transcript_map = _load_expression_map(
-        transcript_expression_path,
-        ("transcript_id", "transcript", "target_id", "Name", "isoform_id"),
+    transcript_map, transcript_gene_map = _load_transcript_expression_maps(
+        transcript_expression_path
     )
 
     rows: list[dict[str, str]] = []
@@ -61,18 +104,43 @@ def build_expression_evidence(
         ev = enrich_event_layers(ev)
         gene = str(ev.get("gene") or "")
         transcript_id = str(ev.get("transcript_id") or "").split(".", 1)[0]
-        gene_tpm = to_float(ev.get("gene_expression_tpm") or ev.get("event_expression"), 0.0)
+        raw_gene_tpm = ev.get("gene_expression_tpm") or ev.get("event_expression")
+        # Rebuilding an evidence layer must not treat values written by an
+        # earlier build as independent observations.  Re-resolve them from the
+        # current input tables; retain only genuinely upstream raw-event values.
+        prior_expression_layer = str(ev.get("expression_evidence_status") or "").strip()
+        prior_gene_source = str(ev.get("expression_source") or "").strip()
+        gene_assessed = (
+            str(raw_gene_tpm or "").strip() != ""
+            and not prior_gene_source
+            and not prior_expression_layer
+        )
+        gene_tpm = to_float(raw_gene_tpm, 0.0)
         if gene in tpm_map:
             gene_tpm = max(gene_tpm, tpm_map[gene])
+            gene_assessed = True
+        elif gene in transcript_gene_map:
+            gene_tpm = max(gene_tpm, transcript_gene_map[gene])
+            gene_assessed = True
         elif "::" in gene:
-            partner_tpms = [tpm_map[g] for g in gene.split("::") if g in tpm_map]
+            combined_gene_map = {**transcript_gene_map, **tpm_map}
+            partner_tpms = [combined_gene_map[g] for g in gene.split("::") if g in combined_gene_map]
             if partner_tpms:
                 # A fusion is limited by its lower-expressed partner. Junction
                 # reads remain the direct evidence for the fusion transcript.
                 gene_tpm = max(gene_tpm, min(partner_tpms))
-        tx_tpm = to_float(ev.get("transcript_expression_tpm"), 0.0)
+                gene_assessed = True
+        raw_tx_tpm = ev.get("transcript_expression_tpm")
+        prior_tx_source = str(ev.get("transcript_expression_source") or "").strip()
+        transcript_assessed = (
+            str(raw_tx_tpm or "").strip() != ""
+            and not prior_tx_source
+            and not prior_expression_layer
+        )
+        tx_tpm = to_float(raw_tx_tpm, 0.0)
         if transcript_id in transcript_map:
             tx_tpm = max(tx_tpm, transcript_map[transcript_id])
+            transcript_assessed = True
         tpm = max(gene_tpm, tx_tpm)
         if gene_tpm > 0 and tx_tpm > 0:
             expression_status = "GENE_AND_TRANSCRIPT_SUPPORTED"
@@ -80,8 +148,10 @@ def build_expression_evidence(
             expression_status = "TRANSCRIPT_SUPPORTED"
         elif gene_tpm > 0:
             expression_status = "GENE_ONLY_PARTIAL"
-        elif expression_path or transcript_expression_path:
+        elif gene_assessed or transcript_assessed:
             expression_status = "NOT_DETECTED"
+        elif expression_path or transcript_expression_path:
+            expression_status = "UNASSESSED_ID_NOT_MAPPED"
         else:
             expression_status = "UNASSESSED"
         rows.append({
@@ -90,8 +160,8 @@ def build_expression_evidence(
             "gene": gene,
             "transcript_id": transcript_id,
             "event_expression": f"{tpm:.4f}",
-            "gene_expression_tpm": f"{gene_tpm:.4f}",
-            "transcript_expression_tpm": f"{tx_tpm:.4f}" if transcript_expression_path else "",
+            "gene_expression_tpm": f"{gene_tpm:.4f}" if gene_assessed else "",
+            "transcript_expression_tpm": f"{tx_tpm:.4f}" if transcript_assessed else "",
             "expression_tpm": f"{tpm:.4f}",
             "expression_evidence_status": expression_status,
             "expression_source": _expression_source(expression_path),

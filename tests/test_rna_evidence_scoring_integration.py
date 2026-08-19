@@ -89,3 +89,35 @@ def test_coordinate_rna_count_does_not_leak_to_another_variant_in_same_gene(tmp_
         "raw_events",
     )
     assert other.rna_alt_reads == ""
+
+
+def test_gencode_salmon_name_maps_gene_symbol_and_distinguishes_unmapped(tmp_path):
+    from neoag.evidence_layer import build_expression_evidence
+
+    events = tmp_path / "raw_events.tsv"
+    write_tsv(events, [
+        {"event_id": "E1", "gene": "ADCY5", "transcript_id": "ENST00000309879.7"},
+        {"event_id": "E2", "gene": "NOT_IN_INDEX", "transcript_id": "ENST_MISSING"},
+    ], ["event_id", "gene", "transcript_id"])
+    gene_tpm = tmp_path / "gene_tpm.tsv"
+    write_tsv(gene_tpm, [{"gene_id": "ENSG00000173175.15", "tpm": "9.5"}], ["gene_id", "tpm"])
+    transcript_tpm = tmp_path / "quant.sf"
+    write_tsv(transcript_tpm, [{
+        "Name": "ENST00000309879.7|ENSG00000173175.15|-|-|ADCY5-201|ADCY5|1000|protein_coding|",
+        "TPM": "2.75",
+    }], ["Name", "TPM"])
+
+    output = tmp_path / "expression_evidence.tsv"
+    rows = build_expression_evidence(
+        events,
+        output,
+        expression_path=gene_tpm,
+        transcript_expression_path=transcript_tpm,
+    )
+    by_id = {row["event_id"]: row for row in rows}
+    assert by_id["E1"]["gene_expression_tpm"] == "2.7500"
+    assert by_id["E1"]["transcript_expression_tpm"] == "2.7500"
+    assert by_id["E1"]["expression_evidence_status"] == "GENE_AND_TRANSCRIPT_SUPPORTED"
+    assert by_id["E2"]["gene_expression_tpm"] == ""
+    assert by_id["E2"]["transcript_expression_tpm"] == ""
+    assert by_id["E2"]["expression_evidence_status"] == "UNASSESSED_ID_NOT_MAPPED"

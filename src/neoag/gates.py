@@ -41,14 +41,26 @@ def evaluate_presentation_gate(
                 passed = False
                 reasons.append(f"el_rank={el:.2f}")
 
-    min_stab = float(cfg.get("min_stabpan_score", 0.0))
-    if min_stab > 0:
+    # NetMHCstabpan exports are encountered in two forms: a legacy stability
+    # score (larger is better) and percentile rank (smaller is better).  Older
+    # profiles called the 1.4 cutoff ``min_stabpan_score``, although 1.4 is the
+    # documented rank cutoff used by this project.  Prefer rank whenever it is
+    # available and retain score handling for legacy score-only inputs.
+    legacy_stab_cutoff = float(cfg.get("min_stabpan_score", 0.0))
+    max_stab_rank = float(cfg.get("max_stabpan_rank", legacy_stab_cutoff))
+    stab_rank_raw = presentation.get("netmhcstabpan_rank") or peptide.get("netmhcstabpan_rank", "")
+    if max_stab_rank > 0 and str(stab_rank_raw).strip():
+        stab_rank = to_float(stab_rank_raw, 100.0)
+        if stab_rank > max_stab_rank:
+            passed = False
+            reasons.append(f"stabpan_rank={stab_rank:.2f}")
+    elif legacy_stab_cutoff > 0:
         stab_raw = presentation.get("netmhcstabpan_score") or peptide.get("netmhcstabpan_score", "")
         if str(stab_raw).strip():
             stab = to_float(stab_raw, 0.0)
-            if stab < min_stab:
+            if stab < legacy_stab_cutoff:
                 passed = False
-                reasons.append(f"stabpan={stab:.2f}")
+                reasons.append(f"stabpan_score={stab:.2f}")
 
     min_tpm = float(cfg.get("min_event_expression_tpm", 0.0))
     if min_tpm > 0:

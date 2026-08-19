@@ -2,7 +2,7 @@ import hashlib
 import json
 from pathlib import Path
 
-from neoag.reports_dual import ReportBundle, _patient_event_grade_counts, _patient_evidence_audit_rows, _patient_evidence_summary, _patient_event_change, _patient_limitation, _patient_rna_measurements, _replace_gene_ids, load_report_bundle, make_dual_reports, make_patient_report, make_technical_report
+from neoag.reports_dual import ReportBundle, _patient_conflict_summary, _patient_event_grade_counts, _patient_evidence_audit_rows, _patient_evidence_summary, _patient_event_change, _patient_key_gaps, _patient_limitation, _patient_metric, _patient_presentation_metric, _patient_rna_measurements, _patient_rna_metric, _patient_track, _patient_validation, _replace_gene_ids, load_report_bundle, make_dual_reports, make_patient_report, make_technical_report
 from neoag.utils import write_tsv
 
 
@@ -57,6 +57,7 @@ def test_patient_report_is_plain_language(tmp_path):
     assert "<th>为什么值得关注</th>" in section6
     assert "<th>当前不确定性</th>" in section6
     assert "<th>建议下一步</th>" in section6
+    assert "Safety-focused validation before efficacy assay" not in section6
     assert "<th>呈递工具</th>" not in section6
     assert "基因表达 12.3400 TPM" in text
     assert "转录本表达 3.5000 TPM" in text
@@ -80,6 +81,29 @@ def test_patient_report_is_plain_language(tmp_path):
     assert "缺失证据统一视为未评估" in text
     assert "DQA1/DQB1" not in text
     assert "EWSR1::WT1" not in text
+
+
+def test_patient_validation_translates_safety_recommendation():
+    row = {
+        "peptide_id": "P1",
+        "event_type": "SNV",
+        "recommended_use": "Safety-focused validation before efficacy assay",
+    }
+    text = _patient_validation(row, {})
+    assert text == "先完成针对性的正常组织与脱靶安全性复核，再考虑有效性实验"
+    assert "Safety-focused" not in text
+
+
+def test_patient_metric_explains_junction_novel_sequence_instead_of_unassessed():
+    fusion = {
+        "event_type": "Fusion",
+        "peptide_consequence": "fusion",
+        "crosses_junction": "yes",
+        "mutant_specificity_state": "NOVEL_SEQUENCE",
+    }
+    assert _patient_metric("MT/WT", fusion, "mutant_specificity_status", "mutant_specificity_state") == (
+        "MT/WT=异常连接新序列；应使用正常连接或正常异构体肽作为对照"
+    )
 
 
 def test_patient_summary_separates_event_and_peptide_hla_counts(tmp_path):
@@ -168,6 +192,80 @@ def test_patient_report_has_track_top5_when_present(tmp_path):
     assert "<th>肽段-HLA</th>" in text
     assert "BBBBBBBBB / HLA-B*07:02" in text
     assert "CCCCCCCCC / HLA-C*07:02" in text
+
+
+def test_patient_track_does_not_promote_vcf_consequence_to_splice():
+    assert _patient_track({
+        "event_type": "InDel",
+        "mutation_source": "SNV_INDEL",
+        "peptide_consequence": "splice_region_variant,frameshift_variant",
+    }) == "InDel"
+    assert _patient_track({
+        "event_type": "SNV",
+        "mutation_source": "VCF",
+        "peptide_consequence": "splice_region_variant,missense_variant",
+    }) == "SNV"
+
+
+def test_patient_conflicts_ignore_none_status_and_provenance_only_fields():
+    row = {
+        "evidence_conflict_status": "NONE",
+        "evidence_conflict_fields": "source_file,source_row_number,source_tools,safety_status",
+    }
+    assert _patient_conflict_summary(row) == ""
+
+
+def test_patient_presentation_disagreement_names_tools_and_values():
+    text = _patient_presentation_metric({
+        "presentation_consensus_state": "PRESENTATION_DISCORDANT",
+        "netmhcpan_el_rank": "0.261",
+        "mhcflurry_presentation_score": "0.5847",
+    })
+    assert "NetMHCpan EL rank=0.261" in text
+    assert "MHCflurry呈递分=0.5847" in text
+
+
+def test_patient_rna_only_track_does_not_report_ccf_as_universal_gap():
+    bundle = _bundle()
+    row = {
+        "event_type": "Fusion", "event_id": "F1", "peptide": "AAAAAAAAA",
+        "hla_allele": "HLA-A*02:01", "source_chain_confidence_tier": "C2",
+        "netmhcpan_el_rank": "0.5", "ccf_status": "RNA_ONLY_UNRESOLVED",
+        "safety_status": "PASS",
+    }
+    assert "CCF未形成可靠估计" not in _patient_key_gaps(row, bundle)
+
+
+def test_patient_splice_reports_provided_reads_separately_from_verified_reads():
+    row = {
+        "event_type": "Splice",
+        "provided_rna_junction_reads": "218",
+        "rna_junction_reads": "0",
+        "rna_support_status": "UNASSESSED",
+    }
+    assert "上游工具报告junction reads 218" in _patient_rna_metric(row)
+    assert "已核实reads为0" in _patient_rna_metric(row)
+    measurements = _patient_rna_measurements(row)
+    assert "已核实junction reads 0" in measurements
+    assert "上游工具报告junction reads 218（尚未精确回链）" in measurements
+
+
+def test_patient_source_chain_c4_lists_specific_traceability_gaps():
+    bundle = _bundle()
+    row = {
+        "event_type": "Splice", "event_id": "SJ1", "peptide": "AAAAAAAAA",
+        "hla_allele": "HLA-A*02:01", "source_chain_confidence_tier": "C4",
+        "canonical_junction_id": "SJ|GRCh38|chr1|100|200|.",
+        "junction_strand": ".", "provided_rna_junction_reads": "218",
+        "rna_junction_reads": "0", "netmhcpan_el_rank": "0.5",
+        "source_chain_reason_codes": "SC_PEPTIDE_HLA_TRACEABILITY_INCOMPLETE",
+        "safety_status": "PASS",
+    }
+    gaps = _patient_key_gaps(row, bundle)
+    source_gap = next(item for item in gaps if item.startswith("完整性缺口：来源链C4"))
+    assert "canonical junction缺少可用strand" in source_gap
+    assert "上游报告218条reads但精确核实为0" in source_gap
+    assert "ORF未回链" in source_gap
 
 
 def test_event_top_uses_ranked_events_before_candidate_integrity_filter(tmp_path):
@@ -413,7 +511,7 @@ def test_patient_status_codes_are_translated_to_fixed_chinese():
     text = _patient_evidence_summary(row, bundle)
     for translated in (
         "事件获得部分支持", "RNA中检测到直接支持", "两个核心工具呈递预测一致且较强",
-        "正常组织安全性证据不完整", "候选来源链基本合理，但关键环节尚未闭合",
+        "正常组织安全性仅部分评估（具体缺口见候选说明）", "候选来源链基本合理，但关键环节尚未闭合",
     ):
         assert translated in text
     for code in ("EVENT_PARTIAL", "RNA_CONFIRMED", "PRESENTATION_CONSISTENT_STRONG", "SAFETY_PARTIAL", "C3"):
@@ -437,6 +535,53 @@ def test_tool_version_manifest_is_used_in_patient_tool_table(tmp_path):
     assert "版本依据" in text
 
 
+def test_patient_tool_table_overrides_stale_deepimmuno_not_used_status(tmp_path):
+    bundle = _bundle()
+    bundle.peptides[0]["deepimmuno_score"] = "0.82"
+    bundle.provenance["tools"]["deepimmuno"] = {
+        "status": "not_used",
+        "version": "deepimmuno-cnn.py",
+        "mode": "derived",
+    }
+    out = tmp_path / "patient_deepimmuno.html"
+    make_patient_report(out, bundle)
+    text = out.read_text(encoding="utf-8")
+    assert "综合证据表已载入结果值（1/1）" in text
+    assert "结果值优先于可能过期的运行清单状态" in text
+    deep_row = text.split("<td>DeepImmuno</td>", 1)[1].split("</tr>", 1)[0]
+    assert "not_used" not in deep_row
+
+
+def test_patient_tool_table_discovers_source_tools_not_listed_in_provenance(tmp_path):
+    bundle = _bundle()
+    bundle.peptides[0]["source_tools"] = "EasyFuse;JAFFAL;SNAF;SpliceMutr"
+    out = tmp_path / "patient_source_tools.html"
+    make_patient_report(out, bundle)
+    text = out.read_text(encoding="utf-8")
+    for tool in ("EasyFuse", "JAFFAL", "SNAF", "SpliceMutr"):
+        assert f"<td>{tool}</td>" in text
+    assert "综合证据表已载入结果值（1/1）" in text
+
+
+def test_patient_tool_table_discovers_standard_runtime_outputs(tmp_path):
+    (tmp_path / "rna" / "star").mkdir(parents=True)
+    (tmp_path / "rna" / "star" / "Log.final.out").write_text("finished\n", encoding="utf-8")
+    (tmp_path / "hla_loh" / "spechla").mkdir(parents=True)
+    (tmp_path / "hla_loh" / "spechla" / "hla_loh.tsv").write_text(
+        "hla_allele\tloh_status\nHLA-A*02:01\tno\n", encoding="utf-8"
+    )
+    base = _bundle()
+    bundle = load_report_bundle(
+        profile=base.profile, events=base.events, peptides=base.peptides, outdir=tmp_path,
+    )
+    out = tmp_path / "patient_runtime_tools.html"
+    make_patient_report(out, bundle)
+    text = out.read_text(encoding="utf-8")
+    assert "<td>STAR</td>" in text
+    assert "<td>SpecHLA</td>" in text
+    assert "runtime_output_discovery" in text
+
+
 def test_patient_report_writes_machine_readable_release_audit(tmp_path):
     out = tmp_path / "patient.html"
     make_patient_report(out, _bundle())
@@ -448,11 +593,34 @@ def test_patient_report_writes_machine_readable_release_audit(tmp_path):
 
 
 def test_patient_limitation_keeps_hard_fail_and_missing_dimensions():
-    limitation = _patient_limitation({"hard_failure_codes": "FAIL_EVENT", "safety_state": "SAFETY_PARTIAL"})
+    limitation = _patient_limitation({
+        "hard_failure_codes": "FAIL_EVENT",
+        "safety_state": "SAFETY_PARTIAL",
+        "safety_missing_layers": "normal_hspc;normal_junction",
+    })
     assert "FAIL_EVENT" in limitation
     assert "RNA证据未评估" in limitation
-    assert "安全性证据不完整" in limitation
+    assert "专门HSPC正常造血参考层未完成正式评估" in limitation
+    assert "正常融合/剪接连接背景未完成正式评估" in limitation
+    assert "安全性证据不完整" not in limitation
     assert "NetMHCstabpan未评估" in limitation
+
+
+def test_patient_key_gaps_describes_safety_review_signals():
+    row = {
+        "event_type": "Fusion",
+        "safety_state": "SAFETY_REVIEW",
+        "event_safety_reason": "critical_tissue_expression;normal_HSPC_expression",
+        "critical_tissue_name": "Brain_Cerebellar_Hemisphere",
+        "critical_tissue_max_tpm": "201.559",
+        "normal_hspc_tpm": "160.7",
+        "normal_hspc_unit": "HPA_nCPM",
+    }
+    gaps = _patient_key_gaps(row, _bundle())
+    text = "；".join(gaps)
+    assert "Brain_Cerebellar_Hemisphere表达信号 201.5590 TPM" in text
+    assert "HSPC/正常造血参考中检测到表达信号 160.7000 HPA_nCPM" in text
+    assert "安全性证据不完整" not in text
 
 
 def test_patient_limitation_describes_patient_specific_tool_conflict():
@@ -721,7 +889,10 @@ def test_patient_report_shows_hla_loh_tools_and_uses_consensus_in_appm(tmp_path)
     assert "<td>未提供</td><td>未见LOH（保留）</td>" in text
     assert "未见限制性HLA-I LOH（仅SpecHLA，证据有限）" in text
     assert "仅SpecHLA报告未见LOH（保留），证据有限" in text
-    assert "限制性HLA=单工具提示保留；多工具LOH确认未完成" in text
+    assert (
+        "限制性HLA HLA-A*02:01 LOH仅单工具评估："
+        "LOHHLA=未提供；SpecHLA=未见LOH（保留）"
+    ) in text
     assert "HLA/APPM未评估" not in text
 
 
