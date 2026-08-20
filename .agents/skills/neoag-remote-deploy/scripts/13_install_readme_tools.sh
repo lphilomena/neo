@@ -866,6 +866,9 @@ fi
 export NEOAG_TOOLS_ROOT="$TOOLS_ROOT"
 export NEOAG_REFERENCE_ROOT="$REFERENCE_ROOT"
 export NEOAG_REF_BUNDLE="$REFERENCE_ROOT"
+if [[ -f "$REFERENCE_ROOT/data/normal/expression/normal_expression.gtex_v11_hpa_hspc.tsv" ]]; then
+  export NEOAG_NORMAL_EXPRESSION="$REFERENCE_ROOT/data/normal/expression/normal_expression.gtex_v11_hpa_hspc.tsv"
+fi
 if [[ -f "$REFERENCE_ROOT/data/normal/junctions/normal_junctions.GRCh38.tsv.gz" ]]; then
   export NEOAG_NORMAL_JUNCTIONS="$REFERENCE_ROOT/data/normal/junctions/normal_junctions.GRCh38.tsv.gz"
 elif [[ -f "$REFERENCE_ROOT/data/normal/junctions/gtex_v8_liver.GRCh38.tsv.gz" ]]; then

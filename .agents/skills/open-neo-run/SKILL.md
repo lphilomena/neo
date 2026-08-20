@@ -60,14 +60,19 @@ in the two-field allele-level cross-check. Consensus states are
 When a request supplies a completed `case_root` plus `somatic_vcf`, Skill2 uses
 the repository-owned `scripts/run_production_case.sh` wrapper as the preferred
 production-case entrypoint. This wrapper discovers standard completed outputs
-under the case root, generates `manifest/production.results.toml` with
-`scripts/generate_production_from_results_manifest.py`, then runs
+under the case root and output tree, generates `manifest/production.results.toml`
+with `scripts/generate_production_from_results_manifest.py`, then runs
 `neoag.production_runner --execute` with the sarcoma RNA-supported v2 weighted
 profile and v3 Evidence-consensus rules. It accepts explicit overrides for
-Sequenza/PURPLE, RNA FASTQ/BAM/VAF, STAR/GTF/reference assets, predictor
-dependency roots, NetMHCpan, NetMHCstabpan, and RNA threads. The wrapper is for
-existing upstream results and ranking/report production; it must not replace
-the raw-input Gateway DAG for new heavy DNA/RNA tool execution.
+Sequenza/PURPLE, gene TPM, transcript TPM/`quant.sf`, RNA FASTQ/BAM/VAF,
+STAR/GTF/reference assets, predictor dependency roots, NetMHCpan,
+NetMHCstabpan, and RNA threads. When overrides are absent it must reuse the
+latest non-empty `gene_tpm.tsv`, `transcript_tpm.tsv`, Salmon `quant.sf`, RSEM
+`*.genes.results`/`*.isoforms.results`, existing `rna_alt_vaf.tsv`, or a
+non-empty STAR RNA BAM so patient reports can show transcript expression, RNA
+site depth, RNA alt reads, and RNA VAF. The wrapper is for existing upstream
+results and ranking/report production; it must not replace the raw-input Gateway
+DAG for new heavy DNA/RNA tool execution.
 
 ## Modes
 
@@ -85,7 +90,7 @@ the raw-input Gateway DAG for new heavy DNA/RNA tool execution.
 4. Route to the existing fine-grained internal Skills and generate `capability_aware.production.toml` for raw inputs.
 5. Run Doctor/preflight.
 6. Use `pipeline-full` for the dry-run DAG and submit approved execute/resume requests through NeoAg Gateway to the production runner. For existing completed case roots, prefer `scripts/run_production_case.sh` after explicit approval; it creates `manifest/production.results.toml` and invokes the production runner directly with fixed profiles and predictor environment pins. Raw heavy manifests must use the same final integration standards as the wrapper: `profiles/sarcoma_rna_supported_v2_provisional.toml`, `configs/ranking/sarcoma_evidence_consensus_v3_source_chain.toml`, required NetMHCpan/MHCflurry/NetMHCstabpan/NetChop presentation predictors, optional PRIME/MixMHCpred/BigMHC/DeepImmuno immunogenicity support when configured, and `patient,technical` reports.
-7. Reuse existing gene/transcript TPM and RNA alt/VAF tables, or plan/run Salmon/RSEM gene plus transcript quantification from tumor RNA FASTQ and RNA ref/alt counting from tumor RNA BAM plus somatic VCF. When multiple paired RNA FASTQ batches are supplied, merge R1 files and R2 files first and pass the merged pair to all downstream RNA tools. Retain fusion/splice junction read evidence. Enforce the wrapper-compatible RNA allele evidence rule for raw runs too: use only one of RNA FASTQ, RNA BAM, or an existing RNA VAF table.
+7. Reuse existing gene/transcript TPM and RNA alt/VAF tables, or plan/run Salmon/RSEM gene plus transcript quantification from tumor RNA FASTQ and RNA ref/alt counting from tumor RNA BAM plus somatic VCF. When multiple paired RNA FASTQ batches are supplied, merge R1 files and R2 files first and pass the merged pair to all downstream RNA tools. Retain fusion/splice junction read evidence. Enforce the wrapper-compatible RNA allele evidence rule for raw runs too: use only one of RNA FASTQ, RNA BAM, or an existing RNA VAF table. Before final ranking, verify that `ranked_peptides.evidence_consensus.tsv` carries concrete `gene_expression_tpm`, `transcript_expression_tpm`, `rna_depth`, `rna_alt_reads`, and `rna_vaf` values when the corresponding upstream evidence exists; do not let reports silently fall back to generic “未提供/未计算” text when a usable Salmon/RSEM table or RNA BAM/VAF table is present.
    For the automatic RNA profile, require HLA, FASTA/GTF, STAR index,
    EasyFuse reference, Salmon index plus tx2gene or RSEM reference before execute. Standalone STAR-Fusion/FusionCatcher/Arriba references are fallback-only when EasyFuse is not configured.
    When Salmon and RSEM are both configured in auto mode, Salmon remains the
@@ -104,7 +109,7 @@ the raw-input Gateway DAG for new heavy DNA/RNA tool execution.
 - `capability_plan.json`, `capability_decisions.tsv`, `capability_aware.production.toml`
 - `manifest/production.results.toml` when using `scripts/run_production_case.sh`
 - `rna_preprocessing_status.tsv`, `rna_preprocessing_summary.json`
-- `gene_tpm.tsv`, `transcript_tpm.tsv`, `rna_alt_vaf.tsv` when generated
+- `gene_tpm.tsv`, `transcript_tpm.tsv`, `rna_alt_vaf.tsv` when generated or discovered; final ranking tables must retain the joined expression and RNA VAF fields used by reports
 - `all_tool_results.tsv`
 - `tool_run_status.tsv`, `tool_consensus_summary.tsv`, `tool_evidence.long.tsv`
 - `hla_typing_consensus.tsv`, `hla_loh_consensus.tsv`, `fusion_consensus.tsv`, `splice_consensus.tsv`

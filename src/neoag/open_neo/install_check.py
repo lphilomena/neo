@@ -82,11 +82,11 @@ TIER_REQUIRED_REFERENCES = {
     "core": [],
     "prediction": [
         "reference_fasta", "reference_fasta_fai", "reference_fasta_dict",
-        "gencode_gtf", "vep_cache", "normal_proteome",
+        "gencode_gtf", "vep_cache", "normal_proteome", "normal_expression",
     ],
     "full": [
         "reference_fasta", "reference_fasta_fai", "reference_fasta_dict",
-        "gencode_gtf", "vep_cache", "normal_proteome", "normal_ligandome",
+        "gencode_gtf", "vep_cache", "normal_proteome", "normal_expression", "normal_ligandome",
         "normal_junctions", "star_index", "ctat_genome_lib", "salmon_index",
         "salmon_tx2gene",
     ],
@@ -117,6 +117,7 @@ REFERENCE_ALIASES = {
     "vep_cache": ["vep_cache", "vep.cache"],
     "normal_proteome": ["normal_proteome"],
     "normal_ligandome": ["normal_ligandome", "normal_hla_ligands"],
+    "normal_expression": ["normal_expression"],
     "normal_junctions": ["normal_junctions"],
     "star_index": ["star_index"],
     "ctat_genome_lib": ["ctat_genome_lib", "ctat"],
@@ -509,6 +510,8 @@ references:
     path: '${OPEN_NEO_REFERENCE_ROOT}/data/normal/proteome/Homo_sapiens.GRCh38.pep.all.fa'
   normal_ligandome:
     path: '${OPEN_NEO_REFERENCE_ROOT}/data/normal/ligandome/normal_ms_ligands.tsv'
+  normal_expression:
+    path: '${OPEN_NEO_REFERENCE_ROOT}/data/normal/expression/normal_expression.gtex_v11_hpa_hspc.tsv'
   normal_junctions:
     path: '${OPEN_NEO_REFERENCE_ROOT}/data/normal/junctions/normal_junctions.GRCh38.tsv.gz'
   star_index:

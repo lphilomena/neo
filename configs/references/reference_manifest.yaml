@@ -86,6 +86,15 @@ references:
     builder: scripts/build_hla_ligand_atlas_reference.py
     required: true
 
+  normal_expression:
+    path: ${OPEN_NEO_REFERENCE_ROOT}/data/normal/expression/normal_expression.gtex_v11_hpa_hspc.tsv
+    source: GTEx v11 normal tissue expression plus HPA HSPC background
+    version: GTEx_v11_HPA_25.1_GRCh38
+    sha256: d999c2b89e3cfb6244e5aa12d122c0e85a8bcc84f427942d418a8492bfc91d32
+    qc: ${OPEN_NEO_REFERENCE_ROOT}/data/normal/expression/normal_expression.gtex_v11_hpa_hspc.qc.tsv
+    required: true
+    scoring_role: normal_expression_background
+
   iedb_human_ms_ligands_detail:
     path: ${OPEN_NEO_REFERENCE_ROOT}/data/normal/iedb_mhc_ligand/2026-07-14/build/iedb_human_ms_ligands_detail.tsv
     source: IEDB MHC ligand full TSV export

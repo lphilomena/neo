@@ -2082,6 +2082,37 @@ def _patient_numeric_display(value: str | None, decimals: int) -> str | None:
         return value
 
 
+def _patient_observed_source(row: Mapping[str, Any], *fields: str) -> str | None:
+    for field in fields:
+        value = _patient_observed_value(row, field)
+        if value is not None:
+            return value
+    return None
+
+
+def _patient_missing_rna_label(row: Mapping[str, Any], label: str, *, expression: bool = False, transcript: bool = False) -> str:
+    if expression or transcript:
+        status = _patient_observed_source(row, "expression_evidence_status")
+        source = _patient_observed_source(
+            row,
+            "transcript_expression_source" if transcript else "expression_source",
+            "expression_source",
+            "transcript_expression_source",
+        )
+        if status == "UNASSESSED_ID_NOT_MAPPED":
+            return f"{label}未匹配到表达矩阵ID"
+        if source:
+            return f"{label}未提供（已接入表达源但该候选未匹配：{source}）"
+        return f"{label}未提供（表达证据未接入）"
+    source = _patient_observed_source(row, "rna_vaf_source")
+    status = _patient_observed_source(row, "rna_support_status", "rna_evidence_completeness")
+    if source:
+        return f"{label}未计算（已接入RNA VAF源但该位点未匹配：{source}）"
+    if status:
+        return f"{label}未计算（RNA支持状态：{status}）"
+    return f"{label}未计算（RNA BAM/VAF证据未接入）"
+
+
 def _patient_rna_measurements(row: Mapping[str, Any]) -> str:
     """Render only observed RNA fields carried by the canonical evidence table."""
     track = _patient_track(row)
@@ -2096,8 +2127,14 @@ def _patient_rna_measurements(row: Mapping[str, Any]) -> str:
         or _patient_observed_value(row, "provided_rna_junction_reads"),
         0,
     )
-    values = [f"基因表达 {gene_tpm} TPM" if gene_tpm is not None else "基因表达未提供"]
-    values.append(f"转录本表达 {transcript_tpm} TPM" if transcript_tpm is not None else "转录本表达未提供")
+    values = [
+        f"基因表达 {gene_tpm} TPM"
+        if gene_tpm is not None else _patient_missing_rna_label(row, "基因表达", expression=True)
+    ]
+    values.append(
+        f"转录本表达 {transcript_tpm} TPM"
+        if transcript_tpm is not None else _patient_missing_rna_label(row, "转录本表达", transcript=True)
+    )
     if track in {"Fusion", "Splice"}:
         provided_reads = _patient_numeric_display(
             _patient_observed_value(row, "provided_rna_junction_reads"), 0
@@ -2109,9 +2146,9 @@ def _patient_rna_measurements(row: Mapping[str, Any]) -> str:
         if provided_reads is not None and provided_reads != junction_reads:
             values.append(f"上游工具报告junction reads {provided_reads}（尚未精确回链）")
     else:
-        values.append(f"RNA位点深度 {depth}" if depth is not None else "RNA位点深度未计算")
-        values.append(f"RNA alt reads {alt_reads}" if alt_reads is not None else "RNA alt reads未计算")
-        values.append(f"RNA VAF {vaf}" if vaf is not None else "RNA VAF未计算")
+        values.append(f"RNA位点深度 {depth}" if depth is not None else _patient_missing_rna_label(row, "RNA位点深度"))
+        values.append(f"RNA alt reads {alt_reads}" if alt_reads is not None else _patient_missing_rna_label(row, "RNA alt reads"))
+        values.append(f"RNA VAF {vaf}" if vaf is not None else _patient_missing_rna_label(row, "RNA VAF"))
     return "；".join(values)
 
 

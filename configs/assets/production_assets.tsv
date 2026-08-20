@@ -3,6 +3,9 @@
 asset_name	source_path	target_path	kind	required	sha256	marker
 lohhla_source	/srv/neoag-assets/source/data/tools/lohhla	/srv/neoag-tools/tools/lohhla	dir	1	-	LOHHLAscript.R
 normal_ligandome	/srv/neoag-assets/source/data/normal/ligandome/normal_ms_ligands.tsv	/srv/neoag-assets/install/data/normal/ligandome/normal_ms_ligands.tsv	file	1	7a42cedfe42389f36f4bcbf228626852458375ac766bbf82aed4bb1c9e533e4c	-
+normal_expression	/srv/neoag-assets/source/data/normal/expression/normal_expression.gtex_v11_hpa_hspc.tsv	/srv/neoag-assets/install/data/normal/expression/normal_expression.gtex_v11_hpa_hspc.tsv	file	1	d999c2b89e3cfb6244e5aa12d122c0e85a8bcc84f427942d418a8492bfc91d32	-
+normal_expression_qc	/srv/neoag-assets/source/data/normal/expression/normal_expression.gtex_v11_hpa_hspc.qc.tsv	/srv/neoag-assets/install/data/normal/expression/normal_expression.gtex_v11_hpa_hspc.qc.tsv	file	0	-	-
+normal_expression_sha256	/srv/neoag-assets/source/data/normal/expression/normal_expression.gtex_v11_hpa_hspc.tsv.sha256	/srv/neoag-assets/install/data/normal/expression/normal_expression.gtex_v11_hpa_hspc.tsv.sha256	file	0	-	-
 hla_ligand_atlas_peptides_raw	/srv/neoag-assets/source/data/normal/hla_ligand_atlas/2020.12/raw/peptides.tsv.gz	/srv/neoag-assets/install/data/normal/hla_ligand_atlas/2020.12/raw/peptides.tsv.gz	file	1	daeb0c0146e3037c6e4b2b58663a7a9dc6bce821ef1995e817f70367a0ad28c3	-
 hla_ligand_atlas_sample_hits_raw	/srv/neoag-assets/source/data/normal/hla_ligand_atlas/2020.12/raw/sample_hits.tsv.gz	/srv/neoag-assets/install/data/normal/hla_ligand_atlas/2020.12/raw/sample_hits.tsv.gz	file	1	0e8771113cae27c620b2b9619f035675ddcc87b8d7dfac50750e71ab60eb0167	-
 hla_ligand_atlas_manifest	/srv/neoag-assets/source/data/normal/hla_ligand_atlas/2020.12/manifest.json	/srv/neoag-assets/install/data/normal/hla_ligand_atlas/2020.12/manifest.json	file	1	-	-

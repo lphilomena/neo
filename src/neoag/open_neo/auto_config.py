@@ -110,6 +110,7 @@ REFERENCE_ENV_PATHS = {
     "ascat_alleles": ("ASCAT_ALLELES",),
     "normal_proteome": ("NEOAG_NORMAL_PROTEOME",),
     "normal_ligandome": ("NEOAG_NORMAL_LIGANDOME",),
+    "normal_expression": ("NEOAG_NORMAL_EXPRESSION",),
     "normal_junctions": ("NEOAG_NORMAL_JUNCTIONS",),
     "normal_junctions_liver": ("NEOAG_NORMAL_JUNCTIONS_LIVER",),
     "ctat_genome_lib": ("CTAT_GENOME_LIB",),
@@ -140,6 +141,7 @@ REFERENCE_CANDIDATES = {
     "ascat_alleles": ("data/ascat/G1000_alleles_hg38.txt", "cnv/ascat/loci/G1000_alleles_hg38.txt"),
     "normal_proteome": ("data/normal/proteome/Homo_sapiens.GRCh38.pep.all.fa",),
     "normal_ligandome": ("data/normal/ligandome/normal_ms_ligands.tsv",),
+    "normal_expression": ("data/normal/expression/normal_expression.gtex_v11_hpa_hspc.tsv",),
     "normal_junctions": ("data/normal/junctions/normal_junctions.GRCh38.tsv.gz",),
     "normal_junctions_liver": ("data/normal/junctions/gtex_v8_liver.GRCh38.tsv.gz",),
     "ctat_genome_lib": (

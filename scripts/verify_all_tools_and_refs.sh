@@ -198,6 +198,18 @@ fi
 
 echo
 
+echo "==> Normal expression safety background"
+normal_expression="${NEOAG_NORMAL_EXPRESSION:-}"
+if [[ -n "$normal_expression" ]]; then
+  check_file "$normal_expression" "Normal expression catalog"
+elif [[ -f "${NEOAG_REF_BUNDLE:-}/data/normal/expression/normal_expression.gtex_v11_hpa_hspc.tsv" ]]; then
+  pass "Normal expression catalog: ${NEOAG_REF_BUNDLE}/data/normal/expression/normal_expression.gtex_v11_hpa_hspc.tsv"
+else
+  soft_fail "Normal expression catalog missing; normal-expression safety background will be unassessed"
+fi
+
+echo
+
 echo "==> Normal junction safety background"
 normal_junctions="${NEOAG_NORMAL_JUNCTIONS:-}"
 if [[ -n "$normal_junctions" ]]; then

@@ -69,6 +69,36 @@ def materialize_hla_loh_layout(final_dir: Path, *, hla_loh: str | Path | None = 
 
 def _purity_records(final_dir: Path, manifest: Mapping[str, Any], provenance: Mapping[str, Any]) -> tuple[list[dict[str, str]], dict[str, Any]]:
     production = final_dir.parent
+    consensus_dir = production / "purity" / "consensus"
+    tool_summary = consensus_dir / "purity_cnv_tool_summary.tsv"
+    if tool_summary.is_file():
+        summary_rows = read_tsv(tool_summary)
+        tools = []
+        for row in summary_rows:
+            status = str(row.get("status") or "").upper()
+            if status == "MISSING":
+                continue
+            tools.append({
+                "tool": str(row.get("tool") or ""),
+                "purity": str(row.get("purity") or ""),
+                "ploidy": str(row.get("ploidy") or ""),
+                "status": str(row.get("status") or "ASSESSED"),
+                "note": str(row.get("notes") or row.get("parse_method") or "from purity_cnv_tool_summary.tsv"),
+            })
+        if tools:
+            consensus_rows = read_tsv(consensus_dir / "purity_cnv_consensus.tsv") if (consensus_dir / "purity_cnv_consensus.tsv").is_file() else []
+            recommended_rows = read_tsv(consensus_dir / "recommended_purity.tsv") if (consensus_dir / "recommended_purity.tsv").is_file() else []
+            consensus_row = consensus_rows[0] if consensus_rows else {}
+            recommended_row = recommended_rows[0] if recommended_rows else {}
+            tool_names = [row["tool"] for row in tools if row.get("tool")]
+            consensus = {
+                "recommended_purity": str(consensus_row.get("recommended_purity") or recommended_row.get("purity") or ""),
+                "recommended_ploidy": str(recommended_row.get("ploidy") or next((row.get("ploidy") or "" for row in tools if row.get("ploidy")), "")),
+                "selected_tool": str(recommended_row.get("evidence_tool") or ("多工具共识" if len(tools) > 1 else tools[0].get("tool") or "")),
+                "status": str(consensus_row.get("status") or recommended_row.get("consensus_status") or ("MULTI_TOOL_REVIEW" if len(tools) > 1 else "SINGLE_TOOL_NO_CROSSCHECK")),
+                "basis": str(consensus_row.get("interpretation") or ("已并列保留 " + "、".join(tool_names) + " 结果。")),
+            }
+            return tools, consensus
     search: list[Path] = []
     for stage, key in (("purity_facets", "facets_result"), ("purity_ascat", "ascat_result"), ("purity_sequenza", "sequenza_result"), ("purity_purple", "purple_result")):
         value = _stage_output(manifest, stage, key)

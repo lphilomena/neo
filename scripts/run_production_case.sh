@@ -24,6 +24,8 @@ Usage:
     [--gencode-gtf <gencode.gtf>] \
     [--sequenza <result_file_or_dir>] \
     [--purple <result_file_or_dir>] \
+    [--expression <gene_tpm.tsv>] \
+    [--transcript-expression <transcript_tpm.tsv|quant.sf>] \
     [--rna-fastq1 <R1.fq.gz[,lane2_R1.fq.gz]>] \
     [--rna-fastq2 <R2.fq.gz[,lane2_R2.fq.gz]>] \
     [--rna-bam <sorted_rna.bam> | --rna-vaf <rna_alt_vaf.tsv>] \
@@ -67,6 +69,8 @@ REFERENCE_FASTA=""
 GENCODE_GTF=""
 SEQUENZA=""
 PURPLE=""
+EXPRESSION=""
+TRANSCRIPT_EXPRESSION=""
 RNA_FASTQ1=""
 RNA_FASTQ2=""
 RNA_BAM=""
@@ -93,6 +97,8 @@ while [[ $# -gt 0 ]]; do
     --gencode-gtf) GENCODE_GTF="$2"; shift 2 ;;
     --sequenza) SEQUENZA="$2"; shift 2 ;;
     --purple) PURPLE="$2"; shift 2 ;;
+    --expression) EXPRESSION="$2"; shift 2 ;;
+    --transcript-expression) TRANSCRIPT_EXPRESSION="$2"; shift 2 ;;
     --rna-fastq1) RNA_FASTQ1="$2"; shift 2 ;;
     --rna-fastq2) RNA_FASTQ2="$2"; shift 2 ;;
     --rna-bam) RNA_BAM="$2"; shift 2 ;;
@@ -198,6 +204,28 @@ add_if() {
   fi
 }
 
+latest_matching_file() {
+  local root="$1"
+  shift
+  [[ -d "$root" ]] || return 1
+  find "$root" -maxdepth 7 -type f \( "$@" \) -size +0c -printf '%T@ %p\n' 2>/dev/null \
+    | sort -nr \
+    | awk 'NR == 1 {sub(/^[^ ]+ /, ""); print; exit}'
+}
+
+add_first_existing() {
+  local flag="$1"
+  shift
+  local path=""
+  for path in "$@"; do
+    if [[ -s "$path" ]]; then
+      GEN_ARGS+=("$flag" "$path")
+      return 0
+    fi
+  done
+  return 1
+}
+
 GEN_ARGS=(
   --project-root "$PROJECT_ROOT"
   --sample-id "$SAMPLE_ID"
@@ -220,8 +248,37 @@ add_if --purity "$CASE_ROOT/evidence/purity.tsv"
 add_if --cnv "$CASE_ROOT/evidence/cnv_segments.tsv"
 add_if --lohhla "$CASE_ROOT/evidence/hla_loh.tsv"
 add_if --spechla-loh "$CASE_ROOT/evidence/hla_loh.spechla.tsv"
-add_if --expression "$CASE_ROOT/short-rna/evidence/gene_expression.tsv"
-add_if --transcript-expression "$CASE_ROOT/short-rna/evidence/transcript_quant.sf"
+if [[ -n "$EXPRESSION" ]]; then
+  add_if --expression "$EXPRESSION"
+else
+  discovered_expression="$(latest_matching_file "$CASE_ROOT" -name gene_tpm.tsv -o -name '*.genes.results')"
+  [[ -z "$discovered_expression" && -d "$OUTDIR" ]] && discovered_expression="$(latest_matching_file "$OUTDIR" -name gene_tpm.tsv -o -name '*.genes.results')"
+  add_first_existing --expression \
+    "$CASE_ROOT/short-rna/evidence/gene_expression.tsv" \
+    "$CASE_ROOT/short-rna/evidence/gene_tpm.tsv" \
+    "$discovered_expression" || true
+fi
+if [[ -n "$TRANSCRIPT_EXPRESSION" ]]; then
+  add_if --transcript-expression "$TRANSCRIPT_EXPRESSION"
+else
+  discovered_transcript_expression="$(latest_matching_file "$CASE_ROOT" -name transcript_tpm.tsv -o -name quant.sf -o -name '*.isoforms.results')"
+  [[ -z "$discovered_transcript_expression" && -d "$OUTDIR" ]] && discovered_transcript_expression="$(latest_matching_file "$OUTDIR" -name transcript_tpm.tsv -o -name quant.sf -o -name '*.isoforms.results')"
+  add_first_existing --transcript-expression \
+    "$CASE_ROOT/short-rna/evidence/transcript_tpm.tsv" \
+    "$CASE_ROOT/short-rna/evidence/transcript_quant.sf" \
+    "$discovered_transcript_expression" || true
+fi
+if [[ -z "$RNA_FASTQ1" && -z "$RNA_BAM" && -z "$RNA_VAF" ]]; then
+  discovered_rna_vaf="$(latest_matching_file "$CASE_ROOT" -name rna_alt_vaf.tsv -o -name '*rna*vaf*.tsv' -o -name '*rna*alt*.tsv')"
+  [[ -z "$discovered_rna_vaf" && -d "$OUTDIR" ]] && discovered_rna_vaf="$(latest_matching_file "$OUTDIR" -name rna_alt_vaf.tsv -o -name '*rna*vaf*.tsv' -o -name '*rna*alt*.tsv')"
+  if [[ -n "$discovered_rna_vaf" ]]; then
+    RNA_VAF="$discovered_rna_vaf"
+  else
+    discovered_rna_bam="$(latest_matching_file "$CASE_ROOT" -name Aligned.sortedByCoord.out.bam -o -name '*.Aligned.sortedByCoord.out.bam' -o -name '*.rna.bam')"
+    [[ -z "$discovered_rna_bam" && -d "$OUTDIR" ]] && discovered_rna_bam="$(latest_matching_file "$OUTDIR" -name Aligned.sortedByCoord.out.bam -o -name '*.Aligned.sortedByCoord.out.bam' -o -name '*.rna.bam')"
+    [[ -n "$discovered_rna_bam" ]] && RNA_BAM="$discovered_rna_bam"
+  fi
+fi
 add_if --easyfuse "$CASE_ROOT/short-rna/evidence/easyfuse.fusions.pass.csv"
 add_if --star-fusion "$CASE_ROOT/short-rna/evidence/star-fusion.fusion_predictions.tsv"
 add_if --arriba "$CASE_ROOT/short-rna/evidence/arriba.fusions.tsv"

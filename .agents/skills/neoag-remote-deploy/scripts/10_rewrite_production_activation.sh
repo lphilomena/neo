@@ -86,6 +86,9 @@ export PATH="$TOOLS_ROOT/bin:$TOOLS_ROOT/tools/prime:\${OPTITYPE_ENV_PREFIX}/bin
 export LD_LIBRARY_PATH="\${NEOAG_CONDA_BASE}/envs/neoag-tools/lib:\${NEOAG_CONDA_BASE}/envs/neoag-core/lib:\${NEOAG_CONDA_BASE}/envs/neoag-sequenza/lib\${LD_LIBRARY_PATH:+:\${LD_LIBRARY_PATH}}"
 export NEOAG_REFERENCE_FASTA="\${NEOAG_REFERENCE_FASTA:-$REFERENCE_ROOT/data/ref/hg38/Homo_sapiens_assembly38.fasta}"
 export NEOAG_GENCODE_GTF="\${NEOAG_GENCODE_GTF:-$REFERENCE_ROOT/data/ref/hg38/gencode.gtf}"
+if [[ -z "\${NEOAG_NORMAL_EXPRESSION:-}" && -f "$REFERENCE_ROOT/data/normal/expression/normal_expression.gtex_v11_hpa_hspc.tsv" ]]; then
+  export NEOAG_NORMAL_EXPRESSION="$REFERENCE_ROOT/data/normal/expression/normal_expression.gtex_v11_hpa_hspc.tsv"
+fi
 if [[ -z "\${NEOAG_NORMAL_JUNCTIONS:-}" ]]; then
   if [[ -f "$REFERENCE_ROOT/data/normal/junctions/normal_junctions.GRCh38.tsv.gz" ]]; then
     export NEOAG_NORMAL_JUNCTIONS="$REFERENCE_ROOT/data/normal/junctions/normal_junctions.GRCh38.tsv.gz"
