@@ -12,10 +12,13 @@ plus auditable entity, provenance, conflict, consensus, and QC tables.
 
 from __future__ import annotations
 
+import csv
+import gzip
 import hashlib
+import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, TextIO
 
 from neoag.model_layers import enrich_event_layers, enrich_peptide_layers
 from neoag.provenance import (
@@ -227,6 +230,68 @@ def _normal_specificity(status: str) -> str:
     if status == "NOT_DETECTED_COVERAGE_UNASSESSED":
         return "0.6"
     return "0.5"
+
+
+def _open_text(path: Path) -> TextIO:
+    if path.suffix == ".gz":
+        return gzip.open(path, "rt", encoding="utf-8", newline="")
+    return path.open(newline="", encoding="utf-8")
+
+
+def _fast_scan_normal_junction_ids(
+    path: Path,
+    target_ids: set[str],
+) -> tuple[set[str], int] | None:
+    """Stream a normal panel with canonical junction_id values.
+
+    The generic coordinate adapter is intentionally broad, but it is expensive
+    for large GTEx/recount-style panels.  When the panel already exposes the
+    canonical junction_id column used by Open-Neo, candidate-only runs only need
+    membership checks against target splice candidates.
+    """
+    if not target_ids:
+        return set(), 0
+    with _open_text(path) as handle:
+        reader = csv.DictReader(handle, delimiter="\t")
+        if "junction_id" not in (reader.fieldnames or []):
+            return None
+        detected: set[str] = set()
+        resolvable_rows = 0
+        for row in reader:
+            junction_id = (row.get("junction_id") or "").strip()
+            if not junction_id:
+                continue
+            resolvable_rows += 1
+            if junction_id in target_ids:
+                detected.add(junction_id)
+                if len(detected) == len(target_ids):
+                    # All candidate junctions have been observed in the normal
+                    # panel; no later row can change the per-candidate status.
+                    break
+    return detected, resolvable_rows
+
+
+def _query_normal_junction_index(
+    path: Path,
+    target_ids: set[str],
+) -> tuple[set[str], int] | None:
+    index_path = Path(str(path) + ".sqlite")
+    if not target_ids or not index_path.is_file():
+        return None
+    with sqlite3.connect(f"file:{index_path}?mode=ro", uri=True) as conn:
+        try:
+            total = int(conn.execute("select value from meta where key='resolvable_rows'").fetchone()[0])
+        except Exception:
+            total = 1
+        detected: set[str] = set()
+        ordered = sorted(target_ids)
+        for start in range(0, len(ordered), 900):
+            chunk = ordered[start : start + 900]
+            placeholders = ",".join("?" for _ in chunk)
+            query = f"select junction_id from junction_ids where junction_id in ({placeholders})"
+            for (junction_id,) in conn.execute(query, chunk):
+                detected.add(junction_id)
+        return detected, total
 
 
 def _event_source_row(
@@ -536,28 +601,52 @@ def normalize_splice_sources(
     normal_declared = bool(normal_junctions and Path(normal_junctions).is_file())
     normal_detected: set[str] = set()
     normal_resolvable_rows = 0
+    normal_target_ids = (
+        {item.event_id for item in normalized if item.role == "neoantigen"}
+        if candidate_only
+        else set(registry.entities)
+    )
     if normal_declared:
-        for record in iter_junction_records(
-            Path(normal_junctions),
-            sample_id=sample_id,
-            source_tool="NormalJunctionPanel",
-            genome_build=genome_build,
-            coordinate_system=normal_coordinate_system,
-            strict=False,
-        ):
-            if record.junction is not None:
-                normal_resolvable_rows += 1
-            resolution = registry.resolve(record)
-            if resolution.junction is not None and resolution.junction.junction_id in registry.entities:
-                normal_detected.add(resolution.junction.junction_id)
-            normalized.append(
-                NormalizedRecord(
-                    record,
-                    resolution,
-                    "normal_background",
-                    resolution.junction_id or unresolved_event_id(record),
-                )
-            )
+        indexed_normal_scan = (
+            _query_normal_junction_index(Path(normal_junctions), normal_target_ids)
+            if candidate_only
+            else None
+        )
+        fast_normal_scan = (
+            _fast_scan_normal_junction_ids(Path(normal_junctions), normal_target_ids)
+            if candidate_only and indexed_normal_scan is None
+            else None
+        )
+        if indexed_normal_scan is not None:
+            normal_detected, normal_resolvable_rows = indexed_normal_scan
+        elif fast_normal_scan is not None:
+            normal_detected, normal_resolvable_rows = fast_normal_scan
+        else:
+            for record in iter_junction_records(
+                Path(normal_junctions),
+                sample_id=sample_id,
+                source_tool="NormalJunctionPanel",
+                genome_build=genome_build,
+                coordinate_system=normal_coordinate_system,
+                strict=False,
+            ):
+                if record.junction is not None:
+                    normal_resolvable_rows += 1
+                resolution = registry.resolve(record)
+                if (
+                    resolution.junction is not None
+                    and resolution.junction.junction_id in normal_target_ids
+                ):
+                    normal_detected.add(resolution.junction.junction_id)
+                if not candidate_only:
+                    normalized.append(
+                        NormalizedRecord(
+                            record,
+                            resolution,
+                            "normal_background",
+                            resolution.junction_id or unresolved_event_id(record),
+                        )
+                    )
 
     all_tumor_items = [item for item in normalized if item.role != "normal_background"]
     if candidate_only:

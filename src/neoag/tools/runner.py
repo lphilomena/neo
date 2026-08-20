@@ -752,6 +752,10 @@ def netmhcpan_iedb_fallback_enabled() -> bool:
     return os.environ.get("NEOAG_NETMHCPAN_ALLOW_IEDB_FALLBACK", "").strip().lower() in {"1", "true", "yes"}
 
 
+def netmhcpan_soft_fail_enabled() -> bool:
+    return os.environ.get("NEOAG_NETMHCPAN_SOFT_FAIL", "").strip().lower() in {"1", "true", "yes"}
+
+
 def _run_netmhcpan_local(
     pairs: list[tuple[str, str]],
     out_xls: Path,
@@ -892,6 +896,17 @@ def run_netmhcpan(ctx: RunContext, out_xls: Path) -> Path:
             except Exception as allele_exc:
                 exc = allele_exc
             if not netmhcpan_iedb_fallback_enabled():
+                if netmhcpan_soft_fail_enabled():
+                    from ..adapters.netmhcpan import write_netmhcpan_standard_xls
+
+                    print(
+                        f"netmhcpan: local failed ({exc}); writing empty evidence because "
+                        "NEOAG_NETMHCPAN_SOFT_FAIL=1",
+                        flush=True,
+                    )
+                    write_netmhcpan_standard_xls(out_xls, [])
+                    _set_netmhcpan_provenance(ctx, out_xls, "local-soft-fail")
+                    return out_xls
                 raise RuntimeError(
                     "NetMHCpan local mode failed and IEDB fallback is disabled by default. "
                     "Set NEOAG_NETMHCPAN_ALLOW_IEDB_FALLBACK=1 to allow remote fallback."

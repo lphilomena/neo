@@ -659,6 +659,42 @@ def _augment_runtime_tool_provenance(root: Path, provenance: dict[str, Any]) -> 
             record.setdefault("display_name", raw_name)
 
 
+
+def _augment_purity_cnv_provenance(root: Path, prov: dict[str, Any]) -> None:
+    production = root.parent
+    summary_path = production / "evidence" / "purity_cnv" / "purity_cnv_tool_summary.tsv"
+    if not summary_path.is_file() or summary_path.stat().st_size == 0:
+        summary_path = production / "purity" / "consensus" / "purity_cnv_tool_summary.tsv"
+    if not summary_path.is_file() or summary_path.stat().st_size == 0:
+        return
+    tools = []
+    for row in _read_optional(summary_path):
+        tools.append({
+            "tool": str(row.get("tool") or row.get("source_tool") or ""),
+            "purity": str(row.get("purity") or ""),
+            "ploidy": str(row.get("ploidy") or ""),
+            "status": str(row.get("status") or "UNASSESSED"),
+            "note": str(row.get("notes") or row.get("parse_method") or "from purity_cnv_tool_summary.tsv"),
+        })
+    if tools:
+        prov["purity_cnv_tools"] = tools
+    consensus_path = summary_path.parent / "purity_cnv_consensus.tsv"
+    recommended_path = summary_path.parent / "recommended_purity.tsv"
+    consensus_rows = _read_optional(consensus_path)
+    recommended_rows = _read_optional(recommended_path)
+    consensus_row = consensus_rows[0] if consensus_rows else {}
+    recommended_row = recommended_rows[0] if recommended_rows else {}
+    found_tools = [row for row in tools if str(row.get("status") or "").upper() not in {"", "MISSING"}]
+    names = [str(row.get("tool") or "未记录") for row in tools]
+    if tools:
+        prov["purity_cnv_consensus"] = {
+            "recommended_purity": str(consensus_row.get("recommended_purity") or recommended_row.get("purity") or ""),
+            "recommended_ploidy": str(recommended_row.get("ploidy") or next((row.get("ploidy") or "" for row in found_tools if row.get("ploidy")), "")),
+            "selected_tool": str(recommended_row.get("evidence_tool") or ("多工具共识" if len(found_tools) > 1 else (found_tools[0].get("tool") if found_tools else "未形成估计"))),
+            "status": str(consensus_row.get("status") or recommended_row.get("consensus_status") or ("MULTI_TOOL_REVIEW" if len(found_tools) > 1 else "SINGLE_TOOL_NO_CROSSCHECK")),
+            "basis": str(consensus_row.get("interpretation") or ("已并列保留 " + "、".join(names) + " 结果；缺失工具显式标记为未形成估计。")),
+        }
+
 def load_report_bundle(
     *,
     profile: Mapping[str, Any],
@@ -678,6 +714,7 @@ def load_report_bundle(
         prov = _read_json_optional(root / "provenance.json")
     if root:
         _augment_runtime_tool_provenance(root, prov)
+        _augment_purity_cnv_provenance(root, prov)
     if patient_inputs:
         explicit_inputs = patient_inputs.get("input_files") if isinstance(patient_inputs.get("input_files"), Mapping) else patient_inputs
         prov["input_files"] = dict(explicit_inputs)

@@ -384,7 +384,13 @@ def main() -> int:
     candidate_stages = []
     if args.somatic_vcf:
         reference_env = f"NEOAG_REFERENCE_FASTA={q(reference_fasta)} " if reference_fasta else ""
-        command = f"{reference_env}PYTHONPATH={q(root / 'src')} {q(sys.executable)} {q(root / 'scripts/run_candidate_upstream.py')} --mode snv --input {q(require(args.somatic_vcf, 'somatic VCF'))} --hla-file {q(hla)} --sample-id {q(args.sample_id)} --outdir {{outdir}}/branches/snv"
+        vep_cache = os.environ.get("NEOAG_VEP_CACHE", "")
+        if not vep_cache and args.normal_junctions:
+            candidate_cache = Path(args.normal_junctions).resolve().parents[2] / "vep"
+            if candidate_cache.is_dir():
+                vep_cache = str(candidate_cache)
+        vep_cache_arg = f" --vep-cache {q(vep_cache)}" if vep_cache and Path(vep_cache).is_dir() else ""
+        command = f"{reference_env}PYTHONPATH={q(root / 'src')} {q(sys.executable)} {q(root / 'scripts/run_candidate_upstream.py')} --mode snv --input {q(require(args.somatic_vcf, 'somatic VCF'))} --hla-file {q(hla)} --sample-id {q(args.sample_id)} --outdir {{outdir}}/branches/snv{vep_cache_arg}"
         stage(lines, "snv_indel_candidates", source="SNV_INDEL", command=command, outputs={"raw_events": "{outdir}/branches/snv/parsed/raw_events.tsv", "raw_peptides": "{outdir}/branches/snv/parsed/raw_peptides.tsv"}, depends=hla_dependency)
         candidate_stages.append("snv_indel_candidates")
     if args.easyfuse or args.star_fusion or args.arriba:

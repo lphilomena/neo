@@ -56,6 +56,7 @@ ASSET="${NEOAG_ASSET_ROOT:-${NEOAG_TOOLS_ROOT:-}}"
 PRED_DEPS="${NEOAG_PREDICTOR_DEPS:-${NEOAG_TOOL_QUARANTINE:-}}"
 NETMHCPAN_HOME_DEFAULT="${NETMHCPAN_HOME:-}"
 NETMHCSTABPAN_HOME="${NETMHCSTABPAN_HOME:-}"
+LICENSED_TOOLS_ROOT="${NEOAG_LICENSED_TOOLS_ROOT:-}"
 CLI_ASSET=""
 CLI_PRED_DEPS=""
 CLI_NETMHCPAN_HOME=""
@@ -182,6 +183,9 @@ if [[ -z "$EASYFUSE_STAR_INDEX" && -n "$ASSET" ]]; then
     if [[ -d "$candidate" ]]; then EASYFUSE_STAR_INDEX="$candidate"; break; fi
   done
 fi
+if [[ -z "$LICENSED_TOOLS_ROOT" && -n "$ASSET" ]]; then
+  LICENSED_TOOLS_ROOT="$(cd "$ASSET/.." && pwd)/licensed_tools"
+fi
 
 PROFILE_PATH="$PROFILE"
 [[ "$PROFILE_PATH" = /* ]] || PROFILE_PATH="$PROJECT_ROOT/$PROFILE"
@@ -202,6 +206,25 @@ add_if() {
   if [[ -e "$path" ]]; then
     GEN_ARGS+=("$flag" "$path")
   fi
+}
+
+add_file_if() {
+  local flag="$1" path="$2"
+  if [[ -f "$path" && -s "$path" ]]; then
+    GEN_ARGS+=("$flag" "$path")
+  fi
+}
+
+ensure_normal_junction_index() {
+  local normal_junctions="$1"
+  local index_path="${normal_junctions}.sqlite"
+  if [[ ! -s "$normal_junctions" || -s "$index_path" ]]; then
+    return 0
+  fi
+  echo "[INFO] build normal junction sqlite index: $index_path"
+  PYTHONPATH="$PROJECT_ROOT/src" "$PY" scripts/build_normal_junction_index.py \
+    --input "$normal_junctions" \
+    --output "$index_path"
 }
 
 latest_matching_file() {
@@ -287,9 +310,11 @@ add_if --snaf "$CASE_ROOT/short-rna/snaf/snaf_candidates.tsv"
 add_if --splicemutr "$CASE_ROOT/short-rna/splicemutr"
 
 if [[ -n "$ASSET" ]]; then
-  add_if --normal-junctions "$ASSET/data/normal/junctions/normal_junctions.GRCh38.tsv.gz"
-  add_if --normal-expression "$ASSET/data/normal/expression/normal_expression.gtex_v11_hpa_hspc.tsv"
-  add_if --normal-hla-ligands "$ASSET/data/normal/ligandome/normal_ms_ligands.tsv"
+  NORMAL_JUNCTIONS="$ASSET/data/normal/junctions/normal_junctions.GRCh38.tsv.gz"
+  ensure_normal_junction_index "$NORMAL_JUNCTIONS"
+  add_file_if --normal-junctions "$NORMAL_JUNCTIONS"
+  add_file_if --normal-expression "$ASSET/data/normal/expression/normal_expression.gtex_v11_hpa_hspc.tsv"
+  add_file_if --normal-hla-ligands "$ASSET/data/normal/ligandome/normal_ms_ligands.tsv"
   discovered_reference_proteome=""
   if [[ -d "$ASSET/data/normal/proteome" ]]; then
     discovered_reference_proteome="$(latest_matching_file "$ASSET/data/normal/proteome" -name '*.fa' -o -name '*.fasta' -o -name '*.faa')"
@@ -301,8 +326,19 @@ if [[ -n "$ASSET" ]]; then
     "$ASSET/data/normal/proteome/Homo_sapiens.GRCh38.pep.all.fa" \
     "$ASSET/data/normal/proteome/Homo_sapiens.GRCh38.pep.all.fa.gz" \
     "$discovered_reference_proteome" || true
-  add_if --netchop-executable "$ASSET/data/predictors/netchop/netchop-3.1/Linux_x86_64/bin/netChop"
-  add_if --netchop-home "$ASSET/data/predictors/netchop/netchop-3.1"
+  add_first_existing --netchop-executable \
+    "${NEOAG_NETCHOP_BIN:-}" \
+    "$LICENSED_TOOLS_ROOT/netchop/netchop-3.1/Linux_x86_64/bin/netChop" \
+    "$ASSET/data/predictors/netchop/netchop-3.1/Linux_x86_64/bin/netChop" || true
+  for netchop_home_candidate in \
+    "${NETCHOP_HOME:-}" \
+    "$LICENSED_TOOLS_ROOT/netchop/netchop-3.1" \
+    "$ASSET/data/predictors/netchop/netchop-3.1"; do
+    if [[ -d "$netchop_home_candidate" ]]; then
+      GEN_ARGS+=(--netchop-home "$netchop_home_candidate")
+      break
+    fi
+  done
 fi
 
 # Explicit reference and RNA inputs are passed through unchanged. They are not
@@ -324,6 +360,16 @@ echo "[INFO] generate manifest: $OUTDIR/manifest/production.results.toml"
 
 [[ -n "$ASSET" ]] && export NEOAG_TOOLS_ROOT="$ASSET"
 [[ -n "$PRED_DEPS" ]] && export NEOAG_TOOL_QUARANTINE="$PRED_DEPS"
+if [[ -n "$ASSET" ]]; then
+  export NEOAG_VEP_CACHE="${NEOAG_VEP_CACHE:-$ASSET/data/vep}"
+fi
+export NEOAG_VEP_CACHE_VERSION="${NEOAG_VEP_CACHE_VERSION:-105}"
+PY_PREFIX="$(cd "$(dirname "$PY")/.." && pwd)"
+for lib_dir in "$PY_PREFIX/lib" "${NEOAG_ENV_TOOL_ROOT:-}/lib"; do
+  if [[ -d "$lib_dir" ]]; then
+    export LD_LIBRARY_PATH="$lib_dir:${LD_LIBRARY_PATH:-}"
+  fi
+done
 export NEOAG_FORCE_CPU=1
 export NEOAG_PRIME_JOBS=4
 export NEOAG_NETMHCPAN_LOCAL_CHUNK_SIZE=5000
@@ -357,8 +403,24 @@ export NEOAG_PRIME_PYTHON="${NEOAG_PRIME_PYTHON:-$PY}"
 export BIGMHC_PYTHON="${BIGMHC_PYTHON:-$PY}"
 
 if [[ -n "$ASSET" ]]; then
-  export NEOAG_NETCHOP_BIN="${NEOAG_NETCHOP_BIN:-$ASSET/data/predictors/netchop/netchop-3.1/Linux_x86_64/bin/netChop}"
-  export NETCHOP_HOME="${NETCHOP_HOME:-$ASSET/data/predictors/netchop/netchop-3.1}"
+  for netchop_bin_candidate in \
+    "${NEOAG_NETCHOP_BIN:-}" \
+    "$LICENSED_TOOLS_ROOT/netchop/netchop-3.1/Linux_x86_64/bin/netChop" \
+    "$ASSET/data/predictors/netchop/netchop-3.1/Linux_x86_64/bin/netChop"; do
+    if [[ -x "$netchop_bin_candidate" ]]; then
+      export NEOAG_NETCHOP_BIN="$netchop_bin_candidate"
+      break
+    fi
+  done
+  for netchop_home_candidate in \
+    "${NETCHOP_HOME:-}" \
+    "$LICENSED_TOOLS_ROOT/netchop/netchop-3.1" \
+    "$ASSET/data/predictors/netchop/netchop-3.1"; do
+    if [[ -d "$netchop_home_candidate" ]]; then
+      export NETCHOP_HOME="$netchop_home_candidate"
+      break
+    fi
+  done
 fi
 
 tool_path_entries=("${NETMHCPAN_HOME:-}" "$NETMHCSTABPAN_HOME" "$PRIME_HOME" "$MIXMHCPRED_HOME")

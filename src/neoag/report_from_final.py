@@ -69,15 +69,21 @@ def materialize_hla_loh_layout(final_dir: Path, *, hla_loh: str | Path | None = 
 
 def _purity_records(final_dir: Path, manifest: Mapping[str, Any], provenance: Mapping[str, Any]) -> tuple[list[dict[str, str]], dict[str, Any]]:
     production = final_dir.parent
-    consensus_dir = production / "purity" / "consensus"
+    consensus_dirs = [
+        production / "evidence" / "purity_cnv",
+        production / "purity" / "consensus",
+        final_dir / "evidence" / "purity_cnv",
+        final_dir / "purity" / "consensus",
+    ]
+    consensus_dir = next(
+        (path for path in consensus_dirs if (path / "purity_cnv_tool_summary.tsv").is_file()),
+        consensus_dirs[0],
+    )
     tool_summary = consensus_dir / "purity_cnv_tool_summary.tsv"
     if tool_summary.is_file():
         summary_rows = read_tsv(tool_summary)
         tools = []
         for row in summary_rows:
-            status = str(row.get("status") or "").upper()
-            if status == "MISSING":
-                continue
             tools.append({
                 "tool": str(row.get("tool") or ""),
                 "purity": str(row.get("purity") or ""),
