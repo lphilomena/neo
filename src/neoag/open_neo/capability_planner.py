@@ -41,7 +41,7 @@ TOOL_EXECUTABLES = {
     "mhcflurry": "mhcflurry-predict",
     "netmhcstabpan": "netMHCstabpan",
     "prime": "PRIME",
-    "bigmhc": "bigmhc_predict",
+    "bigmhc_im": "bigmhc_predict",
     "deepimmuno": "deepimmuno-cnn.py",
 }
 
@@ -694,7 +694,7 @@ def build_automatic_production_plan(
 
     presentation_predictors = []
     required_predictors = []
-    for tool in (*WRAPPER_REQUIRED_PRESENTATION, "prime", "bigmhc", "deepimmuno"):
+    for tool in (*WRAPPER_REQUIRED_PRESENTATION, "prime", "bigmhc_im", "deepimmuno"):
         available, executable, _ = _tool_info(tool, tools)
         if not permitted(tool):
             decide("presentation", tool, "POLICY_SKIPPED", f"excluded by {policy} policy", executable=executable)

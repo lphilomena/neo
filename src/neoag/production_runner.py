@@ -54,10 +54,25 @@ def load_production_manifest(path: str | Path) -> dict[str, Any]:
 
 def _expand(value: str, context: dict[str, str]) -> str:
     expanded = os.path.expanduser(os.path.expandvars(value))
+    for key, replacement in context.items():
+        expanded = expanded.replace("${" + key + "}", replacement).replace("$" + key, replacement)
+    import re
+
+    protected_values: dict[str, str] = {}
+
+    def protect_shell_param(match: re.Match[str]) -> str:
+        token = f"__OPEN_NEO_SHELL_PARAM_{len(protected_values)}__"
+        protected_values[token] = match.group(0)
+        return token
+
+    protected = re.sub(r"\$\{[^{}]*\}", protect_shell_param, expanded)
     try:
-        return expanded.format_map(context)
+        rendered = protected.format_map(context)
     except KeyError as exc:
         raise ValueError(f"Unknown production manifest placeholder: {exc.args[0]}") from exc
+    for token, original in protected_values.items():
+        rendered = rendered.replace(token, original)
+    return rendered
 
 
 def _expand_value(value: Any, context: dict[str, str]) -> Any:
@@ -454,6 +469,9 @@ def run_production(
         "outdir": str(run_outdir),
         "sample_id": sample_id,
         "manifest_dir": str(Path(manifest_path).resolve().parent),
+        "OPEN_NEO_REFERENCE_ROOT": os.environ.get("OPEN_NEO_REFERENCE_ROOT", ""),
+        "OPEN_NEO_TOOLS_ROOT": os.environ.get("OPEN_NEO_TOOLS_ROOT", ""),
+        "OPEN_NEO_LICENSED_ROOT": os.environ.get("OPEN_NEO_LICENSED_ROOT", ""),
     }
     expanded_run = _expand_value(run_cfg, context)
     expanded_evidence = _expand_value(manifest.get("evidence") or {}, context)
@@ -637,8 +655,17 @@ def run_production(
         _write_result(result, run_outdir)
         return result
 
-    enabled_predictors = [str(tool) for tool in (expanded_run.get("presentation_predictors") or ["netmhcpan", "mhcflurry"])]
-    required_predictors = [str(tool) for tool in (expanded_run.get("required_presentation_predictors") or enabled_predictors)]
+    def normalize_predictor_name(tool: str) -> str:
+        return "bigmhc_im" if tool == "bigmhc" else tool
+
+    enabled_predictors = [
+        normalize_predictor_name(str(tool))
+        for tool in (expanded_run.get("presentation_predictors") or ["netmhcpan", "mhcflurry"])
+    ]
+    required_predictors = [
+        normalize_predictor_name(str(tool))
+        for tool in (expanded_run.get("required_presentation_predictors") or enabled_predictors)
+    ]
     if "netchop" in enabled_predictors:
         netchop_path = Path(str(expanded_evidence.get("netchop") or run_outdir / "processing/netchop_evidence.tsv"))
         if netchop_path.is_file() and not force:

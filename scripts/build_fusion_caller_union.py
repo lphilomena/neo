@@ -10,6 +10,12 @@ from collections import defaultdict
 from pathlib import Path
 
 from neoag.input_router import build_raw_intermediates
+from neoag.adapters.diagnostic_fusion_rescue import (
+    DEFAULT_DIAGNOSTIC_FUSION_WHITELIST,
+    diagnostic_rescue_rows_from_easyfuse,
+    infer_unfiltered_easyfuse_path,
+    normalize_fusion_label,
+)
 from neoag.model_layers import enrich_event_layers, enrich_peptide_layers, infer_mutation_source, infer_peptide_consequence
 from neoag.provenance import merge_rows_preserving_provenance
 from neoag.schemas import EVENT_FIELDS, PEPTIDE_FIELDS
@@ -36,6 +42,16 @@ FUSIONCATCHER_PATTERNS = (
 EASYFUSE_PATTERNS = (
     "**/fusions.pass.csv",
 )
+STAR_CHIMERIC_PATTERNS = (
+    "**/Chimeric.out.junction",
+)
+
+TARGETED_FUSION_REGIONS = {
+    "EWSR1_WT1": {
+        "EWSR1": ("chr22", 29268009, 29300525),
+        "WT1": ("chr11", 32387775, 32435564),
+    },
+}
 
 
 def read_hla(path: Path) -> list[str]:
@@ -75,6 +91,200 @@ def normalize_breakpoint(value: str) -> str:
     if len(parts) >= 2 and parts[-1] in {"+", "-"}:
         parts = parts[:-1]
     return ":".join(parts[:2]) if len(parts) >= 2 else text
+
+
+def parse_breakpoint(value: str) -> tuple[str, int | None, str]:
+    text = str(value or "").strip()
+    parts = text.split(":")
+    if len(parts) < 2:
+        return "", None, ""
+    chrom = parts[0]
+    if chrom and not chrom.startswith("chr"):
+        chrom = "chr" + chrom
+    try:
+        pos = int(parts[1])
+    except ValueError:
+        pos = None
+    strand = parts[2] if len(parts) > 2 else ""
+    return chrom, pos, strand
+
+
+def infer_star_chimeric_from_junctions(path: Path | None) -> Path | None:
+    if not path:
+        return None
+    p = Path(path)
+    if p.name == "Chimeric.out.junction" and p.is_file():
+        return p
+    candidates = [p.with_name("Chimeric.out.junction")]
+    for candidate in candidates:
+        if candidate.is_file() and candidate.stat().st_size > 0:
+            return candidate
+    return None
+
+
+def star_chimeric_support_count(path: Path | None, fusion_label: str, bp1: str, bp2: str) -> int:
+    if not path or not path.is_file() or path.stat().st_size == 0:
+        return 0
+    norm = normalize_fusion_label(fusion_label)
+    regions = TARGETED_FUSION_REGIONS.get(norm)
+    if not regions:
+        return 0
+    genes = [gene for gene in norm.split("_") if gene in regions]
+    if len(genes) != 2:
+        return 0
+    left_region = regions[genes[0]]
+    right_region = regions[genes[1]]
+
+    def in_region(chrom: str, pos: int, region: tuple[str, int, int]) -> bool:
+        return chrom == region[0] and region[1] <= pos <= region[2]
+
+    count = 0
+    with path.open(encoding="utf-8", errors="replace") as handle:
+        for line in handle:
+            parts = line.rstrip("\n").split("\t")
+            if len(parts) < 5:
+                continue
+            chrom1 = parts[0] if parts[0].startswith("chr") else "chr" + parts[0]
+            chrom2 = parts[3] if parts[3].startswith("chr") else "chr" + parts[3]
+            try:
+                pos1 = int(parts[1])
+                pos2 = int(parts[4])
+            except ValueError:
+                continue
+            if (
+                in_region(chrom1, pos1, left_region) and in_region(chrom2, pos2, right_region)
+            ) or (
+                in_region(chrom1, pos1, right_region) and in_region(chrom2, pos2, left_region)
+            ):
+                count += 1
+    return count
+
+
+def peptide_windows(sequence: str, lengths: tuple[int, ...] = (8, 9, 10, 11)) -> list[str]:
+    seq = re.sub(r"[^ACDEFGHIKLMNPQRSTVWY]", "", str(sequence or "").upper())
+    if not AA_RE.fullmatch(seq or ""):
+        return []
+    if min(lengths) <= len(seq) <= max(lengths):
+        return [seq]
+    return list(dict.fromkeys(seq[start:start + length] for length in lengths for start in range(max(0, len(seq) - length + 1))))
+
+
+def targeted_rescue_rows(
+    easyfuse_files: list[Path],
+    *,
+    star_chimeric_files: list[Path],
+    sample_id: str,
+    profile: str,
+    hla: list[str],
+    whitelist: list[str],
+) -> tuple[list[dict[str, str]], list[dict[str, str]], list[dict[str, str]], list[dict[str, str]]]:
+    events: list[dict[str, str]] = []
+    peptides: list[dict[str, str]] = []
+    audit: list[dict[str, str]] = []
+    rescue_sidecar: list[dict[str, str]] = []
+    seen: set[str] = set()
+    norm_whitelist = [normalize_fusion_label(item) for item in whitelist]
+    for source in easyfuse_files:
+        rows = diagnostic_rescue_rows_from_easyfuse(
+            source,
+            sample_id=sample_id,
+            whitelist=norm_whitelist,
+            pass_keys=set(),
+        )
+        for row in rows:
+            fusion_norm = row.get("fusion_gene_normalized", "")
+            bp1 = row.get("breakpoint1", "")
+            bp2 = row.get("breakpoint2", "")
+            event_id = safe_id(f"TARGETED_RESCUE|{sample_id}|{fusion_norm}|{bp1}|{bp2}")
+            if event_id in seen:
+                continue
+            seen.add(event_id)
+            star_support = sum(star_chimeric_support_count(path, fusion_norm, bp1, bp2) for path in star_chimeric_files)
+            rescue_status = "STAR-junction-supported" if star_support > 0 else "single-caller"
+            reads = str(max(int(to_float(row.get("rna_junction_reads"), 0.0)), star_support))
+            gene_pair_display = row.get("fusion_gene", "").replace("_", "::")
+            chrom, pos, _strand = parse_breakpoint(bp1)
+            confidence = "0.85" if star_support > 0 else "0.65"
+            base = {field: "" for field in EVENT_FIELDS}
+            base.update({
+                "event_id": event_id,
+                "sample_id": sample_id,
+                "disease_profile": profile,
+                "event_type": "Fusion",
+                "mutation_source": infer_mutation_source(event_type="Fusion", tool="TARGETED_RESCUE"),
+                "peptide_consequence": infer_peptide_consequence(event_type="Fusion", consequence="fusion", tool="TARGETED_RESCUE"),
+                "gene": gene_pair_display,
+                "event_name": gene_pair_display,
+                "chrom": chrom,
+                "pos": str(pos or ""),
+                "transcript_id": row.get("ftid", ""),
+                "consequence": row.get("frame_status", "") or "fusion",
+                "rna_junction_reads": reads,
+                "rna_junction_source": rescue_status,
+                "event_confidence": confidence,
+                "event_expression": "0.0",
+                "driver_relevance": "1.0",
+                "tumor_vaf": "0.0",
+                "clonality": "0.5",
+                "persistence": "0.5",
+                "tumor_specificity": "0.8",
+                "source": f"TARGETED_RESCUE:{source}",
+                "source_file": str(source),
+                "source_record_id": row.get("rescue_id", ""),
+                "source_tools": "TARGETED_RESCUE,EasyFuseRaw" + (",STAR-Chimeric" if star_support > 0 else ""),
+            })
+            events.append(enrich_event_layers(base))
+            windows = peptide_windows(row.get("neo_peptide_sequence", ""))
+            for peptide in windows:
+                for allele in hla:
+                    pbase = {field: "" for field in PEPTIDE_FIELDS}
+                    pbase.update({
+                        "peptide_id": safe_id(f"{event_id}|{allele}|{peptide}"),
+                        "event_id": event_id,
+                        "sample_id": sample_id,
+                        "event_type": "Fusion",
+                        "mutation_source": base["mutation_source"],
+                        "peptide_consequence": base["peptide_consequence"],
+                        "gene": gene_pair_display,
+                        "peptide": peptide,
+                        "hla_allele": allele,
+                        "mhc_class": "I",
+                        "source_tool": "TARGETED_RESCUE",
+                        "source_file": str(source),
+                        "source_record_id": row.get("rescue_id", ""),
+                        "crosses_junction": "true",
+                        "contains_novel_aa": "true",
+                        "rna_junction_reads": reads,
+                        "rna_junction_source": rescue_status,
+                        "binding_rank": "99",
+                        "el_rank": "99",
+                        "presentation_score": "0.0",
+                        "immunogenicity_score": "0.5",
+                        "wildtype_binding_rank": "99",
+                        "self_similarity_score": "0.0",
+                        "normal_hla_ligand_overlap": "no",
+                    })
+                    peptides.append(enrich_peptide_layers(pbase, base))
+            peptide_status = "TARGETED_RESCUE:" + rescue_status + (":GENERATED_FROM_RESCUE_ORF" if windows else ":ORF_PEPTIDE_UNAVAILABLE_REVIEW_ONLY")
+            audit.append({
+                "event_id": event_id,
+                "gene_pair": gene_pair_display,
+                "left_breakpoint": bp1,
+                "right_breakpoint": bp2,
+                "direction": rescue_status,
+                "source_tool": "TARGETED_RESCUE",
+                "source_file": str(source),
+                "source_row": row.get("rescue_id", ""),
+                "peptide_status": peptide_status,
+            })
+            rescue_sidecar.append({
+                **row,
+                "rescue_reason": rescue_status,
+                "peptide_generation_status": "generated_for_ranking" if windows else "not_generated_no_rescue_orf",
+                "rna_junction_reads": reads,
+                "notes": (row.get("notes", "") + f" TARGETED_RESCUE included in fusion peptide generation; STAR Chimeric support={star_support}.").strip(),
+            })
+    return events, peptides, audit, rescue_sidecar
 
 
 def existing(paths: list[Path | None]) -> list[Path]:
@@ -220,6 +430,11 @@ def main() -> int:
     parser.add_argument("--hla-file", required=True, type=Path); parser.add_argument("--easyfuse", type=Path)
     parser.add_argument("--star-fusion", type=Path); parser.add_argument("--arriba", type=Path)
     parser.add_argument("--fusioncatcher", type=Path)
+    parser.add_argument("--easyfuse-all", action="append", type=Path, default=[])
+    parser.add_argument("--star-chimeric", action="append", type=Path, default=[])
+    parser.add_argument("--targeted-fusion-rescue", action="store_true", default=True)
+    parser.add_argument("--no-targeted-fusion-rescue", action="store_false", dest="targeted_fusion_rescue")
+    parser.add_argument("--targeted-fusion-whitelist", default=",".join(DEFAULT_DIAGNOSTIC_FUSION_WHITELIST))
     parser.add_argument("--caller-root", action="append", type=Path, default=[])
     parser.add_argument("--outdir", required=True, type=Path)
     args = parser.parse_args()
@@ -230,12 +445,22 @@ def main() -> int:
     events, peptides, audit = [], [], []
     roots = [root for root in args.caller_root if root]
     easyfuse_files = existing([args.easyfuse]) or discover_files(roots, EASYFUSE_PATTERNS)
+    easyfuse_all_files = existing(args.easyfuse_all)
+    for easyfuse in easyfuse_files:
+        inferred = infer_unfiltered_easyfuse_path(easyfuse)
+        if inferred:
+            easyfuse_all_files.extend(existing([inferred]))
+    easyfuse_all_files.extend([
+        path for path in discover_files(roots, ("**/fusions.csv",))
+        if path.name != "fusions.pass.csv"
+    ])
     star_fusion_files = existing([args.star_fusion]) + discover_files(roots, STAR_FUSION_PATTERNS)
     arriba_files = existing([args.arriba]) + [
         path for path in discover_files(roots, ARRIBA_PATTERNS)
         if path.name != "fusions.pass.csv"
     ]
     fusioncatcher_files = existing([args.fusioncatcher]) + discover_files(roots, FUSIONCATCHER_PATTERNS)
+    star_chimeric_files = existing(args.star_chimeric) + discover_files(roots, STAR_CHIMERIC_PATTERNS)
 
     for easyfuse in existing(easyfuse_files):
         cfg = {"sample": {"id": args.sample_id, "profile": args.profile}, "inputs": {"entry_mode": "fusion", "easyfuse_tsv": str(easyfuse.resolve()), "hla_alleles": hla}}
@@ -250,6 +475,20 @@ def main() -> int:
         for path in existing(paths):
             e, p, a = generic_caller_rows(path, tool, args.sample_id, args.profile, hla)
             events.extend(e); peptides.extend(p); audit.extend(a)
+    rescue_sidecar: list[dict[str, str]] = []
+    if args.targeted_fusion_rescue:
+        whitelist = [item.strip() for item in args.targeted_fusion_whitelist.replace(";", ",").split(",") if item.strip()]
+        rescue_events, rescue_peptides, rescue_audit, rescue_sidecar = targeted_rescue_rows(
+            existing(easyfuse_all_files),
+            star_chimeric_files=existing(star_chimeric_files),
+            sample_id=args.sample_id,
+            profile=args.profile,
+            hla=hla,
+            whitelist=whitelist,
+        )
+        events.extend(rescue_events)
+        peptides.extend(rescue_peptides)
+        audit.extend(rescue_audit)
     if not events:
         raise SystemExit("No fusion events were parsed from supplied caller outputs")
     merged_events, _, _ = merge_rows_preserving_provenance(events, EVENT_FIELDS, ("event_id",), entity_type="fusion_union_event")
@@ -260,6 +499,18 @@ def main() -> int:
     write_tsv(args.outdir / "parsed/raw_peptides.tsv", merged_peptides, PEPTIDE_FIELDS)
     write_tsv(args.outdir / "fusion_caller_union.tsv", audit, ["event_id", "gene_pair", "left_breakpoint", "right_breakpoint", "direction", "source_tool", "source_file", "source_row", "peptide_status"])
     write_consensus(args.outdir / "fusion_consensus.tsv", audit)
+    if rescue_sidecar:
+        fields = [
+            "rescue_id", "sample_id", "fusion_gene", "fusion_gene_raw", "fusion_gene_normalized",
+            "gene5", "gene3", "breakpoint1", "breakpoint2", "ftid", "fusion_type",
+            "frame_status", "neo_peptide_sequence", "neo_peptide_sequence_bp",
+            "rna_junction_reads", "rna_spanning_reads", "anchor_size", "star_detected",
+            "fusioncatcher_detected", "arriba_detected", "tools_detected", "tool_count",
+            "prediction_class", "prediction_prob", "easyfuse_pass_status",
+            "diagnostic_whitelist_status", "diagnostic_relevance", "rescue_reason",
+            "peptide_generation_status", "source_file", "notes",
+        ]
+        write_tsv(args.outdir / "targeted_fusion_rescue.tsv", rescue_sidecar, fields)
     return 0
 
 

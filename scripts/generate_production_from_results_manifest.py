@@ -393,6 +393,11 @@ def main() -> int:
         if easyfuse: union_args += ["--easyfuse", q(easyfuse)]
         if args.star_fusion: union_args += ["--star-fusion", q(require(args.star_fusion, "STAR-Fusion"))]
         if args.arriba: union_args += ["--arriba", q(require(args.arriba, "Arriba"))]
+        star_junction_source = args.star_sj or args.junctions
+        if star_junction_source:
+            chimeric = Path(star_junction_source).with_name("Chimeric.out.junction")
+            if chimeric.is_file() and chimeric.stat().st_size > 0:
+                union_args += ["--star-chimeric", q(str(chimeric))]
         command = f"PYTHONPATH={q(root / 'src')} {q(sys.executable)} {q(root / 'scripts/build_fusion_caller_union.py')} --sample-id {q(args.sample_id)} --profile {q(profile)} --hla-file {q(hla)} {' '.join(union_args)} --outdir {{outdir}}/branches/fusion/intermediates"
         stage(lines, "fusion_candidates", source="FusionCallerUnion", command=command, outputs={"raw_events": "{outdir}/branches/fusion/intermediates/raw_events.tsv", "raw_peptides": "{outdir}/branches/fusion/intermediates/raw_peptides.tsv", "fusion_union": "{outdir}/branches/fusion/intermediates/fusion_caller_union.tsv"}, depends=hla_dependency)
         candidate_stages.append("fusion_candidates")

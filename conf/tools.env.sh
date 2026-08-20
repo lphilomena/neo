@@ -222,3 +222,8 @@ export NETCHOP_HOME="/root/neo/licensed_tools/netchop/netchop-3.1"
 export NETCHOP="/root/neo/licensed_tools/netchop/netchop-3.1/Linux_x86_64"
 export NETCHOP_BIN="/root/neo/env_tool/bin/netChop"
 export PATH="/root/neo/env_tool/bin:${PATH}"
+
+export NEOAG_SPLICEMUTR_ENV="neoag-splicemutr"
+export NEOAG_SPLICEMUTR_HOME="/home/na/project/open-neo-deploy/env_tool/tools/SpliceMutr"
+export NEOAG_SPLICEMUTR_BIN="/home/na/project/neo/bin/splicemutr-neoag"
+export SPLICEMUTR_WORKFLOW="/home/na/project/open-neo-deploy/env_tool/tools/SpliceMutr/simulation/running_splicemutr/run_splicemutr.smk"

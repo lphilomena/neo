@@ -196,10 +196,43 @@ export FACETS_SNP_VCF="{reference_root}/data/facets/reference/1000G_omni2.5.hg38
 export FACETS_R_ENV_PREFIX="${{NEOAG_CONDA_BASE}}/envs/neoag-fusion"
 export SNP_PILEUP_BIN="${{NEOAG_CONDA_BASE}}/envs/neoag-tools/bin/snp-pileup"
 export NEOAG_CONTAMINATION_SITES="{reference_root}/data/facets/reference/contamination.common.hg38.vcf.gz"
-export PRIME_HOME="{reference_root}/data/predictors/prime"
+# Advisory immunogenicity predictors: prefer the deployed env_tool tree.
+# Only fall back to refs/data/predictors when a real executable/source marker exists.
+_NEOAG_DEPLOY_TOOLS_ROOT="{tools_root}"
+_NEOAG_PREDICTOR_REF_ROOT="{reference_root}/data/predictors"
+if [[ -x "${{_NEOAG_DEPLOY_TOOLS_ROOT}}/tools/prime/PRIME" ]]; then
+  export PRIME_HOME="${{_NEOAG_DEPLOY_TOOLS_ROOT}}/tools/prime"
+elif [[ -x "${{_NEOAG_PREDICTOR_REF_ROOT}}/prime/PRIME" ]]; then
+  export PRIME_HOME="${{_NEOAG_PREDICTOR_REF_ROOT}}/prime"
+else
+  export PRIME_HOME="${{_NEOAG_DEPLOY_TOOLS_ROOT}}/tools/prime"
+fi
 export NEOAG_PRIME_BIN="${{PRIME_HOME}}/PRIME"
-export MIXMHCPRED_HOME="{reference_root}/data/predictors/mixMHCpred_install"
+if [[ -x "${{_NEOAG_DEPLOY_TOOLS_ROOT}}/tools/mixMHCpred_install/MixMHCpred" ]]; then
+  export MIXMHCPRED_HOME="${{_NEOAG_DEPLOY_TOOLS_ROOT}}/tools/mixMHCpred_install"
+elif [[ -x "{tools_root}/../licensed_tools/mixMHCpred_install/MixMHCpred" ]]; then
+  export MIXMHCPRED_HOME="{tools_root}/../licensed_tools/mixMHCpred_install"
+elif [[ -x "${{_NEOAG_PREDICTOR_REF_ROOT}}/mixMHCpred_install/MixMHCpred" ]]; then
+  export MIXMHCPRED_HOME="${{_NEOAG_PREDICTOR_REF_ROOT}}/mixMHCpred_install"
+else
+  export MIXMHCPRED_HOME="${{_NEOAG_DEPLOY_TOOLS_ROOT}}/tools/mixMHCpred_install"
+fi
 export MIXMHCPRED_BIN="${{MIXMHCPRED_HOME}}/MixMHCpred"
+if [[ -f "${{_NEOAG_DEPLOY_TOOLS_ROOT}}/tools/bigmhc/src/predict.py" ]]; then
+  export BIGMHC_DIR="${{_NEOAG_DEPLOY_TOOLS_ROOT}}/tools/bigmhc"
+elif [[ -f "${{_NEOAG_PREDICTOR_REF_ROOT}}/bigmhc/src/predict.py" ]]; then
+  export BIGMHC_DIR="${{_NEOAG_PREDICTOR_REF_ROOT}}/bigmhc"
+else
+  export BIGMHC_DIR="${{_NEOAG_DEPLOY_TOOLS_ROOT}}/tools/bigmhc"
+fi
+export BIGMHC_PYTHON="${{NEOAG_CONDA_BASE}}/envs/neoag-tools/bin/python"
+if [[ -f "${{_NEOAG_DEPLOY_TOOLS_ROOT}}/tools/DeepImmuno/deepimmuno-cnn.py" ]]; then
+  export DEEPIMMUNO_DIR="${{_NEOAG_DEPLOY_TOOLS_ROOT}}/tools/DeepImmuno"
+elif [[ -f "${{_NEOAG_PREDICTOR_REF_ROOT}}/DeepImmuno/deepimmuno-cnn.py" ]]; then
+  export DEEPIMMUNO_DIR="${{_NEOAG_PREDICTOR_REF_ROOT}}/DeepImmuno"
+else
+  export DEEPIMMUNO_DIR="${{_NEOAG_DEPLOY_TOOLS_ROOT}}/tools/DeepImmuno"
+fi
 export HMFTOOLS_HOME="{tools_root}/tools/HMFTOOLS"
 export NEOAG_HMFTOOLS_HOME="${{HMFTOOLS_HOME}}"
 export HMF_ENV="${{HMFTOOLS_HOME}}/.conda"
@@ -211,7 +244,8 @@ export HMFTOOLS_ENSEMBL_DATA_DIR="{reference_root}/data/hmf/purple_reference/ens
 export SEQUENZA_FASTA="{reference_root}/data/sequenza/reference/GRCh38.primary_assembly.chr.fa"
 export SEQUENZA_GC_WIG="{reference_root}/data/sequenza/reference/Homo_sapiens.GRCh38.dna.primary_assembly.chr.gc50.wig.gz"
 export SAMTOOLS="${{NEOAG_CONDA_BASE}}/envs/neoag-tools/bin/samtools"
-export PATH="{project_root}/bin:${{OPTITYPE_ENV}}/bin:${{NEOAG_BAM_MATCHER_ENV_PREFIX}}/bin:${{PRIME_HOME}}:${{MIXMHCPRED_HOME}}:${{NEOAG_CONDA_BASE}}/envs/neoag-tools/bin:${{PATH}}"
+export PATH="{project_root}/bin:${{OPTITYPE_ENV}}/bin:${{NEOAG_BAM_MATCHER_ENV_PREFIX}}/bin:${{PRIME_HOME}}:${{MIXMHCPRED_HOME}}:${{DEEPIMMUNO_DIR}}:${{NEOAG_CONDA_BASE}}/envs/neoag-tools/bin:${{PATH}}"
+unset _NEOAG_DEPLOY_TOOLS_ROOT _NEOAG_PREDICTOR_REF_ROOT
 {end}
 '''
 path.parent.mkdir(parents=True, exist_ok=True)

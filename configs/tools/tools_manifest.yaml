@@ -372,7 +372,7 @@ tools:
 
   netmhcstabpan:
     category: presentation
-    executable: ${OPEN_NEO_LICENSED_ROOT}/netMHCstabpan/netMHCstabpan
+    executable: netMHCstabpan
     env: env.neoag-mhc
     container: neoag-netmhcstabpan:1.0-ubuntu22.04
     asset: netmhcstabpan_install
@@ -634,7 +634,7 @@ tools:
   sequenza:
     category: purity_cnv
     executable: sequenza-utils
-    env: env.neoag-sequenza
+    env: env.neoag-tools
     reference_dir: sequenza_gc_wiggle
     required: false
     license_required: false

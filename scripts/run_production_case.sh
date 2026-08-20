@@ -290,7 +290,17 @@ if [[ -n "$ASSET" ]]; then
   add_if --normal-junctions "$ASSET/data/normal/junctions/normal_junctions.GRCh38.tsv.gz"
   add_if --normal-expression "$ASSET/data/normal/expression/normal_expression.gtex_v11_hpa_hspc.tsv"
   add_if --normal-hla-ligands "$ASSET/data/normal/ligandome/normal_ms_ligands.tsv"
-  add_if --reference-proteome "$ASSET/data/normal/proteome/gencode.v49.pc_translations.clean.fa"
+  discovered_reference_proteome=""
+  if [[ -d "$ASSET/data/normal/proteome" ]]; then
+    discovered_reference_proteome="$(latest_matching_file "$ASSET/data/normal/proteome" -name '*.fa' -o -name '*.fasta' -o -name '*.faa')"
+  fi
+  add_first_existing --reference-proteome \
+    "${NEOAG_NORMAL_PROTEOME_FASTA:-}" \
+    "${NEOAG_NORMAL_PROTEOME:-}" \
+    "$ASSET/data/normal/proteome/gencode.v49.pc_translations.clean.fa" \
+    "$ASSET/data/normal/proteome/Homo_sapiens.GRCh38.pep.all.fa" \
+    "$ASSET/data/normal/proteome/Homo_sapiens.GRCh38.pep.all.fa.gz" \
+    "$discovered_reference_proteome" || true
   add_if --netchop-executable "$ASSET/data/predictors/netchop/netchop-3.1/Linux_x86_64/bin/netChop"
   add_if --netchop-home "$ASSET/data/predictors/netchop/netchop-3.1"
 fi

@@ -7,9 +7,40 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck source=/dev/null
 source "${ROOT}/conf/tools.env.sh"
 : "${NEOAG_CONDA_BASE:?ERROR: set NEOAG_CONDA_BASE to your conda/mamba installation root}"
-ENV="${SEQUENZA_ENV:-neoag-sequenza}"
+ENV="${SEQUENZA_ENV:-neoag-tools}"
+R_ENV="${SEQUENZA_R_ENV:-neoag-r}"
 CONDA_SH="${NEOAG_CONDA_BASE}/etc/profile.d/conda.sh"
 source "${CONDA_SH}"
+if [[ ! -d "${NEOAG_CONDA_BASE}/envs/${ENV}" ]]; then
+  if [[ -d "${NEOAG_CONDA_BASE}/envs/neoag-tools" ]]; then
+    echo "WARN Sequenza command env ${ENV} not found; falling back to neoag-tools" >&2
+    ENV="neoag-tools"
+  else
+    echo "ERROR Sequenza command env not found: ${ENV}" >&2
+    exit 1
+  fi
+fi
+r_env_has_sequenza() {
+  local candidate="$1"
+  [[ -x "${NEOAG_CONDA_BASE}/envs/${candidate}/bin/Rscript" ]] || return 1
+  env PATH="${NEOAG_CONDA_BASE}/envs/${candidate}/bin:${PATH}" \
+    LD_LIBRARY_PATH="${NEOAG_CONDA_BASE}/envs/${candidate}/lib:${LD_LIBRARY_PATH:-}" \
+    Rscript -e 'quit(status = ifelse(requireNamespace("sequenza", quietly = TRUE), 0, 1))' \
+    >/dev/null 2>&1
+}
+if ! r_env_has_sequenza "${R_ENV}"; then
+  for candidate in neoag-r "${ENV}" neoag-tools neoag-fusion; do
+    if r_env_has_sequenza "${candidate}"; then
+      echo "WARN Sequenza R env ${R_ENV} cannot load package sequenza; falling back to ${candidate}" >&2
+      R_ENV="${candidate}"
+      break
+    fi
+  done
+fi
+if ! r_env_has_sequenza "${R_ENV}"; then
+  echo "ERROR no conda R env with package sequenza found. Set SEQUENZA_R_ENV to a working env." >&2
+  exit 1
+fi
 
 SAMPLE_ID="${SAMPLE_ID:?ERROR: set SAMPLE_ID}"
 TUMOR_BAM="${TUMOR_BAM:-}"
@@ -37,7 +68,12 @@ LOG="${LOG:-${OUTDIR}/run.log}"
 mkdir -p "${OUTDIR}/chrom" "${OUTDIR}/sequenza_fit" "$(dirname "${LOG}")"
 exec > >(tee -a "${LOG}") 2>&1
 
-run_env() { mamba run -n "${ENV}" "$@"; }
+run_env() {
+  PATH="${NEOAG_CONDA_BASE}/envs/${ENV}/bin:${PATH}" LD_LIBRARY_PATH="${NEOAG_CONDA_BASE}/envs/${ENV}/lib:${LD_LIBRARY_PATH:-}" "$@"
+}
+run_r_env() {
+  PATH="${NEOAG_CONDA_BASE}/envs/${R_ENV}/bin:${PATH}" LD_LIBRARY_PATH="${NEOAG_CONDA_BASE}/envs/${R_ENV}/lib:${LD_LIBRARY_PATH:-}" "$@"
+}
 
 echo "[$(date -Is)] run_sequenza_sample_by_chrom sample=${SAMPLE_ID}"
 echo "    tumor=${TUMOR_BAM}"
@@ -50,6 +86,8 @@ echo "    chunk_jobs=${CHUNK_JOBS}"
 echo "    bin_window=${BIN_WINDOW}"
 echo "    merged_seqz=${MERGED_SEQZ}"
 echo "    binned_seqz=${BINNED_SEQZ}"
+echo "    sequenza_cmd_env=${ENV}"
+echo "    sequenza_r_env=${R_ENV}"
 
 require_bam_inputs() {
   [[ -n "${TUMOR_BAM}" ]] || { echo "ERROR set TUMOR_BAM unless BINNED_SEQZ or MERGED_SEQZ is provided" >&2; exit 1; }
@@ -147,6 +185,15 @@ if [[ "${FORCE}" != 1 && -s "${SUMMARY}" ]]; then
   echo "[$(date -Is)] reuse Sequenza R fit ${SUMMARY}"
 else
   echo "[$(date -Is)] R fit"
-  run_env Rscript "${ROOT}/scripts/run_sequenza_fit.R" "${BINNED}" "${OUTDIR}/sequenza_fit" "${SAMPLE_ID}"
+  CHECK_R="${OUTDIR}/sequenza_fit/check_sequenza_package.R"
+  cat > "${CHECK_R}" <<'EOF_R'
+suppressPackageStartupMessages(library(sequenza))
+cat("sequenza_ok\n")
+EOF_R
+  if ! timeout "${SEQUENZA_R_LOAD_TIMEOUT:-60s}" env PATH="${NEOAG_CONDA_BASE}/envs/${R_ENV}/bin:${PATH}" LD_LIBRARY_PATH="${NEOAG_CONDA_BASE}/envs/${R_ENV}/lib:${LD_LIBRARY_PATH:-}" Rscript "${CHECK_R}" >/dev/null 2>&1; then
+    echo "ERROR R package sequenza is not available or did not load within ${SEQUENZA_R_LOAD_TIMEOUT:-60s} in conda env ${R_ENV}. Set SEQUENZA_R_ENV to a working env or reuse existing purity consensus." >&2
+    exit 1
+  fi
+  run_r_env Rscript "${ROOT}/scripts/run_sequenza_fit.R" "${BINNED}" "${OUTDIR}/sequenza_fit" "${SAMPLE_ID}"
 fi
 echo "[$(date -Is)] finished ${SAMPLE_ID}"

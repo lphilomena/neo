@@ -293,6 +293,122 @@ def _write_docx(path: Path, title: str, sections: list[tuple[str, str]], rows: l
     return True
 
 
+def _count_data_rows(path: Path) -> int:
+    if not path.is_file():
+        return 0
+    try:
+        with path.open("r", encoding="utf-8", errors="replace") as handle:
+            return max(0, sum(1 for line in handle if line.strip()) - 1)
+    except OSError:
+        return 0
+
+
+def _first_existing_path(paths: list[Path]) -> Path | None:
+    for path in paths:
+        if path.is_file():
+            return path
+    return None
+
+
+def _fusion_root(result_dir: Path) -> Path | None:
+    for candidate in (
+        result_dir / "pipeline" / "production" / "branches" / "fusion",
+        result_dir / "branches" / "fusion",
+        result_dir / "fusion",
+        result_dir.parent / "branches" / "fusion",
+        result_dir.parent.parent / "branches" / "fusion",
+    ):
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def _fusion_report_data(result_dir: Path) -> tuple[list[dict[str, str]], list[dict[str, str]], str]:
+    root = _fusion_root(result_dir)
+    if root is None:
+        return [], [], "No fusion branch directory was found in the reviewed result directory."
+    rows: list[dict[str, str]] = []
+
+    def add(tool: str, path: Path | None, note: str = "") -> None:
+        rows.append({
+            "tool_or_layer": tool,
+            "records": str(_count_data_rows(path) if path else 0),
+            "path": str(path) if path and path.exists() else "",
+            "note": note,
+        })
+
+    easyfuse_files = sorted(root.glob("easyfuse/*/fusions.pass.csv")) + sorted(root.glob("easyfuse/fusions.pass.csv"))
+    easyfuse_count = sum(_count_data_rows(path) for path in easyfuse_files)
+    rows.append({
+        "tool_or_layer": "EasyFuse PASS calls",
+        "records": str(easyfuse_count),
+        "path": ";".join(str(path) for path in easyfuse_files),
+        "note": "caller-level PASS fusion calls before Open-Neo peptide-HLA generation",
+    })
+    add("STAR-Fusion calls", _first_existing_path([root / "star-fusion" / "star-fusion.fusion_predictions.tsv", root / "star_fusion" / "star-fusion.fusion_predictions.tsv"]), "optional caller")
+    add("Arriba calls", _first_existing_path(sorted(root.glob("arriba/*.fusions.tsv")) + [root / "arriba" / "fusions.tsv"]), "optional caller")
+    add("FusionCatcher calls", _first_existing_path([root / "fusioncatcher" / "fusioncatcher.final-list.txt", root / "fusioncatcher" / "final-list_candidate-fusion-genes.txt"]), "optional caller")
+    add("Fusion consensus", root / "consensus" / "fusion_consensus.tsv", "cross-caller consensus layer")
+    raw_events_path = root / "intermediates" / "parsed" / "raw_events.tsv"
+    raw_peptides_path = root / "intermediates" / "parsed" / "raw_peptides.tsv"
+    add("Open-Neo fusion raw events", raw_events_path, "normalized fusion events forwarded to the pipeline")
+    add("Open-Neo fusion peptides", raw_peptides_path, "fusion peptide-HLA rows entering presentation/ranking")
+
+    top_events: list[dict[str, str]] = []
+    if raw_events_path.is_file():
+        _, event_rows = read_tsv(raw_events_path)
+        for event in event_rows[:20]:
+            top_events.append({
+                "fusion": _get(event, "gene", "event_name"),
+                "frame": _get(event, "rna_frame_status", "frame_status", "consequence"),
+                "junction_reads": _get(event, "rna_junction_reads", "provided_rna_junction_reads"),
+                "confidence": _get(event, "event_confidence", "confidence"),
+                "source": _get(event, "source", "source_tools", "source_file"),
+            })
+    peptide_count = _count_data_rows(raw_peptides_path)
+    event_count = _count_data_rows(raw_events_path)
+    if peptide_count == 0 and (easyfuse_count or event_count):
+        note = "Fusion detection produced caller/event records, but no fusion peptide-HLA row entered the ranked neoantigen table for this run. Report this as no reportable fusion peptide in the current run, not as fusion not run."
+    elif peptide_count:
+        note = "Fusion peptide-HLA rows were generated and are eligible for downstream presentation/ranking review."
+    else:
+        note = "No reportable fusion calls were found in the reviewed result directory."
+    return rows, top_events, note
+
+
+def _fusion_report_markdown(result_dir: Path, out_tsv: Path | None = None) -> str:
+    rows, top_events, note = _fusion_report_data(result_dir)
+    if out_tsv is not None and rows:
+        write_tsv(out_tsv, rows)
+    parts = [note]
+    if rows:
+        parts += ["", markdown_table(rows, max_rows=50)]
+    if top_events:
+        parts += ["", "Top normalized fusion events:", "", markdown_table(top_events, max_rows=20)]
+    return "\n".join(parts)
+
+
+def _fusion_report_html(result_dir: Path) -> str:
+    rows, top_events, note = _fusion_report_data(result_dir)
+    if not rows:
+        return ""
+
+    def table(records: list[dict[str, str]], keys: list[str]) -> str:
+        head = "".join(f"<th>{html.escape(key)}</th>" for key in keys)
+        body = []
+        for record in records:
+            body.append("<tr>" + "".join(f"<td>{html.escape(str(record.get(key, '')))}</td>" for key in keys) + "</tr>")
+        return "<table><thead><tr>" + head + "</tr></thead><tbody>" + "".join(body) + "</tbody></table>"
+
+    content = ["<div class='section'><h2>融合基因检测结果</h2>", f"<p>{html.escape(note)}</p>"]
+    content.append(table(rows, ["tool_or_layer", "records", "note", "path"]))
+    if top_events:
+        content.append("<h3>代表性 fusion event</h3>")
+        content.append(table(top_events, ["fusion", "frame", "junction_reads", "confidence", "source"]))
+    content.append("</div>")
+    return "\n".join(content)
+
+
 def _write_onepage(path: Path, first_batch: list[dict[str, str]], integrity: dict[str, Any]) -> bool:
     try:
         from pptx import Presentation
@@ -313,12 +429,13 @@ def _write_onepage(path: Path, first_batch: list[dict[str, str]], integrity: dic
     return True
 
 
-def _write_reports(layout: RunLayout, context: dict[str, Any], review_rows: list[dict[str, str]], first_batch: list[dict[str, str]], artifacts: dict[str, str], integrity: dict[str, Any], support_outputs: dict[str, str], reports: set[str]) -> dict[str, str]:
+def _write_reports(layout: RunLayout, context: dict[str, Any], review_rows: list[dict[str, str]], first_batch: list[dict[str, str]], artifacts: dict[str, str], integrity: dict[str, Any], support_outputs: dict[str, str], reports: set[str], result_dir: Path) -> dict[str, str]:
     uncertainties = sum(row["review_status"] == "COMPLETE_EVIDENCE" for row in review_rows)
     outputs: dict[str, str] = {}
     technical_sections = [
         ("Integrity and provenance", markdown_table(integrity.get("checks", []), max_rows=100)),
         ("Source artifacts", markdown_table([{"artifact": key, "path": value} for key, value in sorted(artifacts.items())], max_rows=100)),
+        ("Fusion detection summary", _fusion_report_markdown(result_dir, layout.review / "fusion_summary.tsv")),
         ("Weighted versus Evidence consensus", _read_preview(support_outputs.get("ranking_compare_report"))),
         ("HLA LOH / APPM review", _read_preview(support_outputs.get("appm_review"))),
         ("CCF / clonality review", _read_preview(support_outputs.get("ccf_review"))),
@@ -417,6 +534,12 @@ def _formal_patient_report(
     )
     patient_html = layout.reports / "patient_report.html"
     make_patient_report(patient_html, bundle)
+    fusion_html = _fusion_report_html(result_dir)
+    if fusion_html:
+        current = patient_html.read_text(encoding="utf-8")
+        if "融合基因检测结果" not in current:
+            current = current.replace("</body></html>", fusion_html + "\n</body></html>")
+            patient_html.write_text(current, encoding="utf-8")
     return {"patient_report_html": str(patient_html)}
 
 
@@ -511,7 +634,7 @@ def run_review(args: dict[str, Any]) -> dict[str, Any]:
             concept_outputs[concept.replace(" ", "_")] = concept_result["outputs"]["concept_explanation"]
     context = _read_context(args.get("disease_profile"), args.get("clinical_context"))
     support_outputs = {**mechanism_outputs, "ranking_compare_report": cmp.get("outputs", {}).get("report", "")}
-    report_outputs = _write_reports(layout, context, review_rows, first_batch, artifacts, integrity, support_outputs, selected_reports)
+    report_outputs = _write_reports(layout, context, review_rows, first_batch, artifacts, integrity, support_outputs, selected_reports, result_dir)
     if "patient" in selected_reports:
         report_outputs.update(_formal_patient_report(layout, result_dir, context, artifacts, events, peptides, all_tool))
     production_reports: dict[str, str] = {}
@@ -522,7 +645,7 @@ def run_review(args: dict[str, Any]) -> dict[str, Any]:
     result.steps.append(MacroStep("06", "reports-and-concept-explanations", report_status, outputs={**report_outputs, **concept_outputs, **production_reports}))
 
     result.outputs.update({
-        "candidate_review": str(candidate_review), "first_batch_experiment_set": str(first_batch_path),
+        "candidate_review": str(candidate_review), "first_batch_experiment_set": str(first_batch_path), "fusion_summary": str(layout.review / "fusion_summary.tsv"),
         "evidence_completion_queue": str(layout.review / "evidence_completion_queue.tsv"), "manual_review_candidates": str(layout.review / "manual_review_candidates.tsv"),
         **{f"experiment_{key}": value for key, value in exp.get("outputs", {}).items()}, **{f"comparison_{key}": value for key, value in cmp.get("outputs", {}).items()},
         **mechanism_outputs, **{f"concept_{key}": value for key, value in concept_outputs.items()}, **report_outputs, **production_reports,

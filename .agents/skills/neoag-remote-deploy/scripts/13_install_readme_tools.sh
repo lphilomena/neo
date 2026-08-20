@@ -878,7 +878,13 @@ export NETMHCPAN_HOME="$LICENSED_ROOT/netMHCpan"
 export NETMHCpan="$LICENSED_ROOT/netMHCpan"
 export NETMHCSTABPAN_HOME="$LICENSED_ROOT/netMHCstabpan"
 export PRIME_HOME="$TOOLS_ROOT/tools/prime"
-export MIXMHCPRED_HOME="$LICENSED_ROOT/mixMHCpred_install"
+export NEOAG_PRIME_BIN="$PRIME_HOME/PRIME"
+if [[ -x "$TOOLS_ROOT/tools/mixMHCpred_install/MixMHCpred" ]]; then
+  export MIXMHCPRED_HOME="$TOOLS_ROOT/tools/mixMHCpred_install"
+else
+  export MIXMHCPRED_HOME="$LICENSED_ROOT/mixMHCpred_install"
+fi
+export MIXMHCPRED_BIN="$MIXMHCPRED_HOME/MixMHCpred"
 export BIGMHC_DIR="$TOOLS_ROOT/tools/bigmhc"
 export BIGMHC_PYTHON="$CONDA_BASE/envs/neoag-tools/bin/python"
 export DEEPIMMUNO_DIR="$TOOLS_ROOT/tools/DeepImmuno"
@@ -919,7 +925,7 @@ export SEQUENZA_GC_WIG="$REFERENCE_ROOT/data/sequenza/reference/Homo_sapiens.GRC
 export FACETS_R_ENV_PREFIX="$CONDA_BASE/envs/neoag-fusion"
 export SNP_PILEUP_BIN="$CONDA_BASE/envs/neoag-tools/bin/snp-pileup"
 export SAMTOOLS="$CONDA_BASE/envs/neoag-tools/bin/samtools"
-export PATH="$PROJECT_ROOT/bin:$CONDA_BASE/envs/neoag-tools/bin:$PATH"
+export PATH="$PROJECT_ROOT/bin:$PRIME_HOME:$MIXMHCPRED_HOME:$DEEPIMMUNO_DIR:$CONDA_BASE/envs/neoag-tools/bin:$PATH"
 
 if [[ -x "$TOOLS_ROOT/conda_pkgs/bedtools-2.31.1-h13024bc_3/bin/bedtools" ]]; then
   mkdir -p "$PROJECT_ROOT/bin"

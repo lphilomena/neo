@@ -285,6 +285,7 @@ def generate_rna_fusion_splice_manifest(
         fusion_inputs.append(f"--easyfuse {{outdir}}/branches/fusion/easyfuse/{_q(sample_id)}/fusions.pass.csv")
         fusion_union_inputs.extend([
             f"--easyfuse {{outdir}}/branches/fusion/easyfuse/{_q(sample_id)}/fusions.pass.csv",
+            "--star-chimeric {outdir}/rna/star/Chimeric.out.junction",
             "--caller-root {outdir}/branches/fusion/easyfuse",
             "--caller-root {outdir}/branches/fusion",
         ])
@@ -333,6 +334,8 @@ def generate_rna_fusion_splice_manifest(
 
     if not fusion_union_inputs:
         fusion_union_inputs.append("--caller-root {outdir}/branches/fusion")
+    if "--star-chimeric {outdir}/rna/star/Chimeric.out.junction" not in fusion_union_inputs:
+        fusion_union_inputs.append("--star-chimeric {outdir}/rna/star/Chimeric.out.junction")
 
     fusion_args = " ".join(fusion_inputs)
     fusion_consensus_command = (
