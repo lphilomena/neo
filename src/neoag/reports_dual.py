@@ -2160,6 +2160,8 @@ def _patient_missing_rna_label(row: Mapping[str, Any], label: str, *, expression
             "expression_source",
             "transcript_expression_source",
         )
+        if transcript and _patient_track(row) in {"Fusion", "Splice"}:
+            return "转录本表达未精确匹配；该类候选按基因表达和junction reads解读"
         if status == "UNASSESSED_ID_NOT_MAPPED":
             return f"{label}未匹配到表达矩阵ID"
         if source:
@@ -2167,6 +2169,10 @@ def _patient_missing_rna_label(row: Mapping[str, Any], label: str, *, expression
         return f"{label}未提供（表达证据未接入）"
     source = _patient_observed_source(row, "rna_vaf_source")
     status = _patient_observed_source(row, "rna_support_status", "rna_evidence_completeness")
+    depth = _patient_observed_value(row, "rna_depth")
+    alt_reads = _patient_observed_value(row, "rna_alt_reads")
+    if depth is not None or alt_reads is not None:
+        return f"{label} 0.0000（RNA位点已评估但未检测到ALT或深度为0）"
     if source:
         return f"{label}未计算（已接入RNA VAF源但该位点未匹配：{source}）"
     if status:
