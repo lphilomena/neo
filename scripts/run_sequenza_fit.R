@@ -7,6 +7,8 @@ outdir <- args[[2]]
 sample_id <- args[[3]]
 dir.create(outdir, recursive = TRUE, showWarnings = FALSE)
 
+Sys.setenv(VROOM_CONNECTION_SIZE = Sys.getenv("VROOM_CONNECTION_SIZE", "1073741824"))
+
 suppressPackageStartupMessages(library(sequenza))
 
 patch_sequenza_gc_sample_stats <- function() {
@@ -24,13 +26,21 @@ patch_sequenza_gc_sample_stats <- function() {
     suppressWarnings(skip_line <- readLines(con, n = 1))
     remove(skip_line)
     parse_chunck <- function(x, col_types) {
-      x <- readr::read_tsv(
-        file = paste(iotools::mstrsplit(x), collapse = "\n"),
-        col_types = col_types,
-        col_names = FALSE,
-        skip = 0,
-        n_max = Inf,
-        progress = FALSE
+      chunk_text <- paste(iotools::mstrsplit(x), collapse = "\n")
+      raw <- utils::read.table(
+        text = chunk_text,
+        sep = "\t",
+        header = FALSE,
+        quote = "",
+        comment.char = "",
+        stringsAsFactors = FALSE,
+        fill = TRUE
+      )
+      x <- data.frame(
+        chromosome = raw[[1]],
+        depth_normal = suppressWarnings(as.numeric(raw[[4]])),
+        depth_tumor = suppressWarnings(as.numeric(raw[[5]])),
+        gc_percent = suppressWarnings(as.numeric(raw[[10]]))
       )
       u_chr <- unique(x[, 1])
       n_chr <- table(x[, 1])

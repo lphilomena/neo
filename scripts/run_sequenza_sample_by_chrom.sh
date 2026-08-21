@@ -176,6 +176,9 @@ else
     TMP_BINNED="${BINNED}.tmp.gz"
     run_env sequenza-utils seqz_binning -s "${MERGED}" -w "${BIN_WINDOW}" -T "${TABIX}" -o "${TMP_BINNED}"
     mv "${TMP_BINNED}" "${BINNED}"
+    if [[ -s "${TMP_BINNED}.tbi" ]]; then
+      mv "${TMP_BINNED}.tbi" "${BINNED}.tbi"
+    fi
   fi
   ln -sfn "$(basename "${BINNED}")" "${OUTDIR}/${SAMPLE_ID}.small.seqz.gz"
 fi

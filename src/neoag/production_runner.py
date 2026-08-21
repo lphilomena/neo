@@ -764,8 +764,18 @@ def run_production(
         final_stage = StageResult("unified_ranking", "SKIPPED", True, outputs={"config": str(config_path)})
         final_status = "PARTIAL"
     else:
+        py_prefix = Path(sys.executable).resolve().parent.parent
+        py_lib = py_prefix / "lib"
+        lib_export = (
+            f"export LD_LIBRARY_PATH={shlex.quote(str(py_lib))}:"
+            '"${LD_LIBRARY_PATH:-}"; '
+            if py_lib.is_dir()
+            else ""
+        )
         command = (
+            f"{lib_export}"
             f"source {shlex.quote(str(root / 'conf/tools.env.sh'))}; "
+            f"{lib_export}"
             f"{shlex.quote(sys.executable)} -m neoag.cli run-full "
             f"--config {shlex.quote(str(config_path))} --outdir {shlex.quote(str(final_outdir))} "
             f"--reports {shlex.quote(str(expanded_run.get('reports') or 'patient,technical'))}"

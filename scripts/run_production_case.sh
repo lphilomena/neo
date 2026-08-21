@@ -314,6 +314,19 @@ if [[ -z "$RNA_FASTQ1" && -z "$RNA_BAM" && -z "$RNA_VAF" ]]; then
   else
     discovered_rna_bam="$(latest_matching_file "$CASE_ROOT" -name Aligned.sortedByCoord.out.bam -o -name '*.Aligned.sortedByCoord.out.bam' -o -name '*.rna.bam')"
     [[ -z "$discovered_rna_bam" && -d "$OUTDIR" ]] && discovered_rna_bam="$(latest_matching_file "$OUTDIR" -name Aligned.sortedByCoord.out.bam -o -name '*.Aligned.sortedByCoord.out.bam' -o -name '*.rna.bam')"
+    if [[ -z "$discovered_rna_bam" ]]; then
+      for candidate in \
+        "$CASE_ROOT/pipeline/production/rna/star/Aligned.sortedByCoord.out.bam" \
+        "$CASE_ROOT/pipeline/production/fusion_fixed_20260811_171125/star/Aligned.sortedByCoord.out.bam" \
+        "$CASE_ROOT/pipeline/production/rna_parallel_core_20260811_095246/star/Aligned.sortedByCoord.out.bam" \
+        "$OUTDIR/pipeline/production/rna/star/Aligned.sortedByCoord.out.bam" \
+        "$OUTDIR/rna/star/Aligned.sortedByCoord.out.bam"; do
+        if [[ -s "$candidate" ]]; then
+          discovered_rna_bam="$candidate"
+          break
+        fi
+      done
+    fi
     [[ -n "$discovered_rna_bam" ]] && RNA_BAM="$discovered_rna_bam"
   fi
 fi
