@@ -90,6 +90,16 @@ CROSS_SITE_RNA_FIELDS = {
     "secondary_rna_junction_reads", "secondary_rna_support_status",
     "secondary_source_tools", "cross_site_reason",
 }
+CROSS_SITE_RNA_FIELDS = {
+    "secondary_sample_id", "sample_identity_status", "cross_site_status",
+    "cross_site_exact_support", "cross_site_match_method", "cross_site_event_key",
+    "cross_site_review_status", "cross_site_review_reason",
+    "secondary_event_id", "secondary_gene_expression_tpm",
+    "secondary_transcript_expression_tpm", "secondary_rna_ref_reads",
+    "secondary_rna_alt_reads", "secondary_rna_depth", "secondary_rna_vaf",
+    "secondary_rna_junction_reads", "secondary_rna_support_status",
+    "secondary_source_tools", "cross_site_reason",
+}
 CCF_FIELDS = {
     "raw_ccf", "ccf_estimate", "ccf_best", "ccf_status", "clonality_status",
     "ccf_confidence", "ccf_warning", "ccf_method", "ccf_resolution",
