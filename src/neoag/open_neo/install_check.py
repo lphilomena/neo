@@ -1415,7 +1415,7 @@ def _deployment_command(args: dict[str, Any], project_root: Path, layout: RunLay
     deploy_root = Path(str(args.get("deploy_root") or "/opt/neoag"))
     script = project_root / ".agents/skills/neoag-remote-deploy/scripts/16_install_new_machine.sh"
     tier = str(args.get("deployment_tier") or "core").lower()
-    default_profile = "all-open" if tier in {"prediction", "full"} else "minimal"
+    default_profile = "standard" if tier in {"prediction", "full"} else "minimal"
     installer_profile = str(args.get("installer_profile") or default_profile)
     command = [
         "bash", str(script),

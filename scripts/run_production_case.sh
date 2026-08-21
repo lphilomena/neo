@@ -36,6 +36,11 @@ Usage:
     [--star-executable <STAR>] \
     [--samtools-executable <samtools>] \
     [--rna-threads <N>] \
+    [--fusion-caller-root <completed_caller_results_dir>] \
+    [--normal-readthrough <normal_readthrough.tsv>] \
+    [--prime-evidence <prime_evidence.tsv>] \
+    [--bigmhc-evidence <bigmhc_im_evidence.tsv>] \
+    [--deepimmuno-evidence <deepimmuno_evidence.tsv>] \
     [--pred-deps <predictor_deps_dir>] \
     [--netmhcpan-home <netMHCpan_home>] \
     [--netmhcstabpan-home <netMHCstabpan_home>] \
@@ -83,6 +88,11 @@ STAR_SJDB_OVERHANG=149
 STAR_EXECUTABLE=""
 SAMTOOLS_EXECUTABLE="samtools"
 RNA_THREADS=16
+FUSION_CALLER_ROOTS=()
+NORMAL_READTHROUGH=""
+PRIME_EVIDENCE=""
+BIGMHC_EVIDENCE=""
+DEEPIMMUNO_EVIDENCE=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -111,6 +121,11 @@ while [[ $# -gt 0 ]]; do
     --star-executable) STAR_EXECUTABLE="$2"; shift 2 ;;
     --samtools-executable) SAMTOOLS_EXECUTABLE="$2"; shift 2 ;;
     --rna-threads) RNA_THREADS="$2"; shift 2 ;;
+    --fusion-caller-root) FUSION_CALLER_ROOTS+=("$2"); shift 2 ;;
+    --normal-readthrough) NORMAL_READTHROUGH="$2"; shift 2 ;;
+    --prime-evidence) PRIME_EVIDENCE="$2"; shift 2 ;;
+    --bigmhc-evidence) BIGMHC_EVIDENCE="$2"; shift 2 ;;
+    --deepimmuno-evidence) DEEPIMMUNO_EVIDENCE="$2"; shift 2 ;;
     --pred-deps) PRED_DEPS="$2"; CLI_PRED_DEPS="$2"; shift 2 ;;
     --netmhcpan-home) NETMHCPAN_HOME_DEFAULT="$2"; CLI_NETMHCPAN_HOME="$2"; shift 2 ;;
     --netmhcstabpan-home) NETMHCSTABPAN_HOME="$2"; CLI_NETMHCSTABPAN_HOME="$2"; shift 2 ;;
@@ -305,6 +320,19 @@ fi
 add_if --easyfuse "$CASE_ROOT/short-rna/evidence/easyfuse.fusions.pass.csv"
 add_if --star-fusion "$CASE_ROOT/short-rna/evidence/star-fusion.fusion_predictions.tsv"
 add_if --arriba "$CASE_ROOT/short-rna/evidence/arriba.fusions.tsv"
+add_if --fusioncatcher "$CASE_ROOT/short-rna/evidence/fusioncatcher.final-list.txt"
+add_if --jaffal "$CASE_ROOT/long-rna/evidence/jaffa_results.csv"
+add_if --jaffal "$CASE_ROOT/long-rna/jaffal/output/jaffa_results.csv"
+for fusion_root in "${FUSION_CALLER_ROOTS[@]}"; do
+  [[ -e "$fusion_root" ]] && GEN_ARGS+=(--fusion-caller-root "$fusion_root")
+done
+for fusion_root in "$CASE_ROOT/short-rna/fusion" "$CASE_ROOT/long-rna/fusion"; do
+  [[ -d "$fusion_root" ]] && GEN_ARGS+=(--fusion-caller-root "$fusion_root")
+done
+[[ -n "$NORMAL_READTHROUGH" ]] && GEN_ARGS+=(--normal-readthrough "$NORMAL_READTHROUGH")
+[[ -n "$PRIME_EVIDENCE" ]] && GEN_ARGS+=(--prime-evidence "$PRIME_EVIDENCE")
+[[ -n "$BIGMHC_EVIDENCE" ]] && GEN_ARGS+=(--bigmhc-evidence "$BIGMHC_EVIDENCE")
+[[ -n "$DEEPIMMUNO_EVIDENCE" ]] && GEN_ARGS+=(--deepimmuno-evidence "$DEEPIMMUNO_EVIDENCE")
 add_if --junctions "$CASE_ROOT/short-rna/evidence/regtools_junctions.tsv"
 add_if --snaf "$CASE_ROOT/short-rna/snaf/snaf_candidates.tsv"
 add_if --splicemutr "$CASE_ROOT/short-rna/splicemutr"

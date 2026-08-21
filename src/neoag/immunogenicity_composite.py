@@ -282,6 +282,7 @@ def run_immunogenicity_predictors(
     *,
     skip: bool = False,
     skip_sources: set[str] | None = None,
+    reuse_sources: set[str] | None = None,
     provenance_registry: ProvenanceRegistry | None = None,
 ) -> dict[str, Path | None]:
     """Run configured immunogenicity tools and write presentation evidence TSVs."""
@@ -293,6 +294,7 @@ def run_immunogenicity_predictors(
 
     cfg = immunogenicity_config(profile)
     skip_sources = skip_sources or set()
+    reuse_sources = reuse_sources or set()
     registry = provenance_registry or ProvenanceRegistry()
     tools_dir = outdir / "tools"
     pres_dir = outdir / "presentation"
@@ -305,13 +307,19 @@ def run_immunogenicity_predictors(
     }
 
     prime_tool = tools_dir / "prime.tsv"
+    prime_reuse = pres_dir / "prime_evidence.tsv"
     if "prime" in cfg["sources"] and "prime" not in skip_sources:
+        if "prime" in reuse_sources and prime_reuse.is_file() and prime_reuse.stat().st_size > 0:
+            paths["prime"] = prime_reuse
+            registry.register_passthrough("prime", prime_reuse)
         prime_can_use_tool_output = skip or ctx.stub or _immunogenicity_tool_available("prime", ctx)
-        if not skip and not prime_can_use_tool_output:
+        if paths["prime"] is not None:
+            pass
+        elif not skip and not prime_can_use_tool_output:
             registry.register_missing("prime")
         elif not skip:
             run_prime(ctx, prime_tool)
-        if prime_can_use_tool_output and prime_tool.is_file():
+        if paths["prime"] is None and prime_can_use_tool_output and prime_tool.is_file():
             prime_path = pres_dir / "prime_evidence.tsv"
             write_prime_evidence(
                 prime_path,
@@ -330,13 +338,19 @@ def run_immunogenicity_predictors(
         registry.register_not_used("prime")
 
     bigmhc_tool = tools_dir / "bigmhc_im.tsv"
+    bigmhc_reuse = pres_dir / "bigmhc_im_evidence.tsv"
     if "bigmhc_im" in cfg["sources"] and "bigmhc_im" not in skip_sources:
+        if "bigmhc_im" in reuse_sources and bigmhc_reuse.is_file() and bigmhc_reuse.stat().st_size > 0:
+            paths["bigmhc_im"] = bigmhc_reuse
+            registry.register_passthrough("bigmhc_im", bigmhc_reuse)
         bigmhc_can_use_tool_output = skip or ctx.stub or _immunogenicity_tool_available("bigmhc_im", ctx)
-        if not skip and not bigmhc_can_use_tool_output:
+        if paths["bigmhc_im"] is not None:
+            pass
+        elif not skip and not bigmhc_can_use_tool_output:
             registry.register_missing("bigmhc_im")
         elif not skip:
             run_bigmhc_im(ctx, bigmhc_tool)
-        if bigmhc_can_use_tool_output and bigmhc_tool.is_file():
+        if paths["bigmhc_im"] is None and bigmhc_can_use_tool_output and bigmhc_tool.is_file():
             bigmhc_path = pres_dir / "bigmhc_im_evidence.tsv"
             write_bigmhc_im_evidence(
                 bigmhc_path,
@@ -355,13 +369,19 @@ def run_immunogenicity_predictors(
         registry.register_not_used("bigmhc_im")
 
     deepimmuno_tool = tools_dir / "deepimmuno.tsv"
+    deepimmuno_reuse = pres_dir / "deepimmuno_evidence.tsv"
     if "deepimmuno" in cfg["sources"] and "deepimmuno" not in skip_sources:
+        if "deepimmuno" in reuse_sources and deepimmuno_reuse.is_file() and deepimmuno_reuse.stat().st_size > 0:
+            paths["deepimmuno"] = deepimmuno_reuse
+            registry.register_passthrough("deepimmuno", deepimmuno_reuse)
         deepimmuno_can_use_tool_output = skip or ctx.stub or _immunogenicity_tool_available("deepimmuno", ctx)
-        if not skip and not deepimmuno_can_use_tool_output:
+        if paths["deepimmuno"] is not None:
+            pass
+        elif not skip and not deepimmuno_can_use_tool_output:
             registry.register_missing("deepimmuno")
         elif not skip:
             run_deepimmuno(ctx, deepimmuno_tool)
-        if deepimmuno_can_use_tool_output and deepimmuno_tool.is_file():
+        if paths["deepimmuno"] is None and deepimmuno_can_use_tool_output and deepimmuno_tool.is_file():
             deepimmuno_path = pres_dir / "deepimmuno_evidence.tsv"
             write_deepimmuno_evidence(
                 deepimmuno_path,

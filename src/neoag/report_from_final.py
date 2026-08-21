@@ -40,6 +40,40 @@ def _stage_output(manifest: Mapping[str, Any], stage: str, key: str) -> str:
     return str((((manifest.get("stages") or {}).get(stage) or {}).get("outputs") or {}).get(key) or "")
 
 
+def _purity_qc_status(tool: str, result_path: Path) -> str:
+    """Return tool QC without confusing evidence provenance with QC."""
+    if not result_path.exists():
+        return "RESULT_PATH_MISSING"
+    root = result_path if result_path.is_dir() else result_path.parent
+    key = tool.upper()
+    if key == "PURPLE":
+        for path in sorted(root.rglob("*.purple.qc")):
+            for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+                parts = line.split("\t", 1)
+                if len(parts) == 2 and parts[0].strip().lower() == "qcstatus":
+                    return parts[1].strip() or "ASSESSED"
+    if key == "FACETS":
+        for path in sorted(root.rglob("facets_omni2p5_summary.tsv")):
+            for row in read_tsv(path):
+                if str(row.get("metric") or "").strip().lower() == "status":
+                    return str(row.get("value") or "ASSESSED").upper()
+    return "ASSESSED"
+
+
+def _declared_purity_results(manifest: Mapping[str, Any]) -> dict[str, Path]:
+    declared: dict[str, Path] = {}
+    for tool, stage, key in (
+        ("FACETS", "purity_facets", "facets_result"),
+        ("PURPLE", "purity_purple", "purple_result"),
+        ("Sequenza", "purity_sequenza", "sequenza_result"),
+        ("ASCAT", "purity_ascat", "ascat_result"),
+    ):
+        value = _stage_output(manifest, stage, key)
+        if value:
+            declared[tool] = Path(value)
+    return declared
+
+
 def materialize_hla_loh_layout(final_dir: Path, *, hla_loh: str | Path | None = None, manifest: Mapping[str, Any] | None = None) -> dict[str, str]:
     """Copy per-tool HLA LOH tables into the layout the patient report scans."""
     production = final_dir.parent
@@ -69,6 +103,7 @@ def materialize_hla_loh_layout(final_dir: Path, *, hla_loh: str | Path | None = 
 
 def _purity_records(final_dir: Path, manifest: Mapping[str, Any], provenance: Mapping[str, Any]) -> tuple[list[dict[str, str]], dict[str, Any]]:
     production = final_dir.parent
+    declared = _declared_purity_results(manifest)
     consensus_dirs = [
         production / "evidence" / "purity_cnv",
         production / "purity" / "consensus",
@@ -105,7 +140,7 @@ def _purity_records(final_dir: Path, manifest: Mapping[str, Any], provenance: Ma
                 "basis": str(consensus_row.get("interpretation") or ("已并列保留 " + "、".join(tool_names) + " 结果。")),
             }
             return tools, consensus
-    search: list[Path] = []
+    search: list[Path] = list(declared.values())
     for stage, key in (("purity_facets", "facets_result"), ("purity_ascat", "ascat_result"), ("purity_sequenza", "sequenza_result"), ("purity_purple", "purple_result")):
         value = _stage_output(manifest, stage, key)
         if value:
@@ -116,16 +151,34 @@ def _purity_records(final_dir: Path, manifest: Mapping[str, Any], provenance: Ma
             search.append(Path(str(record["file"])))
     search = [path for path in search if path.exists()]
     rows = collect_tool_results(search, sample_id=None) if search else []
-    tools = []
+    tools: list[dict[str, str]] = []
     for row in rows:
         if str(row.get("status") or "").upper() == "MISSING":
             continue
+        tool = str(row.get("tool") or "")
+        source_path = declared.get(tool) or declared.get(tool.upper()) or Path(str(row.get("source_file") or ""))
         tools.append({
-            "tool": str(row.get("tool") or ""),
+            "tool": tool,
             "purity": "" if row.get("purity") in {None, ""} else f"{row['purity']}",
             "ploidy": "" if row.get("ploidy") in {None, ""} else f"{row['ploidy']}",
-            "status": str(row.get("status") or "ASSESSED"),
-            "note": str(row.get("notes") or row.get("parse_method") or ""),
+            "status": _purity_qc_status(tool, source_path),
+            "note": "已从工具原始结果解析纯度/倍性；用于多工具交叉核对。",
+        })
+    present = {str(row.get("tool") or "").upper() for row in tools}
+    for tool, path in declared.items():
+        if tool.upper() in present:
+            continue
+        status = "RESULT_PATH_MISSING" if not path.exists() else "NO_VALID_ESTIMATE"
+        tools.append({
+            "tool": tool,
+            "purity": "",
+            "ploidy": "",
+            "status": status,
+            "note": (
+                "结果路径不存在，未完成评估。"
+                if status == "RESULT_PATH_MISSING"
+                else "工具结果目录存在，但未形成可用的纯度/倍性估计。"
+            ),
         })
     if not tools:
         return [], {}
@@ -133,12 +186,23 @@ def _purity_records(final_dir: Path, manifest: Mapping[str, Any], provenance: Ma
     cons = purity_consensus(assessed_rows)
     selected = next((row for row in tools if row.get("purity")), tools[0])
     ploidy = next((row.get("ploidy") or "" for row in tools if row.get("ploidy")), selected.get("ploidy") or "")
+    values = [float(row["purity"]) for row in tools if row.get("purity")]
+    value_text = "、".join(f"{row['tool']}={float(row['purity']):.4f}" for row in tools if row.get("purity"))
+    range_text = f"{min(values):.4f}-{max(values):.4f}" if values else "未形成"
+    status = str(cons.get("status") or ("MULTI_TOOL_REVIEW" if len(values) > 1 else "SINGLE_TOOL_NO_CROSSCHECK"))
+    if status == "CONCORDANT":
+        basis = f"{value_text}；范围 {range_text}，多工具结果基本一致，工作值采用中位数。"
+    elif status in {"MODERATE_DISCORDANCE", "STRONG_DISCORDANCE"}:
+        degree = "中等" if status == "MODERATE_DISCORDANCE" else "明显"
+        basis = f"{value_text}；范围 {range_text}，工具间存在{degree}差异。工作值采用中位数并标记低置信度，需结合BAF、深度和CNV拟合图审阅。"
+    else:
+        basis = f"{value_text or '未获得有效纯度值'}；未形成充分的多工具数值共识。"
     consensus = {
         "recommended_purity": str(cons.get("recommended_purity") or selected.get("purity") or ""),
         "recommended_ploidy": ploidy,
-        "selected_tool": "多工具并列" if len(tools) > 1 else selected.get("tool") or "",
-        "status": str(cons.get("status") or ("MULTI_TOOL_REVIEW" if len(tools) > 1 else "SINGLE_TOOL_NO_CROSSCHECK")),
-        "basis": str(cons.get("interpretation") or ("已并列保留 " + "、".join(row["tool"] for row in tools) + " 结果。")),
+        "selected_tool": "多工具中位数" if len(values) > 1 else selected.get("tool") or "",
+        "status": status,
+        "basis": basis,
     }
     return tools, consensus
 
@@ -240,6 +304,16 @@ def write_reports_from_final(
         profile = load_profile(profile_name)
     except Exception:
         profile = {"_profile_name": Path(profile_name).stem, "rules_version": str((provenance.get("parallel_rankings") or {}).get("rules_version") or "")}
+    consensus_rule_path = Path(str((provenance.get("parallel_rankings") or {}).get("rules") or ""))
+    consensus_rules = _toml_load(consensus_rule_path)
+    manual_review = (
+        consensus_rules.get("manual_review")
+        or (provenance.get("evidence_consensus") or {}).get("manual_review")
+        or {}
+    )
+    if manual_review:
+        profile = dict(profile)
+        profile["manual_review"] = manual_review
     appm_rows = read_tsv(root / "appm/appm_summary.tsv") if (root / "appm/appm_summary.tsv").is_file() else []
     validation_rows = read_tsv(scoring / "validation_plan.tsv") if (scoring / "validation_plan.tsv").is_file() else []
     bundle = load_report_bundle(

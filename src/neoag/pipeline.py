@@ -45,6 +45,8 @@ def run(
     immunogenicity_stub=False,
     tool_executables=None,
     *,
+    reuse_immunogenicity_outputs=False,
+    reuse_immunogenicity_sources=None,
     transcript_expression=None,
     rna_vaf=None,
     raw_events=None,
@@ -143,7 +145,13 @@ def run(
         executables=tool_executables or {},
     )
     immuno_paths = run_immunogenicity_predictors(
-        raw_peptides_path, outdir, profile, immuno_ctx, provenance_registry=provenance_registry,
+        raw_peptides_path,
+        outdir,
+        profile,
+        immuno_ctx,
+        skip=reuse_immunogenicity_outputs,
+        reuse_sources=set(reuse_immunogenicity_sources or []),
+        provenance_registry=provenance_registry,
     )
     apply_immunogenicity_evidence(pres_rows, immuno_paths, profile)
     write_tsv(pres_path, pres_rows, PRESENTATION_FIELDS)
@@ -316,6 +324,7 @@ def run(
             "rules_name": consensus_rules.get("metadata", {}).get("name", ""),
             "rules_version": consensus_rules.get("metadata", {}).get("version", ""),
             "rules_status": consensus_rules.get("metadata", {}).get("status", "PROVISIONAL_RESEARCH_ONLY"),
+            "manual_review": consensus_rules.get("manual_review", {}),
         },
     }
     selected_reports = {"patient", "technical"}
@@ -327,8 +336,10 @@ def run(
         unknown = selected_reports - {"patient", "technical"}
         if unknown:
             raise ValueError("unsupported report type(s): " + ",".join(sorted(unknown)))
+    report_profile = dict(profile)
+    report_profile["manual_review"] = consensus_rules.get("manual_review", {})
     report_bundle = load_report_bundle(
-        profile=profile,
+        profile=report_profile,
         events=report_events,
         peptides=report_peptides,
         appm_summary=appm_summary,

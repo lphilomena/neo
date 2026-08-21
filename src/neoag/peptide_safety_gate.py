@@ -160,28 +160,69 @@ def _normal_junctions(
     out={}
     handle = gzip.open(p, 'rt', encoding='utf-8', newline='') if p.suffix == '.gz' else p.open('r', encoding='utf-8', newline='')
     with handle:
-        for r in csv.DictReader(handle, delimiter='\t'):
-            keys=[]
-            for k in ('event_id','junction_id','gene_pair','fusion'):
-                v = r.get(k)
-                if v:
-                    keys.append(v)
-            if r.get('gene1') and r.get('gene2'):
-                keys.extend([f"{r.get('gene1')}::{r.get('gene2')}", f"{r.get('gene2')}::{r.get('gene1')}"])
+        header_line = handle.readline()
+        if not header_line:
+            return out
+        fieldnames = header_line.rstrip('\r\n').split('\t')
+        field_index = {name: idx for idx, name in enumerate(fieldnames)}
+
+        def value(parts: list[str], *names: str) -> str:
+            for name in names:
+                idx = field_index.get(name)
+                if idx is not None and idx < len(parts):
+                    found = parts[idx].strip()
+                    if found:
+                        return found
+            return ''
+
+        has_explicit_coordinates = bool(
+            set(field_index).intersection({'chromosome', 'chrom', 'chr', 'seqname', 'seqnames'})
+            and set(field_index).intersection({'junction_start', 'start', 'donor', 'intron_start'})
+            and set(field_index).intersection({'junction_end', 'end', 'acceptor', 'intron_end'})
+        )
+        for line in handle:
+            parts = line.rstrip('\r\n').split('\t')
             normalized=[]
-            for key in keys:
-                value = str(key).strip()
-                if not value:
+            for name in ('event_id', 'junction_id', 'gene_pair', 'fusion'):
+                raw = value(parts, name)
+                if not raw:
                     continue
-                normalized.extend([value, value.replace('--', '::')])
-                if '::' in value.replace('--', '::'):
-                    left, right = value.replace('--', '::').split('::', 1)
+                canonical = raw.replace('--', '::')
+                normalized.extend([raw, canonical])
+                if '::' in canonical:
+                    left, right = canonical.split('::', 1)
                     normalized.append(f'{right}::{left}')
-            normalized.extend(_junction_coordinate_keys(r))
+            gene1, gene2 = value(parts, 'gene1'), value(parts, 'gene2')
+            if gene1 and gene2:
+                normalized.extend([f'{gene1}::{gene2}', f'{gene2}::{gene1}'])
+
+            if has_explicit_coordinates:
+                chrom = _normalize_chromosome(value(parts, 'chromosome', 'chrom', 'chr', 'seqname', 'seqnames'))
+                start = value(parts, 'junction_start', 'start', 'donor', 'intron_start')
+                end = value(parts, 'junction_end', 'end', 'acceptor', 'intron_end')
+                strand = value(parts, 'strand', 'junction_strand')
+                try:
+                    start_i, end_i = int(start), int(end)
+                except (TypeError, ValueError):
+                    start_i = end_i = -1
+                if chrom and start_i >= 0 and end_i >= 0:
+                    if start_i > end_i:
+                        start_i, end_i = end_i, start_i
+                    base = f'{chrom}:{start_i}-{end_i}'
+                    normalized.append(base)
+                    if strand in {'+', '-'}:
+                        normalized.append(f'{base}:{strand}')
+            elif target_keys is None:
+                row = dict(zip(fieldnames, parts))
+                normalized.extend(_junction_coordinate_keys(row))
+
             if target_keys is not None:
                 normalized = [key for key in normalized if key in target_keys]
+                if not normalized:
+                    continue
+            row = dict(zip(fieldnames, parts))
             for key in dict.fromkeys(normalized):
-                out[key] = r
+                out[key] = row
     return out
 
 

@@ -2,7 +2,7 @@ import hashlib
 import json
 from pathlib import Path
 
-from neoag.reports_dual import ReportBundle, _patient_conflict_summary, _patient_event_grade_counts, _patient_evidence_audit_rows, _patient_evidence_summary, _patient_event_change, _patient_key_gaps, _patient_limitation, _patient_metric, _patient_presentation_metric, _patient_rna_measurements, _patient_rna_metric, _patient_track, _patient_validation, _replace_gene_ids, load_report_bundle, make_dual_reports, make_patient_report, make_technical_report
+from neoag.reports_dual import ReportBundle, _augment_runtime_tool_provenance, _patient_conflict_summary, _patient_event_grade_counts, _patient_evidence_audit_rows, _patient_evidence_summary, _patient_event_change, _patient_key_gaps, _patient_limitation, _patient_manual_review_rows, _patient_metric, _patient_presentation_metric, _patient_rna_measurements, _patient_rna_metric, _patient_tool_rows, _patient_track, _patient_validation, _replace_gene_ids, load_report_bundle, make_dual_reports, make_patient_report, make_technical_report
 from neoag.utils import write_tsv
 
 
@@ -205,6 +205,48 @@ def test_patient_track_does_not_promote_vcf_consequence_to_splice():
         "mutation_source": "VCF",
         "peptide_consequence": "splice_region_variant,missense_variant",
     }) == "SNV"
+
+
+def test_patient_tool_coverage_discovers_event_only_splicemutr(tmp_path):
+    root = tmp_path / "run"
+    parsed = root / "parsed"
+    parsed.mkdir(parents=True)
+    write_tsv(parsed / "raw_events.tsv", [{
+        "event_id": "SJ|GRCh38|chr1|101|200|+",
+        "event_type": "Splice",
+        "source_tools": "RegTools;SNAF;SpliceMutr",
+    }])
+    provenance = {}
+    _augment_runtime_tool_provenance(root, provenance)
+    assert provenance["tools"]["splicemutr"]["evidence_event_rows"] == 1
+
+    bundle = ReportBundle(profile={}, events=[], peptides=[], provenance=provenance)
+    rows = {row["流程/工具"]: row for row in _patient_tool_rows(bundle)}
+    assert rows["SpliceMutr"]["状态"] == "事件来源记录已确认（1个事件）"
+    assert rows["SpliceMutr"]["作用"] == "异常剪接交叉验证"
+
+
+def test_patient_manual_review_keeps_configured_key_fusion_with_junction_guidance():
+    routine = [
+        {
+            "event_id": f"F{i}", "gene": f"GENE{i}::PARTNER{i}", "event_type": "Fusion",
+            "manual_review_required": "yes", "source_chain_orthogonal_status": "SUPPORTED",
+        }
+        for i in range(8)
+    ]
+    key = {
+        "event_id": "KEY", "gene": "KEY1::KEY2", "event_type": "Fusion",
+        "manual_review_required": "yes", "best_evidence_grade": "R4",
+    }
+    bundle = ReportBundle(
+        profile={"manual_review": {"events": ["KEY1::KEY2"]}},
+        events=routine + [key], peptides=[],
+    )
+    rows = _patient_manual_review_rows(bundle.events, [], bundle, {}, limit=5)
+    assert rows[0]["事件"] == "KEY1::KEY2"
+    assert "疾病/证据规则明确指定" in rows[0]["为什么重要"]
+    assert "精确跨断点" in rows[0]["当前建议"]
+    assert "普通融合伙伴蛋白" in rows[0]["当前建议"]
 
 
 def test_patient_conflicts_ignore_none_status_and_provenance_only_fields():
@@ -579,7 +621,8 @@ def test_patient_tool_table_discovers_standard_runtime_outputs(tmp_path):
     text = out.read_text(encoding="utf-8")
     assert "<td>STAR</td>" in text
     assert "<td>SpecHLA</td>" in text
-    assert "runtime_output_discovery" in text
+    assert "短读长RNA比对与junction提取" in text
+    assert "HLA分型与HLA-LOH证据" in text
 
 
 def test_patient_report_writes_machine_readable_release_audit(tmp_path):

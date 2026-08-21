@@ -658,6 +658,30 @@ def _augment_runtime_tool_provenance(root: Path, provenance: dict[str, Any]) -> 
             record.setdefault("mode", "tool_summary_discovery")
             record.setdefault("display_name", raw_name)
 
+    # Event-producing tools may be preserved only on canonical raw events and
+    # disappear from peptide-level ranking tables. Discover them from the
+    # event provenance so patient reports do not silently omit tools such as
+    # SpliceMutr after an exact-junction merge.
+    event_source_paths = (
+        root / "parsed" / "raw_events.tsv",
+        root / "inputs" / "combined_raw_events.tsv",
+    )
+    for path in event_source_paths:
+        if not path.is_file() or path.stat().st_size == 0:
+            continue
+        for key, count in _patient_source_tool_counts(_read_optional(path)).items():
+            if key not in _PATIENT_SOURCE_TOOL_META:
+                continue
+            record = tools.get(key)
+            if not isinstance(record, dict):
+                record = {}
+                tools[key] = record
+            record.update({"source": "local", "status": "real", "file": str(path)})
+            record.setdefault("mode", "event_source_discovery")
+            record["evidence_event_rows"] = max(
+                int(record.get("evidence_event_rows") or 0), count
+            )
+
 
 
 def _augment_purity_cnv_provenance(root: Path, prov: dict[str, Any]) -> None:
@@ -2343,6 +2367,59 @@ def _patient_attention_reasons(row: Mapping[str, Any]) -> list[str]:
     return list(dict.fromkeys(reasons))
 
 
+def _manual_review_label(value: Any) -> str:
+    return re.sub(r"[^A-Z0-9]+", "_", str(value or "").strip().upper()).strip("_")
+
+
+def _patient_configured_manual_review(row: Mapping[str, Any], profile: Mapping[str, Any]) -> bool:
+    """Return true for events explicitly retained by the active review rules."""
+    config = profile.get("manual_review") if isinstance(profile, Mapping) else None
+    config = config if isinstance(config, Mapping) else {}
+    targets = {
+        _manual_review_label(value)
+        for key in ("events", "genes")
+        for value in (config.get(key) or [])
+        if _manual_review_label(value)
+    }
+    observed = {
+        _manual_review_label(row.get(key))
+        for key in ("gene", "event_name", "event_id", "source_event_id")
+        if _manual_review_label(row.get(key))
+    }
+    if targets.intersection(observed):
+        return True
+    scope = str(row.get("evidence_scope") or "").upper()
+    source = str(row.get("source") or row.get("source_tool") or "").upper()
+    return "DIAGNOSTIC_WHITELIST_RESCUE" in scope or "DIAGNOSTIC_WHITELIST_RESCUE" in source
+
+
+def _patient_fusion_manual_review_advice(row: Mapping[str, Any]) -> str:
+    if _patient_track(row) != "Fusion":
+        return ""
+    return (
+        "作为疾病相关关键融合保留机制审阅；只把精确跨断点、来源可追溯且不与正常蛋白组精确匹配的肽"
+        "视为融合特异性候选，普通融合伙伴蛋白来源肽仅作背景。先复核断点、方向、阅读框、正常read-through"
+        "及独立RNA支持，再决定长肽或minigene验证；事件重要性本身不自动提高R等级"
+    )
+
+
+def _patient_manual_review_identity(row: Mapping[str, Any]) -> str:
+    """Collapse caller/breakpoint records for the same named fusion in summaries.
+
+    Provenance and event-level outputs intentionally retain every exact event.
+    The patient-facing manual-review table instead presents one biological
+    fusion label, so independent caller IDs and rescued breakpoints do not
+    consume several of the five review slots.
+    """
+    if _patient_track(row) == "Fusion":
+        fusion = str(row.get("gene") or row.get("event_name") or "").strip()
+        normalized = _manual_review_label(fusion)
+        if normalized:
+            return f"FUSION::{normalized}"
+    keys = _patient_event_keys(row)
+    return keys[0] if keys else str(row.get("event_id") or row.get("event_name") or row.get("gene") or "")
+
+
 def _patient_manual_review_rows(
     events: list[dict[str, str]],
     peptides: list[dict[str, str]],
@@ -2354,7 +2431,7 @@ def _patient_manual_review_rows(
     for peptide in peptides:
         for key in _patient_event_keys(peptide):
             peptide_by_event.setdefault(key, peptide)
-    scored: list[tuple[int, int, dict[str, str], list[str]]] = []
+    scored: list[tuple[int, int, int, dict[str, str], list[str]]] = []
     seen: set[str] = set()
     for index, event in enumerate(events):
         keys = _patient_event_keys(event)
@@ -2366,13 +2443,24 @@ def _patient_manual_review_rows(
         row = dict(peptide or {})
         row.update({key: value for key, value in event.items() if str(value or "").strip()})
         reasons = _patient_attention_reasons(row)
+        configured = _patient_configured_manual_review(row, bundle.profile)
+        if configured:
+            reasons.insert(0, "由当前疾病/证据规则明确指定为关键人工审阅事件")
         if not reasons:
             continue
-        scored.append((-len(reasons), index, row, reasons))
+        scored.append((0 if configured else 1, -len(reasons), index, row, list(dict.fromkeys(reasons))))
     result: list[dict[str, str]] = []
-    for _, _, row, reasons in sorted(scored)[:limit]:
+    displayed: set[str] = set()
+    for _, _, _, row, reasons in sorted(scored):
+        identity = _patient_manual_review_identity(row)
+        if identity in displayed:
+            continue
+        displayed.add(identity)
         gaps = _patient_key_gaps(row, bundle)
         advice = _patient_validation(row, val_map)
+        fusion_advice = _patient_fusion_manual_review_advice(row)
+        if fusion_advice:
+            advice = fusion_advice
         if gaps:
             advice += "。当前缺口：" + "；".join(gaps)
         result.append({
@@ -2380,6 +2468,8 @@ def _patient_manual_review_rows(
             "为什么重要": "；".join(reasons) + "。RNA数据：" + _patient_rna_measurements(row),
             "当前建议": advice,
         })
+        if len(result) >= limit:
+            break
     return result
 
 
@@ -2629,16 +2719,20 @@ def _patient_tool_rows(bundle: ReportBundle) -> list[dict[str, str]]:
             spec = _PATIENT_RESULT_TOOL_SPECS.get(key)
             source_meta = _PATIENT_SOURCE_TOOL_META.get(key)
             display_name = str(record.get("display_name") or (spec[0] if spec else source_meta[0] if source_meta else provenance_name or key))
-            purpose = str(record.get("purpose") or record.get("mode") or "")
+            purpose = str(record.get("purpose") or "")
             if not purpose:
-                purpose = spec[2] if spec else source_meta[1] if source_meta else "结果证据生成"
+                purpose = spec[2] if spec else source_meta[1] if source_meta else str(record.get("mode") or "结果证据生成")
             fields = spec[1] if spec else ()
             result_count = sum(1 for row in bundle.peptides if fields and _patient_assessed(row, *fields))
             result_count = max(result_count, source_counts.get(key, 0))
+            event_result_count = int(record.get("evidence_event_rows") or 0)
             recorded_status = str(record.get("status") or "UNASSESSED")
             if result_count:
                 status = f"综合证据表已载入结果值（{result_count}/{len(bundle.peptides)}）"
                 status_basis = "；结果值优先于可能过期的运行清单状态"
+            elif event_result_count:
+                status = f"事件来源记录已确认（{event_result_count}个事件）"
+                status_basis = "；依据标准化事件的工具来源与精确映射记录"
             else:
                 status = _patient_status_text(recorded_status)
                 status_basis = ""
@@ -2886,6 +2980,7 @@ def make_patient_report(
     manual_review_rows = _patient_manual_review_rows(bundle.events, ranked, bundle, val_map)
     out.append("<div class='section'><h2>关键人工审阅事件</h2>")
     out.append("<p>以下事件因机制重要、多工具/正交支持或证据存在冲突而单独保留人工审阅；进入本表不等于自动升级为R1/R2，也不代表已确认新抗原。</p>")
+    out.append("<p class='small'>对于关键融合，报告只将精确跨断点、来源可追溯且不与正常蛋白组精确匹配的肽作为融合特异性候选；普通融合伙伴蛋白肽不能替代融合junction肽。疾病相关关键融合即使暂为R4，也应保留在本节说明其机制意义和补证路线。</p>")
     if manual_review_rows:
         out.append(_table(manual_review_rows, ["事件", "为什么重要", "当前建议"]))
     else:
@@ -2927,9 +3022,28 @@ def make_patient_report(
     out.append("</div>")
 
     out.append("<div class='section'><h2>7. 分析方法与工具状态</h2>")
+    active_tracks = {
+        str(track).strip().upper().replace(" ", "_")
+        for track, count in track_counts.items()
+        if count
+    }
+    input_methods = []
+    peptide_methods = []
+    if active_tracks.intersection({"SNV", "INDEL"}):
+        input_methods.append("体细胞VCF标准化与来源链检查")
+        peptide_methods.append("SNV突变肽/正常肽配对与InDel新生尾部")
+    if "FUSION" in active_tracks:
+        input_methods.append("Fusion断点与多工具来源检查")
+        peptide_methods.append("Fusion精确断点与阅读框肽段")
+    if "SPLICE" in active_tracks:
+        input_methods.append("Splice精确junction与来源链检查")
+        peptide_methods.append("Splice精确junction及ORF肽段")
+    if active_tracks.intersection({"DNA_SV", "SV"}):
+        input_methods.append("DNA结构变异断点与来源链检查")
+        peptide_methods.append("DNA结构变异异常转录本与ORF肽段")
     method_rows = [
-        {"阶段": "事件输入与质控", "方法": "VCF/Fusion/Splice/SV标准化与来源链检查", "状态": "按当前输入执行"},
-        {"阶段": "肽段构建", "方法": "SNV MT/WT；InDel novel tail；Fusion/Splice精确junction ORF", "状态": "无可追溯ORF时不形成高等级证据"},
+        {"阶段": "事件输入与质控", "方法": "；".join(input_methods) or "未检测到可用事件赛道", "状态": "仅列出本次实际输入"},
+        {"阶段": "肽段构建", "方法": "；".join(peptide_methods) or "未形成候选肽段", "状态": "无可追溯序列或ORF时不形成高等级证据"},
         {"阶段": "呈递预测", "方法": "核心结合/呈递、稳定性和免疫原性样模型分组汇总", "状态": "工具缺失记为未评估"},
         {"阶段": "综合排序", "方法": "证据状态、hard fail、priority cap、R1–R4、Pareto和事件去重", "状态": "研究性规则"},
     ]

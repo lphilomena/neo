@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import shlex
+import shutil
 import subprocess
 import sys
 import tomllib
@@ -383,6 +384,7 @@ def _write_final_config(
     raw_events: Path,
     raw_peptides: Path,
     evidence: dict[str, Any],
+    reuse_immunogenicity_sources: list[str] | None = None,
 ) -> None:
     def toml_value(value: Any) -> str:
         if isinstance(value, bool):
@@ -400,6 +402,7 @@ def _write_final_config(
         f"stub = {toml_value(tools_stub)}",
         f"enabled = {toml_value(enabled_predictors)}",
         f"immunogenicity_stub = {toml_value(immunogenicity_stub)}",
+        f"reuse_immunogenicity_sources = {toml_value(reuse_immunogenicity_sources or [])}",
         "",
         "[inputs]",
         'entry_mode = "intermediates"',
@@ -433,6 +436,34 @@ def _write_final_config(
             lines.append(f"{key} = {toml_value(value)}")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+_REUSABLE_IMMUNOGENICITY_OUTPUTS = {
+    "prime_evidence": ("prime", "prime_evidence.tsv"),
+    "bigmhc_evidence": ("bigmhc_im", "bigmhc_im_evidence.tsv"),
+    "deepimmuno_evidence": ("deepimmuno", "deepimmuno_evidence.tsv"),
+}
+
+
+def _materialize_reusable_immunogenicity_outputs(
+    final_outdir: Path, evidence: dict[str, Any]
+) -> list[str]:
+    """Materialize explicitly supplied normalized predictor evidence for run-full."""
+    presentation = final_outdir / "presentation"
+    reused: list[str] = []
+    for evidence_key, (tool_key, filename) in _REUSABLE_IMMUNOGENICITY_OUTPUTS.items():
+        raw_source = str(evidence.get(evidence_key) or "").strip()
+        if not raw_source:
+            continue
+        source = Path(raw_source)
+        if not source.is_file() or source.stat().st_size == 0:
+            raise FileNotFoundError(f"Reusable {tool_key} evidence is missing or empty: {source}")
+        presentation.mkdir(parents=True, exist_ok=True)
+        destination = presentation / filename
+        if source.resolve() != destination.resolve():
+            shutil.copy2(source, destination)
+        reused.append(tool_key)
+    return reused
 
 
 def _write_result(result: ProductionResult, outdir: Path) -> None:
@@ -690,6 +721,30 @@ def run_production(
         expanded_evidence["netchop"] = str(netchop_path)
     tools_stub = bool(expanded_run.get("tools_stub", False))
     immunogenicity_stub = bool(expanded_run.get("immunogenicity_stub", False))
+    final_outdir = run_outdir / "final"
+    try:
+        reused_immunogenicity_sources = _materialize_reusable_immunogenicity_outputs(
+            final_outdir, expanded_evidence
+        )
+    except (FileNotFoundError, OSError) as exc:
+        stage_results.append(StageResult(
+            "immunogenicity_evidence_reuse", "FAILED", True, message=str(exc)
+        ))
+        result = ProductionResult(sample_id, "BLOCKED", str(run_outdir), False, stage_results)
+        _write_result(result, run_outdir)
+        return result
+    if reused_immunogenicity_sources:
+        stage_results.append(StageResult(
+            "immunogenicity_evidence_reuse",
+            "PASS",
+            False,
+            outputs={
+                tool: str(final_outdir / "presentation" / filename)
+                for _, (tool, filename) in _REUSABLE_IMMUNOGENICITY_OUTPUTS.items()
+                if tool in reused_immunogenicity_sources
+            },
+            message="reused normalized evidence: " + ", ".join(reused_immunogenicity_sources),
+        ))
     config_path = run_outdir / "run.production.generated.toml"
     _write_final_config(
         config_path,
@@ -703,8 +758,8 @@ def run_production(
         raw_events=merged_events,
         raw_peptides=merged_peptides,
         evidence=expanded_evidence,
+        reuse_immunogenicity_sources=reused_immunogenicity_sources,
     )
-    final_outdir = run_outdir / "final"
     if skip_ranking:
         final_stage = StageResult("unified_ranking", "SKIPPED", True, outputs={"config": str(config_path)})
         final_status = "PARTIAL"

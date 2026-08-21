@@ -279,6 +279,41 @@ def test_normalizer_keeps_exact_schema_and_multitool_provenance(tmp_path: Path):
     assert Path(outputs["evidence_conflicts"]).is_file()
 
 
+def test_splicemutr_directory_resolves_standard_combined_output(tmp_path: Path):
+    primary = _write(
+        tmp_path / "regtools.tsv",
+        "chrom\tstart\tend\tname\tscore\tstrand\tgene_names\n"
+        "chr1\t99\t200\tJ1\t7\t+\tGENE1\n",
+    )
+    splicemutr_dir = tmp_path / "splicemutr"
+    input_dir = splicemutr_dir / "input"
+    combined = splicemutr_dir / "combined"
+    input_dir.mkdir(parents=True)
+    combined.mkdir(parents=True)
+    _write(
+        input_dir / "snaf_maxmin_junctions.tsv",
+        "chr\tstart\tend\tstrand\tuid\n"
+        "chr1\t100\t200\t+\tJ1\n",
+    )
+    _write(
+        combined / "data_splicemutr_all_pep.txt",
+        "chr\tstart\tend\tstrand\tgene\tpeptide\n"
+        "chr1\t100\t200\t+\tGENE1\tPROTEINSEQ\n",
+    )
+
+    outputs = normalize_splice_sources(
+        sample_id="S1",
+        junctions=primary,
+        splicemutr=splicemutr_dir,
+        outdir=tmp_path / "out_dir_input",
+    )
+
+    evidence = read_tsv(outputs["splice_tool_evidence"])
+    assert any(row["source_tool"] == "SpliceMutr" for row in evidence)
+    events = read_tsv(outputs["raw_events"])
+    assert any("SpliceMutr" in row["source_tools"] for row in events)
+
+
 def test_candidate_only_emits_linked_primary_records_not_unrelated_junctions(tmp_path: Path):
     primary = _write(
         tmp_path / "regtools.tsv",
@@ -305,6 +340,40 @@ def test_candidate_only_emits_linked_primary_records_not_unrelated_junctions(tmp
     qc = {row["metric"]: row["value"] for row in read_tsv(outputs["splice_qc"])}
     assert qc["primary_junction_records"] == "2"
     assert qc["candidate_only_output"] == "true"
+
+
+def test_candidate_only_streams_normal_panel_without_materializing_rows(tmp_path: Path):
+    primary = _write(
+        tmp_path / "regtools.tsv",
+        "chrom\tstart\tend\tname\tscore\tstrand\tgene_names\n"
+        "chr1\t99\t200\tJ1\t7\t+\tGENE1\n",
+    )
+    snaf = _write(
+        tmp_path / "snaf.tsv",
+        "source_junction_id\tgene\tpeptide\thla_allele\tbinding_rank\n"
+        "J1\tGENE1\tACDEFGHIK\tHLA-A*02:01\t0.8\n",
+    )
+    normal = _write(
+        tmp_path / "normal.tsv",
+        "chrom\tstart\tend\tname\tscore\tstrand\tgene_names\n"
+        "chr1\t100\t200\tJ1\t3\t+\tGENE1\n"
+        "chr2\t299\t400\tN2\t5\t+\tGENE2\n",
+    )
+    outputs = normalize_splice_sources(
+        sample_id="S1",
+        junctions=primary,
+        snaf=snaf,
+        normal_junctions=normal,
+        outdir=tmp_path / "candidate_only_normal",
+        candidate_only=True,
+    )
+    consensus = read_tsv(outputs["splice_consensus"])
+    assert consensus[0]["normal_junction_status"] == "DETECTED"
+    qc = {row["metric"]: row["value"] for row in read_tsv(outputs["splice_qc"])}
+    assert qc["normal_resolvable_rows"] == "2"
+    assert qc["normal_exact_tumor_junction_hits"] == "1"
+    assert qc["normal_scan_mode"] == "targeted_stream"
+    assert qc["normal_background_records_materialized"] == "0"
 
 
 def test_tool_consensus_does_not_confirm_same_gene_different_junction(tmp_path: Path):

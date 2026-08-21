@@ -934,6 +934,12 @@ def cmd_run_full(args):
         "reference_proteome": reference_proteome,
         "evidence_consensus_rules": evidence_consensus_rules,
         "immunogenicity_stub": bool(tools_cfg.get("immunogenicity_stub", False)),
+        "reuse_immunogenicity_outputs": bool(
+            tools_cfg.get("reuse_immunogenicity_outputs", False)
+        ),
+        "reuse_immunogenicity_sources": list(
+            tools_cfg.get("reuse_immunogenicity_sources") or []
+        ),
         "tool_executables": tools_cfg.get("executables") or {},
         "rna_junction": inputs.get("rna_junction_tsv") or inputs.get("rna_junction"),
         "entry_mode": entry_mode,

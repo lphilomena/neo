@@ -136,9 +136,18 @@ def main() -> int:
     ap.add_argument("--star-executable", default="", help="Optional explicit STAR executable")
     ap.add_argument("--samtools-executable", default="samtools", help="samtools used to index RNA BAM")
     ap.add_argument("--rna-threads", type=int, default=16)
-    ap.add_argument("--easyfuse"); ap.add_argument("--star-fusion"); ap.add_argument("--arriba")
+    ap.add_argument("--easyfuse"); ap.add_argument("--easyfuse-unfiltered")
+    ap.add_argument("--diagnostic-fusion-whitelist", action="append", default=[], help="Exact disease-defining fusion label eligible for audited rescue; repeatable")
+    ap.add_argument("--disable-diagnostic-fusion-rescue", action="store_true")
+    ap.add_argument("--star-fusion"); ap.add_argument("--arriba")
+    ap.add_argument("--fusioncatcher"); ap.add_argument("--jaffal")
+    ap.add_argument("--fusion-caller-root", action="append", default=[], help="Directory containing completed fusion caller outputs; repeatable")
+    ap.add_argument("--normal-readthrough", help="Normal/read-through fusion background table for review")
     ap.add_argument("--junctions"); ap.add_argument("--star-sj"); ap.add_argument("--snaf"); ap.add_argument("--splicemutr"); ap.add_argument("--normal-junctions")
     ap.add_argument("--normal-expression"); ap.add_argument("--normal-hla-ligands"); ap.add_argument("--reference-proteome")
+    ap.add_argument("--prime-evidence", help="Existing normalized PRIME evidence TSV to reuse")
+    ap.add_argument("--bigmhc-evidence", help="Existing normalized BigMHC_IM evidence TSV to reuse")
+    ap.add_argument("--deepimmuno-evidence", help="Existing normalized DeepImmuno evidence TSV to reuse")
     ap.add_argument("--netchop-executable", default="netChop"); ap.add_argument("--netchop-home", default="")
     ap.add_argument(
         "--skip-netmhcstabpan",
@@ -393,10 +402,15 @@ def main() -> int:
         command = f"{reference_env}PYTHONPATH={q(root / 'src')} {q(sys.executable)} {q(root / 'scripts/run_candidate_upstream.py')} --mode snv --input {q(require(args.somatic_vcf, 'somatic VCF'))} --hla-file {q(hla)} --sample-id {q(args.sample_id)} --outdir {{outdir}}/branches/snv{vep_cache_arg}"
         stage(lines, "snv_indel_candidates", source="SNV_INDEL", command=command, outputs={"raw_events": "{outdir}/branches/snv/parsed/raw_events.tsv", "raw_peptides": "{outdir}/branches/snv/parsed/raw_peptides.tsv"}, depends=hla_dependency)
         candidate_stages.append("snv_indel_candidates")
-    if args.easyfuse or args.star_fusion or args.arriba:
+    if args.easyfuse or args.easyfuse_unfiltered or args.star_fusion or args.arriba or args.fusioncatcher or args.jaffal or args.fusion_caller_root:
         union_args = []
         easyfuse = require(args.easyfuse, "EasyFuse") if args.easyfuse else ""
         if easyfuse: union_args += ["--easyfuse", q(easyfuse)]
+        if args.easyfuse_unfiltered: union_args += ["--easyfuse-unfiltered", q(require(args.easyfuse_unfiltered, "unfiltered EasyFuse"))]
+        for fusion_label in args.diagnostic_fusion_whitelist:
+            union_args += ["--diagnostic-fusion-whitelist", q(fusion_label)]
+        if args.disable_diagnostic_fusion_rescue:
+            union_args += ["--disable-diagnostic-fusion-rescue"]
         if args.star_fusion: union_args += ["--star-fusion", q(require(args.star_fusion, "STAR-Fusion"))]
         if args.arriba: union_args += ["--arriba", q(require(args.arriba, "Arriba"))]
         star_junction_source = args.star_sj or args.junctions
@@ -404,13 +418,23 @@ def main() -> int:
             chimeric = Path(star_junction_source).with_name("Chimeric.out.junction")
             if chimeric.is_file() and chimeric.stat().st_size > 0:
                 union_args += ["--star-chimeric", q(str(chimeric))]
+        if args.fusioncatcher: union_args += ["--fusioncatcher", q(require(args.fusioncatcher, "FusionCatcher"))]
+        if args.jaffal: union_args += ["--jaffal", q(require(args.jaffal, "JAFFAL"))]
+        for caller_root in args.fusion_caller_root:
+            union_args += ["--caller-root", q(require(caller_root, "fusion caller result root"))]
         command = f"PYTHONPATH={q(root / 'src')} {q(sys.executable)} {q(root / 'scripts/build_fusion_caller_union.py')} --sample-id {q(args.sample_id)} --profile {q(profile)} --hla-file {q(hla)} {' '.join(union_args)} --outdir {{outdir}}/branches/fusion/intermediates"
-        stage(lines, "fusion_candidates", source="FusionCallerUnion", command=command, outputs={"raw_events": "{outdir}/branches/fusion/intermediates/raw_events.tsv", "raw_peptides": "{outdir}/branches/fusion/intermediates/raw_peptides.tsv", "fusion_union": "{outdir}/branches/fusion/intermediates/fusion_caller_union.tsv"}, depends=hla_dependency)
+        stage(lines, "fusion_candidates", source="FusionCallerUnion", command=command, outputs={"raw_events": "{outdir}/branches/fusion/intermediates/raw_events.tsv", "raw_peptides": "{outdir}/branches/fusion/intermediates/raw_peptides.tsv", "fusion_union": "{outdir}/branches/fusion/intermediates/fusion_caller_union.tsv", "fusion_consensus": "{outdir}/branches/fusion/intermediates/fusion_consensus.tsv", "diagnostic_fusion_rescue": "{outdir}/branches/fusion/intermediates/diagnostic_fusion_rescue.tsv"}, depends=hla_dependency)
         candidate_stages.append("fusion_candidates")
         review = f"{q(sys.executable)} {q(root / 'scripts/review_rna_fusions.py')}"
-        if easyfuse: review += f" --easyfuse {easyfuse}"
-        if args.star_fusion: review += f" --star-fusion {require(args.star_fusion, 'STAR-Fusion')}"
-        if args.arriba: review += f" --arriba {require(args.arriba, 'Arriba')}"
+        if easyfuse: review += f" --easyfuse {q(easyfuse)}"
+        if args.star_fusion: review += f" --star-fusion {q(require(args.star_fusion, 'STAR-Fusion'))}"
+        if args.arriba: review += f" --arriba {q(require(args.arriba, 'Arriba'))}"
+        if args.fusioncatcher: review += f" --fusioncatcher {q(require(args.fusioncatcher, 'FusionCatcher'))}"
+        if args.jaffal: review += f" --jaffal {q(require(args.jaffal, 'JAFFAL'))}"
+        for caller_root in args.fusion_caller_root:
+            review += f" --caller-root {q(require(caller_root, 'fusion caller result root'))}"
+        if args.normal_readthrough:
+            review += f" --normal-readthrough {q(require(args.normal_readthrough, 'normal read-through background'))}"
         review += " --outdir {outdir}/branches/fusion/consensus"
         stage(lines, "fusion_cross_validation", command=review, outputs={"fusion_consensus": "{outdir}/branches/fusion/consensus/fusion_consensus.tsv"}, required=True, depends=["fusion_candidates"])
     if args.junctions and args.star_sj:
@@ -443,6 +467,10 @@ def main() -> int:
     ]
     if rna_vaf:
         lines.append(f"rna_vaf = {q(rna_vaf)}")
+    for key in ("prime_evidence", "bigmhc_evidence", "deepimmuno_evidence"):
+        value = getattr(args, key)
+        if value:
+            lines.append(f"{key} = {q(require(value, key))}")
     for key in ("expression", "transcript_expression", "normal_junctions", "normal_expression", "normal_hla_ligands", "reference_proteome"):
         value = getattr(args, key)
         if value: lines.append(f"{key} = {q(require(value, key))}")

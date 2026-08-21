@@ -7,6 +7,7 @@ import tomllib
 from pathlib import Path
 
 from neoag.utils import read_tsv
+from neoag.production_runner import _materialize_reusable_immunogenicity_outputs
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -41,12 +42,45 @@ def test_generator_builds_all_three_upstream_consensus_stages(tmp_path):
     manifest = tomllib.loads(output.read_text(encoding="utf-8"))
     assert manifest["run"]["hla_file"].endswith("evidence/hla_typing/recommended_hla.txt")
     assert {"hla_typing_consensus", "purity_cnv_consensus", "hla_loh_consensus", "fusion_candidates"} <= set(manifest["stages"])
+    assert "--jaffal" not in manifest["stages"]["fusion_candidates"]["command"]
     assert manifest["evidence"]["purity"].endswith("evidence/purity_cnv/recommended_purity.tsv")
     assert manifest["evidence"]["hla_loh"].endswith("evidence/hla_loh/hla_loh_consensus.tsv")
     assert manifest["run"]["profile"].endswith("profiles/sarcoma_rna_supported_v2_provisional.toml")
     assert manifest["evidence"]["evidence_consensus_rules"].endswith(
         "configs/ranking/sarcoma_evidence_consensus_v3_source_chain.toml"
     )
+
+
+def test_generator_and_runner_reuse_immunogenicity_evidence_independently(tmp_path):
+    hla = write(tmp_path / "hla.txt", "HLA-A*02:01\n")
+    purity = write(tmp_path / "purity.tsv", "sample_id\tpurity\tploidy\nS1\t0.60\t2.0\n")
+    cnv = write(tmp_path / "cnv.tsv", "chrom\tstart\tend\ttotal_cn\nchr1\t1\t1000\t2\n")
+    lohhla = write(tmp_path / "lohhla.tsv", "hla_allele\tloh_status\nHLA-A*02:01\tretained\n")
+    spechla_loh = write(tmp_path / "spechla_loh.tsv", "hla_allele\tloh_status\nHLA-A*02:01\tretained\n")
+    vcf = write(tmp_path / "somatic.vcf", "##fileformat=VCFv4.2\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\nchr1\t10\t.\tA\tT\t.\tPASS\t.\n")
+    prime = write(tmp_path / "existing/prime_evidence.tsv", "peptide\thla_allele\tprime_score\nSIINFEKL\tHLA-A*02:01\t0.8\n")
+    bigmhc = write(tmp_path / "existing/bigmhc_im_evidence.tsv", "peptide\thla_allele\tbigmhc_im_score\nSIINFEKL\tHLA-A*02:01\t0.7\n")
+    deep = write(tmp_path / "existing/deepimmuno_evidence.tsv", "peptide\thla_allele\tdeepimmuno_score\nSIINFEKL\tHLA-A*02:01\t0.6\n")
+    output = tmp_path / "production.toml"
+    subprocess.run([
+        sys.executable, str(ROOT / "scripts/generate_production_from_results_manifest.py"),
+        "--project-root", str(ROOT), "--sample-id", "S1", "--outdir", str(tmp_path / "run"),
+        "--output", str(output), "--hla-file", str(hla), "--purity", str(purity), "--cnv", str(cnv),
+        "--lohhla", str(lohhla), "--spechla-loh", str(spechla_loh), "--somatic-vcf", str(vcf),
+        "--prime-evidence", str(prime), "--bigmhc-evidence", str(bigmhc),
+        "--deepimmuno-evidence", str(deep),
+    ], check=True)
+    manifest = tomllib.loads(output.read_text(encoding="utf-8"))
+    assert manifest["evidence"]["prime_evidence"] == str(prime)
+    assert manifest["evidence"]["bigmhc_evidence"] == str(bigmhc)
+    assert manifest["evidence"]["deepimmuno_evidence"] == str(deep)
+
+    final = tmp_path / "run/final"
+    reused = _materialize_reusable_immunogenicity_outputs(final, manifest["evidence"])
+    assert reused == ["prime", "bigmhc_im", "deepimmuno"]
+    assert (final / "presentation/prime_evidence.tsv").read_text() == prime.read_text()
+    assert (final / "presentation/bigmhc_im_evidence.tsv").read_text() == bigmhc.read_text()
+    assert (final / "presentation/deepimmuno_evidence.tsv").read_text() == deep.read_text()
 
 
 def test_generator_filters_splice_candidates_before_production_scoring(tmp_path):
@@ -219,6 +253,72 @@ def test_fusion_union_keeps_event_only_callers_and_provided_peptides(tmp_path):
     assert {row["gene"] for row in events} == {"EWSR1::WT1", "CPSF6::RARG"}
     assert any(row["peptide"] == "QYYSTPWTF" and row["hla_allele"] == "HLA-A*02:01" for row in peptides)
     assert any(row["gene_pair"] == "EWSR1::WT1" and row["peptide_status"] == "ORF_PEPTIDE_UNAVAILABLE_REVIEW_ONLY" for row in audit)
+
+
+def test_fusion_union_rescues_only_exact_diagnostic_whitelist_from_unfiltered_easyfuse(tmp_path):
+    hla = write(tmp_path / "hla.txt", "HLA-A*02:01\n")
+    header = (
+        "BPID;Fusion_Gene;Breakpoint1;Breakpoint2;FTID;prediction_class;prediction_prob;"
+        "fusioncatcher_detected;star_detected;arriba_detected;tool_count;fusioncatcher_junc;"
+        "fusioncatcher_span;fusioncatcher_anch;frame;type;neo_peptide_sequence;neo_peptide_sequence_bp"
+    )
+    unfiltered = write(
+        tmp_path / "fusions.csv",
+        header + "\n"
+        "ews;EWSR1_WT1;22:100:+;11:200:-;tx1;;0;1;0;0;1;20;10;18;in_frame;trans;ACDEFGHIKLMNPQRSTVWY;10\n"
+        "noise;NOISE_BACKGROUND;1:10:+;2:20:-;tx2;;0;1;0;0;1;30;20;18;in_frame;trans;ACDEFGHIKLMNPQRSTVWY;10\n",
+    )
+    outdir = tmp_path / "union-rescue"
+    subprocess.run([
+        sys.executable, str(ROOT / "scripts/build_fusion_caller_union.py"),
+        "--sample-id", "S1", "--hla-file", str(hla),
+        "--easyfuse-unfiltered", str(unfiltered), "--outdir", str(outdir),
+    ], cwd=ROOT, check=True)
+    events = read_tsv(outdir / "raw_events.tsv")
+    peptides = read_tsv(outdir / "raw_peptides.tsv")
+    audit = read_tsv(outdir / "fusion_caller_union.tsv")
+    rescue = read_tsv(outdir / "diagnostic_fusion_rescue.tsv")
+    assert {row["gene"] for row in events} == {"EWSR1::WT1"}
+    assert peptides and all(row["crosses_junction"] == "yes" for row in peptides)
+    assert all(row["gene"] == "EWSR1::WT1" for row in peptides)
+    assert audit[0]["admission_policy"] == "DIAGNOSTIC_WHITELIST_RESCUE"
+    assert audit[0]["rescue_reason"] == "diagnostic_whitelist_not_in_easyfuse_pass"
+    assert {row["fusion_gene"] for row in rescue} == {"EWSR1::WT1"}
+
+
+def test_generator_unions_existing_fusion_callers_including_jaffal(tmp_path):
+    hla = write(tmp_path / "hla.txt", "HLA-A*02:01\n")
+    purity = write(tmp_path / "purity.tsv", "sample_id\tpurity\tploidy\nS1\t0.60\t2.0\n")
+    cnv = write(tmp_path / "cnv.tsv", "chrom\tstart\tend\ttotal_cn\nchr1\t1\t1000\t2\n")
+    lohhla = write(tmp_path / "lohhla.tsv", "hla_allele\tloh_status\nHLA-A*02:01\tretained\n")
+    spechla_loh = write(tmp_path / "spechla_loh.tsv", "hla_allele\tloh_status\nHLA-A*02:01\tretained\n")
+    jaffal = write(tmp_path / "long-rna/jaffal/output/jaffa_results.csv", "fusion genes,chrom1,base1,chrom2,base2,spanning reads,classification\nEWSR1::WT1,chr22,100,chr11,200,15,HighConfidence\nNOISE::EVENT,chr1,10,chr2,20,2,PotentialTransSplicing\n")
+    caller_root = tmp_path / "long-rna"
+    output = tmp_path / "production.toml"
+    subprocess.run([
+        sys.executable, str(ROOT / "scripts/generate_production_from_results_manifest.py"),
+        "--project-root", str(ROOT), "--sample-id", "S1", "--outdir", str(tmp_path / "run"),
+        "--output", str(output), "--hla-file", str(hla), "--purity", str(purity), "--cnv", str(cnv),
+        "--lohhla", str(lohhla), "--spechla-loh", str(spechla_loh),
+        "--jaffal", str(jaffal), "--fusion-caller-root", str(caller_root),
+    ], check=True)
+    manifest = tomllib.loads(output.read_text(encoding="utf-8"))
+    fusion = manifest["stages"]["fusion_candidates"]
+    assert "build_fusion_caller_union.py" in fusion["command"]
+    assert "--jaffal" in fusion["command"]
+    assert "--caller-root" in fusion["command"]
+    assert fusion["outputs"]["fusion_consensus"].endswith("fusion_consensus.tsv")
+
+    union_dir = tmp_path / "union"
+    subprocess.run([
+        sys.executable, str(ROOT / "scripts/build_fusion_caller_union.py"),
+        "--sample-id", "S1", "--hla-file", str(hla), "--jaffal", str(jaffal),
+        "--outdir", str(union_dir),
+    ], cwd=ROOT, check=True)
+    events = read_tsv(union_dir / "raw_events.tsv")
+    assert len(events) == 1
+    assert events[0]["gene"] == "EWSR1::WT1"
+    assert events[0]["rna_junction_reads"] == "15"
 
 
 def test_existing_upstream_results_produce_hla_purity_and_loh_consensus(tmp_path):

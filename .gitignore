@@ -99,3 +99,7 @@ configs/local/
 /bin/pvacseq-neoag7
 /bin/pvacfuse-neoag7
 /bin/pvacsplice-neoag7
+
+# Native crash dumps (for example licensed predictor failures).
+/core
+/core.*

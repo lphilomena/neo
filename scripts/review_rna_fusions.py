@@ -18,6 +18,7 @@ FUSIONCATCHER_PATTERNS = (
     "**/final-list_candidate-fusion-genes*.txt",
     "**/final-list_candidate-fusion-genes*",
 )
+JAFFAL_PATTERNS = ("**/jaffa_results.csv", "**/jaffal_results.csv")
 EASYFUSE_PATTERNS = ("**/fusions.pass.csv",)
 
 
@@ -66,7 +67,7 @@ def first(row: dict[str, str], names: list[str]) -> str:
 
 
 def pair(row: dict[str, str]) -> str:
-    combined = first(row, ["fusion", "fusion_name", "fusionname", "fusion_gene"])
+    combined = first(row, ["fusion", "fusion_name", "fusionname", "fusion_gene", "fusion genes", "fusion_genes"])
     if combined:
         return combined.replace("--", "::")
     left = first(row, ["gene1", "gene5", "left_gene", "gene_1_symbol(5end_fusion_partner)", "gene_1_symbol", "5end_fusion_partner"])
@@ -88,6 +89,7 @@ def main() -> int:
     ap.add_argument("--star-fusion", type=Path)
     ap.add_argument("--arriba", type=Path)
     ap.add_argument("--fusioncatcher", type=Path)
+    ap.add_argument("--jaffal", type=Path)
     ap.add_argument("--caller-root", action="append", type=Path, default=[])
     ap.add_argument("--normal-readthrough", type=Path)
     ap.add_argument("--outdir", required=True, type=Path)
@@ -101,10 +103,15 @@ def main() -> int:
         ("STAR-Fusion", existing([args.star_fusion]) + discover_files(roots, STAR_FUSION_PATTERNS)),
         ("Arriba", existing([args.arriba]) + [path for path in discover_files(roots, ARRIBA_PATTERNS) if path.name != "fusions.pass.csv"]),
         ("FusionCatcher", existing([args.fusioncatcher]) + discover_files(roots, FUSIONCATCHER_PATTERNS)),
+        ("JAFFAL", existing([args.jaffal]) + discover_files(roots, JAFFAL_PATTERNS)),
     ]
     for tool, paths in caller_paths:
         for path in existing(paths):
             for row in read_rows(path):
+                if tool == "JAFFAL":
+                    classification = first(row, ["classification", "confidence"])
+                    if classification and classification.lower() != "highconfidence":
+                        continue
                 fusion = pair(row)
                 if not fusion:
                     continue

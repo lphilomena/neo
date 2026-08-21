@@ -15,6 +15,7 @@ from neoag.adapters.diagnostic_fusion_rescue import (
     diagnostic_rescue_rows_from_easyfuse,
     infer_unfiltered_easyfuse_path,
     normalize_fusion_label,
+    write_diagnostic_fusion_rescue,
 )
 from neoag.model_layers import enrich_event_layers, enrich_peptide_layers, infer_mutation_source, infer_peptide_consequence
 from neoag.provenance import merge_rows_preserving_provenance
@@ -38,6 +39,10 @@ FUSIONCATCHER_PATTERNS = (
     "**/fusioncatcher.final-list.txt",
     "**/final-list_candidate-fusion-genes*.txt",
     "**/final-list_candidate-fusion-genes*",
+)
+JAFFAL_PATTERNS = (
+    "**/jaffa_results.csv",
+    "**/jaffal_results.csv",
 )
 EASYFUSE_PATTERNS = (
     "**/fusions.pass.csv",
@@ -316,7 +321,7 @@ def discover_files(roots: list[Path], patterns: tuple[str, ...]) -> list[Path]:
 
 
 def gene_pair(row: dict[str, str]) -> tuple[str, str]:
-    combined = first(row, ["FusionName", "#FusionName", "fusion", "fusion_name", "Fusion_Gene"], "")
+    combined = first(row, ["FusionName", "#FusionName", "fusion", "fusion_name", "Fusion_Gene", "fusion genes", "fusion_genes"], "")
     for sep in ("::", "--", "_"):
         if sep in combined:
             left, right = combined.split(sep, 1)
@@ -330,17 +335,32 @@ def gene_pair(row: dict[str, str]) -> tuple[str, str]:
 def generic_caller_rows(path: Path, tool: str, sample_id: str, profile: str, hla: list[str]):
     events, peptides, audit = [], [], []
     for index, row in enumerate(read_table(path), 1):
+        if tool == "JAFFAL":
+            classification = first(row, ["classification", "confidence"], "")
+            if classification and classification.lower() != "highconfidence":
+                continue
+        if tool == "Arriba" and first(row, ["confidence"], "").strip().lower() == "low":
+            continue
+        filter_status = first(row, ["filter", "filter_status", "status"], "").strip().lower()
+        if filter_status and filter_status in {"fail", "failed", "reject", "rejected", "filtered"}:
+            continue
         left_gene, right_gene = gene_pair(row)
         if not left_gene or not right_gene:
             continue
         left_bp = first(row, ["LeftBreakpoint", "breakpoint1", "left_breakpoint", "breakpoint_1"], "")
         right_bp = first(row, ["RightBreakpoint", "breakpoint2", "right_breakpoint", "breakpoint_2"], "")
+        if not left_bp:
+            chrom, base = first(row, ["chrom1", "chr1"], ""), first(row, ["base1", "position1", "pos1"], "")
+            left_bp = f"{chrom}:{base}" if chrom and base else ""
+        if not right_bp:
+            chrom, base = first(row, ["chrom2", "chr2"], ""), first(row, ["base2", "position2", "pos2"], "")
+            right_bp = f"{chrom}:{base}" if chrom and base else ""
         direction = first(row, ["direction", "strand", "Strand1", "strand1(gene/fusion)"], "") + "/" + first(row, ["Strand2", "strand2(gene/fusion)"], "")
         pair = f"{left_gene}::{right_gene}"
         norm_left_bp = normalize_breakpoint(left_bp)
         norm_right_bp = normalize_breakpoint(right_bp)
         event_id = safe_id(f"FUSION|{pair}|{norm_left_bp}|{norm_right_bp}")
-        reads = first(row, ["JunctionReadCount", "junction_reads", "split_reads", "supporting_reads", "split_reads1"], "")
+        reads = first(row, ["JunctionReadCount", "junction_reads", "split_reads", "supporting_reads", "split_reads1", "spanning reads", "spanning_reads", "spanning pairs", "spanning_pairs"], "")
         frame = first(row, ["frame", "reading_frame", "in_frame", "reading_frame_status"], "")
         base = {field: "" for field in EVENT_FIELDS}
         base.update({
@@ -378,7 +398,110 @@ def generic_caller_rows(path: Path, tool: str, sample_id: str, profile: str, hla
                     "immunogenicity_score": "0.5", "wildtype_binding_rank": "99", "self_similarity_score": "0.0",
                 })
                 peptides.append(enrich_peptide_layers(pbase))
-        audit.append({"event_id": event_id, "gene_pair": pair, "left_breakpoint": left_bp, "right_breakpoint": right_bp, "direction": direction, "source_tool": tool, "source_file": str(path), "source_row": str(index), "peptide_status": "PROVIDED_ORF_PEPTIDE" if windows else "ORF_PEPTIDE_UNAVAILABLE_REVIEW_ONLY"})
+        audit.append({"event_id": event_id, "gene_pair": pair, "left_breakpoint": left_bp, "right_breakpoint": right_bp, "direction": direction, "source_tool": tool, "source_file": str(path), "source_row": str(index), "peptide_status": "PROVIDED_ORF_PEPTIDE" if windows else "ORF_PEPTIDE_UNAVAILABLE_REVIEW_ONLY", "admission_policy": "CALLER_PASS_OR_INDEPENDENT_CALLER", "rescue_reason": ""})
+    return events, peptides, audit
+
+
+def _breakpoint_windows(sequence: str, breakpoint: int, lengths: tuple[int, ...] = (8, 9, 10, 11)) -> list[str]:
+    """Return only peptide windows that contain residues on both sides of a junction."""
+    sequence = re.sub(r"[^ACDEFGHIKLMNPQRSTVWY]", "", str(sequence or "").upper())
+    if not sequence or breakpoint <= 0 or breakpoint >= len(sequence):
+        return []
+    windows: list[str] = []
+    for length in lengths:
+        first_start = max(0, breakpoint - length + 1)
+        last_start = min(breakpoint - 1, len(sequence) - length)
+        for start in range(first_start, last_start + 1):
+            peptide = sequence[start:start + length]
+            if len(peptide) == length and peptide not in windows:
+                windows.append(peptide)
+    return windows
+
+
+def diagnostic_rescue_entities(
+    rows: list[dict[str, str]], sample_id: str, profile: str, hla: list[str]
+) -> tuple[list[dict[str, str]], list[dict[str, str]], list[dict[str, str]]]:
+    """Promote exact-whitelist rescue rows into the formal union with an auditable cap."""
+    events: list[dict[str, str]] = []
+    peptides: list[dict[str, str]] = []
+    audit: list[dict[str, str]] = []
+    for row in rows:
+        pair = str(row.get("fusion_gene") or "").strip()
+        bp1, bp2 = str(row.get("breakpoint1") or ""), str(row.get("breakpoint2") or "")
+        event_id = safe_id(f"FUSION|{pair}|{normalize_breakpoint(bp1)}|{normalize_breakpoint(bp2)}")
+        chrom, pos = "", ""
+        parts = normalize_breakpoint(bp1).split(":", 1)
+        if len(parts) == 2:
+            chrom, pos = parts
+        event = {field: "" for field in EVENT_FIELDS}
+        event.update({
+            "event_id": event_id,
+            "sample_id": sample_id,
+            "disease_profile": profile,
+            "event_type": "Fusion",
+            "mutation_source": infer_mutation_source(event_type="Fusion", tool="EasyFuse"),
+            "peptide_consequence": "fusion",
+            "evidence_scope": "DIAGNOSTIC_WHITELIST_RESCUE",
+            "priority_cap": "C_CAUTION",
+            "gene": pair,
+            "event_name": pair,
+            "chrom": chrom,
+            "pos": pos,
+            "transcript_id": row.get("ftid", ""),
+            "consequence": row.get("frame_status") or "fusion_orf_unassessed",
+            "rna_junction_reads": row.get("rna_junction_reads", ""),
+            "event_confidence": "0.600",
+            "driver_relevance": "1.0",
+            "clonality": "0.5",
+            "persistence": "0.5",
+            "tumor_specificity": "0.7",
+            "source": f"EasyFuse:diagnostic_whitelist_rescue:{row.get('source_file', '')}",
+        })
+        events.append(enrich_event_layers(event))
+        sequence = row.get("neo_peptide_sequence", "")
+        breakpoint = int(to_float(row.get("neo_peptide_sequence_bp"), 0.0))
+        windows = _breakpoint_windows(sequence, breakpoint)
+        for peptide in windows:
+            for allele in hla:
+                pbase = {field: "" for field in PEPTIDE_FIELDS}
+                pbase.update({
+                    "peptide_id": safe_id(f"{event_id}|{allele}|{peptide}"),
+                    "event_id": event_id,
+                    "sample_id": sample_id,
+                    "event_type": "Fusion",
+                    "mutation_source": event["mutation_source"],
+                    "peptide_consequence": "fusion",
+                    "evidence_scope": "DIAGNOSTIC_WHITELIST_RESCUE",
+                    "priority_cap": "C_CAUTION",
+                    "gene": pair,
+                    "peptide": peptide,
+                    "crosses_junction": "yes",
+                    "contains_novel_aa": "yes",
+                    "rna_junction_reads": row.get("rna_junction_reads", ""),
+                    "hla_allele": allele,
+                    "mhc_class": "I",
+                    "source_tool": "EasyFuse_diagnostic_whitelist_rescue",
+                    "binding_rank": "99",
+                    "el_rank": "99",
+                    "presentation_score": "0.0",
+                    "immunogenicity_score": "0.5",
+                    "wildtype_binding_rank": "99",
+                    "self_similarity_score": "0.0",
+                })
+                peptides.append(enrich_peptide_layers(pbase))
+        audit.append({
+            "event_id": event_id,
+            "gene_pair": pair,
+            "left_breakpoint": bp1,
+            "right_breakpoint": bp2,
+            "direction": "",
+            "source_tool": "EasyFuse",
+            "source_file": row.get("source_file", ""),
+            "source_row": "",
+            "peptide_status": "JUNCTION_WINDOWS_GENERATED" if windows else "ORF_PEPTIDE_UNAVAILABLE_REVIEW_ONLY",
+            "admission_policy": "DIAGNOSTIC_WHITELIST_RESCUE",
+            "rescue_reason": row.get("rescue_reason", ""),
+        })
     return events, peptides, audit
 
 
@@ -428,6 +551,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--sample-id", required=True); parser.add_argument("--profile", default="default")
     parser.add_argument("--hla-file", required=True, type=Path); parser.add_argument("--easyfuse", type=Path)
+    parser.add_argument("--easyfuse-unfiltered", type=Path)
+    parser.add_argument("--diagnostic-fusion-whitelist", action="append", default=[])
+    parser.add_argument("--disable-diagnostic-fusion-rescue", action="store_true")
     parser.add_argument("--star-fusion", type=Path); parser.add_argument("--arriba", type=Path)
     parser.add_argument("--fusioncatcher", type=Path)
     parser.add_argument("--easyfuse-all", action="append", type=Path, default=[])
@@ -435,6 +561,7 @@ def main() -> int:
     parser.add_argument("--targeted-fusion-rescue", action="store_true", default=True)
     parser.add_argument("--no-targeted-fusion-rescue", action="store_false", dest="targeted_fusion_rescue")
     parser.add_argument("--targeted-fusion-whitelist", default=",".join(DEFAULT_DIAGNOSTIC_FUSION_WHITELIST))
+    parser.add_argument("--jaffal", type=Path)
     parser.add_argument("--caller-root", action="append", type=Path, default=[])
     parser.add_argument("--outdir", required=True, type=Path)
     args = parser.parse_args()
@@ -461,6 +588,7 @@ def main() -> int:
     ]
     fusioncatcher_files = existing([args.fusioncatcher]) + discover_files(roots, FUSIONCATCHER_PATTERNS)
     star_chimeric_files = existing(args.star_chimeric) + discover_files(roots, STAR_CHIMERIC_PATTERNS)
+    jaffal_files = existing([args.jaffal]) + discover_files(roots, JAFFAL_PATTERNS)
 
     for easyfuse in existing(easyfuse_files):
         cfg = {"sample": {"id": args.sample_id, "profile": args.profile}, "inputs": {"entry_mode": "fusion", "easyfuse_tsv": str(easyfuse.resolve()), "hla_alleles": hla}}
@@ -470,8 +598,35 @@ def main() -> int:
         events.extend(easyfuse_events)
         peptides.extend(read_table(easyfuse_out / "parsed/raw_peptides.tsv"))
         for event in easyfuse_events:
-            audit.append({"event_id": event.get("event_id", ""), "gene_pair": event.get("gene", ""), "left_breakpoint": "", "right_breakpoint": "", "direction": "", "source_tool": "EasyFuse", "source_file": str(easyfuse), "source_row": "", "peptide_status": "GENERATED_FROM_EASYFUSE_ORF"})
-    for paths, tool in ((star_fusion_files, "STAR-Fusion"), (arriba_files, "Arriba"), (fusioncatcher_files, "FusionCatcher")):
+            audit.append({"event_id": event.get("event_id", ""), "gene_pair": event.get("gene", ""), "left_breakpoint": "", "right_breakpoint": "", "direction": "", "source_tool": "EasyFuse", "source_file": str(easyfuse), "source_row": "", "peptide_status": "GENERATED_FROM_EASYFUSE_ORF", "admission_policy": "CALLER_PASS", "rescue_reason": ""})
+    rescue_rows: list[dict[str, str]] = []
+    rescue_sources: list[Path] = []
+    if not args.disable_diagnostic_fusion_rescue:
+        whitelist = args.diagnostic_fusion_whitelist or list(DEFAULT_DIAGNOSTIC_FUSION_WHITELIST)
+        whitelist = sorted({normalize_fusion_label(value) for value in whitelist if normalize_fusion_label(value)})
+        rescue_sources = existing([args.easyfuse_unfiltered])
+        if not rescue_sources:
+            rescue_sources = existing([infer_unfiltered_easyfuse_path(path) for path in easyfuse_files])
+        pass_keys: set[tuple[str, str, str]] = set()
+        for path in easyfuse_files:
+            for row in read_table(path):
+                left_gene, right_gene = gene_pair(row)
+                label = normalize_fusion_label(f"{left_gene}::{right_gene}")
+                pass_keys.add((label, first(row, ["Breakpoint1", "breakpoint1"], ""), first(row, ["Breakpoint2", "breakpoint2"], "")))
+        for path in rescue_sources:
+            rescue_rows.extend(diagnostic_rescue_rows_from_easyfuse(path, sample_id=args.sample_id, whitelist=whitelist, pass_keys=pass_keys))
+        rescued_events, rescued_peptides, rescued_audit = diagnostic_rescue_entities(rescue_rows, args.sample_id, args.profile, hla)
+        existing_event_ids = {row.get("event_id", "") for row in events}
+        rescued_event_ids = {row.get("event_id", "") for row in rescued_events if row.get("event_id", "") not in existing_event_ids}
+        events.extend(row for row in rescued_events if row.get("event_id", "") in rescued_event_ids)
+        peptides.extend(row for row in rescued_peptides if row.get("event_id", "") in rescued_event_ids)
+        audit.extend(row for row in rescued_audit if row.get("event_id", "") in rescued_event_ids)
+    write_diagnostic_fusion_rescue(
+        rescue_rows,
+        args.outdir / "diagnostic_fusion_rescue.tsv",
+        source_path=rescue_sources[0] if rescue_sources else None,
+    )
+    for paths, tool in ((star_fusion_files, "STAR-Fusion"), (arriba_files, "Arriba"), (fusioncatcher_files, "FusionCatcher"), (jaffal_files, "JAFFAL")):
         for path in existing(paths):
             e, p, a = generic_caller_rows(path, tool, args.sample_id, args.profile, hla)
             events.extend(e); peptides.extend(p); audit.extend(a)
@@ -497,7 +652,7 @@ def main() -> int:
     write_tsv(args.outdir / "raw_peptides.tsv", merged_peptides, PEPTIDE_FIELDS)
     write_tsv(args.outdir / "parsed/raw_events.tsv", merged_events, EVENT_FIELDS)
     write_tsv(args.outdir / "parsed/raw_peptides.tsv", merged_peptides, PEPTIDE_FIELDS)
-    write_tsv(args.outdir / "fusion_caller_union.tsv", audit, ["event_id", "gene_pair", "left_breakpoint", "right_breakpoint", "direction", "source_tool", "source_file", "source_row", "peptide_status"])
+    write_tsv(args.outdir / "fusion_caller_union.tsv", audit, ["event_id", "gene_pair", "left_breakpoint", "right_breakpoint", "direction", "source_tool", "source_file", "source_row", "peptide_status", "admission_policy", "rescue_reason"])
     write_consensus(args.outdir / "fusion_consensus.tsv", audit)
     if rescue_sidecar:
         fields = [

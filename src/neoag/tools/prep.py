@@ -61,11 +61,11 @@ def write_mhcflurry_peptides_csv(pairs: list[tuple[str, str]], path: str | Path)
 
 
 def netmhcpan_pmhc_allele(hla: str) -> str:
-    """Format allele for NetMHCpan PEPTIDEMHC input (HLA-A02:06)."""
+    """Format allele for portable NetMHCpan input (HLA-A0206)."""
     s = str(hla or "").strip().upper()
     if s.startswith("HLA-"):
         s = s[4:]
-    s = s.replace("*", "")
+    s = s.replace("*", "").replace(":", "")
     return f"HLA-{s}"
 
 
@@ -77,13 +77,13 @@ def write_netmhcpan_pmhc_input(pairs: list[tuple[str, str]], path: str | Path) -
 
 
 def netmhcpan_allele_string(alleles: list[str]) -> str:
-    """Convert HLA-A*02:01 alleles to NetMHCpan 4.2 -a format (HLA-A02:01)."""
+    """Convert HLA-A*02:01 alleles to portable NetMHCpan form (HLA-A0201)."""
     out: list[str] = []
     for allele in alleles:
         s = str(allele or "").strip().upper()
         if s.startswith("HLA-"):
             s = s[4:]
-        s = s.replace("*", "")
+        s = s.replace("*", "").replace(":", "")
         out.append(f"HLA-{s}")
     return ",".join(out)
 

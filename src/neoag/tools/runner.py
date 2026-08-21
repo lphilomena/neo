@@ -734,8 +734,13 @@ def _netmhcpan_subprocess_env() -> dict[str, str]:
             home = str(Path(tools_root) / "tools" / "netMHCpan")
     if home:
         env["NETMHCPAN_HOME"] = home
-        platform_home = Path(home) / f"Linux_{os.uname().machine}"
-        env["NETMHCpan"] = str(platform_home if (platform_home / "data").is_dir() else Path(home))
+        root_home = Path(home)
+        platform_home = root_home / f"Linux_{os.uname().machine}"
+        # Official installations keep data/ at the package root. Some repaired
+        # layouts also expose Linux_<arch>/data; prefer the canonical root so
+        # wrappers, helper binaries, and temporary paths resolve consistently.
+        selected_home = root_home if (root_home / "data").is_dir() else platform_home
+        env["NETMHCpan"] = str(selected_home)
         tmpdir = env.get("NEOAG_NETMHCPAN_TMPDIR") or str(Path(home) / "tmp")
         Path(tmpdir).mkdir(parents=True, exist_ok=True)
         env["TMPDIR"] = tmpdir
@@ -832,35 +837,46 @@ def _run_netmhcpan_local_by_allele(
     all_rows: list[dict[str, str]] = []
     completed = 0
     total = sum(len(v) for v in by_allele.values())
+    allele_chunk_size = int(
+        os.environ.get("NEOAG_NETMHCPAN_ALLELE_CHUNK_SIZE", "100") or "100"
+    )
+    allele_chunk_size = max(allele_chunk_size, 1)
     for hla, peptides in sorted(by_allele.items()):
         allele = netmhcpan_allele_string([hla])
-        pep_file = work / f"{allele.replace('*', '').replace(':', '').replace(',', '_')}.pep"
-        pep_file.write_text("\n".join(peptides) + "\n", encoding="utf-8")
-        cmd = [
-            netmhcpan_exe,
-            "-p",
-            "-BA",
-            "-a",
-            allele,
-            "-f",
-            str(pep_file),
-            "-t",
-            "-99.9",
-        ]
-        proc = _run_cmd(cmd, work, env=_netmhcpan_subprocess_env())
-        if proc.returncode != 0:
-            raise RuntimeError(
-                f"NetMHCpan allele-mode failed ({proc.returncode}) for {hla}: {' '.join(cmd)}\n"
-                f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
-            )
-        rows = parse_netmhcpan_local_stdout(proc.stdout, source=str(out_xls))
-        if not rows:
-            raise RuntimeError(
-                f"NetMHCpan allele-mode produced no rows for {hla}; stdout tail:\n{proc.stdout[-2000:]}"
-            )
-        all_rows.extend(rows)
-        completed += len(peptides)
-        print(f"netmhcpan local allele-mode: {completed}/{total}", flush=True)
+        safe_allele = allele.replace("*", "").replace(":", "").replace(",", "_")
+        for chunk_idx, start_idx in enumerate(
+            range(0, len(peptides), allele_chunk_size), start=1
+        ):
+            chunk = peptides[start_idx:start_idx + allele_chunk_size]
+            pep_file = work / f"{safe_allele}.chunk{chunk_idx:04d}.pep"
+            pep_file.write_text("\n".join(chunk) + "\n", encoding="utf-8")
+            cmd = [
+                netmhcpan_exe,
+                "-p",
+                "-BA",
+                "-a",
+                allele,
+                "-f",
+                str(pep_file),
+                "-t",
+                "-99.9",
+            ]
+            proc = _run_cmd(cmd, work, env=_netmhcpan_subprocess_env())
+            if proc.returncode != 0:
+                raise RuntimeError(
+                    f"NetMHCpan allele-mode failed ({proc.returncode}) for {hla} "
+                    f"chunk {chunk_idx}: {' '.join(cmd)}\n"
+                    f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
+                )
+            rows = parse_netmhcpan_local_stdout(proc.stdout, source=str(out_xls))
+            if not rows:
+                raise RuntimeError(
+                    f"NetMHCpan allele-mode produced no rows for {hla} chunk "
+                    f"{chunk_idx}; stdout tail:\n{proc.stdout[-2000:]}"
+                )
+            all_rows.extend(rows)
+            completed += len(chunk)
+            print(f"netmhcpan local allele-mode: {completed}/{total}", flush=True)
     write_netmhcpan_standard_xls(out_xls, all_rows)
 
 def _set_netmhcpan_provenance(ctx: RunContext, out_xls: Path, backend: str, *, stub: bool = False) -> None:

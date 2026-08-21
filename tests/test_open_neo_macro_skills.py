@@ -220,10 +220,13 @@ def test_prediction_tier_requires_complete_reference_manifest(tmp_path: Path):
     gtf = tmp_path / "gencode.gtf"; gtf.write_text("# gtf\n", encoding="utf-8")
     vep = tmp_path / "vep"; vep.mkdir()
     proteome = tmp_path / "normal.fa"; proteome.write_text(">P\nA\n", encoding="utf-8")
+    normal_expression = tmp_path / "normal_expression.tsv"
+    normal_expression.write_text("gene\tmax_tpm\nGENE1\t0\n", encoding="utf-8")
     manifest = tmp_path / "references.json"
     manifest.write_text(json.dumps({"references": {
         "reference_fasta": {"path": str(fasta)}, "gencode_gtf": {"path": str(gtf)},
         "vep_cache": {"path": str(vep)}, "normal_proteome": {"path": str(proteome)},
+        "normal_expression": {"path": str(normal_expression)},
     }}), encoding="utf-8")
     status, requirements = _assess_tier("prediction", rows, manifest)
     assert status == "READY"
@@ -253,10 +256,13 @@ def test_prediction_tier_immunogenicity_support_is_advisory(tmp_path: Path):
     gtf = tmp_path / "gencode.gtf"; gtf.write_text("# gtf\n", encoding="utf-8")
     vep = tmp_path / "vep"; vep.mkdir()
     proteome = tmp_path / "normal.fa"; proteome.write_text(">P\nA\n", encoding="utf-8")
+    normal_expression = tmp_path / "normal_expression.tsv"
+    normal_expression.write_text("gene\tmax_tpm\nGENE1\t0\n", encoding="utf-8")
     manifest = tmp_path / "references.json"
     manifest.write_text(json.dumps({"references": {
         "reference_fasta": {"path": str(fasta)}, "gencode_gtf": {"path": str(gtf)},
         "vep_cache": {"path": str(vep)}, "normal_proteome": {"path": str(proteome)},
+        "normal_expression": {"path": str(normal_expression)},
     }}), encoding="utf-8")
     status, requirements = _assess_tier("prediction", rows, manifest)
     advisory = [row for row in requirements if row["requirement"] == "immunogenicity_support"]
@@ -646,10 +652,35 @@ def test_install_checkpoint_can_be_reused(tmp_path: Path):
 
 
 def test_install_checkpoint_records_timeout(tmp_path: Path, monkeypatch):
-    def timeout(*args, **kwargs):
-        raise subprocess.TimeoutExpired(cmd=args[0], timeout=kwargs["timeout"], output=b"partial output")
+    class TimeoutProcess:
+        pid = -1
+        returncode = None
 
-    monkeypatch.setattr(subprocess, "run", timeout)
+        def __init__(self, *args, **kwargs):
+            self.communicate_calls = 0
+
+        def communicate(self, timeout=None):
+            self.communicate_calls += 1
+            if self.communicate_calls == 1:
+                raise subprocess.TimeoutExpired(cmd=["bash", "installer.sh"], timeout=timeout)
+            self.returncode = -15
+            return "partial output", None
+
+        def poll(self):
+            return self.returncode
+
+        def terminate(self):
+            self.returncode = -15
+
+        def kill(self):
+            self.returncode = -9
+
+        def wait(self, timeout=None):
+            if self.returncode is None:
+                self.returncode = -15
+            return self.returncode
+
+    monkeypatch.setattr(subprocess, "Popen", TimeoutProcess)
     checkpoint = tmp_path / "checkpoint.json"
     status, log, failure = _run_deployment(
         ["bash", "installer.sh"], tmp_path, tmp_path / "install.log", checkpoint,
@@ -658,7 +689,7 @@ def test_install_checkpoint_records_timeout(tmp_path: Path, monkeypatch):
     assert status == "FAILED"
     assert "timed out after 60 seconds" in failure
     assert Path(log).read_text(encoding="utf-8") == "partial output"
-    assert json.loads(checkpoint.read_text(encoding="utf-8"))["status"] == "FAILED"
+    assert json.loads(checkpoint.read_text(encoding="utf-8"))["status"] == "TIMEOUT"
 
 
 def test_install_resume_requires_approval(tmp_path: Path):

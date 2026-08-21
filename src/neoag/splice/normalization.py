@@ -511,6 +511,169 @@ def _merge_conflict_to_public(row: dict[str, str], domain: str) -> dict[str, str
     }
 
 
+def _scan_targeted_normal_panel(
+    path: Path,
+    *,
+    candidate_event_ids: set[str],
+    genome_build: str,
+) -> tuple[int, set[str]] | None:
+    """Scan a canonical normal-junction table without building row objects.
+
+    The optimized path is intentionally strict: it is used only for a
+    tab-delimited table with explicit chromosome/start/end/strand columns.
+    Unknown schemas fall back to the general provenance parser.
+    """
+
+    opener = gzip.open if path.suffix.casefold() == ".gz" else Path.open
+    kwargs = {"mode": "rt", "encoding": "utf-8", "errors": "replace"}
+    with opener(path, **kwargs) as handle:
+        header_line = handle.readline()
+        if not header_line or "\t" not in header_line:
+            return None
+        header = [value.strip().casefold() for value in header_line.rstrip("\r\n").split("\t")]
+
+        def column(*names: str) -> int | None:
+            for name in names:
+                try:
+                    return header.index(name.casefold())
+                except ValueError:
+                    continue
+            return None
+
+        chrom_i = column("chromosome", "chrom", "chr")
+        start_i = column("intron_start_1based", "start")
+        end_i = column("intron_end_1based", "end")
+        strand_i = column("strand")
+        build_i = column("genome_build", "reference_build", "assembly", "build")
+        required = (chrom_i, start_i, end_i, strand_i)
+        if any(index is None for index in required):
+            return None
+        max_i = max(index for index in required if index is not None)
+        if build_i is not None:
+            max_i = max(max_i, build_i)
+
+        resolvable_rows = 0
+        detected: set[str] = set()
+        for line in handle:
+            if not line.strip() or line.startswith("#"):
+                continue
+            cells = line.rstrip("\r\n").split("\t")
+            if len(cells) <= max_i:
+                continue
+            chrom = cells[chrom_i].strip()  # type: ignore[index]
+            strand = cells[strand_i].strip()  # type: ignore[index]
+            try:
+                start = int(cells[start_i])  # type: ignore[index]
+                end = int(cells[end_i])  # type: ignore[index]
+            except (TypeError, ValueError):
+                continue
+            if not chrom or start < 1 or end < start or strand not in {"+", "-", "."}:
+                continue
+            if not chrom.lower().startswith("chr"):
+                chrom = f"chr{chrom}"
+            build = cells[build_i].strip() if build_i is not None else genome_build
+            build = build or genome_build
+            event_id = f"SJ|{build}|{chrom}|{start}|{end}|{strand}"
+            resolvable_rows += 1
+            if event_id in candidate_event_ids:
+                detected.add(event_id)
+        return resolvable_rows, detected
+
+
+def _resolve_secondary_splice_input(value: str | Path | None, tool: str) -> Path | None:
+    """Resolve a caller output file while preserving directory-based inputs."""
+    if not value:
+        return None
+    path = Path(value)
+    if path.is_file():
+        return path
+    if not path.is_dir():
+        return None
+    patterns = {
+        "SNAF": (
+            "snaf_candidates.tsv",
+            "T_candidates/T_antigen_candidates_*.txt",
+        ),
+        "SpliceMutr": (
+            "splicemutr_candidates.tsv",
+            "combined/data_splicemutr_all_pep.txt",
+            "combined/data_splicemutr_all.txt",
+        ),
+    }.get(tool, ())
+    for pattern in patterns:
+        matches = sorted(path.glob(pattern))
+        match = next((candidate for candidate in matches if candidate.is_file() and candidate.stat().st_size > 0), None)
+        if match:
+            return match
+    return None
+
+
+def _materialize_splicemutr_directory(path: Path, output: Path) -> Path | None:
+    """Create an alias-linked event table from a completed SpliceMutr run.
+
+    SpliceMutr is commonly run from a SNAF max/min table.  Its translated
+    output retains coordinates but not the SNAF UID.  Rejoining those two
+    files by exact build/chrom/start/end/strand restores the explicit unique
+    caller relation without relaxing the canonical strand-aware match policy.
+    """
+    input_path = path / "input" / "snaf_maxmin_junctions.tsv"
+    result_path = next(
+        (
+            candidate
+            for candidate in (
+                path / "combined" / "data_splicemutr_all_pep.txt",
+                path / "combined" / "data_splicemutr_all.txt",
+            )
+            if candidate.is_file() and candidate.stat().st_size > 0
+        ),
+        None,
+    )
+    if not input_path.is_file() or result_path is None:
+        return None
+
+    completed: set[tuple[str, str, str, str]] = set()
+    with result_path.open(encoding="utf-8", errors="replace", newline="") as handle:
+        for row in csv.DictReader(handle, delimiter="\t"):
+            key = tuple(str(row.get(field) or "").strip() for field in ("chr", "start", "end", "strand"))
+            if all(key):
+                completed.add(key)
+
+    rows: list[dict[str, str]] = []
+    with input_path.open(encoding="utf-8", errors="replace", newline="") as handle:
+        for row in csv.DictReader(handle, delimiter="\t"):
+            key = tuple(str(row.get(field) or "").strip() for field in ("chr", "start", "end", "strand"))
+            uid = str(row.get("uid") or "").strip()
+            if not uid or key not in completed:
+                continue
+            gene = uid.split(":", 1)[0] if ":" in uid else ""
+            rows.append({
+                "source_junction_id": uid,
+                "gene": gene,
+                # Preserve SpliceMutr's reported SNAF boundary coordinates as
+                # provenance only.  The explicit unique SNAF UID is the
+                # authoritative relation; treating these values as canonical
+                # intron coordinates introduces a one-base convention error.
+                "reported_chrom": key[0],
+                "reported_start": key[1],
+                "reported_end": key[2],
+                "reported_strand": key[3],
+                "source_file": str(result_path),
+                "evidence_status": "SPLICEMUTR_TRANSLATION_COMPLETED",
+            })
+    if not rows:
+        return None
+    write_tsv(
+        output,
+        rows,
+        [
+            "source_junction_id", "gene",
+            "reported_chrom", "reported_start", "reported_end", "reported_strand",
+            "source_file", "evidence_status",
+        ],
+    )
+    return output
+
+
 def normalize_splice_sources(
     *,
     sample_id: str,
@@ -542,11 +705,18 @@ def normalize_splice_sources(
     sources = [
         SpliceSource(junction_tool, primary_path, "rna_junction", junction_coordinate_system),
     ]
-    if snaf and Path(snaf).is_file():
-        sources.append(SpliceSource("SNAF", Path(snaf), "neoantigen", snaf_coordinate_system))
-    if splicemutr and Path(splicemutr).is_file():
+    snaf_path = _resolve_secondary_splice_input(snaf, "SNAF")
+    if snaf_path:
+        sources.append(SpliceSource("SNAF", snaf_path, "neoantigen", snaf_coordinate_system))
+    splicemutr_value = Path(splicemutr) if splicemutr else None
+    splicemutr_path = (
+        _materialize_splicemutr_directory(splicemutr_value, out / "splicemutr.standardized.tsv")
+        if splicemutr_value and splicemutr_value.is_dir()
+        else _resolve_secondary_splice_input(splicemutr, "SpliceMutr")
+    )
+    if splicemutr_path:
         sources.append(
-            SpliceSource("SpliceMutr", Path(splicemutr), "neoantigen", splicemutr_coordinate_system)
+            SpliceSource("SpliceMutr", splicemutr_path, "neoantigen", splicemutr_coordinate_system)
         )
 
     primary_tools = {junction_tool}
@@ -598,57 +768,11 @@ def normalize_splice_sources(
                 )
             )
 
-    normal_declared = bool(normal_junctions and Path(normal_junctions).is_file())
-    normal_detected: set[str] = set()
-    normal_resolvable_rows = 0
-    normal_target_ids = (
-        {item.event_id for item in normalized if item.role == "neoantigen"}
-        if candidate_only
-        else set(registry.entities)
-    )
-    if normal_declared:
-        indexed_normal_scan = (
-            _query_normal_junction_index(Path(normal_junctions), normal_target_ids)
-            if candidate_only
-            else None
-        )
-        fast_normal_scan = (
-            _fast_scan_normal_junction_ids(Path(normal_junctions), normal_target_ids)
-            if candidate_only and indexed_normal_scan is None
-            else None
-        )
-        if indexed_normal_scan is not None:
-            normal_detected, normal_resolvable_rows = indexed_normal_scan
-        elif fast_normal_scan is not None:
-            normal_detected, normal_resolvable_rows = fast_normal_scan
-        else:
-            for record in iter_junction_records(
-                Path(normal_junctions),
-                sample_id=sample_id,
-                source_tool="NormalJunctionPanel",
-                genome_build=genome_build,
-                coordinate_system=normal_coordinate_system,
-                strict=False,
-            ):
-                if record.junction is not None:
-                    normal_resolvable_rows += 1
-                resolution = registry.resolve(record)
-                if (
-                    resolution.junction is not None
-                    and resolution.junction.junction_id in normal_target_ids
-                ):
-                    normal_detected.add(resolution.junction.junction_id)
-                if not candidate_only:
-                    normalized.append(
-                        NormalizedRecord(
-                            record,
-                            resolution,
-                            "normal_background",
-                            resolution.junction_id or unresolved_event_id(record),
-                        )
-                    )
-
-    all_tumor_items = [item for item in normalized if item.role != "normal_background"]
+    # Resolve the tumor candidate set before scanning the normal panel.  In
+    # production candidate-only mode the normal panel can contain millions of
+    # rows; retaining a NormalizedRecord for every row needlessly turns a
+    # targeted lookup into a multi-gigabyte in-memory operation.
+    all_tumor_items = list(normalized)
     if candidate_only:
         candidate_items = [item for item in all_tumor_items if item.role == "neoantigen"]
         candidate_event_ids = {item.event_id for item in candidate_items}
@@ -660,6 +784,63 @@ def normalize_splice_sources(
     else:
         tumor_items = all_tumor_items
         candidate_event_ids = {item.event_id for item in tumor_items}
+
+    normal_declared = bool(normal_junctions and Path(normal_junctions).is_file())
+    normal_detected: set[str] = set()
+    normal_resolvable_rows = 0
+    normal_scan_mode = "not_declared"
+    if normal_declared:
+        indexed = _query_normal_junction_index(Path(normal_junctions), candidate_event_ids) if candidate_only else None
+        fast = (
+            _fast_scan_normal_junction_ids(Path(normal_junctions), candidate_event_ids)
+            if candidate_only and indexed is None
+            else None
+        )
+        targeted = (
+            _scan_targeted_normal_panel(
+                Path(normal_junctions),
+                candidate_event_ids=candidate_event_ids,
+                genome_build=genome_build,
+            )
+            if candidate_only
+            and indexed is None
+            and fast is None
+            and normal_coordinate_system in {"", "auto", "intron_1based_closed"}
+            else None
+        )
+        if indexed is not None:
+            normal_detected, normal_resolvable_rows = indexed
+            normal_scan_mode = "sqlite_index"
+        elif fast is not None:
+            normal_detected, normal_resolvable_rows = fast
+            normal_scan_mode = "canonical_id_stream"
+        elif targeted is not None:
+            normal_resolvable_rows, normal_detected = targeted
+            normal_scan_mode = "targeted_stream"
+        else:
+            normal_scan_mode = "full_provenance_stream"
+            for record in iter_junction_records(
+                Path(normal_junctions),
+                sample_id=sample_id,
+                source_tool="NormalJunctionPanel",
+                genome_build=genome_build,
+                coordinate_system=normal_coordinate_system,
+                strict=False,
+            ):
+                if record.junction is not None:
+                    normal_resolvable_rows += 1
+                resolution = registry.resolve(record)
+                if resolution.junction is not None and resolution.junction.junction_id in registry.entities:
+                    normal_detected.add(resolution.junction.junction_id)
+                if not candidate_only:
+                    normalized.append(
+                        NormalizedRecord(
+                            record,
+                            resolution,
+                            "normal_background",
+                            resolution.junction_id or unresolved_event_id(record),
+                        )
+                    )
     event_source_rows: list[dict[str, str]] = []
     for item in tumor_items:
         status = _normal_status(
@@ -863,6 +1044,11 @@ def normalize_splice_sources(
         {"metric": "normal_junction_file_declared", "value": str(normal_declared).lower()},
         {"metric": "normal_resolvable_rows", "value": str(normal_resolvable_rows)},
         {"metric": "normal_exact_tumor_junction_hits", "value": str(len(normal_detected))},
+        {"metric": "normal_scan_mode", "value": normal_scan_mode},
+        {
+            "metric": "normal_background_records_materialized",
+            "value": str(sum(item.role == "normal_background" for item in normalized)),
+        },
         {"metric": "gene_or_nearest_locus_fallbacks_used", "value": "0"},
     ]
 
