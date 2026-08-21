@@ -49,6 +49,7 @@ REFERENCE_ALIASES = {
     "reference_fasta": ("reference_fasta", "reference.fasta", "fasta"),
     "gencode_gtf": ("gencode_gtf", "reference.gtf", "gencode.gtf", "gtf"),
     "vep_cache": ("vep_cache", "vep.cache"),
+    "vep_plugins": ("vep_plugins", "vep.plugins", "vep_plugins_dir"),
     "facets_snp_vcf": ("facets_snp_vcf", "common_snp", "facets.vcf"),
     "bam_matcher_loci": ("bam_matcher_loci", "bam-matcher.loci", "sample_identity_vcf"),
     "sequenza_fasta": ("sequenza_fasta", "sequenza_reference_fasta", "sequenza.reference_fasta"),
@@ -484,7 +485,9 @@ def build_automatic_production_plan(
         command = (
             f"PYTHONPATH={root / 'src'} python {root / 'scripts/run_candidate_upstream.py'} --mode snv --input {somatic_vcf} "
             f"--hla-file {hla_file} --sample-id {sample_id} --outdir {{outdir}}/branches/snv/upstream "
-            f"--reference-fasta {refs.get('reference_fasta', '')} --vep-cache {refs.get('vep_cache', '')} --normal-proteome {refs.get('reference_proteome', '')}"
+            f"--reference-fasta {refs.get('reference_fasta', '')} --vep-cache {refs.get('vep_cache', '')} "
+            f"--vep-plugins {refs.get('vep_plugins') or os.environ.get('NEOAG_VEP_PLUGINS', '')} "
+            f"--normal-proteome {refs.get('reference_proteome', '')}"
         )
         add_stage(
             "snv_indel_candidates", required=True, source="SNV_INDEL", command=command,

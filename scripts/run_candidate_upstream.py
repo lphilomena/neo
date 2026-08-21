@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import re
 from pathlib import Path
 
@@ -26,6 +27,7 @@ def main() -> int:
     parser.add_argument("--outdir", required=True)
     parser.add_argument("--reference-fasta", default="")
     parser.add_argument("--vep-cache", default="")
+    parser.add_argument("--vep-plugins", default=os.environ.get("NEOAG_VEP_PLUGINS", ""))
     parser.add_argument("--normal-proteome", default="")
     args = parser.parse_args()
 
@@ -47,6 +49,7 @@ def main() -> int:
             "auto_vep_annotate": True,
             "reference_fasta": args.reference_fasta,
             "vep_cache": args.vep_cache,
+            "vep_plugins": args.vep_plugins,
             "normal_proteome_fasta": args.normal_proteome,
         })
         cfg = {"sample": {"id": args.sample_id, "profile": "default"}, "tools": {"enabled": []}, "inputs": inputs}
@@ -58,6 +61,7 @@ def main() -> int:
             f'variants_vcf = "{source.resolve()}"\nvariant_peptide_extraction = true\nauto_vep_annotate = true\n'
             f'hla_alleles = [{", ".join(repr(value) for value in alleles)}]\n'
             f'reference_fasta = "{args.reference_fasta}"\nvep_cache = "{args.vep_cache}"\n'
+            f'vep_plugins = "{args.vep_plugins}"\n'
             f'normal_proteome_fasta = "{args.normal_proteome}"\n',
             encoding="utf-8",
         )

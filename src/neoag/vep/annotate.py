@@ -40,6 +40,20 @@ def resolve_vep_annotate_from_config(cfg: dict[str, Any], *, root: str | Path | 
     }
 
 
+def normalize_vep_cache_dir(cache_dir: str | Path | None) -> Path | None:
+    if not cache_dir:
+        return None
+    path = Path(cache_dir)
+    if (path / "homo_sapiens").exists():
+        return path
+    if path.name.startswith("105_") or path.name.endswith("_GRCh38"):
+        if path.parent.name == "homo_sapiens":
+            return path.parent.parent
+    if path.parent.name == "homo_sapiens":
+        return path.parent.parent
+    return path
+
+
 def build_vep_pvacseq_command(
     *,
     input_vcf: str | Path,
@@ -76,8 +90,9 @@ def build_vep_pvacseq_command(
         cmd.extend(["--database", "--species", "homo_sapiens"])
     else:
         cmd.extend(["--cache", "--offline"])
-        if cache_dir:
-            cmd.extend(["--dir_cache", str(cache_dir)])
+        normalized_cache_dir = normalize_vep_cache_dir(cache_dir)
+        if normalized_cache_dir:
+            cmd.extend(["--dir_cache", str(normalized_cache_dir)])
         ver = cache_version or os.environ.get("NEOAG_VEP_CACHE_VERSION")
         if ver:
             cmd.extend(["--cache_version", str(ver)])

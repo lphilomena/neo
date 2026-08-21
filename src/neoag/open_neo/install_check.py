@@ -115,6 +115,7 @@ REFERENCE_ALIASES = {
     "reference_fasta": ["reference_fasta", "reference.fasta", "fasta"],
     "gencode_gtf": ["gencode_gtf", "gencode.gtf", "reference.gtf", "gtf"],
     "vep_cache": ["vep_cache", "vep.cache"],
+    "vep_plugins": ["vep_plugins", "vep.plugins", "vep_plugins_dir"],
     "normal_proteome": ["normal_proteome"],
     "normal_ligandome": ["normal_ligandome", "normal_hla_ligands"],
     "normal_expression": ["normal_expression"],
@@ -505,7 +506,11 @@ references:
   gencode_gtf:
     path: '${OPEN_NEO_REFERENCE_ROOT}/data/ref/hg38/gencode.gtf'
   vep_cache:
-    path: '${OPEN_NEO_REFERENCE_ROOT}/data/vep/homo_sapiens/105_GRCh38'
+    path: '${OPEN_NEO_REFERENCE_ROOT}/data/vep'
+    marker: homo_sapiens/105_GRCh38
+  vep_plugins:
+    path: '${OPEN_NEO_REFERENCE_ROOT}/work/vep_plugins'
+    marker: Wildtype.pm
   normal_proteome:
     path: '${OPEN_NEO_REFERENCE_ROOT}/data/normal/proteome/Homo_sapiens.GRCh38.pep.all.fa'
   normal_ligandome:
