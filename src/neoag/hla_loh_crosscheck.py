@@ -62,8 +62,8 @@ def _consensus(lohhla_status: str, spechla_status: str) -> tuple[str, str, str]:
     if positives:
         return "loh", "SINGLE_TOOL_LOH", "Only one tool reports LOH"
     if negatives:
-        return "no", "SINGLE_TOOL_NO_LOH", "Only one tool reports retained allele"
-    return "unassessed", "UNASSESSED", "No usable HLA LOH status"
+        return "no", "SINGLE_TOOL_NO_LOH", "Only one tool produced a usable retained-allele call; the other tool was unavailable or QC-unassessed"
+    return "unassessed", "UNASSESSED", "No usable HLA LOH status; raw tool evidence may be present but QC-unassessed"
 
 
 def crosscheck_hla_loh(

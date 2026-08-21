@@ -2613,6 +2613,7 @@ def _patient_hla_loh_label(status: str, *, missing: str = "未提供") -> str:
 
 def _patient_hla_loh_consensus(bundle: ReportBundle) -> tuple[list[dict[str, str]], str]:
     by_tool: dict[str, dict[str, set[str]]] = {"LOHHLA": {}, "SpecHLA": {}}
+    tool_evidence: dict[str, dict[str, bool]] = {"LOHHLA": {}, "SpecHLA": {}}
     for record in bundle.hla_loh_tool_results:
         allele = str(record.get("hla_allele") or record.get("allele") or "").strip()
         if not re.match(r"^HLA-[ABC]\*", allele):
@@ -2622,6 +2623,9 @@ def _patient_hla_loh_consensus(bundle: ReportBundle) -> tuple[list[dict[str, str
         if not tool:
             continue
         by_tool[tool].setdefault(allele, set()).add(_patient_hla_loh_status(record.get("loh_status") or record.get("status")))
+        prefix = "lohhla_" if tool == "LOHHLA" else "spechla_"
+        has_evidence = any(str(value or "").strip() for key, value in record.items() if key.startswith(prefix))
+        tool_evidence[tool][allele] = tool_evidence[tool].get(allele, False) or has_evidence or bool(record.get("_report_source"))
 
     restricting = sorted({
         str(row.get("hla_allele") or row.get("allele") or "").strip()
@@ -2637,8 +2641,18 @@ def _patient_hla_loh_consensus(bundle: ReportBundle) -> tuple[list[dict[str, str
             calls = by_tool[tool].get(allele, set()) - {"UNASSESSED"}
             statuses[tool] = next(iter(calls)) if len(calls) == 1 else "CONFLICT" if len(calls) > 1 else "UNASSESSED"
         assessed = [status for status in statuses.values() if status != "UNASSESSED"]
+        evidence_present = {tool: tool_evidence.get(tool, {}).get(allele, False) for tool in ("LOHHLA", "SpecHLA")}
+        def label(tool: str) -> str:
+            status = statuses[tool]
+            if status == "UNASSESSED" and evidence_present[tool]:
+                return "未形成判断（QC不足）"
+            return _patient_hla_loh_label(status)
+
         if not assessed:
-            consensus, explanation, internal = "未评估", "未提供逐等位基因HLA LOH结果", "UNASSESSED"
+            if any(evidence_present.values()):
+                consensus, explanation, internal = "未评估", "已有工具原始证据，但未形成可用逐等位基因LOH判断/QC未通过", "UNASSESSED"
+            else:
+                consensus, explanation, internal = "未评估", "未提供逐等位基因HLA LOH结果", "UNASSESSED"
         elif "CONFLICT" in assessed or len(set(assessed)) > 1:
             consensus, explanation, internal = "工具结果冲突，暂不判定", "保留全部结果并要求人工复核", "CONFLICT"
         elif len(assessed) == 2:
@@ -2648,13 +2662,17 @@ def _patient_hla_loh_consensus(bundle: ReportBundle) -> tuple[list[dict[str, str
         else:
             internal = assessed[0]
             tool = next(name for name, status in statuses.items() if status != "UNASSESSED")
+            other_tool = "SpecHLA" if tool == "LOHHLA" else "LOHHLA"
             consensus = f"仅{tool}报告{_patient_hla_loh_label(internal)}，证据有限"
-            explanation = f"另一个HLA LOH工具未提供该等位基因结果"
+            if evidence_present[other_tool]:
+                explanation = f"{other_tool}有原始证据，但未形成可用逐等位基因LOH判断/QC未通过"
+            else:
+                explanation = f"另一个HLA LOH工具未提供该等位基因结果"
         aggregate.append((allele, internal))
         rows.append({
             "HLA等位基因": allele,
-            "LOHHLA": _patient_hla_loh_label(statuses["LOHHLA"]),
-            "SpecHLA": _patient_hla_loh_label(statuses["SpecHLA"]),
+            "LOHHLA": label("LOHHLA"),
+            "SpecHLA": label("SpecHLA"),
             "综合判断": consensus,
             "说明": explanation,
         })

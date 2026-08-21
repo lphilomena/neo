@@ -166,42 +166,72 @@ def collect_tool_results(paths: list[Path], sample_id: str | None = None) -> lis
     return rows
 
 
+def _majority_cluster(vals: list[tuple[str, float]], *, window: float = 0.08) -> tuple[list[tuple[str, float]], list[tuple[str, float]]]:
+    if len(vals) < 3:
+        return vals, []
+    ordered = sorted(vals, key=lambda item: item[1])
+    best: list[tuple[str, float]] = []
+    for i, (_, start) in enumerate(ordered):
+        cluster = [item for item in ordered[i:] if item[1] - start <= window]
+        if len(cluster) > len(best):
+            best = cluster
+    if len(best) < 2:
+        return vals, []
+    center = statistics.median([value for _, value in best])
+    outliers = [item for item in vals if item not in best and abs(item[1] - center) > 0.18]
+    if not outliers:
+        return vals, []
+    return best, outliers
+
+
 def consensus(rows: list[dict[str, Any]]) -> dict[str, Any]:
     vals = []
     for row in rows:
         val = safe_float(row.get("purity"), None)
-        if val is not None:
+        if val is not None and str(row.get("status") or "").upper() not in {"MISSING", "FAILED"}:
             vals.append((row["tool"], val))
     if not vals:
         return {"status": "NO_PURITY", "recommended_purity": "", "range": "", "interpretation": "No parsed purity value found."}
-    nums = [v for _, v in vals]
+    consensus_vals, outliers = _majority_cluster(vals)
+    outlier_tools = {tool for tool, _ in outliers}
+    if outlier_tools:
+        center = statistics.median([value for _, value in consensus_vals])
+        for row in rows:
+            if row.get("tool") in outlier_tools:
+                row["status"] = "OUTLIER"
+                note = f"excluded from recommended purity: deviates from majority median {center:.4f} by >0.18"
+                row["notes"] = (str(row.get("notes") or "") + ("; " if row.get("notes") else "") + note).strip()
+    nums = [v for _, v in consensus_vals]
     med = statistics.median(nums)
     spread = max(nums) - min(nums) if len(nums) > 1 else 0.0
     if len(nums) == 1:
-        interp = f"Only {vals[0][0]} produced a parsed purity; use cautiously and cross-check with another tool."
+        interp = f"Only {consensus_vals[0][0]} produced a usable purity; use cautiously and cross-check with another tool."
         status = "SINGLE_TOOL"
     elif spread <= 0.08:
         interp = "Tools are broadly concordant; median purity is a reasonable working value."
-        status = "CONCORDANT"
+        status = "CONCORDANT_WITH_OUTLIER" if outlier_tools else "CONCORDANT"
     elif spread <= 0.18:
         interp = "Tools differ moderately; use a range and inspect BAF/depth plots before choosing one value."
         status = "MODERATE_DISCORDANCE"
     else:
         interp = "Tools are strongly discordant; do not use a single purity without reviewing QC, SNP references, coverage, and CNV signal."
         status = "STRONG_DISCORDANCE"
+    if outlier_tools:
+        interp += " Excluded outlier tool(s) from recommended purity: " + ", ".join(sorted(outlier_tools)) + "."
     return {
         "status": status,
         "recommended_purity": round(med, 4),
         "range": f"{min(nums):.4f}-{max(nums):.4f}",
         "n_tools": len(nums),
-        "tool_values": dict(vals),
+        "tool_values": dict(consensus_vals),
+        "excluded_outliers": ",".join(sorted(outlier_tools)),
         "interpretation": interp,
     }
 
 
 def select_recommended_tool(rows: list[dict[str, Any]], recommended_purity: Any) -> dict[str, Any] | None:
     target = safe_float(recommended_purity, None)
-    candidates = [row for row in rows if safe_float(row.get("purity"), None) is not None]
+    candidates = [row for row in rows if safe_float(row.get("purity"), None) is not None and str(row.get("status") or "").upper() != "OUTLIER"]
     if target is None or not candidates:
         return None
     with_ploidy = [row for row in candidates if safe_float(row.get("ploidy"), None) is not None]
