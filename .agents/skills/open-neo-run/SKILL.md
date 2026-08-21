@@ -101,7 +101,7 @@ For normal-proteome safety, prefer explicit `NEOAG_NORMAL_PROTEOME_FASTA`/`NEOAG
    branch and are reported explicitly.
 8. Cross-check HLA typing, LOHHLA/SpecHLA HLA LOH, fusion, splice, presentation and FACETS/Sequenza/PURPLE/ASCAT purity/CNV/CCF evidence by domain; missing evidence remains `UNASSESSED`. When using the production-case wrapper, preserve its single-RNA-input-mode rule: choose one of RNA FASTQ, RNA BAM, or existing RNA VAF.
 9. Build `all_tool_results.tsv`, long-form tool evidence and explicit consensus/conflict outputs.
-10. Preserve the weighted baseline, generate independent Evidence consensus rankings, compare both rankings, and write run/audit manifests.
+10. Preserve the weighted baseline, generate independent Evidence consensus rankings, compare both rankings, and write run/audit manifests. Treat `ranked_peptides.evidence_consensus.tsv` and `ranked_events.evidence_consensus.tsv` as the final report/Excel ranking inputs; use `ranked_peptides.tsv` only as the legacy weighted baseline or compatibility source.
 11. Generate the technical Pipeline report by default. Do not generate a patient-facing report unless explicitly requested; the final patient report belongs to `open-neo-review`.
 
 ## Required outputs
@@ -117,9 +117,9 @@ For normal-proteome safety, prefer explicit `NEOAG_NORMAL_PROTEOME_FASTA`/`NEOAG
 - `presentation_consensus.tsv`, `purity_cnv_consensus.tsv`, `ccf_consensus.tsv`
 - `sample_identity_consensus.tsv` when tumor-normal genotype identity is assessed
 - `evidence_conflicts.tsv`, `evidence_source_conflicts.tsv`
-- `ranked_peptides.weighted_baseline.tsv`
-- `ranked_peptides.evidence_consensus.tsv`
-- `ranked_events.evidence_consensus.tsv`
+- `ranked_peptides.evidence_consensus.tsv` as the final report/Excel ranking table with concrete `evidence_grade`/R grade fields
+- `ranked_events.evidence_consensus.tsv` as the final event ranking table
+- `ranked_peptides.weighted_baseline.tsv` as the preserved legacy weighted baseline for audit/comparison only
 - `ranking_compare_weighted_vs_consensus.md`
 - `run_manifest.json`, `audit_log.jsonl`
 - `reports/evidence_report.technical.html` as the default Pipeline report; an explicitly requested patient report is a non-final Pipeline snapshot

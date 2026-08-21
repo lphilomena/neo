@@ -787,7 +787,7 @@ def run_production(
             proc.stdout + ("\n--- STDERR ---\n" if proc.stderr else "") + proc.stderr,
             encoding="utf-8",
         )
-        expected_ranked = final_outdir / "scoring/ranked_peptides.tsv"
+        expected_ranked = final_outdir / "scoring/ranked_peptides.evidence_consensus.tsv"
         final_status = "PASS" if proc.returncode == 0 and expected_ranked.is_file() else "FAILED"
         final_stage = StageResult(
             "unified_ranking",
@@ -795,7 +795,7 @@ def run_production(
             True,
             command=command,
             log=str(log_path),
-            outputs={"ranked_peptides": str(expected_ranked), "config": str(config_path)},
+            outputs={"ranked_peptides": str(expected_ranked), "ranked_peptides_weighted_baseline": str(final_outdir / "scoring/ranked_peptides.tsv"), "config": str(config_path)},
             message="" if final_status == "PASS" else f"run-full returned {proc.returncode}",
         )
         if final_status == "PASS":

@@ -3208,13 +3208,12 @@ def make_technical_report(path: str | Path, bundle: ReportBundle) -> None:
         out.append("<div class='section'><h2>Experimental parallel evidence-consensus ranking</h2>")
         out.append(
             "<div class='warn'><b>Research-only parallel analysis:</b> "
-            "This section does not replace the current primary weighted ranking. "
-            "The evidence-consensus ranking has not been experimentally calibrated "
-            "and is provided only for algorithm comparison and candidate review.</div>"
+            "The patient and technical reports use the evidence-consensus ranking as the primary final ranking. "
+            "The legacy weighted ranking is preserved for audit and comparison.</div>"
         )
         metadata_rows = [
-            {"field": "primary patient-report ranking", "value": parallel_rankings.get("legacy_weighted", "ranked_peptides.tsv")},
-            {"field": "parallel peptide ranking", "value": parallel_rankings.get("evidence_consensus", "")},
+            {"field": "primary patient-report ranking", "value": parallel_rankings.get("evidence_consensus", "ranked_peptides.evidence_consensus.tsv")},
+            {"field": "legacy weighted ranking", "value": parallel_rankings.get("legacy_weighted", "ranked_peptides.tsv")},
             {"field": "parallel event ranking", "value": parallel_rankings.get("event_consensus", "")},
             {"field": "comparison", "value": parallel_rankings.get("comparison", "")},
             {"field": "rules", "value": parallel_rankings.get("rules_name", "")},

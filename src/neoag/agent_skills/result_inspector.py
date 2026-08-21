@@ -29,17 +29,27 @@ def count_rows(path: Path) -> int:
     return max(0, n - 1)
 
 
+def final_ranked_peptides_path(run_dir: Path) -> Path:
+    consensus = run_dir / 'scoring/ranked_peptides.evidence_consensus.tsv'
+    return consensus if consensus.exists() else run_dir / 'scoring/ranked_peptides.tsv'
+
+
+def final_ranked_events_path(run_dir: Path) -> Path:
+    consensus = run_dir / 'scoring/ranked_events.evidence_consensus.tsv'
+    return consensus if consensus.exists() else run_dir / 'scoring/ranked_events.tsv'
+
+
 def find_latest_run(candidates: Iterable[Path]) -> Path | None:
     found: list[Path] = []
     for base in candidates:
         if not base:
             continue
-        if (base / 'scoring/ranked_peptides.tsv').exists():
+        if final_ranked_peptides_path(base).exists():
             found.append(base)
-        found.extend(p for p in base.glob('**/run-full') if (p / 'scoring/ranked_peptides.tsv').exists())
+        found.extend(p for p in base.glob('**/run-full') if final_ranked_peptides_path(p).exists())
     if not found:
         return None
-    return max(found, key=lambda p: (p / 'scoring/ranked_peptides.tsv').stat().st_mtime)
+    return max(found, key=lambda p: final_ranked_peptides_path(p).stat().st_mtime)
 
 
 def safe_float(v: str) -> float | None:
@@ -88,8 +98,8 @@ def main(argv: list[str] | None = None) -> int:
         print(msg)
         return 0
 
-    ranked_peptides = run_dir / 'scoring/ranked_peptides.tsv'
-    ranked_events = run_dir / 'scoring/ranked_events.tsv'
+    ranked_peptides = final_ranked_peptides_path(run_dir)
+    ranked_events = final_ranked_events_path(run_dir)
     validation_plan = run_dir / 'scoring/validation_plan.tsv'
     report = run_dir / 'reports/evidence_report.html'
     patient_report = run_dir / 'reports/evidence_report.patient.html'
@@ -101,7 +111,7 @@ def main(argv: list[str] | None = None) -> int:
     peptide_rows_for_counts = read_tsv(ranked_peptides, limit=100000)
 
     priority_counts = Counter((r.get('final_priority') or r.get('priority') or 'NA') for r in peptide_rows_for_counts)
-    grade_counts = Counter((r.get('presentation_evidence_grade') or r.get('presentation_grade') or 'NA') for r in peptide_rows_for_counts)
+    grade_counts = Counter((r.get('evidence_grade') or r.get('presentation_evidence_grade') or r.get('presentation_grade') or 'NA') for r in peptide_rows_for_counts)
     event_counts = Counter((r.get('event_type') or 'NA') for r in event_rows)
     safety_counts = Counter((r.get('safety_status') or 'NA') for r in peptide_rows_for_counts)
 
@@ -136,7 +146,7 @@ def main(argv: list[str] | None = None) -> int:
         '',
         '## 分布概览',
         '- priority: ' + ', '.join(f'{k}={v}' for k, v in sorted(priority_counts.items())) if priority_counts else '- priority: NA',
-        '- presentation grade: ' + ', '.join(f'{k}={v}' for k, v in sorted(grade_counts.items())) if grade_counts else '- presentation grade: NA',
+        '- evidence/R grade: ' + ', '.join(f'{k}={v}' for k, v in sorted(grade_counts.items())) if grade_counts else '- evidence/R grade: NA',
         '- event type: ' + ', '.join(f'{k}={v}' for k, v in sorted(event_counts.items())) if event_counts else '- event type: NA',
         '- safety status: ' + ', '.join(f'{k}={v}' for k, v in sorted(safety_counts.items())) if safety_counts else '- safety status: NA',
         '',
@@ -165,7 +175,7 @@ def main(argv: list[str] | None = None) -> int:
     md += [
         '',
         '## 解释要点',
-        '- 这批结果已经完成 sliding-window 主流程；可优先查看 ranked_peptides、ranked_events、validation_plan 和 evidence_report。',
+        '- 这批结果已经完成主流程；优先查看 ranked_peptides.evidence_consensus.tsv / ranked_events.evidence_consensus.tsv、validation_plan 和 evidence_report。',
         '- 推荐优先级综合了呈递预测、免疫原性、APPM/免疫逃逸、安全性和 CCF/持久性等证据，不等同于单一 NetMHCpan 排名。',
         '- 当前结果属于计算筛选候选，需要后续实验验证；不要把候选直接表述为已确认新抗原。',
         '',
