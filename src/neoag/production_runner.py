@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import os
 import shlex
@@ -47,6 +48,67 @@ class ProductionResult:
     generated_config: str = ""
     final_outdir: str = ""
     provenance_outputs: dict[str, str] = field(default_factory=dict)
+
+
+def _variant_candidate_for_mtwt(row: dict[str, str]) -> bool:
+    tokens = " ".join(
+        str(row.get(key) or "")
+        for key in ("event_type", "mutation_source", "source_chain_track", "peptide_consequence")
+    ).upper()
+    if any(token in tokens for token in ("FUSION", "SPLICE", "SV")):
+        return False
+    return any(token in tokens for token in ("SNV", "INDEL", "MISSENSE", "FRAMESHIFT", "VARIANT"))
+
+
+def _assess_mtwt_completeness(ranked_peptides: Path) -> tuple[bool, dict[str, Any]]:
+    summary: dict[str, Any] = {
+        "ranked_peptides": str(ranked_peptides),
+        "variant_rows": 0,
+        "with_wildtype_peptide": 0,
+        "with_wt_binding": 0,
+        "with_mutant_specificity": 0,
+        "status": "NOT_ASSESSED",
+    }
+    if not ranked_peptides.is_file():
+        summary["status"] = "MISSING_RANKED_PEPTIDES"
+        return False, summary
+    wt_binding_fields = (
+        "netmhcpan_wt_rank_el",
+        "netmhcpan_wt_affinity",
+        "mhcflurry_wt_affinity_percentile",
+        "mhcflurry_wt_affinity",
+        "mt_wt_el_rank_difference",
+        "mt_wt_fold_change",
+    )
+    specificity_fields = ("mutant_specificity_status", "mutant_specificity_state")
+    with ranked_peptides.open("r", encoding="utf-8", errors="replace", newline="") as handle:
+        reader = csv.DictReader(handle, delimiter="	")
+        for row in reader:
+            if not _variant_candidate_for_mtwt(row):
+                continue
+            summary["variant_rows"] += 1
+            if str(row.get("wildtype_peptide") or "").strip():
+                summary["with_wildtype_peptide"] += 1
+            if any(str(row.get(field) or "").strip() for field in wt_binding_fields):
+                summary["with_wt_binding"] += 1
+            if any(str(row.get(field) or "").strip().upper() not in {"", "UNASSESSED", "NA"} for field in specificity_fields):
+                summary["with_mutant_specificity"] += 1
+    if int(summary["variant_rows"]) == 0:
+        summary["status"] = "NO_VARIANT_CANDIDATES"
+        return True, summary
+    ok = (
+        int(summary["with_wildtype_peptide"]) > 0
+        and int(summary["with_wt_binding"]) > 0
+        and int(summary["with_mutant_specificity"]) > 0
+    )
+    summary["status"] = "PASS" if ok else "FAILED"
+    if not ok:
+        summary["message"] = (
+            "SNV/InDel candidates require MT/WT assessment by default. "
+            "Ensure VEP Wildtype/Frameshift plugins are configured via NEOAG_VEP_PLUGINS "
+            "or refs.vep_plugins, then rerun candidate upstream and final ranking."
+        )
+    return ok, summary
 
 
 def load_production_manifest(path: str | Path) -> dict[str, Any]:
@@ -821,18 +883,33 @@ def run_production(
             message="" if final_status == "PASS" else f"run-full returned {proc.returncode}",
         )
         if final_status == "PASS":
-            from .report_from_final import materialize_hla_loh_layout, write_reports_from_final
-
-            materialize_hla_loh_layout(
-                final_outdir,
-                hla_loh=str(expanded_evidence.get("hla_loh") or ""),
-                manifest=manifest,
+            mtwt_ok, mtwt_summary = _assess_mtwt_completeness(expected_ranked)
+            mtwt_stage = StageResult(
+                "mtwt_assessment_gate",
+                "PASS" if mtwt_ok else "FAILED",
+                True,
+                outputs=mtwt_summary,
+                message=str(mtwt_summary.get("message") or ""),
             )
-            try:
-                write_reports_from_final(final_outdir)
-                final_stage.message = (final_stage.message + "; reports rebuilt from consensus tables").strip("; ")
-            except Exception as exc:  # pragma: no cover - keep production PASS if ranking succeeded
-                final_stage.message = f"{final_stage.message}; report rebuild warning: {exc}".strip("; ")
+            stage_results.append(mtwt_stage)
+            if not mtwt_ok:
+                final_status = "FAILED"
+                final_stage.message = (
+                    final_stage.message + "; MT/WT assessment missing for SNV/InDel candidates"
+                ).strip("; ")
+            else:
+                from .report_from_final import materialize_hla_loh_layout, write_reports_from_final
+
+                materialize_hla_loh_layout(
+                    final_outdir,
+                    hla_loh=str(expanded_evidence.get("hla_loh") or ""),
+                    manifest=manifest,
+                )
+                try:
+                    write_reports_from_final(final_outdir)
+                    final_stage.message = (final_stage.message + "; reports rebuilt from consensus tables").strip("; ")
+                except Exception as exc:  # pragma: no cover - keep production PASS if ranking succeeded
+                    final_stage.message = f"{final_stage.message}; report rebuild warning: {exc}".strip("; ")
     stage_results.append(final_stage)
     status = "PASS" if final_status == "PASS" and source_status == "COMPLETE" else (
         "LOW_CONFIDENCE" if final_status == "PASS" else final_status
