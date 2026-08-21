@@ -189,3 +189,15 @@ def test_authoritative_sources_override_stale_ranked_copies_and_record_conflicts
     assert manifest["record_type"] == "PEPTIDE_HLA_EVIDENCE"
     assert manifest["inputs"]["event_safety"]["sha256"]
     assert manifest["output"]["rows"] == 1
+
+
+def test_cross_site_fields_are_preserved(tmp_path):
+    ranked = tmp_path / "ranked.tsv"
+    cross = tmp_path / "cross.tsv"
+    output = tmp_path / "comprehensive.tsv"
+    write_tsv(ranked, [{"peptide_id": "P1", "event_id": "E1", "peptide": "AAAAAAAA"}], ["peptide_id", "event_id", "peptide"])
+    write_tsv(cross, [{"event_id": "E1", "cross_site_status": "EXACT_SHARED", "cross_site_exact_support": "yes", "secondary_sample_id": "ASCITES"}], ["event_id", "cross_site_status", "cross_site_exact_support", "secondary_sample_id"])
+    build_comprehensive_peptide_evidence(output_tsv=output, ranked_peptides=ranked, cross_site_rna_evidence=cross)
+    row = read_tsv(output)[0]
+    assert row["cross_site_status"] == "EXACT_SHARED"
+    assert row["secondary_sample_id"] == "ASCITES"

@@ -925,6 +925,7 @@ def cmd_run_full(args):
         "expression": upstream.get("expression"),
         "transcript_expression": upstream.get("transcript_expression") or inputs.get("transcript_expression_tsv") or inputs.get("transcript_expression"),
         "rna_vaf": upstream.get("rna_vaf") or inputs.get("rna_vaf_tsv") or inputs.get("rna_vaf"),
+        "cross_site_rna_evidence": inputs.get("cross_site_rna_evidence"),
         "hla_loh": upstream.get("hla_loh"),
         "purity": upstream.get("purity"),
         "cnv": upstream.get("cnv"),

@@ -479,6 +479,7 @@ def _orthogonal_confirmation(row: Mapping[str, Any], *, track: str, rna_requirem
         "orthogonal_confirmation_status", "targeted_validation_status", "rt_pcr_status", "sanger_status",
         "long_read_status", "independent_library_status", "dna_sv_confirmation_status", "protein_evidence_status",
         "proteomics_status", "ligandome_evidence_status", "cross_platform_status",
+        "cross_site_status", "cross_site_exact_support", "sample_identity_status",
     )
     if any(token in status_text for token in ("REFUTED", "FAILED_WITH_ADEQUATE_POWER", "NEGATIVE_WITH_ADEQUATE")):
         return NEGATIVE, tuple(sources), "SC_ORTHOGONAL_REFUTED"
@@ -521,6 +522,9 @@ def _orthogonal_confirmation(row: Mapping[str, Any], *, track: str, rna_requirem
             sources.append(label)
 
     cross = _text(row, "cross_platform_status", "comparison_status")
+    cross_site = _text(row, "cross_site_status")
+    if "EXACT_SHARED" in cross_site and _truthy(row, "cross_site_exact_support") is True:
+        sources.append("independent-tumor-site-RNA")
     if track in {"SNV", "INDEL"}:
         if "CROSS_PLATFORM_PASS_CONCORDANT" in cross:
             sources.append("WES/WGS-cross-platform")

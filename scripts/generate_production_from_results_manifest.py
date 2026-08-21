@@ -124,6 +124,9 @@ def main() -> int:
     ap.add_argument("--purity"); ap.add_argument("--cnv")
     ap.add_argument("--lohhla", required=True); ap.add_argument("--spechla-loh", required=True); ap.add_argument("--hla-loh")
     ap.add_argument("--expression"); ap.add_argument("--transcript-expression")
+    ap.add_argument("--secondary-rna-events", help="Standardized raw_events/all_tool_results from another tumor site")
+    ap.add_argument("--secondary-sample-id", default="SECONDARY_RNA")
+    ap.add_argument("--secondary-identity-status", default="UNASSESSED", help="CONFIRMED only after RNA-DNA fingerprint review")
     ap.add_argument("--rna-fastq1", help="Tumor RNA FASTQ R1; comma-separate multiple lanes")
     ap.add_argument("--rna-fastq2", help="Tumor RNA FASTQ R2; comma-separate multiple lanes")
     ap.add_argument("--rna-bam", help="Existing coordinate-sorted tumor RNA BAM")
@@ -471,6 +474,10 @@ def main() -> int:
         value = getattr(args, key)
         if value:
             lines.append(f"{key} = {q(require(value, key))}")
+    if args.secondary_rna_events:
+        lines.append(f"secondary_rna_events = {q(require(args.secondary_rna_events, 'secondary RNA events'))}")
+        lines.append(f"secondary_sample_id = {q(args.secondary_sample_id)}")
+        lines.append(f"secondary_identity_status = {q(args.secondary_identity_status.upper())}")
     for key in ("expression", "transcript_expression", "normal_junctions", "normal_expression", "normal_hla_ligands", "reference_proteome"):
         value = getattr(args, key)
         if value: lines.append(f"{key} = {q(require(value, key))}")

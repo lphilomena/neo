@@ -55,6 +55,16 @@ RNA_FIELDS = {
     "rna_junction_reads", "rna_junction_source", "rna_frame_status", "junction_reads",
     "junction_source", "junction_status",
 }
+CROSS_SITE_RNA_FIELDS = {
+    "secondary_sample_id", "sample_identity_status", "cross_site_status",
+    "cross_site_exact_support", "cross_site_match_method", "cross_site_event_key",
+    "cross_site_review_status", "cross_site_review_reason",
+    "secondary_event_id", "secondary_gene_expression_tpm",
+    "secondary_transcript_expression_tpm", "secondary_rna_ref_reads",
+    "secondary_rna_alt_reads", "secondary_rna_depth", "secondary_rna_vaf",
+    "secondary_rna_junction_reads", "secondary_rna_support_status",
+    "secondary_source_tools", "cross_site_reason",
+}
 CCF_FIELDS = {
     "raw_ccf", "ccf_estimate", "ccf_best", "ccf_status", "clonality_status",
     "ccf_confidence", "ccf_warning", "ccf_method", "ccf_resolution",
@@ -103,6 +113,7 @@ AUTHORITATIVE_FIELDS = {
     "presentation_evidence": PRESENTATION_FIELDS,
     "expression_evidence": EXPRESSION_FIELDS,
     "rna_junction_evidence": RNA_FIELDS,
+    "cross_site_rna_evidence": CROSS_SITE_RNA_FIELDS,
     "ccf_2": CCF_FIELDS,
     "appm_peptide_modifiers": APPM_FIELDS,
     "peptide_escape_flags": ESCAPE_FIELDS,
@@ -119,6 +130,7 @@ for fields, sources in (
     (PRESENTATION_FIELDS, ("presentation_evidence", "annotated_peptides", "raw_peptides", "ranked_peptides")),
     (EXPRESSION_FIELDS, ("expression_evidence", "ranked_peptides", "raw_events")),
     (RNA_FIELDS, ("rna_junction_evidence", "raw_events", "raw_peptides", "ranked_peptides")),
+    (CROSS_SITE_RNA_FIELDS, ("cross_site_rna_evidence",)),
     (CCF_FIELDS, ("ccf_2", "ranked_peptides", "raw_events")),
     (APPM_FIELDS, ("appm_peptide_modifiers", "ranked_peptides")),
     (ESCAPE_FIELDS, ("peptide_escape_flags", "ranked_peptides")),
@@ -137,11 +149,11 @@ PEPTIDE_SOURCES = (
 )
 EVENT_SOURCES = (
     "raw_events", "ccf_2", "expression_evidence", "rna_junction_evidence",
-    "event_safety",
+    "cross_site_rna_evidence", "event_safety",
 )
 SOURCE_ORDER = (
     "annotated_peptides", "raw_peptides", "raw_events", "presentation_evidence",
-    "expression_evidence", "rna_junction_evidence", "ccf_2",
+    "expression_evidence", "rna_junction_evidence", "cross_site_rna_evidence", "ccf_2",
     "appm_peptide_modifiers", "peptide_escape_flags", "peptide_safety",
     "event_safety", "ranked_peptides", "validation_plan",
 )
@@ -260,6 +272,7 @@ def build_comprehensive_peptide_evidence(
     ccf_2: str | Path | None = None,
     expression_evidence: str | Path | None = None,
     rna_junction_evidence: str | Path | None = None,
+    cross_site_rna_evidence: str | Path | None = None,
     peptide_safety: str | Path | None = None,
     event_safety: str | Path | None = None,
     peptide_escape_flags: str | Path | None = None,
@@ -276,6 +289,7 @@ def build_comprehensive_peptide_evidence(
         "ccf_2": ccf_2,
         "expression_evidence": expression_evidence,
         "rna_junction_evidence": rna_junction_evidence,
+        "cross_site_rna_evidence": cross_site_rna_evidence,
         "peptide_safety": peptide_safety,
         "event_safety": event_safety,
         "peptide_escape_flags": peptide_escape_flags,

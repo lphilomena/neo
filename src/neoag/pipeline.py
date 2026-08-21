@@ -52,6 +52,7 @@ def run(
     raw_events=None,
     raw_peptides=None,
     rna_junction=None,
+    cross_site_rna_evidence=None,
     entry_mode=None,
     reference_proteome=None,
     normal_junctions=None,
@@ -229,6 +230,7 @@ def run(
         ccf_2=ccf_path,
         expression_evidence=evidence_paths["expression_evidence"],
         rna_junction_evidence=evidence_paths["rna_junction_evidence"],
+        cross_site_rna_evidence=cross_site_rna_evidence,
         peptide_safety=peptide_safety_path,
         event_safety=event_safety_path,
         peptide_escape_flags=immune_paths["peptide_escape_flags"],
@@ -259,6 +261,7 @@ def run(
         for key, value in {
             "raw_events": raw_events_path,
             "raw_peptides": raw_peptides_path,
+            "cross_site_rna_evidence": cross_site_rna_evidence,
             "expression": expression,
             "transcript_expression": transcript_expression,
             "purity": purity,

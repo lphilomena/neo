@@ -2213,6 +2213,36 @@ def _patient_rna_measurements(row: Mapping[str, Any]) -> str:
     return "；".join(values)
 
 
+def _patient_cross_site_rna(row: Mapping[str, Any]) -> str:
+    status = _patient_observed_value(row, "cross_site_status")
+    if status is None:
+        return ""
+    sample = _patient_observed_value(row, "secondary_sample_id") or "另一部位RNA样本"
+    identity = (_patient_observed_value(row, "sample_identity_status") or "UNASSESSED").upper()
+    translations = {
+        "EXACT_SHARED": "精确事件获得跨部位RNA支持",
+        "EXACT_MATCH_IDENTITY_UNASSESSED": "待核对：精确事件在另一部位检出，但样本身份尚未完成RNA-DNA指纹确认",
+        "GENE_PAIR_SHARED_BREAKPOINT_UNASSESSED": "待核对：融合基因对一致，但至少一侧缺少可比较的精确断点",
+        "SECONDARY_NEGATIVE_ADEQUATE_COVERAGE": "待核对：另一部位覆盖充分但未检出直接RNA支持，需结合部位和样本成分解释",
+        "SECONDARY_MATCH_LOW_POWER": "待核对：另一部位存在对应记录，但位点或junction覆盖不足",
+        "PRIMARY_ONLY": "当前仅在主肿瘤部位获得支持",
+        "AMBIGUOUS_SECONDARY_MATCH": "待核对：另一部位存在多个可能匹配记录，需确认坐标、方向和来源记录",
+    }
+    detail = _patient_observed_value(row, "cross_site_review_reason") or translations.get(status.upper(), status)
+    secondary_alt = _patient_numeric_display(_patient_observed_value(row, "secondary_rna_alt_reads"), 0)
+    secondary_depth = _patient_numeric_display(_patient_observed_value(row, "secondary_rna_depth"), 0)
+    secondary_junction = _patient_numeric_display(_patient_observed_value(row, "secondary_rna_junction_reads"), 0)
+    metrics = []
+    if secondary_depth is not None:
+        metrics.append(f"位点深度 {secondary_depth}")
+    if secondary_alt is not None:
+        metrics.append(f"alt reads {secondary_alt}")
+    if secondary_junction is not None:
+        metrics.append(f"junction reads {secondary_junction}")
+    suffix = f"（{identity}；{'，'.join(metrics)}）" if metrics else f"（身份状态 {identity}）"
+    return f"跨部位RNA {sample}：{detail}{suffix}"
+
+
 def _patient_event_evidence_and_next_step(
     row: Mapping[str, Any], bundle: ReportBundle, val_map: Mapping[str, Mapping[str, str]],
 ) -> str:
@@ -2227,6 +2257,7 @@ def _patient_event_evidence_and_next_step(
     return (
         f"核心证据：{'；'.join(evidence)}。"
         f"RNA数据：{_patient_rna_measurements(row)}。"
+        f"{_patient_cross_site_rna(row) + '。' if _patient_cross_site_rna(row) else ''}"
         f"主要缺口：{gap_text}。"
         f"下一步：{_patient_validation(row, val_map)}"
     )
@@ -2342,6 +2373,9 @@ def _patient_key_gaps(row: Mapping[str, Any], bundle: ReportBundle) -> list[str]
 
 def _patient_attention_reasons(row: Mapping[str, Any]) -> list[str]:
     reasons: list[str] = []
+    gene = str(row.get("gene") or row.get("event_name") or "").upper().replace("--", "::")
+    if gene in {"EWSR1::WT1", "WT1::EWSR1"}:
+        reasons.append("DSRCT标志性驱动融合，需独立保留机制与融合肽审阅")
     driver = str(row.get("cancer_driver_context") or "").upper()
     if driver == "DRIVER_CONTEXT" or str(row.get("cancer_gene_types") or "").strip():
         reasons.append("具有癌症基因或驱动机制背景")
@@ -2448,7 +2482,9 @@ def _patient_manual_review_rows(
             reasons.insert(0, "由当前疾病/证据规则明确指定为关键人工审阅事件")
         if not reasons:
             continue
-        scored.append((0 if configured else 1, -len(reasons), index, row, list(dict.fromkeys(reasons))))
+        gene = str(row.get("gene") or row.get("event_name") or "").upper().replace("--", "::")
+        mechanism_priority = gene in {"EWSR1::WT1", "WT1::EWSR1"}
+        scored.append((0 if configured or mechanism_priority else 1, -len(reasons), index, row, list(dict.fromkeys(reasons))))
     result: list[dict[str, str]] = []
     displayed: set[str] = set()
     for _, _, _, row, reasons in sorted(scored):
@@ -2480,7 +2516,8 @@ def _patient_candidate_attention(row: Mapping[str, Any], bundle: ReportBundle) -
         _patient_metric("呈递", row, "presentation_consensus_state", "presentation_evidence_grade"),
         _patient_metric("MT/WT", row, "mutant_specificity_status", "mutant_specificity_state"),
     ]
-    return "；".join(evidence) + "。RNA数据：" + _patient_rna_measurements(row)
+    cross_site = _patient_cross_site_rna(row)
+    return "；".join(evidence) + "。RNA数据：" + _patient_rna_measurements(row) + ("。" + cross_site if cross_site else "")
 
 
 def _patient_candidate_disposition(

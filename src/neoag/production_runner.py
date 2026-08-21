@@ -418,6 +418,7 @@ def _write_final_config(
         "transcript_expression",
         "rna_vaf",
         "rna_junction_tsv",
+        "cross_site_rna_evidence",
         "hla_loh",
         "purity",
         "cnv",
@@ -625,6 +626,27 @@ def run_production(
     write_tsv(event_provenance_path, event_provenance, PROVENANCE_FIELDS)
     write_tsv(peptide_provenance_path, peptide_provenance, PROVENANCE_FIELDS)
     write_tsv(conflicts_path, event_conflicts + peptide_conflicts, CONFLICT_FIELDS)
+    secondary_events = str(expanded_evidence.get("secondary_rna_events") or "")
+    if secondary_events:
+        from .cross_site_rna import build_cross_site_rna_evidence
+
+        cross_site_path = run_outdir / "evidence" / "cross_site_rna_evidence.tsv"
+        cross_site_path.parent.mkdir(parents=True, exist_ok=True)
+        cross_site_summary = build_cross_site_rna_evidence(
+            merged_events,
+            secondary_events,
+            cross_site_path,
+            secondary_sample_id=str(expanded_evidence.get("secondary_sample_id") or "SECONDARY_RNA"),
+            identity_status=str(expanded_evidence.get("secondary_identity_status") or "UNASSESSED"),
+        )
+        expanded_evidence["cross_site_rna_evidence"] = str(cross_site_path)
+        cross_site_summary_path = cross_site_path.with_suffix(".summary.json")
+        cross_site_summary_path.write_text(json.dumps(cross_site_summary, indent=2) + "\n", encoding="utf-8")
+        stage_results.append(StageResult(
+            "cross_site_rna_evidence", "PASS", False, source="SECONDARY_SITE_RNA",
+            outputs={"cross_site_rna_evidence": str(cross_site_path), "summary": str(cross_site_summary_path)},
+            message="secondary-site evidence is annotation-only unless sample identity is confirmed",
+        ))
     provenance_outputs = {
         "event_provenance": str(event_provenance_path),
         "peptide_provenance": str(peptide_provenance_path),

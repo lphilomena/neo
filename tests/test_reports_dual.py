@@ -106,6 +106,36 @@ def test_patient_metric_explains_junction_novel_sequence_instead_of_unassessed()
     )
 
 
+def test_dsrct_defining_fusion_is_retained_once_in_manual_review_top_five():
+    bundle = _bundle()
+    events = []
+    peptides = []
+    for index in range(6):
+        event_id = f"E{index}"
+        events.append({
+            "event_id": event_id, "gene": f"GENE{index}", "event_type": "SNV",
+            "manual_review_required": "yes", "cancer_driver_context": "DRIVER_CONTEXT",
+            "source_tools": "caller1;caller2", "evidence_conflict_fields": "presentation",
+        })
+        peptides.append({
+            "event_id": event_id, "gene": f"GENE{index}", "event_type": "SNV",
+            "peptide": "AAAAAAAAA", "hla_allele": "HLA-A*02:01",
+        })
+    for suffix in ("", "_ALT"):
+        events.append({
+            "event_id": f"FUSION_EWSR1_WT1{suffix}", "gene": "EWSR1::WT1", "event_type": "Fusion",
+            "manual_review_required": "yes",
+        })
+    peptides.append({
+        "event_id": "FUSION_EWSR1_WT1", "gene": "EWSR1::WT1", "event_type": "Fusion",
+        "peptide": "SSYGQQSEK", "hla_allele": "HLA-A*03:01",
+    })
+    bundle.events = events
+    bundle.peptides = peptides
+    rows = _patient_manual_review_rows(events, peptides, bundle, {}, limit=5)
+    assert sum(row["事件"] == "EWSR1::WT1" for row in rows) == 1
+
+
 def test_patient_summary_separates_event_and_peptide_hla_counts(tmp_path):
     bundle = _bundle()
     bundle.events = [
