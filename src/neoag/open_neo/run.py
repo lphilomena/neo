@@ -62,7 +62,7 @@ def _result_from_args(args: dict[str, Any], layout: RunLayout) -> RoutingResult:
     }
     keys = [
         "tumor_dna_bam", "normal_dna_bam", "tumor_rna_bam", "tumor_dna_fastq", "normal_dna_fastq", "tumor_rna_fastq",
-        "tumor_sample_id", "normal_sample_id",
+        "tumor_sample_id", "normal_sample_id", "evidence_consensus_rules",
         "somatic_vcf", "fusion_tsv", "splice_junction_tsv", "sv_vcf", "capture_bed",
         "peptide_csv", "raw_events", "raw_peptides", "sv_raw_events", "sv_raw_peptides",
         "hla_file", "hla_alleles", "expression_tsv", "transcript_expression_tsv",
@@ -71,13 +71,17 @@ def _result_from_args(args: dict[str, Any], layout: RunLayout) -> RoutingResult:
         "gencode_gtf", "vep_cache", "production_manifest", "result_dir",
         "salmon_index", "tx2gene", "rsem_reference", "star_index", "ctat_genome_lib",
         "easyfuse_ref", "normal_readthrough", "snaf_workflow", "snaf_db", "snaf_python", "altanalyze_image", "splicemutr_workflow",
-        "rna_threads",
+        "case_root", "asset_root", "predictor_deps", "netmhcpan_home", "netmhcstabpan_home", "sequenza", "purple",
+        "rna_fastq1", "rna_fastq2", "rna_bam", "rna_vaf", "easyfuse_star_index", "star_index_build_dir",
+        "star_executable", "samtools_executable", "fusion_caller_root", "prime_evidence", "bigmhc_evidence", "deepimmuno_evidence", "python",
+        "rna_threads", "star_sjdb_overhang",
         "comprehensive_evidence", "weighted_baseline",
         "input_dir",
     ]
     project_root = Path(args.get("project_root") or ".").resolve()
     path_like = {
         "tumor_dna_bam", "normal_dna_bam", "tumor_rna_bam", "tumor_dna_fastq", "normal_dna_fastq", "tumor_rna_fastq",
+        "evidence_consensus_rules",
         "somatic_vcf", "fusion_tsv", "splice_junction_tsv", "sv_vcf", "capture_bed",
         "peptide_csv", "raw_events", "raw_peptides", "sv_raw_events", "sv_raw_peptides",
         "hla_file", "expression_tsv", "transcript_expression_tsv", "rna_evidence_tsv",
@@ -86,6 +90,9 @@ def _result_from_args(args: dict[str, Any], layout: RunLayout) -> RoutingResult:
         "gencode_gtf", "vep_cache", "production_manifest", "result_dir",
         "salmon_index", "tx2gene", "rsem_reference", "star_index", "ctat_genome_lib",
         "easyfuse_ref", "normal_readthrough", "snaf_workflow", "snaf_db", "snaf_python", "splicemutr_workflow",
+        "case_root", "asset_root", "predictor_deps", "netmhcpan_home", "netmhcstabpan_home", "sequenza", "purple",
+        "rna_fastq1", "rna_fastq2", "rna_bam", "rna_vaf", "easyfuse_star_index", "star_index_build_dir",
+        "star_executable", "samtools_executable", "fusion_caller_root", "prime_evidence", "bigmhc_evidence", "deepimmuno_evidence", "python",
         "comprehensive_evidence", "weighted_baseline",
         "input_dir",
     }
@@ -192,6 +199,67 @@ def _run_sv_only(args: dict[str, Any], routing: RoutingResult, layout: RunLayout
     if bool(args.get("stub", False)):
         command += ["--binding-stub", "--immunogenicity-stub"]
     return run_cli(command, cwd=args.get("project_root") or ".", log_path=layout.logs / "sv_run_full.log", timeout=int(args.get("timeout", 7200)))
+
+
+
+def _path_arg(value: Any) -> str:
+    if isinstance(value, list):
+        return ",".join(str(v) for v in value if v)
+    return str(value or "")
+
+
+def _run_production_case_wrapper(args: dict[str, Any], routing: RoutingResult, layout: RunLayout) -> dict[str, Any]:
+    project_root = Path(args.get("project_root") or ".").resolve()
+    wrapper = project_root / "scripts" / "run_production_case.sh"
+    command = [
+        "bash", str(wrapper),
+        "--project-root", str(project_root),
+        "--sample-id", routing.sample_id,
+        "--case-root", str(routing.inputs["case_root"]),
+        "--outdir", str(layout.pipeline / "production_case"),
+        "--somatic-vcf", str(routing.inputs["somatic_vcf"]),
+        "--rna-threads", str(routing.inputs.get("rna_threads") or args.get("rna_threads") or 16),
+    ]
+    optional_flags = {
+        "profile": "--profile",
+        "evidence_consensus_rules": "--evidence-consensus-rules",
+        "asset_root": "--asset-root",
+        "reference_fasta": "--reference-fasta",
+        "gencode_gtf": "--gencode-gtf",
+        "sequenza": "--sequenza",
+        "purple": "--purple",
+        "expression_tsv": "--expression",
+        "transcript_expression_tsv": "--transcript-expression",
+        "rna_bam": "--rna-bam",
+        "rna_vaf": "--rna-vaf",
+        "star_index": "--star-index",
+        "easyfuse_star_index": "--easyfuse-star-index",
+        "star_index_build_dir": "--star-index-build-dir",
+        "star_sjdb_overhang": "--star-sjdb-overhang",
+        "star_executable": "--star-executable",
+        "samtools_executable": "--samtools-executable",
+        "normal_readthrough": "--normal-readthrough",
+        "prime_evidence": "--prime-evidence",
+        "bigmhc_evidence": "--bigmhc-evidence",
+        "deepimmuno_evidence": "--deepimmuno-evidence",
+        "predictor_deps": "--pred-deps",
+        "netmhcpan_home": "--netmhcpan-home",
+        "netmhcstabpan_home": "--netmhcstabpan-home",
+        "python": "--python",
+    }
+    for key, flag in optional_flags.items():
+        value = routing.inputs.get(key, args.get(key))
+        if value is None or value == "" or value == []:
+            continue
+        if key == "profile" and str(value) == "default":
+            continue
+        command += [flag, _path_arg(value)]
+    if routing.inputs.get("rna_fastq1") or routing.inputs.get("rna_fastq2"):
+        command += ["--rna-fastq1", _path_arg(routing.inputs.get("rna_fastq1")), "--rna-fastq2", _path_arg(routing.inputs.get("rna_fastq2"))]
+    for caller_root in routing.inputs.get("fusion_caller_root") or []:
+        if caller_root:
+            command += ["--fusion-caller-root", str(caller_root)]
+    return run_cli(command, cwd=project_root, log_path=layout.logs / "production_case_wrapper.log", timeout=int(args.get("timeout", 7200)))
 
 
 def _run_standard(args: dict[str, Any], routing: RoutingResult, layout: RunLayout) -> dict[str, Any]:
@@ -303,9 +371,9 @@ def run_open_neo(args: dict[str, Any]) -> dict[str, Any]:
 
     rna_modes = [
         label for label, present in (
-            ("RNA_FASTQ", bool(routing.inputs.get("tumor_rna_fastq"))),
-            ("RNA_BAM", bool(routing.inputs.get("tumor_rna_bam"))),
-            ("RNA_VAF", bool(routing.inputs.get("rna_evidence_tsv"))),
+            ("RNA_FASTQ", bool(routing.inputs.get("tumor_rna_fastq") or routing.inputs.get("rna_fastq1"))),
+            ("RNA_BAM", bool(routing.inputs.get("tumor_rna_bam") or routing.inputs.get("rna_bam"))),
+            ("RNA_VAF", bool(routing.inputs.get("rna_evidence_tsv") or routing.inputs.get("rna_vaf"))),
         ) if present
     ]
     if len(rna_modes) > 1:
@@ -343,7 +411,8 @@ def run_open_neo(args: dict[str, Any]) -> dict[str, Any]:
         result.finish("APPROVAL_REQUIRED").write(layout.skill_result)
         return result.to_dict()
 
-    if mode in {"execute", "resume"} and not bool(args.get("_gateway_dispatched", False)):
+    production_case_candidate = any(r.route == "production_case_wrapper" for r in routing.routes)
+    if mode in {"execute", "resume"} and not bool(args.get("_gateway_dispatched", False)) and not production_case_candidate:
         gateway_url = str(args.get("gateway_url") or "")
         if not gateway_url:
             result.steps.append(MacroStep("02", "gateway-execution-boundary", "BLOCKED", "Direct heavy execution is disabled; submit through NeoAg Gateway with --gateway-url", failure_code=FailureCode.GATEWAY_REQUIRED.value))
@@ -533,7 +602,14 @@ def run_open_neo(args: dict[str, Any]) -> dict[str, Any]:
     command_result: dict[str, Any] | None = None
     result.steps.append(MacroStep("04", "pipeline-execution"))
     try:
-        if routing.inputs.get("production_manifest"):
+        if any(r.route == "production_case_wrapper" for r in routing.routes):
+            command_result = _run_production_case_wrapper(args, routing, layout)
+            success = bool(command_result["ok"])
+            result.steps[-1].status = "PASS" if success else "FAILED"
+            result.steps[-1].outputs = {"log": command_result.get("log", ""), "production_outdir": str(layout.pipeline / "production_case")}
+            if success:
+                routing.inputs["result_dir"] = str(layout.pipeline / "production_case")
+        elif routing.inputs.get("production_manifest"):
             production_result = run_production(
                 routing.inputs["production_manifest"],
                 outdir=layout.pipeline / "production",

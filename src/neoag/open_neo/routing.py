@@ -17,6 +17,7 @@ PATH_ALIASES: dict[str, tuple[str, ...]] = {
     "tumor_dna_fastq": ("tumor_dna_fastq", "tumor_dna_fastqs"),
     "normal_dna_fastq": ("normal_dna_fastq", "normal_dna_fastqs"),
     "tumor_rna_fastq": ("tumor_rna_fastq", "tumor_rna_fastqs", "rna_fastqs"),
+    "case_root": ("case_root", "completed_case_root"),
     "somatic_vcf": ("somatic_vcf", "variants_vcf", "tumor_vcf", "annotated_vcf", "vcf"),
     "fusion_tsv": ("fusion_tsv", "easyfuse_tsv", "easyfuse_pass_csv", "fusion_csv", "fusions"),
     "splice_junction_tsv": ("splice_junction_tsv", "regtools_tsv", "junctions", "splice_tsv"),
@@ -37,6 +38,7 @@ PATH_ALIASES: dict[str, tuple[str, ...]] = {
     "normal_expression": ("normal_expression",),
     "normal_hla_ligands": ("normal_hla_ligands",),
     "reference_proteome": ("reference_proteome", "normal_proteome"),
+    "evidence_consensus_rules": ("evidence_consensus_rules", "consensus_rules"),
     "normal_junctions": ("normal_junctions",),
     "reference_fasta": ("reference_fasta", "fasta"),
     "gencode_gtf": ("gencode_gtf", "gtf"),
@@ -48,6 +50,25 @@ PATH_ALIASES: dict[str, tuple[str, ...]] = {
     "ctat_genome_lib": ("ctat_genome_lib", "star_fusion_reference"),
     "easyfuse_ref": ("easyfuse_ref", "easyfuse_reference"),
     "normal_readthrough": ("normal_readthrough", "normal_readthrough_db"),
+    "asset_root": ("asset_root", "assets_root", "neodata_root"),
+    "predictor_deps": ("predictor_deps", "pred_deps", "predictor_dependency_root"),
+    "netmhcpan_home": ("netmhcpan_home",),
+    "netmhcstabpan_home": ("netmhcstabpan_home",),
+    "sequenza": ("sequenza", "sequenza_result"),
+    "purple": ("purple", "purple_result"),
+    "rna_fastq1": ("rna_fastq1", "rna_r1", "rna_read1"),
+    "rna_fastq2": ("rna_fastq2", "rna_r2", "rna_read2"),
+    "rna_bam": ("rna_bam",),
+    "rna_vaf": ("rna_vaf",),
+    "easyfuse_star_index": ("easyfuse_star_index",),
+    "star_index_build_dir": ("star_index_build_dir",),
+    "star_executable": ("star_executable", "star_bin"),
+    "samtools_executable": ("samtools_executable", "samtools_bin"),
+    "fusion_caller_root": ("fusion_caller_root", "fusion_caller_roots"),
+    "prime_evidence": ("prime_evidence",),
+    "bigmhc_evidence": ("bigmhc_evidence",),
+    "deepimmuno_evidence": ("deepimmuno_evidence",),
+    "python": ("python", "python_bin"),
     "snaf_workflow": ("snaf_workflow",),
     "snaf_db": ("snaf_db", "snaf_reference"),
     "snaf_python": ("snaf_python",),
@@ -60,7 +81,7 @@ PATH_ALIASES: dict[str, tuple[str, ...]] = {
     "input_dir": ("input_dir", "data_dir"),
 }
 
-LIST_KEYS = {"sv_vcf", "tumor_dna_fastq", "normal_dna_fastq", "tumor_rna_fastq"}
+LIST_KEYS = {"sv_vcf", "tumor_dna_fastq", "normal_dna_fastq", "tumor_rna_fastq", "rna_fastq1", "rna_fastq2", "fusion_caller_root"}
 HLA_RE = re.compile(r"^(?:HLA-)?(?:A|B|C|DRB1|DQB1|DPB1|DQA1|DPA1)\*[0-9]{2,3}(?::[0-9A-Z]{2,3}){1,4}$", re.I)
 FUSION_HEADER_GROUPS = ({"fusionname"}, {"fusion_gene"}, {"gene1", "gene2"}, {"gene5", "gene3"}, {"leftgene", "rightgene"})
 SPLICE_HEADER_GROUPS = ({"chrom", "start", "end"}, {"chromosome", "intron_start", "intron_end"}, {"junction", "read_count"})
@@ -372,6 +393,9 @@ def route_inputs(inputs: dict[str, Any]) -> tuple[list[Route], list[dict[str, st
 
     if inputs.get("production_manifest"):
         routes.append(_route("production_manifest", "neoag-production-run", "Explicit production manifest takes precedence", {"production_manifest": inputs["production_manifest"]}))
+        return routes, missing, ambiguous, warnings
+    if inputs.get("case_root") and inputs.get("somatic_vcf"):
+        routes.append(_route("production_case_wrapper", "neoag-production-case-wrapper", "Completed case root plus somatic VCF detected; use scripts/run_production_case.sh", {"case_root": inputs["case_root"], "somatic_vcf": inputs["somatic_vcf"]}))
         return routes, missing, ambiguous, warnings
     production_inputs = [key for key in ("tumor_dna_bam", "normal_dna_bam", "tumor_rna_bam", "tumor_dna_fastq", "normal_dna_fastq", "tumor_rna_fastq") if inputs.get(key)]
     if production_inputs:

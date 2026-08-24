@@ -29,7 +29,7 @@ production manifest and run the final production runner. The wrapper requires
 NetMHCstabpan tree, then applies the sarcoma RNA-supported v2 weighted profile
 and v3 Evidence-consensus rules by default. Optional overrides include
 Sequenza/PURPLE paths, RNA FASTQ/BAM/VAF, STAR index, GTF, reference FASTA,
-predictor dependency roots, NetMHCpan, NetMHCstabpan, and `--rna-threads`.
+fusion caller roots, normal read-through/background assets, predictor dependency roots, NetMHCpan, NetMHCstabpan, PRIME/BigMHC/DeepImmuno evidence, and `--rna-threads`.
 Exactly one RNA allele-evidence mode may be used: FASTQ pair, RNA BAM, or
 existing RNA VAF. This path is for reusing completed upstream results and
 producing final rankings/reports; raw heavy tool execution remains in the
@@ -39,7 +39,7 @@ Gateway-backed production DAG.
 
 The built-in profile includes multi-batch paired FASTQ merging, FASTQ QC, STAR, Salmon gene/transcript TPM,
 RSEM expression cross-check when a matching RSEM reference is available,
-EasyFuse as the primary fusion meta-workflow, standalone STAR-Fusion/FusionCatcher/Arriba only as fallback when EasyFuse is not configured, RegTools, optional reviewed SNAF/SpliceMutr workflows, fusion/splice
+EasyFuse as the primary fusion meta-workflow, plus a provenance-tagged union of EasyFuse pass/unfiltered evidence, EasyFuse/standalone STAR-Fusion, Arriba, FusionCatcher, JAFFAL and completed caller roots when present, RegTools, optional reviewed SNAF/SpliceMutr workflows, fusion/splice
 cross-validation, candidate peptide generation and downstream ranking.
 Missing optional evidence remains `UNASSESSED` or `SAFETY_PARTIAL`.
 
@@ -63,8 +63,8 @@ Production stages additionally verify their declared outputs before reuse.
 Raw DNA/RNA Gateway DAGs must converge on the same final production standards as
 `scripts/run_production_case.sh`: sarcoma RNA-supported v2 weighted profile,
 v3 Evidence-consensus rules, required NetMHCpan/MHCflurry/NetMHCstabpan/NetChop
-presentation predictors, and `patient,technical` reports. The raw DAG still
+presentation predictors, optional PRIME/BigMHC/DeepImmuno evidence when configured, normal expression, normal ligandome, normal/reference proteome and pre-indexed normal junction backgrounds, and `patient,technical` reports. The raw DAG still
 owns heavy upstream execution, but the generated production manifest should be
 usable as the final production-results manifest shape once upstream stages have
 completed. RNA allele evidence remains mutually exclusive across FASTQ-derived
-STAR pileup, supplied RNA BAM pileup, and an existing RNA VAF table.
+STAR pileup, supplied RNA BAM pileup, and an existing RNA VAF table. Fusion evidence remains cumulative: preserve raw caller outputs and report whether each event is multi-caller, single-caller, or targeted-rescue supported.

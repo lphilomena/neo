@@ -26,7 +26,7 @@ production manifest, Skill2 generates a capability-aware production profile.
 For RNA it includes multi-batch paired FASTQ merging when more than one R1/R2
 batch is supplied, FASTQ QC, STAR alignment, Salmon gene/transcript TPM plus
 RSEM expression cross-check when a matching RSEM reference is available,
-EasyFuse as the primary fusion meta-workflow, standalone STAR-Fusion/FusionCatcher/Arriba only as fallback when EasyFuse is not configured, RegTools,
+EasyFuse as the primary fusion meta-workflow while preserving EasyFuse's embedded caller outputs, configured standalone STAR-Fusion/FusionCatcher/Arriba/JAFFAL outputs and completed caller roots as a provenance-tagged union, RegTools,
 SNAF and SpliceMutr, cross-tool splice normalization, fusion/splice peptide
 generation, presentation, evidence integration, and dual ranking. For DNA it
 can include BWA/samtools alignment, Mutect2, OptiType or command-template HLA
@@ -65,8 +65,8 @@ with `scripts/generate_production_from_results_manifest.py`, then runs
 `neoag.production_runner --execute` with the sarcoma RNA-supported v2 weighted
 profile and v3 Evidence-consensus rules. It accepts explicit overrides for
 Sequenza/PURPLE, gene TPM, transcript TPM/`quant.sf`, RNA FASTQ/BAM/VAF,
-STAR/GTF/reference assets, predictor dependency roots, NetMHCpan,
-NetMHCstabpan, and RNA threads. When overrides are absent it must reuse the
+STAR/GTF/reference assets, fusion caller roots, normal read-through, normal expression/junction/ligandome/proteome assets through `--asset-root`, predictor dependency roots, NetMHCpan,
+NetMHCstabpan, PRIME, BigMHC, DeepImmuno, and RNA threads. When overrides are absent it must reuse the
 latest non-empty `gene_tpm.tsv`, `transcript_tpm.tsv`, Salmon `quant.sf`, RSEM
 `*.genes.results`/`*.isoforms.results`, existing `rna_alt_vaf.tsv`, or a
 non-empty STAR RNA BAM so patient reports can show transcript expression, RNA
@@ -90,16 +90,16 @@ DAG for new heavy DNA/RNA tool execution.
 4. Route to the existing fine-grained internal Skills and generate `capability_aware.production.toml` for raw inputs.
 5. Run Doctor/preflight.
 6. Use `pipeline-full` for the dry-run DAG and submit approved execute/resume requests through NeoAg Gateway to the production runner. For existing completed case roots, prefer `scripts/run_production_case.sh` after explicit approval; it creates `manifest/production.results.toml` and invokes the production runner directly with fixed profiles and predictor environment pins. Raw heavy manifests must use the same final integration standards as the wrapper: `profiles/sarcoma_rna_supported_v2_provisional.toml`, `configs/ranking/sarcoma_evidence_consensus_v3_source_chain.toml`, required NetMHCpan/MHCflurry/NetMHCstabpan/NetChop presentation predictors, optional PRIME/MixMHCpred/BigMHC/DeepImmuno immunogenicity support when configured, and `patient,technical` reports.
-For normal-proteome safety, prefer explicit `NEOAG_NORMAL_PROTEOME_FASTA`/`NEOAG_NORMAL_PROTEOME`, then canonical asset names, then a non-empty FASTA discovered under `data/normal/proteome`; never treat a missing preferred filename as absence of the whole background.
+For normal-background safety, prefer explicit inputs and otherwise pass through the fixed local asset root: indexed normal junctions, normal expression including GTEx/HSPC where available, normal HLA ligandome, and normal/reference proteome. Build or reuse the normal-junction sqlite index before splice review so background checks are streaming/pre-indexed rather than repeatedly scanning large tables. For normal-proteome safety, prefer explicit `NEOAG_NORMAL_PROTEOME_FASTA`/`NEOAG_NORMAL_PROTEOME`, then canonical asset names, then a non-empty FASTA discovered under `data/normal/proteome`; never treat a missing preferred filename as absence of the whole background.
 7. Reuse existing gene/transcript TPM and RNA alt/VAF tables, or plan/run Salmon/RSEM gene plus transcript quantification from tumor RNA FASTQ and RNA ref/alt counting from tumor RNA BAM plus somatic VCF. When multiple paired RNA FASTQ batches are supplied, merge R1 files and R2 files first and pass the merged pair to all downstream RNA tools. Retain fusion/splice junction read evidence. Enforce the wrapper-compatible RNA allele evidence rule for raw runs too: use only one of RNA FASTQ, RNA BAM, or an existing RNA VAF table. Before final ranking, verify that `ranked_peptides.evidence_consensus.tsv` carries concrete `gene_expression_tpm`, `transcript_expression_tpm`, `rna_depth`, `rna_alt_reads`, and `rna_vaf` values when the corresponding upstream evidence exists; do not let reports silently fall back to generic “未提供/未计算” text when a usable Salmon/RSEM table or RNA BAM/VAF table is present. For SNV/InDel rows, also verify `wildtype_peptide`, WT binding predictions and `mutant_specificity_status`/`mutant_specificity_state`; if these are absent, rerun VEP/peptide extraction with Wildtype/Frameshift plugins and do not treat the final report/Excel as complete.
    For the automatic RNA profile, require HLA, FASTA/GTF, STAR index,
-   EasyFuse reference, Salmon index plus tx2gene or RSEM reference before execute. Standalone STAR-Fusion/FusionCatcher/Arriba references are fallback-only when EasyFuse is not configured.
+   EasyFuse reference, Salmon index plus tx2gene or RSEM reference before execute. EasyFuse remains the primary meta-workflow, but final fusion evidence must be built from the union of EasyFuse pass/unfiltered tables, EasyFuse/standalone STAR-Fusion, Arriba, FusionCatcher, JAFFAL and any completed caller roots that are present, with caller provenance and single-caller/targeted-rescue status retained.
    When Salmon and RSEM are both configured in auto mode, Salmon remains the
    primary expression handoff and RSEM is scheduled as an expression cross-check.
    SNAF and SpliceMutr are default splice stages. Their database/workflow
    assets must be present before execution; missing assets block the splice
    branch and are reported explicitly.
-8. Cross-check HLA typing, LOHHLA/SpecHLA HLA LOH, fusion, splice, presentation and FACETS/Sequenza/PURPLE/ASCAT purity/CNV/CCF evidence by domain; missing evidence remains `UNASSESSED`. When using the production-case wrapper, preserve its single-RNA-input-mode rule: choose one of RNA FASTQ, RNA BAM, or existing RNA VAF.
+8. Cross-check HLA typing, LOHHLA/SpecHLA HLA LOH, fusion, splice, presentation and FACETS/Sequenza/PURPLE/ASCAT purity/CNV/CCF evidence by domain; missing evidence remains `UNASSESSED`. Fusion consensus is a union with provenance, not a mutually exclusive caller choice. When using the production-case wrapper, preserve its single-RNA-input-mode rule: choose one of RNA FASTQ, RNA BAM, or existing RNA VAF.
 9. Build `all_tool_results.tsv`, long-form tool evidence and explicit consensus/conflict outputs.
 10. Preserve the weighted baseline, generate independent Evidence consensus rankings, compare both rankings, and write run/audit manifests. Treat `ranked_peptides.evidence_consensus.tsv` and `ranked_events.evidence_consensus.tsv` as the final report/Excel ranking inputs; use `ranked_peptides.tsv` only as the legacy weighted baseline or compatibility source.
 11. Generate the technical Pipeline report by default. Do not generate a patient-facing report unless explicitly requested; the final patient report belongs to `open-neo-review`.

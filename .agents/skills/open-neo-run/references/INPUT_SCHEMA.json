@@ -72,8 +72,8 @@
     "rna_vaf": {"type": "string"},
     "star_executable": {"type": "string"},
     "samtools_executable": {"type": "string"},
-    "evidence_consensus_rules": {"type": "string"},
-    "profile": {"type": "string"}
+    "profile": {"type": "string"},
+    "evidence_consensus_rules": {"type": "string"}
   },
   "anyOf": [
     {"required": ["sample_manifest"]},

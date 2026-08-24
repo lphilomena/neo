@@ -11,7 +11,7 @@
 5. Review event-level consensus first. Keep at most one or two representative
    peptide-HLA pairs per event and deduplicate phase/redundancy groups.
 6. Hard failures cannot enter R1/R2 or a direct experimental set.
-7. Missing RNA, safety, HLA LOH, APPM or CCF evidence is not negative evidence.
+7. Missing RNA, safety, HLA LOH, APPM or CCF evidence is not negative evidence. Fusion/splice caller absence must be reported from Skill2 consensus/provenance fields rather than inferred by rescanning raw caller directories.
 8. R1/R2 with adequate evidence may receive direct experiment priority. R3 may
    enter a clearly labelled targeted-RNA, fusion-confirmation or phasing queue.
 9. R4 drivers remain manual-review-only and are not upgraded for mechanism

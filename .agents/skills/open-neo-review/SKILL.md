@@ -24,7 +24,7 @@ The only CLI entry is `result_dir`, but the directory must contain:
 - `all_tool_results.tsv`
 - `validation_plan.tsv`
 
-Optional evidence includes APPM, HLA LOH, CCF, purity, peptide safety, conflicts, ranking comparison, RNA expression/RNA VAF provenance fields, `clinical_context.yaml`, and `disease_profile.yaml`.
+Optional evidence includes APPM, HLA LOH, CCF, purity, peptide safety, conflicts, ranking comparison, fusion/splice consensus with caller provenance, RNA expression/RNA VAF provenance fields, normal-background safety status, `clinical_context.yaml`, and `disease_profile.yaml`.
 
 Use `--reports patient,technical,onepage` to select report artifacts. Use
 `--reports none` for event review and experiment tables without document/PPT
@@ -36,7 +36,7 @@ generation. Report generation is MEDIUM risk; table-only review is LOW risk.
 2. Return `NEEDS_RANKING` when event-level consensus is absent. Never substitute weighted Top20.
 3. Preserve `pipeline_r_grade` and `pipeline_event_rank`; write independent `review_status`, `review_reason`, and `experiment_priority` fields.
 4. Review event-level representatives, with at most two peptide-HLA pairs per event and explicit phase/redundancy handling.
-5. Invoke ranking comparison, experiment design, HLA-LOH/APPM review, CCF/clonality review, the shared formal patient-report renderer, technical report, and bounded concept explanations. For patient reports, require event rows to carry concrete RNA measurements from the canonical evidence tables: `gene_expression_tpm`, `transcript_expression_tpm`, `rna_depth`, `rna_alt_reads`, and `rna_vaf`. If any value is absent, report the upstream evidence gap or ID-mapping gap from `expression_source`, `transcript_expression_source`, `expression_evidence_status`, `rna_vaf_source`, and `rna_support_status` instead of a generic omission.
+5. Invoke ranking comparison, experiment design, HLA-LOH/APPM review, CCF/clonality review, the shared formal patient-report renderer, technical report, and bounded concept explanations. For patient reports, require event rows to carry concrete RNA measurements from the canonical evidence tables: `gene_expression_tpm`, `transcript_expression_tpm`, `rna_depth`, `rna_alt_reads`, and `rna_vaf`. If any value is absent, report the upstream evidence gap or ID-mapping gap from `expression_source`, `transcript_expression_source`, `expression_evidence_status`, `rna_vaf_source`, and `rna_support_status` instead of a generic omission. Fusion and splice sections must consume Skill2/production-wrapper consensus outputs and caller-provenance columns; Skill3 must not independently rescan EasyFuse, STAR-Fusion, Arriba, FusionCatcher, JAFFAL, SNAF or SpliceMutr raw outputs.
 6. Build a deterministic first-batch research set considering grade, RNA, safety, HLA diversity, clonality, event type, phase and redundancy. It is not a vaccine optimizer.
 7. Generate short-peptide, long-peptide, minigene, targeted-RNA, and manual-review lanes.
 
@@ -64,5 +64,5 @@ Allowed wording: computational candidate, experiment priority, missing evidence,
 
 Forbidden wording: confirmed neoantigen, guaranteed benefit, clinical resistance, ineffective immunotherapy, drug recommendation, or established vaccine/treatment plan.
 
-Skill3 is read-only with respect to Skill2 outputs.
+Skill3 is read-only with respect to Skill2 outputs. It uses `ranked_peptides.evidence_consensus.tsv`, `ranked_events.evidence_consensus.tsv`, `fusion_consensus.tsv`, `splice_consensus.tsv`, and `all_tool_results.tsv` as the authoritative source of report content.
 It must not create a second `production_patient/` report tree or maintain an independent simplified patient-report template.
