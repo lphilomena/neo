@@ -3,7 +3,7 @@ import gzip
 import json
 from pathlib import Path
 
-from neoag.reports_dual import ReportBundle, _apply_patient_gene_expression, _augment_runtime_tool_provenance, _patient_conflict_summary, _patient_disease_background, _patient_dna_evidence, _patient_event_grade_counts, _patient_evidence_audit_rows, _patient_evidence_summary, _patient_event_change, _patient_expression_tpm_map, _patient_key_gaps, _patient_limitation, _patient_manual_review_rows, _patient_metric, _patient_presentation_metric, _patient_rna_measurements, _patient_rna_metric, _patient_safety_gap, _patient_tool_rows, _patient_track, _patient_validation, _replace_gene_ids, load_report_bundle, make_dual_reports, make_patient_report, make_technical_report
+from neoag.reports_dual import ReportBundle, _apply_patient_gene_expression, _augment_runtime_tool_provenance, _find_bam_input, _patient_conflict_summary, _patient_disease_background, _patient_dna_evidence, _patient_event_grade_counts, _patient_evidence_audit_rows, _patient_evidence_summary, _patient_event_change, _patient_expression_tpm_map, _patient_key_gaps, _patient_limitation, _patient_manual_review_rows, _patient_metric, _patient_presentation_metric, _patient_rna_measurements, _patient_rna_metric, _patient_safety_gap, _patient_tool_rows, _patient_track, _patient_validation, _replace_gene_ids, load_report_bundle, make_dual_reports, make_patient_report, make_technical_report
 from neoag.utils import write_tsv
 
 
@@ -1172,6 +1172,60 @@ def test_patient_report_derives_normal_depth_from_paired_vcf(tmp_path):
     assert bundle.provenance["normal_dna_depth"] == (
         "候选事件位点中位正常样本有效深度 40x（n=2；VCF case_blood DP）"
     )
+
+
+def test_patient_report_finds_paired_vcf_through_upstream_provenance(tmp_path):
+    production = tmp_path / "case" / "pipeline" / "production"
+    expression = production / "rna" / "expression" / "gene_tpm.tsv"
+    expression.parent.mkdir(parents=True)
+    expression.write_text("gene_id\ttpm\nGENE1\t1\n", encoding="utf-8")
+    raw_events = production / "candidates" / "events.tsv"
+    write_tsv(raw_events, [{"event_id": "E1", "chrom": "chr1", "pos": "101", "ref": "A", "alt": "G"}])
+    vcf = production / "variants" / "somatic.vcf.gz"
+    vcf.parent.mkdir(parents=True)
+    with gzip.open(vcf, "wt", encoding="utf-8") as handle:
+        handle.write("##fileformat=VCFv4.2\n")
+        handle.write("#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tcase_blood\tcase_tumor\n")
+        handle.write("chr1\t101\t.\tA\tG\t.\tPASS\t.\tGT:AD:DP\t0/0:31,0:31\t0/1:20,11:31\n")
+    upstream = production / "final_original" / "final"
+    upstream.mkdir(parents=True)
+    (upstream / "provenance.json").write_text(json.dumps({
+        "input_files": {"raw_events": str(raw_events), "somatic_vcf": str(vcf)},
+    }), encoding="utf-8")
+    base = _bundle()
+    bundle = load_report_bundle(
+        profile=base.profile,
+        events=base.events,
+        peptides=base.peptides,
+        provenance={"input_files": {"expression": str(expression), "raw_events": str(raw_events)}},
+        outdir=tmp_path / "derived",
+    )
+    assert bundle.provenance["normal_dna_depth"] == (
+        "候选事件位点中位正常样本有效深度 31x（n=1；VCF case_blood DP）"
+    )
+
+
+def test_find_normal_bam_excludes_rna_and_hla_derived_bams(tmp_path):
+    production = tmp_path / "case" / "pipeline" / "production"
+    expression = production / "rna" / "expression" / "gene_tpm.tsv"
+    expression.parent.mkdir(parents=True)
+    expression.write_text("gene_id\ttpm\n", encoding="utf-8")
+    normal = tmp_path / "inputs" / "case_blood_wgs.align.bam"
+    rna = tmp_path / "inputs" / "case_blood_rna.bam"
+    hla = tmp_path / "inputs" / "case_blood_lohhla_region.bam"
+    normal.parent.mkdir()
+    normal.write_bytes(b"normal")
+    rna.write_bytes(b"rna" * 100)
+    hla.write_bytes(b"hla" * 100)
+    upstream = production / "final_original"
+    upstream.mkdir(parents=True)
+    (upstream / "provenance.json").write_text(json.dumps({
+        "normal_dna_bam": str(normal),
+        "normal_rna_bam": str(rna),
+        "normal_lohhla_bam": str(hla),
+    }), encoding="utf-8")
+    provenance = {"input_files": {"expression": str(expression)}}
+    assert _find_bam_input(provenance, "normal", tmp_path / "derived") == str(normal)
 
 
 def test_patient_report_shows_hla_loh_tools_and_uses_consensus_in_appm(tmp_path):

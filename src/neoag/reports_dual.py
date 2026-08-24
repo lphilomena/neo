@@ -282,17 +282,83 @@ def _depth_summary_from_tsv(path: Path | None, *fields: str, limit: int | None =
     return f"候选位点中位深度 {median:.0f}x（n={len(values)}）"
 
 
+def _metadata_contexts(prov: Mapping[str, Any], root: Path | None) -> list[Mapping[str, Any]]:
+    """Load bounded upstream metadata referenced by a derived result."""
+    contexts: list[Mapping[str, Any]] = [prov]
+    production_roots: set[Path] = set()
+    for _, value in _walk_scalar_items(prov):
+        candidate = Path(value)
+        try:
+            exists = candidate.is_absolute() and candidate.exists()
+        except OSError:
+            exists = False
+        if not exists:
+            continue
+        for parent in [candidate.parent, *candidate.parents]:
+            if parent.name == "production":
+                production_roots.add(parent)
+                break
+    if root:
+        for parent in [root, *root.parents]:
+            if parent.name == "production":
+                production_roots.add(parent)
+                break
+
+    metadata_paths: set[Path] = set()
+    for production_root in production_roots:
+        metadata_paths.update(production_root.glob("final*/provenance.json"))
+        metadata_paths.update(production_root.glob("final*/*/provenance.json"))
+        metadata_paths.update(production_root.glob("*/provenance.json"))
+        metadata_paths.add(production_root / "production_run_summary.json")
+        metadata_paths.add(production_root.parent / "run_manifest.json")
+    existing = [path for path in metadata_paths if path.is_file()]
+    existing.sort(key=lambda path: path.stat().st_mtime, reverse=True)
+    for path in existing[:100]:
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            continue
+        if isinstance(payload, Mapping):
+            contexts.append(payload)
+    return contexts
+
+
+def _find_vcf_input(prov: Mapping[str, Any], root: Path | None) -> str:
+    candidates: list[tuple[int, int, str]] = []
+    seen: set[str] = set()
+    for context_index, context in enumerate(_metadata_contexts(prov, root)):
+        for key_path, value in _walk_scalar_items(context):
+            lowered = value.lower()
+            if not (lowered.endswith(".vcf") or lowered.endswith(".vcf.gz")) or value in seen:
+                continue
+            seen.add(value)
+            joined = f"{key_path} {value}".lower()
+            if any(token in joined for token in ("spechla", "lohhla", "hla_vcf", "germline_only")):
+                continue
+            score = 0
+            if any(token in key_path.lower() for token in ("somatic_vcf", "annotated_vcf", "/vcf")):
+                score += 12
+            if "somatic" in joined:
+                score += 8
+            if any(token in joined for token in ("paired", "tumor", "tumour")):
+                score += 3
+            if "pass" in joined:
+                score += 1
+            try:
+                is_file = Path(value).is_file()
+            except OSError:
+                is_file = False
+            if is_file:
+                candidates.append((score, -context_index, value))
+    return max(candidates, default=(0, 0, ""))[2]
+
+
 def _vcf_depth_summary_from_provenance(
-    prov: Mapping[str, Any], rows: list[Mapping[str, Any]], specimen: str,
+    prov: Mapping[str, Any], root: Path | None, rows: list[Mapping[str, Any]], specimen: str,
 ) -> str:
     """Summarize candidate-site depth from a paired VCF when evidence columns are empty."""
-    input_files = prov.get("input_files") if isinstance(prov.get("input_files"), Mapping) else {}
-    vcf = next((
-        str(input_files.get(key) or "").strip()
-        for key in ("somatic_vcf", "vcf", "annotated_vcf")
-        if str(input_files.get(key) or "").strip()
-    ), "")
-    if not vcf or not Path(vcf).is_file():
+    vcf = _find_vcf_input(prov, root)
+    if not vcf:
         return ""
     candidate_keys = {
         (re.sub(r"^chr", "", str(row.get("chrom") or row.get("chromosome") or "").strip(), flags=re.IGNORECASE),
@@ -366,31 +432,48 @@ def _walk_scalar_items(value: Any, path: str = "") -> list[tuple[str, str]]:
     return items
 
 
-def _find_bam_input(prov: Mapping[str, Any], specimen: str) -> str:
+def _find_bam_input(prov: Mapping[str, Any], specimen: str, root: Path | None = None) -> str:
     wanted = {
         "normal": ("normal", "blood", "germline", "control"),
         "tumor": ("tumor", "tumour", "sample"),
     }
     tokens = wanted.get(specimen, (specimen,))
-    candidates: list[tuple[int, str]] = []
-    for path, value in _walk_scalar_items(prov):
-        joined = f"{path} {value}".lower()
-        if not value.lower().endswith(".bam"):
-            continue
-        if not any(token in joined for token in tokens):
-            continue
-        score = 0
-        if specimen in joined:
-            score += 3
-        if "wgs" in joined or "dna" in joined:
-            score += 2
-        if "rna" in joined:
-            score -= 3
-        candidates.append((score, value))
-    for _, path in sorted(candidates, reverse=True):
-        if Path(path).is_file():
-            return path
-    return ""
+    candidates: list[tuple[int, int, int, str]] = []
+    seen: set[str] = set()
+    excluded = ("rna", "spechla", "lohhla", "hla-la", "polysolver", "mhc", "realign", "nomissmatch", "extract", "region_bam", "temp_bam")
+    for context_index, context in enumerate(_metadata_contexts(prov, root)):
+        for key_path, value in _walk_scalar_items(context):
+            joined = f"{key_path} {value}".lower()
+            if not value.lower().endswith(".bam") or value in seen:
+                continue
+            seen.add(value)
+            if not any(token in joined for token in tokens) or any(token in joined for token in excluded):
+                continue
+            source = Path(value)
+            try:
+                is_file = source.is_file()
+                source_size = source.stat().st_size if is_file else 0
+            except OSError:
+                is_file = False
+                source_size = 0
+            if not is_file:
+                continue
+            score = 0
+            key_lower = key_path.lower()
+            if any(token in key_lower for token in (f"{specimen}_dna_bam", f"{specimen}_bam", "source_bam")):
+                score += 15
+            if specimen in joined:
+                score += 5
+            if "blood_wgs" in joined or "germline_bam" in joined:
+                score += 8 if specimen == "normal" else -8
+            if "wgs" in joined:
+                score += 5
+            elif "wes" in joined or "exome" in joined:
+                score += 3
+            if "dna" in joined:
+                score += 3
+            candidates.append((score, min(source_size, 10**12), -context_index, value))
+    return max(candidates, default=(0, 0, 0, ""))[3]
 
 
 def _samtools_candidates(root: Path | None) -> list[str]:
@@ -416,7 +499,7 @@ def _samtools_candidates(root: Path | None) -> list[str]:
 
 
 def _bam_depth_summary_from_provenance(prov: Mapping[str, Any], root: Path | None, specimen: str) -> str:
-    bam = _find_bam_input(prov, specimen)
+    bam = _find_bam_input(prov, specimen, root)
     if not bam:
         return ""
     samtools = next(iter(_samtools_candidates(root)), "")
@@ -1262,7 +1345,7 @@ def load_report_bundle(
         prov["normal_dna_depth"] = (
             _depth_summary(events + peptides, "normal_depth")
             or _depth_summary_from_tsv(canonical_evidence_path, "normal_depth")
-            or _vcf_depth_summary_from_provenance(prov, source_events + events + peptides, "normal")
+            or _vcf_depth_summary_from_provenance(prov, root, source_events + events + peptides, "normal")
             or _bam_depth_summary_from_provenance(prov, root, "normal")
         )
     if not prov.get("genome_build"):
