@@ -1622,6 +1622,13 @@ def _patient_rna_metric(row: Mapping[str, Any]) -> str:
         except ValueError:
             verified_n = provided_n = None
         if provided_n and provided_n > 0 and (verified_n is None or verified_n <= 0):
+            canonical = str(row.get("canonical_junction_id") or "")
+            strand = str(row.get("junction_strand") or "").strip()
+            if canonical.endswith("|.") or strand in {".", "?"}:
+                return (
+                    f"RNA=上游工具报告同坐标junction reads {provided}；因链方向未解析，"
+                    "当前严格规则未将其计入已核实reads（不等同于检测为0）"
+                )
             return (
                 f"RNA=上游工具报告junction reads {provided}，但尚未与同一canonical junction的"
                 "原始比对记录精确回链；已核实reads为0"
@@ -1690,15 +1697,29 @@ def _patient_candidate_integrity(row: Mapping[str, Any]) -> tuple[bool, list[str
         verified = _patient_observed_value(row, "rna_junction_reads") or _patient_observed_value(row, "junction_reads")
         try:
             if float(provided or 0) > 0 and float(verified or 0) <= 0:
-                details.append(f"上游报告{provided}条reads但精确核实为0")
+                if canonical.endswith("|.") or strand in {".", "?"}:
+                    details.append(
+                        f"上游同坐标报告{provided}条reads；因strand未解析，未计入严格verified reads"
+                    )
+                else:
+                    details.append(f"上游报告{provided}条reads但精确核实为0")
         except ValueError:
             pass
         if not str(row.get("transcript_hypothesis_id") or row.get("transcript_id") or "").strip():
-            details.append("transcript hypothesis未回链")
+            details.append("上游caller事件已回溯，但transcript hypothesis尚未建立")
         if not str(row.get("orf_id") or "").strip():
-            details.append("ORF未回链")
+            details.append("正式ORF尚未建立")
         if "SC_PEPTIDE_HLA_TRACEABILITY_INCOMPLETE" in str(row.get("source_chain_reason_codes") or ""):
-            details.append("肽段-HLA来源回链不完整")
+            source_traceable = bool(
+                str(row.get("source_record_id") or "").strip()
+                and str(row.get("event_id") or "").strip()
+                and str(row.get("peptide") or "").strip()
+                and str(row.get("hla_allele") or "").strip()
+            )
+            details.append(
+                "肽段-HLA可回溯至上游caller事件，但尚未通过transcript/ORF/peptide-origin正式闭环"
+                if source_traceable else "肽段-HLA来源回链不完整"
+            )
         missing.append("来源链C4：" + "、".join(details or ["存在阻断性来源链缺口"]))
     core_presentation = any(_patient_assessed(row, field) for field in (
         "netmhcpan_el_rank", "netmhcpan_mt_rank_el", "mhcflurry_presentation_score",
@@ -2275,10 +2296,18 @@ def _patient_rna_measurements(row: Mapping[str, Any]) -> str:
             ):
                 unresolved = provided_value - verified_value
                 unresolved_text = str(int(unresolved)) if unresolved.is_integer() else f"{unresolved:g}"
-                values.append(
-                    f"上游工具汇总junction reads {provided_text}；其中 {verified_text} 条已按同一"
-                    f"canonical junction精确核实，差额 {unresolved_text} 条尚未归属，未计入已核实支持"
-                )
+                canonical = str(row.get("canonical_junction_id") or "")
+                strand = str(row.get("junction_strand") or "").strip()
+                if verified_value <= 0 and (canonical.endswith("|.") or strand in {".", "?"}):
+                    values.append(
+                        f"上游工具汇总同坐标junction reads {provided_text}；因链方向未解析，"
+                        "当前严格规则未将其计入已核实reads（不等同于检测为0）"
+                    )
+                else:
+                    values.append(
+                        f"上游工具汇总junction reads {provided_text}；其中 {verified_text} 条已按同一"
+                        f"canonical junction精确核实，差额 {unresolved_text} 条尚未归属，未计入已核实支持"
+                    )
             else:
                 values.append(
                     f"上游工具汇总junction reads {provided_reads}，与已核实值 {junction_reads} 的"

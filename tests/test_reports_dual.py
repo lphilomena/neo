@@ -377,14 +377,17 @@ def test_patient_source_chain_c4_lists_specific_traceability_gaps():
         "canonical_junction_id": "SJ|GRCh38|chr1|100|200|.",
         "junction_strand": ".", "provided_rna_junction_reads": "218",
         "rna_junction_reads": "0", "netmhcpan_el_rank": "0.5",
+        "source_record_id": "JUNC_TEST_1",
         "source_chain_reason_codes": "SC_PEPTIDE_HLA_TRACEABILITY_INCOMPLETE",
         "safety_status": "PASS",
     }
     gaps = _patient_key_gaps(row, bundle)
     source_gap = next(item for item in gaps if item.startswith("完整性缺口：来源链C4"))
     assert "canonical junction缺少可用strand" in source_gap
-    assert "上游报告218条reads但精确核实为0" in source_gap
-    assert "ORF未回链" in source_gap
+    assert "上游同坐标报告218条reads；因strand未解析，未计入严格verified reads" in source_gap
+    assert "上游caller事件已回溯，但transcript hypothesis尚未建立" in source_gap
+    assert "正式ORF尚未建立" in source_gap
+    assert "肽段-HLA可回溯至上游caller事件" in source_gap
 
 
 def test_event_top_uses_ranked_events_before_candidate_integrity_filter(tmp_path):
