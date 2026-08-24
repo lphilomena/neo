@@ -1414,6 +1414,15 @@ def _patient_event_change(event: Mapping[str, Any]) -> str:
         if not source_label and not coordinate and peptide:
             return f"异常剪接肽段 {peptide}"
         detail = f"（{coordinate}）" if coordinate else ""
+        has_formal_origin = all(
+            str(event.get(field_name) or "").strip()
+            for field_name in ("transcript_hypothesis_id", "orf_id", "origin_peptide_id")
+        )
+        if has_formal_origin:
+            return (
+                f"异常剪接 {junction_path}{detail}；已完成局部转录本、ORF及跨junction肽段来源精确回链，"
+                "全长转录本真实性仍待独立验证"
+            )
         return f"异常剪接 {junction_path}{detail}；ORF/蛋白影响待确认"
     if patient_track == "Fusion" and peptide:
         return f"融合肽段 {peptide}"
@@ -3006,6 +3015,25 @@ def _patient_safety_gap(row: Mapping[str, Any]) -> str:
 
 def _patient_key_gaps(row: Mapping[str, Any], bundle: ReportBundle) -> list[str]:
     gaps: list[str] = []
+    hard_failure_labels = {
+        "HARD_REFERENCE_PROTEOME_MATCH": "候选肽与正常参考蛋白组存在精确匹配",
+        "HARD_NORMAL_JUNCTION": "正常组织中检测到相同异常连接",
+        "HARD_RESTRICTING_HLA_LOST": "限制性HLA已确认丢失",
+        "HARD_MATCHED_NORMAL_SUPPORT": "配对正常样本中检测到变异支持",
+        "HARD_NON_MUTANT_SEQUENCE": "候选肽不包含突变或新生连接序列",
+        "HARD_SAFETY_REJECT": "安全性评估触发明确拒绝条件",
+        "HARD_EVENT_ARTIFACT": "事件被判定为技术伪影风险",
+        "HARD_EVENT_OR_ORF_INVALID": "事件或ORF无效，不能支持该候选肽来源",
+    }
+    hard_codes: list[str] = []
+    for field_name in ("hard_failure_codes", "source_chain_hard_failure_codes"):
+        for code in re.split(r"[,;|]", str(row.get(field_name) or "")):
+            code = code.strip()
+            if code and code not in hard_codes:
+                hard_codes.append(code)
+    if hard_codes:
+        labels = [hard_failure_labels.get(code, code.replace("_", " ")) for code in hard_codes]
+        gaps.append("阻断原因：" + "、".join(labels))
     # RNA-only fusion/splice events do not have a defensible DNA CCF by
     # default.  Treat that as not applicable rather than as a negative result
     # or a universal candidate defect.
@@ -3558,8 +3586,15 @@ def _patient_release_audit(
         or str(event_grades.get(str(row.get("event_id") or "")) or "").upper() == "R4"
     ]
     score_only = [row for row in displayed if not _patient_candidate_integrity(row)[0]]
-    conflicting = [row for row in displayed if str(row.get("evidence_conflict_fields") or "").strip()]
-    unexplained_conflicts = [row for row in conflicting if "来源字段存在冲突" not in _patient_limitation(row, bundle)]
+    # Count only conflicts that survive the patient-facing provenance filter.
+    # Differences against derived ranking/validation copies are audit sync
+    # records, not independent biological-tool disagreements.
+    conflicting = [row for row in displayed if _patient_conflict_summary(row)]
+    unexplained_conflicts = [
+        row for row in conflicting
+        if _patient_conflict_summary(row) not in _patient_limitation(row, bundle)
+        and _patient_conflict_summary(row) not in "；".join(_patient_key_gaps(row, bundle))
+    ]
     path_or_log = bool(re.search(r"(?:/mnt/|/root/|/home/|Traceback \(most recent call last\)|nohup:)", rendered_without_audit))
     hla_appm_consistent = all(
         "HLA/APPM" not in _patient_evidence_summary(row, bundle)

@@ -895,6 +895,28 @@ def test_patient_splice_change_uses_exon_path_and_coordinate():
     assert "ORF/蛋白影响待确认" in change
 
 
+def test_patient_splice_change_reports_formal_origin_chain():
+    change = _patient_event_change({
+        "event_type": "Splice",
+        "canonical_junction_id": "SJ|GRCh38|chr1|101|200|+",
+        "transcript_hypothesis_id": "STH|abc",
+        "orf_id": "ORF|abc",
+        "origin_peptide_id": "POR|abc",
+        "peptide": "ABCDEFGHI",
+    })
+    assert "已完成局部转录本、ORF及跨junction肽段来源精确回链" in change
+    assert "全长转录本真实性仍待独立验证" in change
+
+
+def test_patient_key_gaps_translates_hard_failure_reason():
+    bundle = ReportBundle(profile={}, events=[], peptides=[], appm_summary={}, validation_rows=[])
+    gaps = _patient_key_gaps(
+        {"hard_failure_codes": "HARD_REFERENCE_PROTEOME_MATCH", "event_type": "Splice"},
+        bundle,
+    )
+    assert "阻断原因：候选肽与正常参考蛋白组存在精确匹配" in gaps
+
+
 def test_new_patient_splice_gene_and_change_are_enriched_from_gtf(tmp_path, monkeypatch):
     gtf = tmp_path / "gencode.gtf"
     gtf.write_text(
