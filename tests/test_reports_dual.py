@@ -83,6 +83,26 @@ def test_patient_report_is_plain_language(tmp_path):
     assert "EWSR1::WT1" not in text
 
 
+def test_patient_report_track_uses_explicit_event_type_before_vep_consequence():
+    snv = {
+        "event_type": "SNV",
+        "peptide_consequence": "splice_junction",
+        "event_name": "ENSP000001:p.Glu284Gly",
+    }
+    indel = {
+        "event_type": "InDel",
+        "peptide_consequence": "splice_junction",
+        "event_name": "ENSP000002:p.Gly12fs",
+    }
+    splice = {"event_type": "Splice", "peptide_consequence": "splice_junction", "peptide": "ABCDEFGHI"}
+    assert _patient_track(snv) == "SNV"
+    assert _patient_track(indel) == "InDel"
+    assert _patient_track(splice) == "Splice"
+    assert _patient_event_change(snv) == "ENSP000001:p.Glu284Gly"
+    assert _patient_event_change(indel) == "ENSP000002:p.Gly12fs"
+    assert _patient_event_change(splice) == "异常剪接肽段 ABCDEFGHI"
+
+
 def test_patient_validation_translates_safety_recommendation():
     row = {
         "peptide_id": "P1",

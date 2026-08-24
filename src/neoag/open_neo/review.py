@@ -43,6 +43,28 @@ def _integer(value: Any, default: int = 10**9) -> int:
 
 
 def _event_kind(event_type: str, consequence: str = "") -> str:
+    # The explicit biological event type is authoritative. A DNA SNV/InDel
+    # can have a splice-related VEP consequence without becoming an RNA
+    # splice-junction event.
+    explicit = str(event_type or "").strip().lower()
+    explicit_kinds = {
+        "snv": "MISSENSE",
+        "missense": "MISSENSE",
+        "substitution": "MISSENSE",
+        "indel": "FRAMESHIFT",
+        "insertion": "FRAMESHIFT",
+        "deletion": "FRAMESHIFT",
+        "frameshift": "FRAMESHIFT",
+        "fusion": "FUSION",
+        "splice": "SPLICE",
+        "splice_junction": "SPLICE",
+        "junction": "SPLICE",
+        "dna_sv": "DNA_SV",
+        "structural_variant": "DNA_SV",
+    }
+    if explicit in explicit_kinds:
+        return explicit_kinds[explicit]
+
     text = f"{event_type} {consequence}".lower()
     if "fusion" in text:
         return "FUSION"

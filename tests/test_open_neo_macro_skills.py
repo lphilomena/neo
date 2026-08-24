@@ -29,7 +29,7 @@ from neoag.open_neo.install_check import (
 )
 from neoag.open_neo.auto_config import configure_machine
 from neoag.open_neo.cli import build_parser
-from neoag.open_neo.review import build_review_rows, run_review, select_first_batch
+from neoag.open_neo.review import _event_kind, build_review_rows, run_review, select_first_batch
 from neoag.open_neo.routing import inspect_manifest
 from neoag.open_neo.run import run_open_neo
 from neoag.controlled_execution.pipeline_runner import _manifest_file_hashes
@@ -44,6 +44,7 @@ from neoag.production_runner import load_production_manifest, run_production
 from neoag.sample_identity.bam_matcher import parse_bam_matcher_short
 from neoag.skill_taxonomy.registry import SKILLS_BY_NAME
 from neoag.skill_taxonomy.runner import run_skill
+from neoag.skill_taxonomy.review_skills import _validation_route
 
 
 def test_run_input_contract_and_public_schema_accept_rna_fastq():
@@ -86,6 +87,21 @@ def test_failure_codes_have_stable_cli_exit_mapping():
     assert exit_code_for_result({"status": "PASS"}) == 0
     assert exit_code_for_result({"status": "BLOCKED", "blocking_issues": [FailureCode.APPROVAL_REQUIRED.value]}) == 3
     assert exit_code_for_result({"status": "NEEDS_RANKING", "blocking_issues": [FailureCode.NEEDS_RANKING.value]}) == 4
+
+
+def test_review_event_kind_prioritizes_explicit_dna_event_type():
+    assert _event_kind("SNV", "splice_junction") == "MISSENSE"
+    assert _event_kind("InDel", "splice_acceptor_variant") == "FRAMESHIFT"
+    assert _event_kind("", "splice_junction") == "SPLICE"
+
+
+def test_validation_route_prioritizes_explicit_event_type_over_splice_consequence():
+    snv = {"event_type": "SNV", "peptide_consequence": "splice_junction", "wildtype_peptide": "AAAAAAAAA"}
+    indel = {"event_type": "InDel", "peptide_consequence": "splice_junction", "wildtype_peptide": "AAAAAAAAA"}
+    splice = {"event_type": "Splice", "peptide_consequence": "splice_junction"}
+    assert _validation_route(snv) == "short_peptide_plus_wt_control"
+    assert _validation_route(indel) == "short_peptide_plus_wt_control"
+    assert _validation_route(splice) == "targeted_rna_then_junction_long_peptide_or_minigene"
 
 
 def test_review_cli_accepts_report_selection():

@@ -974,7 +974,10 @@ def _patient_event_change(event: Mapping[str, Any]) -> str:
     protein_change = str(event.get("combined_protein_change") or "").strip()
     if ":p." in protein_change:
         return ("p." + protein_change.split(":p.", 1)[1]).replace("%3D", "=")
-    if event_type == "Splice" or consequence in {"novel_junction", "splice_junction", "exon_deletion_junction"}:
+    # Reuse the authoritative event-track classifier. A DNA SNV/InDel may
+    # carry a splice-related VEP consequence without becoming a splice event.
+    patient_track = _patient_track(event)
+    if patient_track == "Splice":
         source_label = next((
             str(event.get(field_name) or "").strip()
             for field_name in ("source_event_id", "source_record_id", "source_records")
@@ -989,7 +992,7 @@ def _patient_event_change(event: Mapping[str, Any]) -> str:
             return f"异常剪接肽段 {peptide}"
         detail = f"（{coordinate}）" if coordinate else ""
         return f"异常剪接 {junction_path}{detail}；ORF/蛋白影响待确认"
-    if event_type == "Fusion" and peptide:
+    if patient_track == "Fusion" and peptide:
         return f"融合肽段 {peptide}"
     change = str(event.get("event_name") or event.get("consequence") or protein_change or "")
     if change:

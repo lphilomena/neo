@@ -52,7 +52,19 @@ def _validation_route(row: dict[str, str]) -> str:
         return "normal_reference_and_safety_review_before_assay"
     if priority == "PRESENTATION_REVIEW_FIRST":
         return "independent_presentation_prediction_before_assay"
-    src = (row_get(row, ["event_kind", "source_type", "peptide_consequence", "event_type"], "") or "").lower()
+    # Explicit biological identity outranks annotation consequence. In
+    # particular, a VCF SNV/InDel annotated with splice_junction still needs
+    # DNA-variant validation rather than a splice-junction workflow.
+    explicit = (row_get(row, ["event_kind", "event_type", "source_event_type", "mutation_source"], "") or "").lower()
+    if any(x in explicit for x in ["snv", "missense", "substitution"]):
+        return "short_peptide_plus_wt_control" if row_get(row, ["wildtype_peptide", "wt_peptide"], "") else "short_peptide_elispot_with_wt_control_if_available"
+    if any(x in explicit for x in ["indel", "frameshift", "insertion", "deletion"]):
+        return "novel_tail_long_peptide_or_minigene" if "frame" in explicit else "short_peptide_plus_wt_control"
+    if "fusion" in explicit:
+        return "fusion_rt_pcr_sanger_then_long_peptide_or_minigene"
+    if any(x in explicit for x in ["splice", "junction"]):
+        return "targeted_rna_then_junction_long_peptide_or_minigene"
+    src = (row_get(row, ["source_type", "peptide_consequence", "consequence"], "") or "").lower()
     if "fusion" in src:
         return "fusion_rt_pcr_sanger_then_long_peptide_or_minigene"
     if any(x in src for x in ["splice", "junction"]):
