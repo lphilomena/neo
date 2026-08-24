@@ -9,6 +9,8 @@ import gzip
 import json
 import os
 import re
+import shutil
+import subprocess
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -251,6 +253,148 @@ def _depth_summary(rows: list[Mapping[str, Any]], *fields: str) -> str:
     return f"候选位点中位深度 {median:.0f}x（n={len(values)}）"
 
 
+def _depth_summary_from_tsv(path: Path | None, *fields: str, limit: int | None = None) -> str:
+    if not path or not path.is_file():
+        return ""
+    values: list[float] = []
+    seen: set[str] = set()
+    with path.open("r", encoding="utf-8", errors="replace", newline="") as handle:
+        reader = csv.DictReader(handle, delimiter="	")
+        for row in reader:
+            key = str(row.get("event_id") or row.get("peptide_id") or row.get("variant_key") or "")
+            if key and key in seen:
+                continue
+            for field in fields:
+                try:
+                    value = float(str(row.get(field) or "").strip())
+                except ValueError:
+                    continue
+                if value > 0:
+                    values.append(value)
+                    if key:
+                        seen.add(key)
+                    break
+            if limit and len(values) >= limit:
+                break
+    median = _numeric_median(values)
+    if median is None:
+        return ""
+    return f"候选位点中位深度 {median:.0f}x（n={len(values)}）"
+
+
+def _walk_scalar_items(value: Any, path: str = "") -> list[tuple[str, str]]:
+    items: list[tuple[str, str]] = []
+    if isinstance(value, Mapping):
+        for key, nested in value.items():
+            items.extend(_walk_scalar_items(nested, f"{path}/{key}"))
+    elif isinstance(value, list):
+        for index, nested in enumerate(value):
+            items.extend(_walk_scalar_items(nested, f"{path}[{index}]"))
+    else:
+        text = str(value or "").strip()
+        if text:
+            items.append((path, text))
+    return items
+
+
+def _find_bam_input(prov: Mapping[str, Any], specimen: str) -> str:
+    wanted = {
+        "normal": ("normal", "blood", "germline", "control"),
+        "tumor": ("tumor", "tumour", "sample"),
+    }
+    tokens = wanted.get(specimen, (specimen,))
+    candidates: list[tuple[int, str]] = []
+    for path, value in _walk_scalar_items(prov):
+        joined = f"{path} {value}".lower()
+        if not value.lower().endswith(".bam"):
+            continue
+        if not any(token in joined for token in tokens):
+            continue
+        score = 0
+        if specimen in joined:
+            score += 3
+        if "wgs" in joined or "dna" in joined:
+            score += 2
+        if "rna" in joined:
+            score -= 3
+        candidates.append((score, value))
+    for _, path in sorted(candidates, reverse=True):
+        if Path(path).is_file():
+            return path
+    return ""
+
+
+def _samtools_candidates(root: Path | None) -> list[str]:
+    candidates = [
+        os.environ.get("NEOAG_SAMTOOLS", ""),
+        os.environ.get("SAMTOOLS", ""),
+        shutil.which("samtools") or "",
+    ]
+    for env_key in ("OPEN_NEO_DEPLOY_ROOT", "NEOAG_DEPLOY_ROOT"):
+        base = os.environ.get(env_key, "").strip()
+        if base:
+            candidates.extend([
+                str(Path(base) / "env_tool" / "conda_envs" / "neoag-tools" / "bin" / "samtools"),
+                str(Path(base) / "env_tool" / "tools" / "bin" / "samtools"),
+            ])
+    if root:
+        for parent in [root, *root.parents]:
+            candidates.extend([
+                str(parent / "env_tool" / "conda_envs" / "neoag-tools" / "bin" / "samtools"),
+                str(parent / "open-neo-deploy" / "env_tool" / "conda_envs" / "neoag-tools" / "bin" / "samtools"),
+            ])
+    return [path for path in dict.fromkeys(candidates) if path and Path(path).is_file()]
+
+
+def _bam_depth_summary_from_provenance(prov: Mapping[str, Any], root: Path | None, specimen: str) -> str:
+    bam = _find_bam_input(prov, specimen)
+    if not bam:
+        return ""
+    samtools = next(iter(_samtools_candidates(root)), "")
+    if not samtools:
+        return ""
+    try:
+        idxstats = subprocess.run([samtools, "idxstats", bam], text=True, capture_output=True, check=True, timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    chrom_pattern = re.compile(r"^(chr)?([1-9]|1[0-9]|2[0-2]|X|Y|M|MT)$", re.IGNORECASE)
+    primary_length = 0
+    primary_mapped = 0
+    for line in idxstats.stdout.splitlines():
+        fields = line.split("\t")
+        if len(fields) < 4 or not chrom_pattern.match(fields[0]):
+            continue
+        try:
+            primary_length += int(fields[1])
+            primary_mapped += int(fields[2])
+        except ValueError:
+            continue
+    if not primary_length or not primary_mapped:
+        return ""
+    read_lengths: list[int] = []
+    proc: subprocess.Popen[str] | None = None
+    try:
+        proc = subprocess.Popen([samtools, "view", bam], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+        if proc.stdout:
+            for index, line in enumerate(proc.stdout):
+                if index >= 10000:
+                    break
+                fields = line.rstrip("\n").split("\t")
+                if len(fields) > 9 and fields[9] != "*":
+                    read_lengths.append(len(fields[9]))
+    except OSError:
+        read_lengths = []
+    finally:
+        if proc and proc.poll() is None:
+            proc.kill()
+    if not read_lengths:
+        return ""
+    read_length = sorted(read_lengths)[len(read_lengths) // 2]
+    depth = primary_mapped * read_length / primary_length
+    label = "正常DNA" if specimen == "normal" else "肿瘤DNA"
+    return f"{label} BAM全基因组估算平均深度 {depth:.1f}x（idxstats映射reads×抽样读长；非候选位点pileup）"
+
+
 def _purity_tools_from_provenance(prov: Mapping[str, Any]) -> list[dict[str, str]]:
     declared = [dict(row) for row in (prov.get("purity_cnv_tools") or []) if isinstance(row, Mapping)]
     if declared:
@@ -341,6 +485,47 @@ def _asset_gtf_candidates(provenance: Mapping[str, Any]) -> list[Path]:
     return list(dict.fromkeys(candidates))
 
 
+def _normal_expression_gene_map(root: Path | None, prov: Mapping[str, Any], gene_ids: set[str]) -> dict[str, str]:
+    """Map Ensembl gene IDs to symbols using deployed normal-expression assets."""
+    if not gene_ids:
+        return {}
+    candidates: list[Path] = []
+    for payload in (prov, prov.get("input_files") or {}, prov.get("references") or {}, prov.get("reference_manifest") or {}):
+        if not isinstance(payload, Mapping):
+            continue
+        for key in ("normal_expression", "normal_expression_reference", "normal_expression_table"):
+            value = str(payload.get(key) or "").strip()
+            if value:
+                candidates.append(Path(value))
+    for env_key in ("NEOAG_NORMAL_EXPRESSION", "NORMAL_EXPRESSION_REFERENCE"):
+        value = os.environ.get(env_key, "").strip()
+        if value:
+            candidates.append(Path(value))
+    if root:
+        for parent in [root, *root.parents]:
+            candidates.extend([
+                parent / "refs" / "data" / "normal" / "expression" / "normal_expression.gtex_v11_hpa_hspc.tsv",
+                parent / "open-neo-deploy" / "refs" / "data" / "normal" / "expression" / "normal_expression.gtex_v11_hpa_hspc.tsv",
+            ])
+    gene_map: dict[str, str] = {}
+    for candidate in dict.fromkeys(candidates):
+        if not candidate.is_file():
+            continue
+        try:
+            with candidate.open("r", encoding="utf-8", errors="replace", newline="") as handle:
+                reader = csv.DictReader(handle, delimiter="\t")
+                for row in reader:
+                    ensembl = str(row.get("ensembl_gene_id") or row.get("gene_id") or "").split(".", 1)[0].strip()
+                    symbol = str(row.get("gene") or row.get("gene_name") or row.get("gene_symbol") or "").strip()
+                    if ensembl in gene_ids and symbol and symbol != ensembl:
+                        gene_map["GENE|" + ensembl] = symbol
+                        if len(gene_map) >= len(gene_ids):
+                            return gene_map
+        except OSError:
+            continue
+    return gene_map
+
+
 def _read_longrna_junction_genes(
     root: Path | None,
     extra_gene_ids: set[str] | None = None,
@@ -366,6 +551,10 @@ def _read_longrna_junction_genes(
             root.parents[2] / "data" / "ref" / "hg38" / "gencode.gtf",
             root.parents[2] / "data" / "ref" / "ctat" / "current" / "ctat_genome_lib_build_dir" / "ref_annot.gtf",
         ])
+    if len(root.parents) > 3:
+        gtf_candidates.append(
+            root.parents[3] / "open-neo-deploy" / "refs" / "data" / "ref" / "hg38" / "gencode.gtf"
+        )
     for gtf in dict.fromkeys(gtf_candidates):
         if not gtf.is_file() or not (gene_ids or transcript_ids):
             continue
@@ -482,6 +671,17 @@ def _read_report_enrichment_rows(
         "source_junction_id", "source_tool", "source_tools", "splice_event_id",
         "combined_protein_change", "consequence", "peptide_consequence", "transcript_id",
         "orf_id", "transcript_orf_status", "independent_translation_generators",
+        "normal_tissue_max_tpm", "normal_tissue_max_tissue", "critical_tissue_max_tpm",
+        "critical_tissue_name", "critical_tissue_hit", "normal_hspc_tpm",
+        "normal_hspc_cell_type", "normal_hspc_unit", "normal_expression_status",
+        "normal_hspc_status", "safety_missing_layers", "safety_reason",
+        "safety_reason_codes", "event_normal_tissue_max_tpm",
+        "event_normal_tissue_max_tissue", "event_critical_tissue_max_tpm",
+        "event_critical_tissue_name", "event_critical_tissue_hit",
+        "event_normal_hspc_tpm", "event_normal_hspc_cell_type",
+        "event_normal_hspc_unit", "event_normal_expression_status",
+        "event_normal_hspc_status", "event_safety_missing_layers",
+        "event_safety_reason",
     }
     selected: dict[str, dict[str, str]] = {}
     with path.open("r", encoding="utf-8", errors="replace", newline="") as handle:
@@ -535,6 +735,17 @@ def _enrich_rows_from_sources(
         "source_chain_missing_requirements", "evidence_grade", "evidence_grade_uncapped",
         "final_priority", "safety_status", "safety_state", "safety_grade", "cross_platform_status",
         "event_authenticity_state", "event_authenticity_grade", "clonality_state", "clonality_grade",
+        "normal_tissue_max_tpm", "normal_tissue_max_tissue", "critical_tissue_max_tpm",
+        "critical_tissue_name", "critical_tissue_hit", "normal_hspc_tpm",
+        "normal_hspc_cell_type", "normal_hspc_unit", "normal_expression_status",
+        "normal_hspc_status", "safety_missing_layers", "safety_reason",
+        "safety_reason_codes", "event_normal_tissue_max_tpm",
+        "event_normal_tissue_max_tissue", "event_critical_tissue_max_tpm",
+        "event_critical_tissue_name", "event_critical_tissue_hit",
+        "event_normal_hspc_tpm", "event_normal_hspc_cell_type",
+        "event_normal_hspc_unit", "event_normal_expression_status",
+        "event_normal_hspc_status", "event_safety_missing_layers",
+        "event_safety_reason",
         "ccf_estimate", "ccf_confidence_state", "purity_consensus_status", "hla_appm_state",
         "appm_integrity_status", "restricting_hla_lost", "restricting_locus_loh", "loh_status",
         "escape_status", "immunogenicity_score", "immunogenicity_composite_score",
@@ -581,6 +792,8 @@ def _enrich_rows_from_sources(
         for field_name in ("gene", "event_name", "combined_protein_change"):
             if row.get(field_name):
                 row[field_name] = _replace_gene_ids(row[field_name], junction_genes)
+        if re.fullmatch(r"ENSG\d+", str(row.get("gene") or "")):
+            row["gene"] = f"{row['gene']}（symbol未注释）"
         enriched.append(row)
     return enriched
 
@@ -828,9 +1041,16 @@ def load_report_bundle(
                 "basis": "已并列保留 " + "、".join(names) + " 结果，不静默选择单一工具。",
             }
     if not prov.get("tumor_dna_depth"):
-        prov["tumor_dna_depth"] = _depth_summary(events + peptides, "tumor_depth", "wes_tumor_depth")
+        prov["tumor_dna_depth"] = (
+            _depth_summary(events + peptides, "tumor_depth", "wes_tumor_depth")
+            or _depth_summary_from_tsv(canonical_evidence_path, "tumor_depth", "wes_tumor_depth", "wgs_tumor_depth")
+        )
     if not prov.get("normal_dna_depth"):
-        prov["normal_dna_depth"] = _depth_summary(events + peptides, "normal_depth")
+        prov["normal_dna_depth"] = (
+            _depth_summary(events + peptides, "normal_depth")
+            or _depth_summary_from_tsv(canonical_evidence_path, "normal_depth")
+            or _bam_depth_summary_from_provenance(prov, root, "normal")
+        )
     if not prov.get("genome_build"):
         for row in events + peptides:
             build = str(row.get("genome_build") or "").strip()
@@ -853,7 +1073,7 @@ def load_report_bundle(
         for source in source_events + source_peptides + events + peptides
         for field_name in (
             "gene", "gene_pair", "event_name", "combined_protein_change",
-            "source_event_id", "source_record_id", "source_records",
+            "source_event_id", "source_record_id", "source_records", "source_junction_id",
         )
         for gene_id in re.findall(r"ENSG\d+", str(source.get(field_name) or ""))
     }
@@ -870,7 +1090,8 @@ def load_report_bundle(
         if value:
             gtf_candidates.append(Path(value))
     gtf_candidates.extend(_asset_gtf_candidates(prov))
-    junction_genes = _read_longrna_junction_genes(root, extra_gene_ids, gtf_candidates)
+    junction_genes = _normal_expression_gene_map(root, prov, extra_gene_ids)
+    junction_genes.update(_read_longrna_junction_genes(root, extra_gene_ids, gtf_candidates))
     enriched_peptides = _enrich_rows_from_sources(
         peptides, source_peptides or peptides, source_events, junction_genes, evidence_source_label,
     )
@@ -2252,6 +2473,108 @@ def _patient_missing_rna_label(row: Mapping[str, Any], label: str, *, expression
     return f"{label}未计算（RNA BAM/VAF证据未接入）"
 
 
+def _patient_dna_vcf_measurements(row: Mapping[str, Any]) -> str:
+    """Render observed small-variant DNA/VCF support."""
+    blocks: list[str] = []
+    for label, depth_field, alt_field, vaf_field in (
+        ("肿瘤DNA/VCF", "tumor_depth", "tumor_alt_count", "tumor_vaf"),
+        ("WGS", "wgs_tumor_depth", "wgs_tumor_alt_count", "wgs_tumor_vaf"),
+        ("WES", "wes_tumor_depth", "wes_tumor_alt_count", "wes_tumor_vaf"),
+    ):
+        depth = _patient_numeric_display(_patient_observed_value(row, depth_field), 0)
+        alt = _patient_numeric_display(_patient_observed_value(row, alt_field), 0)
+        vaf = _patient_numeric_display(_patient_observed_value(row, vaf_field), 4)
+        if depth is None and alt is None and vaf is None:
+            continue
+        parts = []
+        if depth is not None:
+            parts.append(f"深度 {depth}")
+        if alt is not None:
+            parts.append(f"ALT reads {alt}")
+        if vaf is not None:
+            parts.append(f"VAF {vaf}")
+        blocks.append(f"{label}（{'，'.join(parts)}）")
+    return "；".join(blocks)
+
+
+def _patient_dna_sv_measurements(row: Mapping[str, Any]) -> str:
+    """Render DNA structural-variant support without borrowing RNA junction fields."""
+    parts: list[str] = []
+    for label, fields in (
+        ("断点支持reads", ("dna_sv_support_reads", "wgs_sv_support_reads", "sv_support_reads")),
+        ("split reads", ("dna_sv_split_reads", "wgs_sv_split_reads", "sv_split_reads", "split_reads")),
+        (
+            "discordant pairs",
+            ("dna_sv_discordant_pairs", "wgs_sv_discordant_pairs", "sv_discordant_pairs", "discordant_pairs"),
+        ),
+    ):
+        value = _patient_observed_source(row, *fields)
+        display = _patient_numeric_display(value, 0) if value is not None else None
+        if display is not None:
+            parts.append(f"{label} {display}")
+    caller = _patient_observed_source(row, "dna_sv_caller", "wgs_sv_caller", "sv_caller")
+    if caller:
+        parts.append(f"DNA-SV caller {caller}")
+    return "，".join(parts)
+
+
+def _patient_dna_evidence(row: Mapping[str, Any]) -> str:
+    """Describe DNA evidence using an event-appropriate measurement model."""
+    track = _patient_track(row)
+    if track in {"SNV", "InDel"}:
+        measurements = _patient_dna_vcf_measurements(row)
+        return f"DNA/VCF数据：{measurements or '未接入或未评估'}"
+    if track in {"Fusion", "DNA SV"}:
+        measurements = _patient_dna_sv_measurements(row)
+        if measurements:
+            return f"DNA/SV数据：{measurements}"
+        if track == "Fusion":
+            return "DNA/SV数据：未接入或未评估；当前融合仅按RNA断点证据评估"
+        return "DNA/SV数据：未接入或未评估"
+    if track == "Splice":
+        return "DNA证据：点突变VCF口径不适用；当前异常剪接按RNA junction证据评估"
+    measurements = _patient_dna_vcf_measurements(row)
+    return f"DNA数据：{measurements}" if measurements else "DNA数据：未接入或未评估"
+
+
+def _patient_dna_rna_interpretation(row: Mapping[str, Any]) -> str:
+    if _patient_track(row) not in {"SNV", "InDel"}:
+        return ""
+    dna_alt_values = []
+    for field in ("tumor_alt_count", "wgs_tumor_alt_count", "wes_tumor_alt_count"):
+        value = _patient_observed_value(row, field)
+        if value is None:
+            continue
+        try:
+            dna_alt_values.append(float(value))
+        except ValueError:
+            continue
+    if not dna_alt_values:
+        return ""
+    rna_alt_raw = _patient_observed_value(row, "rna_alt_reads")
+    rna_depth_raw = _patient_observed_value(row, "rna_depth")
+    try:
+        rna_alt = float(rna_alt_raw) if rna_alt_raw is not None else None
+    except ValueError:
+        rna_alt = None
+    try:
+        rna_depth = float(rna_depth_raw) if rna_depth_raw is not None else None
+    except ValueError:
+        rna_depth = None
+    dna_alt = max(dna_alt_values)
+    if dna_alt > 4 and rna_alt == 0:
+        if rna_depth is not None and rna_depth < 10:
+            return "解读：DNA/VCF支持该变异；RNA位点覆盖偏低，不能据此判定RNA突变表达阴性"
+        return "解读：DNA/VCF支持该变异；RNA位点复核未检出ALT，表示突变等位基因RNA表达证据不足，但不否定DNA层面变异"
+    if dna_alt > 4 and rna_alt is not None and rna_alt >= 5:
+        return "解读：DNA/VCF与RNA层面均有ALT reads支持"
+    if dna_alt > 4 and rna_alt is not None and rna_alt > 0:
+        return "解读：DNA/VCF支持该变异，RNA层面有低量ALT reads支持"
+    if dna_alt > 4:
+        return "解读：DNA/VCF支持该变异；RNA突变等位基因表达需结合RNA位点证据单独判断"
+    return ""
+
+
 def _patient_rna_measurements(row: Mapping[str, Any]) -> str:
     """Render only observed RNA fields carried by the canonical evidence table."""
     track = _patient_track(row)
@@ -2363,7 +2686,9 @@ def _patient_event_evidence_and_next_step(
     gap_text = "；".join(gaps) if gaps else "未见明确关键缺口"
     return (
         f"核心证据：{'；'.join(evidence)}。"
+        f"{_patient_dna_evidence(row)}。"
         f"RNA数据：{_patient_rna_measurements(row)}。"
+        f"{_patient_dna_rna_interpretation(row) + '。' if _patient_dna_rna_interpretation(row) else ''}"
         f"{_patient_cross_site_rna(row) + '。' if _patient_cross_site_rna(row) else ''}"
         f"主要缺口：{gap_text}。"
         f"下一步：{_patient_validation(row, val_map)}"
@@ -2371,8 +2696,8 @@ def _patient_event_evidence_and_next_step(
 
 
 _PATIENT_SAFETY_LAYER_LABELS = {
-    "normal_expression": "正常组织表达参考层未完成正式评估",
-    "normal_hspc": "专门HSPC正常造血参考层未完成正式评估",
+    "normal_expression": "正常组织表达参考已接入但该候选未匹配到可判定记录",
+    "normal_hspc": "HSPC正常造血参考已接入但该候选未匹配到可判定记录",
     "reference_proteome": "正常蛋白组精确匹配未完成正式评估",
     "normal_ligandome": "正常HLA配体组未完成正式评估",
     "anchor_only": "突变锚定位点风险未完成正式评估",
@@ -2387,25 +2712,17 @@ def _patient_safety_gap(row: Mapping[str, Any]) -> str:
         str(row.get(field) or "")
         for field in ("safety_missing_layers", "event_safety_missing_layers")
     )
-    missing = []
+    missing_keys: list[str] = []
     reason_text = ";".join(
         str(row.get(field) or "") for field in ("safety_reason", "event_safety_reason", "safety_reason_codes")
     ).lower()
     for token in re.split(r"[;,|\s]+", missing_raw):
         key = token.strip().lower()
-        if not key:
-            continue
-        if key == "normal_expression" and "normal_expression_gene_not_in_reference" in reason_text:
-            label = "当前正式GTEx/HPA正常组织表达参考未收录该基因，不能按0表达解释"
-        elif key == "normal_hspc" and "normal_hspc_gene_not_in_reference" in reason_text:
-            label = "当前正式HSPC正常造血参考未收录该基因，不能按0表达解释"
-        else:
-            label = _PATIENT_SAFETY_LAYER_LABELS.get(key, f"{key}安全参考层未完成正式评估")
-        if label not in missing:
-            missing.append(label)
+        if key and key not in missing_keys:
+            missing_keys.append(key)
 
     if safety in {"SAFETY_PARTIAL", "PARTIAL", "UNASSESSED"}:
-        if not missing:
+        if not missing_keys:
             layer_statuses = {
                 "normal_expression": row.get("normal_expression_status"),
                 "normal_hspc": row.get("normal_hspc_status"),
@@ -2416,10 +2733,36 @@ def _patient_safety_gap(row: Mapping[str, Any]) -> str:
             }
             for key, value in layer_statuses.items():
                 status = str(value or "").strip().upper()
-                if status and status not in {"ASSESSED", "NOT_APPLICABLE"}:
-                    label = _PATIENT_SAFETY_LAYER_LABELS[key]
-                    if label not in missing:
-                        missing.append(label)
+                if status and status not in {"ASSESSED", "NOT_APPLICABLE"} and key not in missing_keys:
+                    missing_keys.append(key)
+        missing: list[str] = []
+        normal_tpm = _patient_numeric_display(_patient_observed_value(row, "normal_tissue_max_tpm"), 4)
+        normal_tissue = _patient_value(row, "normal_tissue_max_tissue", "critical_tissue_name", default="正常组织")
+        hspc_tpm = _patient_numeric_display(_patient_observed_value(row, "normal_hspc_tpm"), 4)
+        hspc_unit = _patient_value(row, "normal_hspc_unit", default="")
+        for key in missing_keys:
+            if key == "normal_expression" and "normal_expression_gene_not_in_reference" in reason_text:
+                label = "当前正式GTEx/HPA正常组织表达参考未收录该基因，不能按0表达解释"
+            elif key == "normal_hspc" and "normal_hspc_gene_not_in_reference" in reason_text:
+                label = "当前正式HSPC正常造血参考未收录该基因，不能按0表达解释"
+            elif key == "normal_expression" and normal_tpm is not None:
+                label = f"正常组织表达已查询但覆盖/映射不完整，最高 {normal_tpm} TPM（{normal_tissue}）"
+            elif key == "normal_hspc" and hspc_tpm is not None:
+                unit = f" {hspc_unit}" if hspc_unit else ""
+                label = f"HSPC正常造血参考已查询但覆盖/映射不完整，最高 {hspc_tpm}{unit}"
+            else:
+                label = _PATIENT_SAFETY_LAYER_LABELS.get(key, f"{key}安全参考层已接入但该候选未匹配到可判定记录")
+            if label not in missing:
+                missing.append(label)
+        if not missing:
+            observed: list[str] = []
+            if normal_tpm is not None:
+                observed.append(f"正常组织最高 {normal_tpm} TPM（{normal_tissue}）")
+            if hspc_tpm is not None:
+                unit = f" {hspc_unit}" if hspc_unit else ""
+                observed.append(f"HSPC最高 {hspc_tpm}{unit}")
+            if observed:
+                return "安全参考已查询：" + "、".join(observed)
         return "安全性缺口：" + "、".join(missing or ["未记录可判定的安全参考层状态"])
 
     if safety not in {"SAFETY_REVIEW", "SAFETY_HIGH_RISK", "REVIEW", "CAUTION"}:
@@ -2453,6 +2796,15 @@ def _patient_safety_gap(row: Mapping[str, Any]) -> str:
     for token, label in reason_labels:
         if token in reason_text and label not in review_reasons:
             review_reasons.append(label)
+    if not review_reasons:
+        normal_tpm = _patient_numeric_display(_patient_observed_value(row, "normal_tissue_max_tpm"), 4)
+        normal_tissue = _patient_value(row, "normal_tissue_max_tissue", "critical_tissue_name", default="正常组织")
+        hspc_tpm = _patient_numeric_display(_patient_observed_value(row, "normal_hspc_tpm"), 4)
+        hspc_unit = _patient_value(row, "normal_hspc_unit", default="")
+        if normal_tpm is not None:
+            review_reasons.append(f"正常组织最高 {normal_tpm} TPM（{normal_tissue}）")
+        if hspc_tpm is not None:
+            review_reasons.append(f"HSPC最高 {hspc_tpm}" + (f" {hspc_unit}" if hspc_unit else ""))
     return "安全性需复核：" + "、".join(review_reasons or ["已触发安全审阅规则，具体原因见peptide_safety.tsv"])
 
 
@@ -2613,7 +2965,7 @@ def _patient_manual_review_rows(
             advice += "。当前缺口：" + "；".join(gaps)
         result.append({
             "事件": str(row.get("gene") or row.get("event_name") or row.get("event_id") or ""),
-            "为什么重要": "；".join(reasons) + "。RNA数据：" + _patient_rna_measurements(row),
+            "为什么重要": "；".join(reasons) + "。" + _patient_dna_evidence(row) + "。RNA数据：" + _patient_rna_measurements(row) + ("。" + _patient_dna_rna_interpretation(row) if _patient_dna_rna_interpretation(row) else ""),
             "当前建议": advice,
         })
         if len(result) >= limit:
@@ -2629,7 +2981,7 @@ def _patient_candidate_attention(row: Mapping[str, Any], bundle: ReportBundle) -
         _patient_metric("MT/WT", row, "mutant_specificity_status", "mutant_specificity_state"),
     ]
     cross_site = _patient_cross_site_rna(row)
-    return "；".join(evidence) + "。RNA数据：" + _patient_rna_measurements(row) + ("。" + cross_site if cross_site else "")
+    return "；".join(evidence) + "。" + _patient_dna_evidence(row) + "。RNA数据：" + _patient_rna_measurements(row) + ("。" + _patient_dna_rna_interpretation(row) if _patient_dna_rna_interpretation(row) else "") + ("。" + cross_site if cross_site else "")
 
 
 def _patient_candidate_disposition(
@@ -2723,7 +3075,7 @@ def _patient_qc_rows(bundle: ReportBundle) -> list[dict[str, str]]:
         {"项目": "肿瘤/正常配对", "结果": str(provenance.get("pairing_status") or "未评估"), "解释": "区分已使用配对输入与已完成指纹确认"},
         {"项目": "肿瘤纯度/倍性", "结果": purity_result, "解释": "用于CNV、CCF和LOH解释；工具冲突必须保留"},
         {"项目": "肿瘤DNA深度", "结果": str(provenance.get("tumor_dna_depth") or "未评估"), "解释": "默认汇总去重事件位点有效深度；低深度会降低检出能力"},
-        {"项目": "正常DNA深度", "结果": str(provenance.get("normal_dna_depth") or "未评估"), "解释": "默认汇总去重事件位点有效深度，用于排除胚系和正常支持"},
+        {"项目": "正常DNA深度", "结果": str(provenance.get("normal_dna_depth") or "未评估"), "解释": "优先汇总候选位点normal_depth；缺失时回退到normal DNA BAM覆盖估算"},
         {"项目": "RNA质量/覆盖", "结果": str(provenance.get("rna_qc_status") or "未评估"), "解释": "区分RNA支持、充分覆盖下未检出和表达层证据"},
         {"项目": "参考版本", "结果": str(provenance.get("genome_build") or "未记录"), "解释": "FASTA、GTF、VEP和坐标必须一致"},
         {"项目": "QC证据来源", "结果": "all_tool_results.tsv" if bundle.evidence_source_status == "CANONICAL_ALL_TOOL_RESULTS" else "未完整归一化", "解释": "样本QC汇总与候选排序的数据职责分离"},

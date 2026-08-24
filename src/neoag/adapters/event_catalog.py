@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
 
 from ..model_layers import enrich_event_layers, infer_mutation_source, infer_peptide_consequence
 from ..schemas import EVENT_FIELDS
@@ -93,6 +94,10 @@ def _splice_gene_name_from_record(record) -> str:
     gene = str(record.gene or "").strip()
     if gene.upper() in {"", "NA", "N/A", "."}:
         gene = ""
+    source_id = str(record.source_junction_id or "").strip()
+    ensg_match = re.search(r"ENSG\d+", source_id)
+    if (not gene or re.fullmatch(r"(?:chr)?[0-9XYM]+:\d+(?:[-:]\d+)?", gene, re.IGNORECASE)) and ensg_match:
+        gene = ensg_match.group(0)
     if not gene and record.source_chrom:
         gene = f"{record.source_chrom}:{record.source_start}"
     return gene

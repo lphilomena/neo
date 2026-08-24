@@ -292,7 +292,22 @@ def _split_genes(gene: str) -> list[str]:
     raw = str(gene or '')
     for sep in ('::',';','|',','):
         raw = raw.replace(sep, ' ')
-    return [x for x in raw.split() if x]
+    genes: list[str] = []
+    for token in (x.strip() for x in raw.split() if x.strip()):
+        candidates: list[str] = []
+        if '(' in token and token.endswith(')'):
+            base, _, rest = token.partition('(')
+            inner = rest[:-1].strip()
+            if base.strip():
+                candidates.append(base.strip())
+            if inner and not inner.isdigit():
+                candidates.append(inner)
+        else:
+            candidates.append(token)
+        for item in candidates:
+            if item and item not in genes:
+                genes.append(item)
+    return genes
 
 
 def _normal_expression_aliases(

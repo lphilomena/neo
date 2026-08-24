@@ -81,7 +81,22 @@ def _split_event_genes(gene_value):
     raw = str(gene_value or "")
     for sep in ("::", ";", ",", "|"):
         raw = raw.replace(sep, " ")
-    return [g.strip() for g in raw.split() if g.strip()]
+    genes = []
+    for token in (g.strip() for g in raw.split() if g.strip()):
+        candidates = []
+        if "(" in token and token.endswith(")"):
+            base, _, rest = token.partition("(")
+            inner = rest[:-1].strip()
+            if base.strip():
+                candidates.append(base.strip())
+            if inner and not inner.isdigit():
+                candidates.append(inner)
+        else:
+            candidates.append(token)
+        for item in candidates:
+            if item and item not in genes:
+                genes.append(item)
+    return genes
 
 def _normal_expr_for_event_gene(gene_value, normal_expr):
     genes = _split_event_genes(gene_value)
