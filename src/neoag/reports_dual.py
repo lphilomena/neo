@@ -526,6 +526,93 @@ def _normal_expression_gene_map(root: Path | None, prov: Mapping[str, Any], gene
     return gene_map
 
 
+def _patient_expression_tpm_map(prov: Mapping[str, Any]) -> tuple[dict[str, str], str]:
+    """Load the patient gene-expression table recorded by pipeline provenance."""
+    candidates: list[Path] = []
+    payloads: list[Mapping[str, Any]] = [prov]
+    for key in ("input_files", "references", "reference_manifest"):
+        value = prov.get(key)
+        if isinstance(value, Mapping):
+            payloads.append(value)
+    for payload in payloads:
+        for key in ("gene_expression", "expression", "gene_tpm", "gene_expression_tpm"):
+            value = str(payload.get(key) or "").strip()
+            if value:
+                candidates.append(Path(value))
+    for candidate in dict.fromkeys(candidates):
+        if not candidate.is_file() or candidate.stat().st_size == 0:
+            continue
+        values: dict[str, str] = {}
+        try:
+            with candidate.open("r", encoding="utf-8", errors="replace", newline="") as handle:
+                reader = csv.DictReader(handle, delimiter="\t")
+                for row in reader:
+                    gene_id = str(
+                        row.get("gene_id") or row.get("ensembl_gene_id")
+                        or row.get("gene") or row.get("gene_name") or ""
+                    ).strip()
+                    tpm = str(
+                        row.get("tpm") or row.get("TPM") or row.get("gene_tpm")
+                        or row.get("expression_tpm") or ""
+                    ).strip()
+                    if not gene_id or not tpm:
+                        continue
+                    values[gene_id] = tpm
+                    values[gene_id.split(".", 1)[0]] = tpm
+                    symbol = str(row.get("gene_symbol") or row.get("gene_name") or "").strip()
+                    if symbol:
+                        values[symbol] = tpm
+        except OSError:
+            continue
+        if values:
+            return values, str(candidate)
+    return {}, ""
+
+
+def _apply_patient_gene_expression(
+    rows: list[dict[str, str]], expression_map: Mapping[str, str], source: str,
+) -> list[dict[str, str]]:
+    """Replace placeholder expression only when one exact patient gene ID resolves."""
+    if not expression_map:
+        return rows
+    id_fields = (
+        "gene_id", "ensembl_gene_id", "gene", "source_event_id", "source_record_id",
+        "source_records", "event_name", "splice_event_id", "uid",
+    )
+    for row in rows:
+        is_splice = str(row.get("event_type") or "").strip().lower() in {
+            "splice", "splice_junction", "junction",
+        }
+        gene_ids = list(dict.fromkeys(
+            gene_id
+            for field_name in id_fields
+            for gene_id in re.findall(r"ENSG\d+(?:\.\d+)?", str(row.get(field_name) or ""))
+        ))
+        matched = [expression_map.get(gene_id) or expression_map.get(gene_id.split(".", 1)[0]) for gene_id in gene_ids]
+        matched = [value for value in matched if value is not None]
+        if len(gene_ids) == 1 and matched:
+            row["gene_expression_tpm"] = str(matched[0])
+            row["expression_source"] = source
+            row["expression_evidence_status"] = "GENE_EXPRESSION_MATCHED_BY_ENSEMBL_ID"
+            continue
+        if is_splice and len(gene_ids) > 1:
+            row["gene_expression_tpm"] = ""
+            row["expression_source"] = source
+            row["expression_evidence_status"] = "UNASSESSED_AMBIGUOUS_GENE_ID"
+            continue
+        gene = str(row.get("gene") or "").strip()
+        if gene and gene in expression_map and "::" not in gene and "/" not in gene:
+            row["gene_expression_tpm"] = str(expression_map[gene])
+            row["expression_source"] = source
+            row["expression_evidence_status"] = "GENE_EXPRESSION_MATCHED_BY_SYMBOL"
+            continue
+        if is_splice and str(row.get("gene_expression_tpm") or "").strip() in {"0", "0.0", "0.0000"}:
+            row["gene_expression_tpm"] = ""
+            row["expression_source"] = source
+            row["expression_evidence_status"] = "UNASSESSED_ID_NOT_MAPPED"
+    return rows
+
+
 def _read_longrna_junction_genes(
     root: Path | None,
     extra_gene_ids: set[str] | None = None,
@@ -1147,6 +1234,13 @@ def load_report_bundle(
     )
     enriched_events = _enrich_rows_from_sources(
         events, source_peptides or enriched_peptides, source_events, junction_genes, evidence_source_label,
+    )
+    patient_expression_map, patient_expression_source = _patient_expression_tpm_map(prov)
+    enriched_peptides = _apply_patient_gene_expression(
+        enriched_peptides, patient_expression_map, patient_expression_source,
+    )
+    enriched_events = _apply_patient_gene_expression(
+        enriched_events, patient_expression_map, patient_expression_source,
     )
     junction_verification_path = p("metadata", "junction_read_verification.tsv") if root else None
     junction_verification_rows = _read_optional(junction_verification_path)

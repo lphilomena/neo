@@ -3,7 +3,7 @@ import gzip
 import json
 from pathlib import Path
 
-from neoag.reports_dual import ReportBundle, _augment_runtime_tool_provenance, _patient_conflict_summary, _patient_event_grade_counts, _patient_evidence_audit_rows, _patient_evidence_summary, _patient_event_change, _patient_key_gaps, _patient_limitation, _patient_manual_review_rows, _patient_metric, _patient_presentation_metric, _patient_rna_measurements, _patient_rna_metric, _patient_safety_gap, _patient_tool_rows, _patient_track, _patient_validation, _replace_gene_ids, load_report_bundle, make_dual_reports, make_patient_report, make_technical_report
+from neoag.reports_dual import ReportBundle, _apply_patient_gene_expression, _augment_runtime_tool_provenance, _patient_conflict_summary, _patient_dna_evidence, _patient_event_grade_counts, _patient_evidence_audit_rows, _patient_evidence_summary, _patient_event_change, _patient_expression_tpm_map, _patient_key_gaps, _patient_limitation, _patient_manual_review_rows, _patient_metric, _patient_presentation_metric, _patient_rna_measurements, _patient_rna_metric, _patient_safety_gap, _patient_tool_rows, _patient_track, _patient_validation, _replace_gene_ids, load_report_bundle, make_dual_reports, make_patient_report, make_technical_report
 from neoag.utils import write_tsv
 
 
@@ -82,6 +82,64 @@ def test_patient_report_is_plain_language(tmp_path):
     assert "缺失证据统一视为未评估" in text
     assert "DQA1/DQB1" not in text
     assert "EWSR1::WT1" not in text
+
+
+def test_splice_dna_evidence_does_not_render_placeholder_vcf_zero():
+    row = {"event_type": "Splice", "tumor_vaf": "0", "tumor_alt_count": "0"}
+    text = _patient_dna_evidence(row)
+    assert "点突变VCF口径不适用" in text
+    assert "VAF 0.0000" not in text
+
+
+def test_splice_expression_uses_exact_patient_ensembl_id(tmp_path):
+    expression = tmp_path / "gene_tpm.tsv"
+    expression.write_text("gene_id\ttpm\nENSG00000139304.16\t18.85\n", encoding="utf-8")
+    expression_map, source = _patient_expression_tpm_map({"expression": str(expression)})
+    rows = [{
+        "event_type": "Splice",
+        "gene": "PTPRQ",
+        "source_record_id": "ENSG00000139304:E45.1-E46.1",
+        "gene_expression_tpm": "0",
+    }]
+    _apply_patient_gene_expression(rows, expression_map, source)
+    assert rows[0]["gene_expression_tpm"] == "18.85"
+    assert rows[0]["expression_evidence_status"] == "GENE_EXPRESSION_MATCHED_BY_ENSEMBL_ID"
+    assert rows[0]["expression_source"] == str(expression)
+
+
+def test_expression_overlay_does_not_collapse_multi_gene_fusion(tmp_path):
+    expression = tmp_path / "gene_tpm.tsv"
+    expression.write_text(
+        "gene_id\ttpm\nENSG00000182944.17\t50\nENSG00000184937.13\t25\n",
+        encoding="utf-8",
+    )
+    expression_map, source = _patient_expression_tpm_map({"gene_expression": str(expression)})
+    rows = [{
+        "event_type": "Fusion",
+        "gene": "EWSR1::WT1",
+        "source_record_id": "ENSG00000182944::ENSG00000184937",
+        "gene_expression_tpm": "7",
+    }]
+    _apply_patient_gene_expression(rows, expression_map, source)
+    assert rows[0]["gene_expression_tpm"] == "7"
+
+
+def test_splice_ambiguous_gene_ids_do_not_render_placeholder_zero(tmp_path):
+    expression = tmp_path / "gene_tpm.tsv"
+    expression.write_text(
+        "gene_id\ttpm\nENSG00000244731.4\t3.2\nENSG00000224389.9\t5.1\n",
+        encoding="utf-8",
+    )
+    expression_map, source = _patient_expression_tpm_map({"expression": str(expression)})
+    rows = [{
+        "event_type": "Splice",
+        "gene": "C4A / C4B",
+        "source_records": "ENSG00000244731;ENSG00000224389",
+        "gene_expression_tpm": "0",
+    }]
+    _apply_patient_gene_expression(rows, expression_map, source)
+    assert rows[0]["gene_expression_tpm"] == ""
+    assert rows[0]["expression_evidence_status"] == "UNASSESSED_AMBIGUOUS_GENE_ID"
 
 
 def test_patient_report_track_uses_explicit_event_type_before_vep_consequence():

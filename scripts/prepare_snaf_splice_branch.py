@@ -84,7 +84,7 @@ def load_tpm_maps(
 ) -> tuple[dict[str, float], dict[str, float]]:
     gene_tpm: dict[str, float] = {}
     for row in read_tsv(gene_path):
-        value = fnum(row.get("TPM"), -1.0)
+        value = fnum(row.get("TPM") or row.get("tpm") or row.get("gene_tpm"), -1.0)
         if value < 0:
             continue
         keys = {
@@ -100,10 +100,19 @@ def load_tpm_maps(
     transcript_tpm: dict[str, float] = {}
     for row in read_tsv(transcript_path):
         transcript = str(row.get("transcript_id") or "").strip().split(".")[0]
-        value = fnum(row.get("TPM"), -1.0)
+        value = fnum(row.get("TPM") or row.get("tpm") or row.get("transcript_tpm"), -1.0)
         if transcript and value >= 0:
             transcript_tpm[transcript] = value
     return gene_tpm, transcript_tpm
+
+
+def resolve_candidate_gene(row: dict[str, object], gene_map: dict[str, str]) -> tuple[str, str]:
+    """Resolve an SNAF gene without allowing a display symbol to hide its Ensembl ID."""
+    uid_gene = str(row.get("uid") or "").split(":", 1)[0].split(".")[0]
+    explicit_ensembl = str(row.get("ensembl_gene_id") or "").split(".")[0]
+    symbol = str(row.get("symbol") or row.get("gene") or "").strip()
+    ensembl = explicit_ensembl or (uid_gene if uid_gene.startswith("ENSG") else "")
+    return ensembl, gene_map.get(ensembl, symbol or ensembl)
 
 
 def supporting_transcripts(evidence: object) -> list[str]:
@@ -198,8 +207,7 @@ def main() -> None:
             if evidence_text not in {"", "()", "[]", "None"}
             else "FRAME_UNRESOLVED"
         )
-        ensembl = str(row.get("symbol") or str(row.get("uid") or "").split(":", 1)[0]).split(".")[0]
-        gene = gene_map.get(ensembl, ensembl)
+        ensembl, gene = resolve_candidate_gene(row, gene_map)
         transcripts = supporting_transcripts(row.get("evidences"))
         expressed_transcripts = [
             (transcript, transcript_tpm[transcript])
