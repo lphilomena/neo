@@ -510,6 +510,7 @@ def _formal_patient_report(
     events: list[dict[str, str]],
     peptides: list[dict[str, str]],
     all_tool: list[dict[str, str]],
+    top_n: int,
 ) -> dict[str, str]:
     all_tool_by_id = {_get(row, "peptide_id"): row for row in all_tool if _get(row, "peptide_id")}
     report_peptides: list[dict[str, str]] = []
@@ -555,7 +556,7 @@ def _formal_patient_report(
         entry_mode=str(provenance.get("entry_mode") or ""),
     )
     patient_html = layout.reports / "patient_report.html"
-    make_patient_report(patient_html, bundle)
+    make_patient_report(patient_html, bundle, event_top_n=top_n, candidate_top_n=top_n)
     fusion_html = _fusion_report_html(result_dir)
     if fusion_html:
         current = patient_html.read_text(encoding="utf-8")
@@ -658,7 +659,9 @@ def run_review(args: dict[str, Any]) -> dict[str, Any]:
     support_outputs = {**mechanism_outputs, "ranking_compare_report": cmp.get("outputs", {}).get("report", "")}
     report_outputs = _write_reports(layout, context, review_rows, first_batch, artifacts, integrity, support_outputs, selected_reports, result_dir)
     if "patient" in selected_reports:
-        report_outputs.update(_formal_patient_report(layout, result_dir, context, artifacts, events, peptides, all_tool))
+        report_outputs.update(
+            _formal_patient_report(layout, result_dir, context, artifacts, events, peptides, all_tool, top_n)
+        )
     production_reports: dict[str, str] = {}
     if "technical" in selected_reports:
         technical = run_technical_report({"outdir": str(layout.reports / "production_technical"), "result_dir_or_summary": str(result_dir), "pipeline_manifest": artifacts.get("run_manifest", "")})
