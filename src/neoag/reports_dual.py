@@ -2453,8 +2453,10 @@ def _patient_missing_rna_label(row: Mapping[str, Any], label: str, *, expression
             "expression_source",
             "transcript_expression_source",
         )
-        if transcript and _patient_track(row) in {"Fusion", "Splice"}:
-            return "转录本表达未精确匹配；该类候选按基因表达和junction reads解读"
+        if transcript and _patient_track(row) == "Fusion":
+            return "转录本表达未精确匹配；融合断点肽按融合伙伴基因表达和断点支持reads解读"
+        if transcript and _patient_track(row) == "Splice":
+            return "转录本表达未精确匹配；异常剪接候选按基因表达和junction reads解读"
         if status == "UNASSESSED_ID_NOT_MAPPED":
             return f"{label}未匹配到表达矩阵ID"
         if source:
@@ -2575,6 +2577,49 @@ def _patient_dna_rna_interpretation(row: Mapping[str, Any]) -> str:
     return ""
 
 
+def _patient_junction_reads_measurement(row: Mapping[str, Any], junction_reads: str | None) -> str:
+    """Label junction read counts according to their actual verification state."""
+    track = _patient_track(row)
+    match_status = (_patient_observed_source(row, "junction_match_status") or "").strip().upper()
+    match_method = (_patient_observed_source(row, "junction_match_method") or "").strip().lower()
+    source = (_patient_observed_source(row, "rna_junction_source", "junction_source") or "").strip().lower()
+    source_tools = (
+        _patient_observed_source(row, "source_tools", "source_tool", "junction_source_tool") or ""
+    ).strip().lower()
+
+    verified_statuses = {
+        "EXACT_MATCH", "MATCHED", "VERIFIED", "RESOLVED", "PILEUP_VERIFIED", "BAM_VERIFIED",
+    }
+    verified_methods = ("pileup", "samtools", "regtools", "bam_recount", "bam_support")
+    independently_verified = match_status in verified_statuses or any(
+        token in match_method for token in verified_methods
+    )
+    caller_tokens = (
+        "raw_events", "caller", "targeted_rescue", "easyfuse", "arriba",
+        "star-fusion", "star_fusion", "fusioncatcher", "snaf", "splicemutr",
+    )
+    caller_reported = any(token in source or token in source_tools for token in caller_tokens)
+
+    if junction_reads is None:
+        if caller_reported:
+            return "caller报告junction reads未提供（尚未独立回链核实）"
+        return "junction reads未提供（核实状态未确认）"
+    if independently_verified:
+        return f"已回链核实junction reads {junction_reads}"
+    if caller_reported:
+        if track == "Fusion" and "targeted_rescue" in source_tools:
+            origin = "融合caller/定向rescue汇总"
+        elif track == "Fusion":
+            origin = "融合caller"
+        elif track == "Splice":
+            origin = "剪接工具"
+        else:
+            origin = "上游caller"
+        return f"{origin}报告junction reads {junction_reads}（尚未独立回链核实）"
+    source_note = f"，来源 {source}" if source else ""
+    return f"junction reads {junction_reads}（核实状态未确认{source_note}）"
+
+
 def _patient_rna_measurements(row: Mapping[str, Any]) -> str:
     """Render only observed RNA fields carried by the canonical evidence table."""
     track = _patient_track(row)
@@ -2607,10 +2652,7 @@ def _patient_rna_measurements(row: Mapping[str, Any]) -> str:
         provided_reads = _patient_numeric_display(
             _patient_observed_value(row, "provided_rna_junction_reads"), 0
         )
-        values.append(
-            f"已核实junction reads {junction_reads}"
-            if junction_reads is not None else "已核实junction reads未提供"
-        )
+        values.append(_patient_junction_reads_measurement(row, junction_reads))
         if provided_reads is not None and provided_reads != junction_reads:
             if (
                 provided_value is not None
