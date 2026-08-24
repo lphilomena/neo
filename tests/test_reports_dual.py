@@ -1149,6 +1149,31 @@ def test_explicit_patient_inputs_override_provenance_inputs():
     assert bundle.provenance["input_files"]["somatic_vcf"] == "/new/new.vcf.gz"
 
 
+def test_patient_report_derives_normal_depth_from_paired_vcf(tmp_path):
+    raw_events = tmp_path / "raw_events.tsv"
+    write_tsv(raw_events, [
+        {"event_id": "E1", "chrom": "chr1", "pos": "101", "ref": "A", "alt": "G"},
+        {"event_id": "E2", "chrom": "1", "pos": "202", "ref": "C", "alt": "T"},
+    ])
+    vcf = tmp_path / "somatic.vcf.gz"
+    with gzip.open(vcf, "wt", encoding="utf-8") as handle:
+        handle.write("##fileformat=VCFv4.2\n")
+        handle.write("#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tcase_blood\tcase_tumor\n")
+        handle.write("chr1\t101\t.\tA\tG\t.\tPASS\t.\tGT:AD:DP\t0/0:20,0:20\t0/1:12,8:20\n")
+        handle.write("chr1\t202\t.\tC\tT\t.\tPASS\t.\tGT:AD:DP\t0/0:40,0:40\t0/1:20,20:40\n")
+    base = _bundle()
+    bundle = load_report_bundle(
+        profile=base.profile,
+        events=base.events,
+        peptides=base.peptides,
+        provenance={"input_files": {"raw_events": str(raw_events), "somatic_vcf": str(vcf)}},
+        outdir=tmp_path,
+    )
+    assert bundle.provenance["normal_dna_depth"] == (
+        "候选事件位点中位正常样本有效深度 40x（n=2；VCF case_blood DP）"
+    )
+
+
 def test_patient_report_shows_hla_loh_tools_and_uses_consensus_in_appm(tmp_path):
     root = tmp_path / "result"
     loh_dir = root / "hla_loh_consensus"

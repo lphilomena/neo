@@ -282,6 +282,75 @@ def _depth_summary_from_tsv(path: Path | None, *fields: str, limit: int | None =
     return f"候选位点中位深度 {median:.0f}x（n={len(values)}）"
 
 
+def _vcf_depth_summary_from_provenance(
+    prov: Mapping[str, Any], rows: list[Mapping[str, Any]], specimen: str,
+) -> str:
+    """Summarize candidate-site depth from a paired VCF when evidence columns are empty."""
+    input_files = prov.get("input_files") if isinstance(prov.get("input_files"), Mapping) else {}
+    vcf = next((
+        str(input_files.get(key) or "").strip()
+        for key in ("somatic_vcf", "vcf", "annotated_vcf")
+        if str(input_files.get(key) or "").strip()
+    ), "")
+    if not vcf or not Path(vcf).is_file():
+        return ""
+    candidate_keys = {
+        (re.sub(r"^chr", "", str(row.get("chrom") or row.get("chromosome") or "").strip(), flags=re.IGNORECASE),
+         str(row.get("pos") or row.get("position") or "").strip())
+        for row in rows
+        if str(row.get("chrom") or row.get("chromosome") or "").strip()
+        and str(row.get("pos") or row.get("position") or "").strip()
+    }
+    if not candidate_keys:
+        return ""
+    opener = gzip.open if vcf.endswith(".gz") else open
+    sample_names: list[str] = []
+    sample_index: int | None = None
+    values: list[float] = []
+    tokens = {"normal": ("normal", "blood", "germline", "control"), "tumor": ("tumor", "tumour")}.get(specimen, (specimen,))
+    try:
+        with opener(vcf, "rt", encoding="utf-8", errors="replace") as handle:
+            for line in handle:
+                if line.startswith("#CHROM"):
+                    sample_names = line.rstrip("\n").split("\t")[9:]
+                    sample_index = next((i for i, name in enumerate(sample_names) if any(token in name.lower() for token in tokens)), None)
+                    if sample_index is None and len(sample_names) == 2:
+                        opposite = ("tumor", "tumour") if specimen == "normal" else ("normal", "blood", "germline", "control")
+                        opposite_index = next((i for i, name in enumerate(sample_names) if any(token in name.lower() for token in opposite)), None)
+                        if opposite_index is not None:
+                            sample_index = 1 - opposite_index
+                    continue
+                if line.startswith("#") or sample_index is None:
+                    continue
+                fields = line.rstrip("\n").split("\t")
+                if len(fields) <= 9 + sample_index:
+                    continue
+                key = (re.sub(r"^chr", "", fields[0], flags=re.IGNORECASE), fields[1])
+                if key not in candidate_keys:
+                    continue
+                sample = dict(zip(fields[8].split(":"), fields[9 + sample_index].split(":")))
+                value = sample.get("DP", "")
+                if not value and sample.get("AD"):
+                    try:
+                        value = str(sum(float(item) for item in sample["AD"].split(",") if item not in {"", "."}))
+                    except ValueError:
+                        value = ""
+                try:
+                    depth = float(value)
+                except ValueError:
+                    continue
+                if depth >= 0:
+                    values.append(depth)
+    except (OSError, UnicodeError):
+        return ""
+    median = _numeric_median(values)
+    if median is None or sample_index is None:
+        return ""
+    sample_name = sample_names[sample_index] if sample_index < len(sample_names) else specimen
+    label = "正常样本" if specimen == "normal" else "肿瘤样本"
+    return f"候选事件位点中位{label}有效深度 {median:.0f}x（n={len(values)}；VCF {sample_name} DP）"
+
+
 def _walk_scalar_items(value: Any, path: str = "") -> list[tuple[str, str]]:
     items: list[tuple[str, str]] = []
     if isinstance(value, Mapping):
@@ -1144,6 +1213,13 @@ def load_report_bundle(
         return root / Path(*parts) if root else None
 
     source_events = _read_optional(p("inputs", "combined_raw_events.tsv") if root else None)
+    if not source_events:
+        input_files = prov.get("input_files") if isinstance(prov.get("input_files"), Mapping) else {}
+        for key in ("combined_raw_events", "raw_events"):
+            candidate = Path(str(input_files.get(key) or ""))
+            if candidate.is_file():
+                source_events = _read_optional(candidate)
+                break
     nested_evidence_path = p("scoring", "evidence_consensus", "all_tool_results.tsv") if root else None
     scoring_evidence_path = p("scoring", "all_tool_results.tsv") if root else None
     canonical_evidence_path = _first_existing([nested_evidence_path, scoring_evidence_path])
@@ -1186,6 +1262,7 @@ def load_report_bundle(
         prov["normal_dna_depth"] = (
             _depth_summary(events + peptides, "normal_depth")
             or _depth_summary_from_tsv(canonical_evidence_path, "normal_depth")
+            or _vcf_depth_summary_from_provenance(prov, source_events + events + peptides, "normal")
             or _bam_depth_summary_from_provenance(prov, root, "normal")
         )
     if not prov.get("genome_build"):
@@ -3345,7 +3422,7 @@ def _patient_qc_rows(bundle: ReportBundle) -> list[dict[str, str]]:
         {"项目": "肿瘤/正常配对", "结果": str(provenance.get("pairing_status") or "未评估"), "解释": "区分已使用配对输入与已完成指纹确认"},
         {"项目": "肿瘤纯度/倍性", "结果": purity_result, "解释": "用于CNV、CCF和LOH解释；工具冲突必须保留"},
         {"项目": "肿瘤DNA深度", "结果": str(provenance.get("tumor_dna_depth") or "未评估"), "解释": "默认汇总去重事件位点有效深度；低深度会降低检出能力"},
-        {"项目": "正常DNA深度", "结果": str(provenance.get("normal_dna_depth") or "未评估"), "解释": "优先汇总候选位点normal_depth；缺失时回退到normal DNA BAM覆盖估算"},
+        {"项目": "正常DNA深度", "结果": str(provenance.get("normal_dna_depth") or "未评估"), "解释": "优先汇总候选位点normal_depth；缺失时从配对VCF正常样本DP/AD回填，再回退到normal DNA BAM覆盖估算"},
         {"项目": "RNA质量/覆盖", "结果": str(provenance.get("rna_qc_status") or "未评估"), "解释": "区分RNA支持、充分覆盖下未检出和表达层证据"},
         {"项目": "参考版本", "结果": str(provenance.get("genome_build") or "未记录"), "解释": "FASTA、GTF、VEP和坐标必须一致"},
         {"项目": "QC证据来源", "结果": "all_tool_results.tsv" if bundle.evidence_source_status == "CANONICAL_ALL_TOOL_RESULTS" else "未完整归一化", "解释": "样本QC汇总与候选排序的数据职责分离"},
