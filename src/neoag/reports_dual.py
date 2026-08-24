@@ -3062,7 +3062,7 @@ def make_patient_report(
     out.append("<h3>事件级结论</h3>")
     out.append("<p class='small'>以下数量直接读取ranked_events.evidence_consensus.tsv并按独立事件统计，不从Peptide-HLA表推算。</p>")
     out.append(_table(event_grade_rows, ["事件等级", "事件数", "含义", "下一步"]))
-    focus_count = len(top[:10])
+    focus_count = len(top)
     out.append(f"<p><b>本次重点审阅：</b>{focus_count}个事件。它们是本报告综合证据表中优先展示的代表事件，不等同于已有{focus_count}个经实验确认的新抗原。</p>")
     out.append(f"<p>候选选择同时考虑事件真实性、RNA支持、HLA呈递、MT/WT突变特异性、克隆性、限制性HLA状态、APPM和安全性；缺失证据统一视为未评估，不作为阴性结论。另有{len(paused_representatives)}个事件代表候选因当前不推进或完整性门槛未通过，仅保留在技术审阅池。</p></div>")
 
@@ -3148,7 +3148,7 @@ def make_patient_report(
     out.append("<div class='section'><h2>6. Top候选综合证据与实验建议</h2>")
     out.append("<p>建议顺序：先确认事件和异常转录本真实性，再补RNA alt/VAF或精确junction证据，完成MT/WT、正常背景和限制性HLA复核，最后开展短肽、长肽、minigene及T细胞功能实验。</p>")
     interpretation_rows = []
-    for row in top[:10]:
+    for row in top:
         interpretation_rows.append({
             "候选": f"{row.get('gene', '')} | {row.get('peptide', '')} | {row.get('hla_allele', '')}",
             "为什么值得关注": _patient_candidate_attention(row, bundle),
