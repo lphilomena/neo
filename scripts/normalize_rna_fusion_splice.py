@@ -24,6 +24,10 @@ def main() -> int:
     parser.add_argument("--snaf", type=Path)
     parser.add_argument("--splicemutr", type=Path)
     parser.add_argument("--normal-junctions", type=Path)
+    parser.add_argument(
+        "--annotation-gtf", type=Path,
+        help="GTF used to resolve strand only from exact same-transcript exon boundaries",
+    )
     parser.add_argument("--outdir", required=True, type=Path)
     parser.add_argument("--genome-build", default="GRCh38")
     parser.add_argument("--junction-coordinate-system", default="auto")
@@ -54,6 +58,7 @@ def main() -> int:
         snaf=args.snaf,
         splicemutr=args.splicemutr,
         normal_junctions=args.normal_junctions,
+        annotation_gtf=args.annotation_gtf,
         outdir=args.outdir,
         genome_build=args.genome_build,
         junction_coordinate_system=coordinate_system,

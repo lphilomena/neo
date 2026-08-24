@@ -46,6 +46,7 @@ from .registry import (
     peptide_provenance_row,
     unresolved_event_id,
 )
+from .gtf_annotation import resolve_gtf_junction_strands
 
 
 @dataclass(frozen=True)
@@ -689,6 +690,7 @@ def normalize_splice_sources(
     snaf_coordinate_system: str = "auto",
     splicemutr_coordinate_system: str = "auto",
     normal_coordinate_system: str = "auto",
+    annotation_gtf: str | Path | None = None,
     strict: bool = False,
     candidate_only: bool = False,
 ) -> dict[str, str]:
@@ -727,7 +729,7 @@ def normalize_splice_sources(
     # linked only by exact coordinate/strand, exact unique source alias, or an
     # explicit unique variant-to-junction relation.
     primary = sources[0]
-    for record in iter_junction_records(
+    primary_records = iter_junction_records(
         primary.path,
         sample_id=sample_id,
         source_tool=primary.tool,
@@ -735,7 +737,10 @@ def normalize_splice_sources(
         coordinate_system=primary.coordinate_system,
         source_tool_version=primary.version,
         strict=strict,
-    ):
+    )
+    if annotation_gtf:
+        primary_records = resolve_gtf_junction_strands(primary_records, annotation_gtf)
+    for record in primary_records:
         resolution = registry.add(record)
         normalized.append(
             NormalizedRecord(
@@ -1122,6 +1127,8 @@ def normalize_splice_sources(
     write_tsv(paths["splice_qc"], qc_rows, ["metric", "value"])
 
     input_paths = [source.path for source in sources]
+    if annotation_gtf:
+        input_paths.append(Path(annotation_gtf))
     if normal_declared:
         input_paths.append(Path(normal_junctions))
     write_json(
@@ -1146,6 +1153,10 @@ def normalize_splice_sources(
                 "verified_rna_junction_reads": "primary exact canonical junction only",
                 "caller_provided_unverified_reads": "provided_rna_junction_reads only",
                 "normal_panel_absence": "NOT_DETECTED_COVERAGE_UNASSESSED unless per-locus coverage is supplied",
+            },
+            "junction_strand_annotation": {
+                "gtf": str(annotation_gtf or ""),
+                "policy": "exact same-transcript exon boundaries; unique strand only",
             },
             "inputs": [
                 {"path": str(path), "sha256": file_sha256(path)}

@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from neoag.splice.coordinates import iter_junction_records
+from neoag.splice.gtf_annotation import resolve_gtf_junction_strands
 
 from .base import row_hash
 
@@ -18,21 +19,22 @@ def parse_junction_source(
     genome_build: str = "GRCh38",
     coordinate_system: str = "auto",
     source_assay_id: str = "",
+    annotation_gtf: str | Path | None = None,
     strict: bool = False,
 ) -> dict[str, list[dict[str, str]]]:
     junctions: list[dict[str, str]] = []
     evidence: list[dict[str, str]] = []
     conflicts: list[dict[str, str]] = []
-    records = list(
-        iter_junction_records(
+    records = list(iter_junction_records(
             path,
             sample_id=sample_id,
             source_tool=source_tool,
             genome_build=genome_build,
             coordinate_system=coordinate_system,
             strict=strict,
-        )
-    )
+        ))
+    if annotation_gtf:
+        records = resolve_gtf_junction_strands(records, annotation_gtf)
     for record in records:
         raw_hash = row_hash(record.row)
         if record.junction is None:

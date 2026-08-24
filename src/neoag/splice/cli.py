@@ -34,6 +34,7 @@ def build_parser() -> argparse.ArgumentParser:
     build.add_argument("--junctions")
     build.add_argument("--junction-coordinate-system", default="auto")
     build.add_argument("--junction-source-assay-id", default="")
+    build.add_argument("--annotation-gtf", help="Matched GTF for exact transcript-boundary strand resolution")
     build.add_argument("--star-junctions")
     build.add_argument("--star-junction-source-assay-id", default="")
     build.add_argument("--spladder-gff3", action="append", default=[])
@@ -128,6 +129,7 @@ def main(argv: list[str] | None = None) -> int:
             junction_query_flank=args.junction_query_flank, junctions=args.junctions,
             junction_coordinate_system=args.junction_coordinate_system,
             junction_source_assay_id=args.junction_source_assay_id,
+            annotation_gtf=args.annotation_gtf,
             star_junctions=args.star_junctions,
             star_junction_source_assay_id=args.star_junction_source_assay_id,
             spladder_gff3=args.spladder_gff3, spladder_txt=args.spladder_txt,

@@ -448,19 +448,34 @@ def main() -> int:
         else:
             primary_arg = f"--junctions {q(require(args.junctions, 'junctions'))}"
         command = f"PYTHONPATH={q(root / 'src')} {q(sys.executable)} {q(root / 'scripts/normalize_rna_fusion_splice.py')} --sample-id {q(args.sample_id)} --profile {q(profile)} {primary_arg} --candidate-only"
+        if args.gencode_gtf:
+            command += f" --annotation-gtf {q(require(args.gencode_gtf, 'matched GENCODE GTF'))}"
         if args.snaf: command += f" --snaf {require(args.snaf, 'SNAF')}"
         if args.splicemutr: command += f" --splicemutr {require(args.splicemutr, 'SpliceMutr')}"
         if args.normal_junctions: command += f" --normal-junctions {require(args.normal_junctions, 'normal junctions')}"
         command += " --outdir {outdir}/branches/splice/intermediates"
+        splicemutr_path = Path(args.splicemutr) if args.splicemutr else None
+        splice_peptides_for_filter = "{outdir}/branches/splice/intermediates/raw_peptides.tsv"
+        if splicemutr_path and splicemutr_path.is_dir():
+            corrected_glob = str(splicemutr_path / "formed_transcripts" / "**" / "*_data_splicemutr_cp_corrected.txt")
+            command += (
+                f" && PYTHONPATH={q(root / 'src')} {q(sys.executable)} "
+                f"{q(root / 'scripts/rebuild_splice_origins_from_splicemutr.py')}"
+                f" --sample-id {q(args.sample_id)} --genome-build GRCh38"
+                " --candidates {outdir}/branches/splice/intermediates/raw_peptides.tsv"
+                f" --splicemutr-glob {q(corrected_glob)}"
+                " --outdir {outdir}/branches/splice/intermediates/formal_origins"
+            )
+            splice_peptides_for_filter = "{outdir}/branches/splice/intermediates/formal_origins/raw_peptides.formal_origins.tsv"
         command += (
             f" && PYTHONPATH={q(root / 'src')} {q(sys.executable)} {q(root / 'scripts/filter_splice_production_candidates.py')}"
             " --events {outdir}/branches/splice/intermediates/raw_events.tsv"
-            " --peptides {outdir}/branches/splice/intermediates/raw_peptides.tsv"
+            f" --peptides {splice_peptides_for_filter}"
             " --consensus {outdir}/branches/splice/intermediates/splice_consensus.tsv"
             " --outdir {outdir}/branches/splice/production_selected"
             " --min-length 8 --max-length 12 --max-source-binding-rank 2.0"
         )
-        stage(lines, "splice_candidates", source="SpliceConsensus", command=command, outputs={"raw_events": "{outdir}/branches/splice/production_selected/raw_events.tsv", "raw_peptides": "{outdir}/branches/splice/production_selected/raw_peptides.tsv", "production_filter_summary": "{outdir}/branches/splice/production_selected/production_filter_summary.json"}, depends=hla_dependency)
+        stage(lines, "splice_candidates", source="SpliceConsensus", command=command, outputs={"raw_events": "{outdir}/branches/splice/production_selected/raw_events.tsv", "raw_peptides": "{outdir}/branches/splice/production_selected/raw_peptides.tsv", "production_filter_summary": "{outdir}/branches/splice/production_selected/production_filter_summary.json", "formal_origin_summary": "{outdir}/branches/splice/intermediates/formal_origins/rebuild_summary.json"}, depends=hla_dependency)
         candidate_stages.append("splice_candidates")
     if not candidate_stages: raise SystemExit("At least one SNV/Fusion/Splice candidate source is required")
     lines += [

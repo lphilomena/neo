@@ -405,6 +405,7 @@ def build_splice_provenance_layer(
     junctions: str | Path | None = None,
     junction_coordinate_system: str = "auto",
     junction_source_assay_id: str = "",
+    annotation_gtf: str | Path | None = None,
     star_junctions: str | Path | None = None,
     star_junction_source_assay_id: str = "",
     spladder_gff3: Iterable[str | Path] | None = None,
@@ -482,11 +483,15 @@ def build_splice_provenance_layer(
 
     if junctions:
         layer.register_input(junctions, role="primary_rna_junctions", tool="RegTools", version=versions.get("RegTools", "UNASSESSED"))
-        layer.extend(parse_junction_source(
+        junction_bundle = parse_junction_source(
             junctions, sample_id=sample_id, source_tool="RegTools", source_tool_version=versions.get("RegTools", "UNASSESSED"),
             source_assay_id=junction_source_assay_id,
-            genome_build=genome_build, coordinate_system=junction_coordinate_system, strict=strict,
-        ))
+            genome_build=genome_build, coordinate_system=junction_coordinate_system,
+            annotation_gtf=annotation_gtf, strict=strict,
+        )
+        if annotation_gtf:
+            layer.register_input(annotation_gtf, role="matched_transcript_annotation", tool="GTF")
+        layer.extend(junction_bundle)
     if star_junctions:
         layer.register_input(star_junctions, role="primary_rna_junctions", tool="STAR-SJ", version=versions.get("STAR", "UNASSESSED"))
         layer.extend(parse_junction_source(

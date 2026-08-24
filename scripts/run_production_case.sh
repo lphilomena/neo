@@ -21,7 +21,7 @@ Usage:
     [--evidence-consensus-rules <configs/ranking/*.toml>] \
     [--asset-root <liup_neodata4git>] \
     [--reference-fasta <GRCh38.fasta>] \
-    [--gencode-gtf <gencode.gtf>] \
+    [--gencode-gtf <matching.gtf; also used for exact splice strand/origin reconstruction>] \
     [--sequenza <result_file_or_dir>] \
     [--purple <result_file_or_dir>] \
     [--expression <gene_tpm.tsv>] \

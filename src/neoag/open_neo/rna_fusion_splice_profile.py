@@ -336,6 +336,7 @@ def generate_rna_fusion_splice_manifest(
         fusion_union_inputs.append("--caller-root {outdir}/branches/fusion")
     if "--star-chimeric {outdir}/rna/star/Chimeric.out.junction" not in fusion_union_inputs:
         fusion_union_inputs.append("--star-chimeric {outdir}/rna/star/Chimeric.out.junction")
+    fusion_union_inputs.append("--rna-bam {outdir}/rna/star/Aligned.sortedByCoord.out.bam")
 
     fusion_args = " ".join(fusion_inputs)
     fusion_consensus_command = (
@@ -408,6 +409,7 @@ def generate_rna_fusion_splice_manifest(
                "raw_peptides": "{outdir}/branches/fusion/intermediates/parsed/raw_peptides.tsv",
                "fusion_caller_union": "{outdir}/branches/fusion/intermediates/fusion_caller_union.tsv",
                "fusion_consensus": "{outdir}/branches/fusion/intermediates/fusion_consensus.tsv",
+               "junction_verification": "{outdir}/branches/fusion/intermediates/junction_read_verification.tsv",
            }, depends_on=fusion_depends)
 
     splice_norm = (
@@ -415,19 +417,29 @@ def generate_rna_fusion_splice_manifest(
         f"{script('normalize_rna_fusion_splice.py')} --sample-id {_q(sample_id)} "
         f"--profile {_q(PROFILE_NAME)} --genome-build {_q(inputs.get('genome_build') or 'GRCh38')} "
         f"--junctions {{outdir}}/branches/splice/regtools_junctions.tsv "
+        f"--annotation-gtf {_q(inputs.get('gencode_gtf') or '')} "
         f"--snaf {{outdir}}/branches/splice/snaf/snaf_candidates.tsv "
         f"--splicemutr {{outdir}}/branches/splice/splicemutr/splicemutr_candidates.tsv "
         f"--normal-junctions {_q(inputs.get('normal_junctions') or '')} "
         f"--outdir {{outdir}}/branches/splice/intermediates"
     )
+    splice_norm += (
+        f" && PYTHONPATH={_q(root / 'src')} {_q(Path(sys.executable))} "
+        f"{script('rebuild_splice_origins_from_splicemutr.py')} --sample-id {_q(sample_id)} "
+        f"--genome-build {_q(inputs.get('genome_build') or 'GRCh38')} "
+        f"--candidates {{outdir}}/branches/splice/intermediates/raw_peptides.tsv "
+        f"--splicemutr-glob '{{outdir}}/branches/splice/splicemutr/formed_transcripts/**/*_data_splicemutr_cp_corrected.txt' "
+        f"--outdir {{outdir}}/branches/splice/intermediates/formal_origins"
+    )
     _stage(lines, "splice_candidate_normalization", required=bool(snaf_command and splicemutr_command), command=splice_norm, source="splice_consensus",
            outputs={
                "raw_events": "{outdir}/branches/splice/intermediates/raw_events.tsv",
-               "raw_peptides": "{outdir}/branches/splice/intermediates/raw_peptides.tsv",
+               "raw_peptides": "{outdir}/branches/splice/intermediates/formal_origins/raw_peptides.formal_origins.tsv",
                "rna_junction_tsv": "{outdir}/branches/splice/intermediates/rna_junction_evidence.tsv",
                "splice_junctions": "{outdir}/branches/splice/intermediates/splice_junctions.tsv",
                "splice_tool_evidence": "{outdir}/branches/splice/intermediates/splice_tool_evidence.long.tsv",
                "splice_peptide_provenance": "{outdir}/branches/splice/intermediates/splice_peptide_provenance.tsv",
+               "formal_origin_summary": "{outdir}/branches/splice/intermediates/formal_origins/rebuild_summary.json",
                "splice_event_merge_provenance": "{outdir}/branches/splice/intermediates/splice_event_merge_provenance.tsv",
                "splice_peptide_merge_provenance": "{outdir}/branches/splice/intermediates/splice_peptide_merge_provenance.tsv",
                "splice_merge_conflicts": "{outdir}/branches/splice/intermediates/splice_merge_conflicts.tsv",
