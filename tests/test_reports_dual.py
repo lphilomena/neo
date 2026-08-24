@@ -339,7 +339,7 @@ def test_patient_splice_reports_provided_reads_separately_from_verified_reads():
     assert "上游工具报告junction reads 218" in _patient_rna_metric(row)
     assert "已核实reads为0" in _patient_rna_metric(row)
     measurements = _patient_rna_measurements(row)
-    assert "已核实junction reads 0" in measurements
+    assert "junction reads 0（核实状态未确认）" in measurements
     assert "上游工具汇总junction reads 218" in measurements
     assert "差额 218 条尚未归属" in measurements
 
@@ -723,7 +723,7 @@ def test_patient_limitation_keeps_hard_fail_and_missing_dimensions():
     })
     assert "FAIL_EVENT" in limitation
     assert "RNA证据未评估" in limitation
-    assert "专门HSPC正常造血参考层未完成正式评估" in limitation
+    assert "HSPC正常造血参考已接入但该候选未匹配到可判定记录" in limitation
     assert "正常融合/剪接连接背景未完成正式评估" in limitation
     assert "安全性证据不完整" not in limitation
     assert "NetMHCstabpan未评估" in limitation

@@ -798,6 +798,56 @@ def _enrich_rows_from_sources(
     return enriched
 
 
+def _apply_junction_verification(
+    rows: list[dict[str, str]], verification_rows: list[dict[str, str]],
+) -> list[dict[str, str]]:
+    """Overlay independently verified junction counts without altering caller evidence."""
+    by_event = {
+        str(item.get("event_id") or "").removeprefix("EVENT:"): item
+        for item in verification_rows
+        if str(item.get("event_id") or "").strip()
+    }
+    by_peptide = {
+        str(item.get("peptide_id") or ""): item
+        for item in verification_rows
+        if str(item.get("peptide_id") or "").strip()
+    }
+    if not by_event and not by_peptide:
+        return rows
+    for row in rows:
+        event_id = str(row.get("event_id") or "").removeprefix("EVENT:")
+        peptide_id = str(row.get("peptide_id") or "")
+        verification = by_peptide.get(peptide_id) or by_event.get(event_id)
+        if not verification:
+            continue
+        verified_reads = str(verification.get("verified_rna_junction_reads") or "").strip()
+        if not verified_reads:
+            continue
+        caller_reads = str(verification.get("caller_rna_junction_reads") or "").strip()
+        if not caller_reads:
+            caller_reads = str(
+                row.get("provided_rna_junction_reads") or row.get("rna_junction_reads") or ""
+            ).strip()
+        if caller_reads:
+            row["provided_rna_junction_reads"] = caller_reads
+            row["caller_rna_junction_reads"] = caller_reads
+        row["rna_junction_reads"] = verified_reads
+        row["junction_match_status"] = str(
+            verification.get("junction_match_status") or "BAM_VERIFIED"
+        )
+        row["junction_match_method"] = str(
+            verification.get("junction_match_method")
+            or "star_chimeric_exact_breakpoint_plus_bam_qname"
+        )
+        row["rna_junction_source"] = str(
+            verification.get("junction_verification_source") or "junction_read_verification.tsv"
+        )
+        row["junction_verification_note"] = str(
+            verification.get("junction_verification_note") or ""
+        )
+    return rows
+
+
 PRIORITY_PATIENT = {
     "A": "优先推荐进一步验证",
     "B": "值得考虑验证",
@@ -1098,6 +1148,16 @@ def load_report_bundle(
     enriched_events = _enrich_rows_from_sources(
         events, source_peptides or enriched_peptides, source_events, junction_genes, evidence_source_label,
     )
+    junction_verification_path = p("metadata", "junction_read_verification.tsv") if root else None
+    junction_verification_rows = _read_optional(junction_verification_path)
+    if junction_verification_rows:
+        enriched_peptides = _apply_junction_verification(enriched_peptides, junction_verification_rows)
+        enriched_events = _apply_junction_verification(enriched_events, junction_verification_rows)
+        prov["junction_read_verification"] = {
+            "status": "LOADED",
+            "source": str(junction_verification_path),
+            "records": len(junction_verification_rows),
+        }
     evidence_manifest = _read_json_optional(_first_existing([
         canonical_evidence_path.with_name("all_tool_results.manifest.json") if canonical_evidence_path else None,
         p("scoring", "evidence_consensus", "all_tool_results.manifest.json") if root else None,

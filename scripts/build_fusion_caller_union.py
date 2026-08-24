@@ -6,6 +6,10 @@ from __future__ import annotations
 import argparse
 import csv
 import re
+import shutil
+import subprocess
+import sys
+import tempfile
 from collections import defaultdict
 from pathlib import Path
 
@@ -112,6 +116,154 @@ def parse_breakpoint(value: str) -> tuple[str, int | None, str]:
         pos = None
     strand = parts[2] if len(parts) > 2 else ""
     return chrom, pos, strand
+
+
+def _same_breakpoint_pair(
+    observed: tuple[str, int, str, int],
+    expected: tuple[str, int, str, int],
+    tolerance: int,
+) -> bool:
+    ochr1, opos1, ochr2, opos2 = observed
+    echr1, epos1, echr2, epos2 = expected
+    direct = ochr1 == echr1 and ochr2 == echr2 and abs(opos1 - epos1) <= tolerance and abs(opos2 - epos2) <= tolerance
+    reverse = ochr1 == echr2 and ochr2 == echr1 and abs(opos1 - epos2) <= tolerance and abs(opos2 - epos1) <= tolerance
+    return direct or reverse
+
+
+def verify_event_junction_reads(
+    audit: list[dict[str, str]],
+    star_chimeric_files: list[Path],
+    rna_bam: Path | None,
+    *,
+    samtools: str = "samtools",
+    tolerance: int = 3,
+) -> tuple[dict[str, dict[str, object]], list[dict[str, str]]]:
+    """Match caller events to STAR junctions, then optionally confirm read names in the RNA BAM."""
+    targets: dict[str, set[tuple[str, int, str, int]]] = defaultdict(set)
+    for row in audit:
+        event_id = str(row.get("event_id") or "").strip()
+        chrom1, pos1, _ = parse_breakpoint(row.get("left_breakpoint", ""))
+        chrom2, pos2, _ = parse_breakpoint(row.get("right_breakpoint", ""))
+        if event_id and chrom1 and pos1 is not None and chrom2 and pos2 is not None:
+            targets[event_id].add((chrom1, pos1, chrom2, pos2))
+    target_index: dict[tuple[str, str], set[str]] = defaultdict(set)
+    for event_id, expected_pairs in targets.items():
+        for chrom1, _, chrom2, _ in expected_pairs:
+            target_index[tuple(sorted((chrom1, chrom2)))].add(event_id)
+
+    matched_names: dict[str, set[str]] = defaultdict(set)
+    matched_sources: dict[str, set[str]] = defaultdict(set)
+    for path in star_chimeric_files:
+        if not path.is_file() or path.stat().st_size == 0:
+            continue
+        with path.open(encoding="utf-8", errors="replace") as handle:
+            for line in handle:
+                parts = line.rstrip("\n").split("\t")
+                if len(parts) < 10:
+                    continue
+                chrom1 = parts[0] if parts[0].startswith("chr") else "chr" + parts[0]
+                chrom2 = parts[3] if parts[3].startswith("chr") else "chr" + parts[3]
+                try:
+                    observed = (chrom1, int(parts[1]), chrom2, int(parts[4]))
+                except ValueError:
+                    continue
+                read_name = parts[9].split()[0]
+                if not read_name:
+                    continue
+                candidate_ids = target_index.get(tuple(sorted((chrom1, chrom2))), set())
+                for event_id in candidate_ids:
+                    expected_pairs = targets[event_id]
+                    if any(_same_breakpoint_pair(observed, expected, tolerance) for expected in expected_pairs):
+                        matched_names[event_id].add(read_name)
+                        matched_sources[event_id].add(str(path))
+
+    all_names = sorted({name for names in matched_names.values() for name in names})
+    bam_names: set[str] = set()
+    bam_error = ""
+    if rna_bam and rna_bam.is_file() and rna_bam.stat().st_size > 0 and all_names:
+        name_file = None
+        try:
+            samtools_path = shutil.which(samtools)
+            sibling_samtools = Path(sys.executable).with_name("samtools")
+            if not samtools_path and sibling_samtools.is_file():
+                samtools_path = str(sibling_samtools)
+            if not samtools_path:
+                raise FileNotFoundError(f"samtools executable not found: {samtools}")
+            with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False) as handle:
+                handle.write("\n".join(all_names) + "\n")
+                name_file = Path(handle.name)
+            result = subprocess.run(
+                [samtools_path, "view", "-N", str(name_file), str(rna_bam)],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode == 0:
+                bam_names = {line.split("\t", 1)[0] for line in result.stdout.splitlines() if line}
+            else:
+                bam_error = (result.stderr or f"samtools exited {result.returncode}").strip()
+        except (OSError, subprocess.SubprocessError) as exc:
+            bam_error = str(exc)
+        finally:
+            if name_file:
+                name_file.unlink(missing_ok=True)
+
+    measurements: dict[str, dict[str, object]] = {}
+    sidecar: list[dict[str, str]] = []
+    for event_id in sorted(targets):
+        star_names = matched_names.get(event_id, set())
+        verified_names = star_names & bam_names if bam_names else set()
+        if verified_names:
+            status = "BAM_VERIFIED"
+            method = "star_chimeric_breakpoint_plus_bam_qname"
+            count = len(verified_names)
+        elif star_names:
+            status = "STAR_JUNCTION_VERIFIED"
+            method = "star_chimeric_breakpoint"
+            count = len(star_names)
+        else:
+            status = "NO_EXACT_JUNCTION_MATCH"
+            method = "star_chimeric_breakpoint"
+            count = 0
+        source_parts = sorted(matched_sources.get(event_id, set()))
+        if verified_names and rna_bam:
+            source_parts.append(str(rna_bam))
+        note = f"coordinate_tolerance_bp={tolerance}; unique_STAR_read_names={len(star_names)}"
+        if bam_error:
+            note += f"; BAM verification unavailable: {bam_error}"
+        measurements[event_id] = {
+            "verified_count": count,
+            "status": status,
+            "method": method,
+            "source": ";".join(source_parts),
+            "note": note,
+        }
+        sidecar.append({
+            "event_id": event_id,
+            "verified_rna_junction_reads": str(count) if count else "",
+            "caller_rna_junction_reads": "",
+            "junction_match_status": status,
+            "junction_match_method": method,
+            "junction_verification_source": ";".join(source_parts),
+            "junction_verification_note": note,
+        })
+    return measurements, sidecar
+
+
+def apply_junction_measurements(
+    rows: list[dict[str, str]], measurements: dict[str, dict[str, object]]
+) -> None:
+    for row in rows:
+        measurement = measurements.get(str(row.get("event_id") or ""))
+        if not measurement or not int(measurement.get("verified_count") or 0):
+            continue
+        caller_count = str(row.get("provided_rna_junction_reads") or row.get("rna_junction_reads") or "").strip()
+        if caller_count:
+            row["provided_rna_junction_reads"] = caller_count
+        row["rna_junction_reads"] = str(measurement["verified_count"])
+        row["junction_match_status"] = str(measurement["status"])
+        row["junction_match_method"] = str(measurement["method"])
+        row["rna_junction_source"] = str(measurement["source"])
 
 
 def infer_star_chimeric_from_junctions(path: Path | None) -> Path | None:
@@ -558,6 +710,9 @@ def main() -> int:
     parser.add_argument("--fusioncatcher", type=Path)
     parser.add_argument("--easyfuse-all", action="append", type=Path, default=[])
     parser.add_argument("--star-chimeric", action="append", type=Path, default=[])
+    parser.add_argument("--rna-bam", type=Path, help="RNA BAM used to confirm STAR junction read names")
+    parser.add_argument("--samtools", default="samtools")
+    parser.add_argument("--junction-coordinate-tolerance", type=int, default=3)
     parser.add_argument("--targeted-fusion-rescue", action="store_true", default=True)
     parser.add_argument("--no-targeted-fusion-rescue", action="store_false", dest="targeted_fusion_rescue")
     parser.add_argument("--targeted-fusion-whitelist", default=",".join(DEFAULT_DIAGNOSTIC_FUSION_WHITELIST))
@@ -595,10 +750,25 @@ def main() -> int:
         easyfuse_out = args.outdir / "easyfuse"
         build_raw_intermediates(cfg, easyfuse_out, root=Path.cwd())
         easyfuse_events = read_table(easyfuse_out / "parsed/raw_events.tsv")
+        easyfuse_source_rows = read_table(easyfuse)
         events.extend(easyfuse_events)
         peptides.extend(read_table(easyfuse_out / "parsed/raw_peptides.tsv"))
-        for event in easyfuse_events:
-            audit.append({"event_id": event.get("event_id", ""), "gene_pair": event.get("gene", ""), "left_breakpoint": "", "right_breakpoint": "", "direction": "", "source_tool": "EasyFuse", "source_file": str(easyfuse), "source_row": "", "peptide_status": "GENERATED_FROM_EASYFUSE_ORF", "admission_policy": "CALLER_PASS", "rescue_reason": ""})
+        for event_index, event in enumerate(easyfuse_events, 1):
+            source_row_number = int(to_float(event.get("source_row_number"), event_index))
+            source_row = easyfuse_source_rows[source_row_number - 1] if 0 < source_row_number <= len(easyfuse_source_rows) else {}
+            audit.append({
+                "event_id": event.get("event_id", ""),
+                "gene_pair": event.get("gene", ""),
+                "left_breakpoint": first(source_row, ["Breakpoint1", "breakpoint1", "LeftBreakpoint", "left_breakpoint"], ""),
+                "right_breakpoint": first(source_row, ["Breakpoint2", "breakpoint2", "RightBreakpoint", "right_breakpoint"], ""),
+                "direction": "",
+                "source_tool": "EasyFuse",
+                "source_file": str(easyfuse),
+                "source_row": str(source_row_number),
+                "peptide_status": "GENERATED_FROM_EASYFUSE_ORF",
+                "admission_policy": "CALLER_PASS",
+                "rescue_reason": "",
+            })
     rescue_rows: list[dict[str, str]] = []
     rescue_sources: list[Path] = []
     if not args.disable_diagnostic_fusion_rescue:
@@ -646,6 +816,23 @@ def main() -> int:
         audit.extend(rescue_audit)
     if not events:
         raise SystemExit("No fusion events were parsed from supplied caller outputs")
+    measurements, verification_rows = verify_event_junction_reads(
+        audit,
+        existing(star_chimeric_files),
+        args.rna_bam,
+        samtools=args.samtools,
+        tolerance=max(0, args.junction_coordinate_tolerance),
+    )
+    caller_counts: dict[str, set[str]] = defaultdict(set)
+    for row in events + peptides:
+        event_id = str(row.get("event_id") or "")
+        value = str(row.get("provided_rna_junction_reads") or row.get("rna_junction_reads") or "").strip()
+        if event_id and value:
+            caller_counts[event_id].add(value)
+    for row in verification_rows:
+        row["caller_rna_junction_reads"] = ";".join(sorted(caller_counts.get(row["event_id"], set())))
+    apply_junction_measurements(events, measurements)
+    apply_junction_measurements(peptides, measurements)
     merged_events, _, _ = merge_rows_preserving_provenance(events, EVENT_FIELDS, ("event_id",), entity_type="fusion_union_event")
     merged_peptides, _, _ = merge_rows_preserving_provenance(peptides, PEPTIDE_FIELDS, ("event_id", "peptide", "hla_allele"), entity_type="fusion_union_peptide")
     write_tsv(args.outdir / "raw_events.tsv", merged_events, EVENT_FIELDS)
@@ -653,6 +840,11 @@ def main() -> int:
     write_tsv(args.outdir / "parsed/raw_events.tsv", merged_events, EVENT_FIELDS)
     write_tsv(args.outdir / "parsed/raw_peptides.tsv", merged_peptides, PEPTIDE_FIELDS)
     write_tsv(args.outdir / "fusion_caller_union.tsv", audit, ["event_id", "gene_pair", "left_breakpoint", "right_breakpoint", "direction", "source_tool", "source_file", "source_row", "peptide_status", "admission_policy", "rescue_reason"])
+    write_tsv(
+        args.outdir / "junction_read_verification.tsv",
+        verification_rows,
+        ["event_id", "verified_rna_junction_reads", "caller_rna_junction_reads", "junction_match_status", "junction_match_method", "junction_verification_source", "junction_verification_note"],
+    )
     write_consensus(args.outdir / "fusion_consensus.tsv", audit)
     if rescue_sidecar:
         fields = [

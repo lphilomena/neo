@@ -242,6 +242,8 @@ def main() -> int:
         stage(lines, "hla_loh_consensus", command=loh_command, outputs={"hla_loh_consensus": hla_loh, "hla_loh_summary": "{outdir}/evidence/hla_loh/hla_loh_summary.json"}, depends=["hla_loh_lohhla", "hla_loh_spechla"])
 
     rna_vaf = ""
+    rna_bam = ""
+    rna_bam_dependency: list[str] = []
     if args.rna_vaf:
         rna_vaf = require(args.rna_vaf, "RNA VAF evidence")
         stage(
@@ -269,6 +271,7 @@ def main() -> int:
             outputs={"rna_bam": rna_bam, "rna_bai": rna_bai},
             required=True,
         )
+        rna_bam_dependency = ["rna_bam_input"]
         rna_vaf = "{outdir}/rna/rna_alt_vaf.tsv"
         allele_command = (
             f"PYTHONPATH={q(root / 'src')} {q(sys.executable)} "
@@ -378,6 +381,7 @@ def main() -> int:
             required=True,
             depends=star_index_dependency,
         )
+        rna_bam_dependency = ["rna_star_alignment"]
         rna_vaf = "{outdir}/rna/rna_alt_vaf.tsv"
         allele_command = (
             f"PYTHONPATH={q(root / 'src')} {q(sys.executable)} "
@@ -421,12 +425,14 @@ def main() -> int:
             chimeric = Path(star_junction_source).with_name("Chimeric.out.junction")
             if chimeric.is_file() and chimeric.stat().st_size > 0:
                 union_args += ["--star-chimeric", q(str(chimeric))]
+        if rna_bam:
+            union_args += ["--rna-bam", q(rna_bam)]
         if args.fusioncatcher: union_args += ["--fusioncatcher", q(require(args.fusioncatcher, "FusionCatcher"))]
         if args.jaffal: union_args += ["--jaffal", q(require(args.jaffal, "JAFFAL"))]
         for caller_root in args.fusion_caller_root:
             union_args += ["--caller-root", q(require(caller_root, "fusion caller result root"))]
         command = f"PYTHONPATH={q(root / 'src')} {q(sys.executable)} {q(root / 'scripts/build_fusion_caller_union.py')} --sample-id {q(args.sample_id)} --profile {q(profile)} --hla-file {q(hla)} {' '.join(union_args)} --outdir {{outdir}}/branches/fusion/intermediates"
-        stage(lines, "fusion_candidates", source="FusionCallerUnion", command=command, outputs={"raw_events": "{outdir}/branches/fusion/intermediates/raw_events.tsv", "raw_peptides": "{outdir}/branches/fusion/intermediates/raw_peptides.tsv", "fusion_union": "{outdir}/branches/fusion/intermediates/fusion_caller_union.tsv", "fusion_consensus": "{outdir}/branches/fusion/intermediates/fusion_consensus.tsv", "diagnostic_fusion_rescue": "{outdir}/branches/fusion/intermediates/diagnostic_fusion_rescue.tsv"}, depends=hla_dependency)
+        stage(lines, "fusion_candidates", source="FusionCallerUnion", command=command, outputs={"raw_events": "{outdir}/branches/fusion/intermediates/raw_events.tsv", "raw_peptides": "{outdir}/branches/fusion/intermediates/raw_peptides.tsv", "fusion_union": "{outdir}/branches/fusion/intermediates/fusion_caller_union.tsv", "fusion_consensus": "{outdir}/branches/fusion/intermediates/fusion_consensus.tsv", "junction_verification": "{outdir}/branches/fusion/intermediates/junction_read_verification.tsv", "diagnostic_fusion_rescue": "{outdir}/branches/fusion/intermediates/diagnostic_fusion_rescue.tsv"}, depends=list(dict.fromkeys(hla_dependency + rna_bam_dependency)))
         candidate_stages.append("fusion_candidates")
         review = f"{q(sys.executable)} {q(root / 'scripts/review_rna_fusions.py')}"
         if easyfuse: review += f" --easyfuse {q(easyfuse)}"

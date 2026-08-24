@@ -337,6 +337,8 @@ def generate_rna_fusion_splice_manifest(
     if "--star-chimeric {outdir}/rna/star/Chimeric.out.junction" not in fusion_union_inputs:
         fusion_union_inputs.append("--star-chimeric {outdir}/rna/star/Chimeric.out.junction")
     fusion_union_inputs.append("--rna-bam {outdir}/rna/star/Aligned.sortedByCoord.out.bam")
+    if "rna_alignment" not in fusion_depends:
+        fusion_depends.append("rna_alignment")
 
     fusion_args = " ".join(fusion_inputs)
     fusion_consensus_command = (
