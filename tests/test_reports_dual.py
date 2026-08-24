@@ -340,7 +340,19 @@ def test_patient_splice_reports_provided_reads_separately_from_verified_reads():
     assert "已核实reads为0" in _patient_rna_metric(row)
     measurements = _patient_rna_measurements(row)
     assert "已核实junction reads 0" in measurements
-    assert "上游工具报告junction reads 218（尚未精确回链）" in measurements
+    assert "上游工具汇总junction reads 218" in measurements
+    assert "差额 218 条尚未归属" in measurements
+
+
+def test_patient_splice_reports_only_the_unresolved_read_difference():
+    measurements = _patient_rna_measurements({
+        "event_type": "Splice",
+        "provided_rna_junction_reads": "126",
+        "rna_junction_reads": "108",
+    })
+    assert "其中 108 条已按同一canonical junction精确核实" in measurements
+    assert "差额 18 条尚未归属" in measurements
+    assert "126（尚未精确回链）" not in measurements
 
 
 def test_patient_source_chain_c4_lists_specific_traceability_gaps():

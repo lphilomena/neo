@@ -2253,6 +2253,12 @@ def _patient_rna_measurements(row: Mapping[str, Any]) -> str:
         if transcript_tpm is not None else _patient_missing_rna_label(row, "转录本表达", transcript=True)
     )
     if track in {"Fusion", "Splice"}:
+        verified_text, verified_value = _patient_numeric_value(
+            row, "rna_junction_reads", "junction_reads"
+        )
+        provided_text, provided_value = _patient_numeric_value(
+            row, "provided_rna_junction_reads"
+        )
         provided_reads = _patient_numeric_display(
             _patient_observed_value(row, "provided_rna_junction_reads"), 0
         )
@@ -2261,7 +2267,22 @@ def _patient_rna_measurements(row: Mapping[str, Any]) -> str:
             if junction_reads is not None else "已核实junction reads未提供"
         )
         if provided_reads is not None and provided_reads != junction_reads:
-            values.append(f"上游工具报告junction reads {provided_reads}（尚未精确回链）")
+            if (
+                provided_value is not None
+                and verified_value is not None
+                and provided_value >= verified_value
+            ):
+                unresolved = provided_value - verified_value
+                unresolved_text = str(int(unresolved)) if unresolved.is_integer() else f"{unresolved:g}"
+                values.append(
+                    f"上游工具汇总junction reads {provided_text}；其中 {verified_text} 条已按同一"
+                    f"canonical junction精确核实，差额 {unresolved_text} 条尚未归属，未计入已核实支持"
+                )
+            else:
+                values.append(
+                    f"上游工具汇总junction reads {provided_reads}，与已核实值 {junction_reads} 的"
+                    "统计口径不一致，需复核来源记录"
+                )
     else:
         values.append(f"RNA位点深度 {depth}" if depth is not None else _patient_missing_rna_label(row, "RNA位点深度"))
         values.append(f"RNA alt reads {alt_reads}" if alt_reads is not None else _patient_missing_rna_label(row, "RNA alt reads"))
