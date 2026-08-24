@@ -78,7 +78,10 @@ def test_wrapper_uses_v2_baseline_and_v3_consensus_and_passes_production_inputs(
         "--rna-threads", "7",
     ], check=True)
 
-    generator_call = invocation_log.read_text().splitlines()[0]
+    invocation_text = invocation_log.read_text()
+    invocations = invocation_text.splitlines()
+    assert "event_track" in invocation_text and "splice_junction" in invocation_text
+    generator_call = next(line for line in invocations if "generate_production_from_results_manifest.py" in line)
     assert "--profile" in generator_call
     assert "sarcoma_rna_supported_v2_provisional.toml" in generator_call
     assert "--evidence-consensus-rules" in generator_call

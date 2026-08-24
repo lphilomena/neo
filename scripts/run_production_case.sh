@@ -161,7 +161,37 @@ if [[ -n "$RNA_FASTQ1" ]]; then
   [[ -n "$GENCODE_GTF" ]] || { echo "RNA FASTQ mode requires --gencode-gtf" >&2; exit 2; }
 fi
 
+verify_event_track_precedence() {
+  # Fail before heavy execution when a deployed code version can still turn
+  # a DNA SNV/InDel into an RNA splice event solely because VEP reports a
+  # splice-related peptide consequence.
+  local check='from neoag.evidence_states import event_track
+from neoag.source_chain import source_chain_track
+from neoag.reports_dual import _patient_track
+from neoag.open_neo.review import _event_kind
+snv = {"event_type": "SNV", "mutation_source": "SNV_INDEL", "peptide_consequence": "splice_junction"}
+indel = {"event_type": "InDel", "mutation_source": "INDEL", "peptide_consequence": "splice_junction"}
+splice = {"event_type": "Splice", "mutation_source": "SPLICE", "peptide_consequence": "splice_junction"}
+assert event_track(snv) == "MISSENSE"
+assert source_chain_track(snv) == "SNV"
+assert _patient_track(snv) == "SNV"
+assert _event_kind("SNV", "splice_junction") == "MISSENSE"
+assert event_track(indel) != "SPLICE"
+assert source_chain_track(indel) == "INDEL"
+assert _patient_track(indel) == "InDel"
+assert _event_kind("InDel", "splice_junction") != "SPLICE"
+assert event_track(splice) == "SPLICE"
+assert source_chain_track(splice) == "SPLICE"
+assert _patient_track(splice) == "Splice"
+assert _event_kind("Splice", "splice_junction") == "SPLICE"'
+  if ! PYTHONPATH="$PROJECT_ROOT/src" "$PY" -c "$check"; then
+    echo "event-track precedence preflight failed; update NeoAg before production execution" >&2
+    return 1
+  fi
+}
+
 cd "$PROJECT_ROOT"
+verify_event_track_precedence
 mkdir -p "$OUTDIR/manifest" "$OUTDIR/logs" "$OUTDIR/tools"
 
 if [[ -f "$PROJECT_ROOT/conf/tools.env.sh" ]]; then
