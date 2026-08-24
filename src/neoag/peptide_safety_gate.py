@@ -295,6 +295,41 @@ def _split_genes(gene: str) -> list[str]:
     return [x for x in raw.split() if x]
 
 
+def _normal_expression_aliases(
+    peptide: Mapping[str, Any],
+    event: Mapping[str, Any],
+    normal_expr: Mapping[str, Mapping[str, Any]],
+) -> str:
+    """Return only exact gene aliases represented in the normal reference.
+
+    Splice normalizers can retain a coordinate in ``gene`` while preserving
+    the Ensembl gene ID in source provenance.  Safety assessment must recover
+    that exact ID before expression/HSPC lookup; coordinate or nearby-gene
+    inference is deliberately not allowed here.
+    """
+    candidates: list[str] = []
+    fields = (
+        'gene', 'gene_symbol', 'gene_name', 'ensembl_gene_id', 'gene_id',
+        'gene_pair', 'source_event_id', 'source_record_id', 'source_records',
+        'event_name',
+    )
+    for row in (peptide, event):
+        for field_name in fields:
+            value = str(row.get(field_name) or '').strip()
+            if not value:
+                continue
+            candidates.extend(_split_genes(value))
+            candidates.extend(re.findall(r'ENSG\d+(?:\.\d+)?', value))
+    normalized: list[str] = []
+    for candidate in candidates:
+        for alias in (candidate, re.sub(r'^(ENSG\d+)\.\d+$', r'\1', candidate)):
+            if alias in normal_expr and alias not in normalized:
+                normalized.append(alias)
+    if normalized:
+        return ';'.join(normalized)
+    return str(peptide.get('gene') or event.get('gene') or '')
+
+
 def _normal_expr_for_genes(gene_value: str, normal_expr: Mapping[str, Mapping[str, Any]]) -> dict[str, Any]:
     nt=0.0; nh=0.0; crit=False; found=False; critical_tpm=0.0
     nt_tissue=''; critical_tissue=''; hspc_unit=''; expr_assessed=True; hspc_assessed=True
@@ -456,7 +491,8 @@ def build_peptide_safety_gate(
             else:
                 if status == 'SAFETY_PASS': status='SAFETY_REVIEW'
                 reasons.append('low_level_normal_junction_seen')
-        expr = _normal_expr_for_genes(p.get('gene') or e.get('gene',''), norm_expr)
+        expression_aliases = _normal_expression_aliases(p, e, norm_expr)
+        expr = _normal_expr_for_genes(expression_aliases, norm_expr)
         wt_rank = to_float(p.get('wildtype_binding_rank') or p.get('netmhcpan_wt_rank_el') or p.get('netmhcpan_wt_rank_ba'), 99.0)
         mt_rank = to_float(p.get('netmhcpan_el_rank') or p.get('netmhcpan_mt_rank_el') or p.get('binding_rank'), 99.0)
         anchor_only, mut_pos, anchor_status = _anchor_only(peptide, p.get('wildtype_peptide',''), hla)
@@ -469,6 +505,18 @@ def build_peptide_safety_gate(
             reasons.append('high_self_similarity_critical_tissue')
         expression_status = expr.get('normal_expression_status', 'UNASSESSED')
         hspc_status = expr.get('normal_hspc_status', 'UNASSESSED')
+        expression_reference_available = bool(normal_expression and Path(normal_expression).is_file())
+        if not expr.get('found'):
+            if expression_reference_available:
+                reasons.extend([
+                    'normal_expression_gene_not_in_reference',
+                    'normal_hspc_gene_not_in_reference',
+                ])
+            else:
+                reasons.extend([
+                    'normal_expression_reference_not_provided',
+                    'normal_hspc_reference_not_provided',
+                ])
         reference_status = 'ASSESSED' if ref_assessed else 'UNASSESSED'
         ligandome_status = 'ASSESSED' if ligand_assessed else 'UNASSESSED'
         junction_type = is_junction_type
@@ -546,7 +594,9 @@ def build_peptide_safety_gate(
         by_event.setdefault(r['event_id'], []).append(r)
     for eid, rs in by_event.items():
         e = events.get(eid, {})
-        event_assessment = apply_event_safety(dict(e), profile or {}, norm_expr)
+        event_for_safety = dict(e)
+        event_for_safety['gene'] = _normal_expression_aliases({}, e, norm_expr)
+        event_assessment = apply_event_safety(event_for_safety, profile or {}, norm_expr)
         worst = event_assessment.get('safety_status', 'SAFETY_PARTIAL')
         reasons = [event_assessment.get('safety_reason', '')]
         matched_normal = any(r.get('matched_normal_status') == 'normal_alt_support' for r in rs)

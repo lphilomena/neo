@@ -2359,11 +2359,19 @@ def _patient_safety_gap(row: Mapping[str, Any]) -> str:
         for field in ("safety_missing_layers", "event_safety_missing_layers")
     )
     missing = []
+    reason_text = ";".join(
+        str(row.get(field) or "") for field in ("safety_reason", "event_safety_reason", "safety_reason_codes")
+    ).lower()
     for token in re.split(r"[;,|\s]+", missing_raw):
         key = token.strip().lower()
         if not key:
             continue
-        label = _PATIENT_SAFETY_LAYER_LABELS.get(key, f"{key}安全参考层未完成正式评估")
+        if key == "normal_expression" and "normal_expression_gene_not_in_reference" in reason_text:
+            label = "当前正式GTEx/HPA正常组织表达参考未收录该基因，不能按0表达解释"
+        elif key == "normal_hspc" and "normal_hspc_gene_not_in_reference" in reason_text:
+            label = "当前正式HSPC正常造血参考未收录该基因，不能按0表达解释"
+        else:
+            label = _PATIENT_SAFETY_LAYER_LABELS.get(key, f"{key}安全参考层未完成正式评估")
         if label not in missing:
             missing.append(label)
 
@@ -2388,9 +2396,6 @@ def _patient_safety_gap(row: Mapping[str, Any]) -> str:
     if safety not in {"SAFETY_REVIEW", "SAFETY_HIGH_RISK", "REVIEW", "CAUTION"}:
         return ""
 
-    reason_text = ";".join(
-        str(row.get(field) or "") for field in ("safety_reason", "event_safety_reason", "safety_reason_codes")
-    ).lower()
     review_reasons: list[str] = []
     critical_tpm = _patient_numeric_display(_patient_observed_value(row, "critical_tissue_max_tpm"), 4)
     critical_tissue = _patient_value(

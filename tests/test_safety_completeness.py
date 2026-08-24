@@ -240,3 +240,85 @@ def test_normal_expression_merges_gene_symbol_and_ensembl_alias_layers(tmp_path)
     assert loaded["GENE1"]["normal_hspc_status"] == "ASSESSED"
     assert loaded["GENE1"]["normal_hspc_tpm"] == 23
     assert loaded["ENSG000001"]["normal_tissue_max_tpm"] == 12
+
+
+def test_splice_safety_recovers_exact_ensembl_id_from_source_provenance(tmp_path):
+    events = tmp_path / "events.tsv"
+    peptides = tmp_path / "peptides.tsv"
+    normal = tmp_path / "normal.tsv"
+    write_tsv(events, [{
+        "event_id": "SJ|GRCh38|chr10|100|200|.",
+        "sample_id": "S1",
+        "event_type": "Splice",
+        "mutation_source": "splice",
+        "gene": "chr10:100",
+        "source_records": "ENSG00000156395:E54.1-E62.1;JUNC00210279",
+    }])
+    write_tsv(peptides, [{
+        "peptide_id": "P1",
+        "event_id": "SJ|GRCh38|chr10|100|200|.",
+        "sample_id": "S1",
+        "event_type": "Splice",
+        "mutation_source": "splice",
+        "gene": "chr10:100",
+        "peptide_consequence": "splice_junction",
+        "peptide": "AAAAAAAAA",
+        "hla_allele": "HLA-A*02:01",
+    }])
+    write_tsv(normal, [{
+        "gene": "SORCS3",
+        "ensembl_gene_id": "ENSG00000156395",
+        "normal_tissue_max_tpm": "9.88",
+        "normal_tissue_max_tissue": "Brain",
+        "normal_expression_status": "ASSESSED",
+        "normal_hspc_tpm": "1.0",
+        "normal_hspc_status": "ASSESSED",
+        "normal_hspc_unit": "HPA_nCPM",
+    }])
+
+    rows, event_rows = build_peptide_safety_gate(
+        raw_events=events,
+        raw_peptides=peptides,
+        out_peptide_safety=tmp_path / "peptide_safety.tsv",
+        out_event_safety=tmp_path / "event_safety.tsv",
+        normal_expression=normal,
+    )
+
+    assert rows[0]["normal_expression_status"] == "ASSESSED"
+    assert rows[0]["normal_hspc_status"] == "ASSESSED"
+    assert rows[0]["normal_tissue_max_tpm"] == "9.8800"
+    assert rows[0]["normal_hspc_tpm"] == "1.0000"
+    assert "normal_expression" not in rows[0]["safety_missing_layers"]
+    assert "normal_hspc" not in rows[0]["safety_missing_layers"]
+    assert event_rows[0]["normal_expression_status"] == "ASSESSED"
+    assert event_rows[0]["normal_hspc_status"] == "ASSESSED"
+
+
+def test_missing_gene_in_available_normal_reference_has_specific_reason(tmp_path):
+    events = tmp_path / "events.tsv"
+    peptides = tmp_path / "peptides.tsv"
+    normal = tmp_path / "normal.tsv"
+    write_tsv(events, [{
+        "event_id": "E1", "sample_id": "S1", "event_type": "SNV",
+        "mutation_source": "SNV", "gene": "GENE_NOT_IN_REFERENCE",
+    }])
+    write_tsv(peptides, [{
+        "peptide_id": "P1", "event_id": "E1", "sample_id": "S1",
+        "event_type": "SNV", "mutation_source": "SNV", "gene": "GENE_NOT_IN_REFERENCE",
+        "peptide": "AAAAAAAAA", "hla_allele": "HLA-A*02:01",
+    }])
+    write_tsv(normal, [{
+        "gene": "OTHER_GENE", "normal_tissue_max_tpm": "1",
+        "normal_expression_status": "ASSESSED", "normal_hspc_tpm": "0",
+        "normal_hspc_status": "ASSESSED",
+    }])
+
+    rows, _ = build_peptide_safety_gate(
+        raw_events=events,
+        raw_peptides=peptides,
+        out_peptide_safety=tmp_path / "peptide_safety.tsv",
+        normal_expression=normal,
+    )
+
+    assert "normal_expression_gene_not_in_reference" in rows[0]["safety_reason"]
+    assert "normal_hspc_gene_not_in_reference" in rows[0]["safety_reason"]

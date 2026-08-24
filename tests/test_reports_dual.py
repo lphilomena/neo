@@ -3,7 +3,7 @@ import gzip
 import json
 from pathlib import Path
 
-from neoag.reports_dual import ReportBundle, _augment_runtime_tool_provenance, _patient_conflict_summary, _patient_event_grade_counts, _patient_evidence_audit_rows, _patient_evidence_summary, _patient_event_change, _patient_key_gaps, _patient_limitation, _patient_manual_review_rows, _patient_metric, _patient_presentation_metric, _patient_rna_measurements, _patient_rna_metric, _patient_tool_rows, _patient_track, _patient_validation, _replace_gene_ids, load_report_bundle, make_dual_reports, make_patient_report, make_technical_report
+from neoag.reports_dual import ReportBundle, _augment_runtime_tool_provenance, _patient_conflict_summary, _patient_event_grade_counts, _patient_evidence_audit_rows, _patient_evidence_summary, _patient_event_change, _patient_key_gaps, _patient_limitation, _patient_manual_review_rows, _patient_metric, _patient_presentation_metric, _patient_rna_measurements, _patient_rna_metric, _patient_safety_gap, _patient_tool_rows, _patient_track, _patient_validation, _replace_gene_ids, load_report_bundle, make_dual_reports, make_patient_report, make_technical_report
 from neoag.utils import write_tsv
 
 
@@ -353,6 +353,20 @@ def test_patient_splice_reports_only_the_unresolved_read_difference():
     assert "其中 108 条已按同一canonical junction精确核实" in measurements
     assert "差额 18 条尚未归属" in measurements
     assert "126（尚未精确回链）" not in measurements
+
+
+def test_patient_safety_gap_distinguishes_gene_absent_from_reference():
+    gap = _patient_safety_gap({
+        "safety_status": "SAFETY_PARTIAL",
+        "safety_missing_layers": "normal_expression;normal_hspc",
+        "safety_reason": (
+            "normal_expression_gene_not_in_reference;"
+            "normal_hspc_gene_not_in_reference;safety_evidence_incomplete"
+        ),
+    })
+    assert "GTEx/HPA正常组织表达参考未收录该基因" in gap
+    assert "HSPC正常造血参考未收录该基因" in gap
+    assert "不能按0表达解释" in gap
 
 
 def test_patient_source_chain_c4_lists_specific_traceability_gaps():
