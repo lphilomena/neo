@@ -2,54 +2,111 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "open-neo-install-check input",
   "type": "object",
-  "required": ["outdir"],
+  "required": [
+    "outdir"
+  ],
   "properties": {
-    "outdir": {"type": "string"},
-    "project_root": {"type": "string"},
-    "release_tarball": {"type": "string"},
+    "outdir": {
+      "type": "string"
+    },
+    "project_root": {
+      "type": "string"
+    },
+    "release_tarball": {
+      "type": "string"
+    },
     "conda_base": {
       "type": "string",
       "description": "Existing Conda/Miniforge root, including NAS/site-managed installations"
     },
-    "sha256": {"type": "string"},
-    "deployment_tier": {"enum": ["review", "core", "prediction", "full"]},
-    "mode": {"enum": ["plan", "verify", "repair", "install", "resume"]},
-    "tools_manifest": {"type": "string"},
-    "reference_manifest": {"type": "string"},
-    "sample_manifest": {"type": "string"},
-    "profile": {"type": "string"},
-    "run_demo": {"type": "boolean"},
-    "run_pytest": {"type": "boolean"},
-    "run_nextflow": {"type": "boolean"},
-    "mini_smoke": {"type": "boolean"},
-    "release_audit": {"type": "boolean"},
-    "approved": {"type": "boolean"},
-    "deploy_root": {"type": "string"},
-    "tools_root": {"type": "string"},
-    "reference_root": {"type": "string"},
-    "licensed_root": {"type": "string"},
+    "sha256": {
+      "type": "string"
+    },
+    "deployment_tier": {
+      "enum": [
+        "review",
+        "core",
+        "prediction",
+        "full"
+      ]
+    },
+    "mode": {
+      "enum": [
+        "plan",
+        "verify",
+        "repair",
+        "install",
+        "resume"
+      ]
+    },
+    "tools_manifest": {
+      "type": "string"
+    },
+    "reference_manifest": {
+      "type": "string"
+    },
+    "sample_manifest": {
+      "type": "string"
+    },
+    "profile": {
+      "type": "string"
+    },
+    "run_demo": {
+      "type": "boolean"
+    },
+    "run_pytest": {
+      "type": "boolean"
+    },
+    "run_nextflow": {
+      "type": "boolean"
+    },
+    "mini_smoke": {
+      "type": "boolean"
+    },
+    "release_audit": {
+      "type": "boolean"
+    },
+    "approved": {
+      "type": "boolean"
+    },
+    "deploy_root": {
+      "type": "string"
+    },
+    "tools_root": {
+      "type": "string"
+    },
+    "reference_root": {
+      "type": "string"
+    },
+    "licensed_root": {
+      "type": "string"
+    },
     "gateway_url": {
       "type": "string",
       "description": "Optional NeoAg Gateway URL; install-check validates /health for full-tier execution readiness"
     },
     "asset_source_host": {
       "type": "string",
-      "default": "na@10.200.50.134",
-      "description": "SSH asset source; explicit input or OPEN_NEO_ASSET_SOURCE_HOST overrides the project default"
+      "description": "SSH asset source host, for example user@host; provide explicitly for approved remote asset sync."
     },
     "asset_source_root": {
       "type": "string",
-      "default": "/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git",
-      "description": "Remote asset root; explicit input or OPEN_NEO_ASSET_SOURCE_ROOT overrides the project default"
+      "description": "Asset source root corresponding to /srv/neoag-assets/source in the portable manifest; provide explicitly for approved asset sync."
     },
-    "asset_manifest": {"type": "string"},
-    "deployment_reference_manifest": {"type": "string"},
+    "asset_manifest": {
+      "type": "string"
+    },
+    "deployment_reference_manifest": {
+      "type": "string"
+    },
     "install_timeout": {
       "type": "integer",
       "minimum": 0,
       "description": "Installer timeout in seconds; 0 disables the timeout"
     },
-    "allow_download": {"type": "boolean"},
+    "allow_download": {
+      "type": "boolean"
+    },
     "install_claude_code": {
       "type": "boolean",
       "description": "Install Claude Code through the approved Anthropic native installer"
@@ -58,8 +115,27 @@
       "type": "string",
       "description": "Claude Code release channel (stable/latest) or exact X.Y.Z version"
     },
-    "installer_profile": {"enum": ["minimal", "standard", "all-open"]},
-    "no_sync_assets": {"type": "boolean"}
+    "installer_profile": {
+      "enum": [
+        "minimal",
+        "standard",
+        "all-open"
+      ]
+    },
+    "no_sync_assets": {
+      "type": "boolean"
+    }
   },
-  "anyOf": [{"required": ["project_root"]}, {"required": ["release_tarball"]}]
+  "anyOf": [
+    {
+      "required": [
+        "project_root"
+      ]
+    },
+    {
+      "required": [
+        "release_tarball"
+      ]
+    }
+  ]
 }

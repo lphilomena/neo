@@ -58,24 +58,32 @@ network snapshot download is only a fallback when the asset is unavailable;
 downloaders detect old curl builds that lack `--retry-all-errors` and retain
 portable retry/timeout behavior instead of failing on the unknown option.
 This compatibility policy also applies to the Bioconductor data-cache helper
-used by ASCAT/Sequenza, LOHHLA source retrieval, SpliceMutr assets, and normal
+used by ASCAT/Sequenza, LOHHLA source retrieval, SpliceMutr assets, SNAF source snapshots, and normal
 junction asset construction. Ubuntu 20.04's curl 7.68 is therefore supported;
 an unavailable `--retry-all-errors` capability is not a machine-configuration
 failure. The immunogenicity source downloader can additionally fall back to
 `wget`.
 
-For asset synchronization, set `--asset-source-root /mounted/assets` for a
-local/mounted asset tree or `--asset-source-host user@host` for remote source
-paths. Approved execution records source reachability and stops before installation when a required asset source cannot be read. Optional assets are reported as MISSING_OPTIONAL and do not masquerade as installed references.
-Use `--asset-ssh-key ~/.ssh/id_ed25519` or `OPEN_NEO_ASSET_SSH_KEY` when the
-asset host requires a specific key. The key is passed only to the rsync asset
-sync step and is recorded in `manifests/paths.env` without copying the key.
+For asset synchronization, approved `install`, `repair`, and `resume` runs must
+use an explicit asset source. Set `--asset-source-root /mounted/assets` for a
+local/mounted asset tree, or set both `--asset-source-host user@host` and
+`--asset-source-root /path/on/source/host` for remote rsync. The repository
+manifest uses the portable placeholder `/srv/neoag-assets/source`; Skill1 rewrites
+that placeholder only after an explicit source root is supplied. It no longer
+defaults to a lab-specific host or username. Approved execution records source
+reachability and stops before installation when a required asset source cannot
+be read. Optional assets are reported as missing/failed optional assets and do
+not masquerade as installed references. Use `--asset-ssh-key ~/.ssh/id_ed25519`
+or `OPEN_NEO_ASSET_SSH_KEY` when the asset host requires a specific key. The key
+is passed only to the rsync asset sync step and is recorded in `manifests/paths.env`
+without copying the key.
 
-When neither option is supplied, the project defaults to
-`na@10.200.50.134:/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git`. The default
-is used only by approved `install`, `repair`, or `resume` execution; `plan` and
-`verify` do not connect to the server. Override it with explicit CLI options or
-`OPEN_NEO_ASSET_SOURCE_HOST` and `OPEN_NEO_ASSET_SOURCE_ROOT`.
+Licensed presentation assets should be staged under the selected licensed root
+or the selected asset source before installation. For NetChop this means both
+`netchop-3.1d.Linux.tar.gz` and the institutional license file are expected in
+a readable `netchop/` directory, or `--netchop-archive` must point to the
+authorized archive. SNAF source snapshot downloads are network fallback only;
+Skill1 verifies the downloaded tarball and retries before failing. SpliceMutr hg38 BSgenome is treated as a synchronizable open asset; if it is absent from the selected asset source, approved runs with `--allow-download` download and stage the Bioconductor package before reference verification.
 
 For a NAS-managed Conda installation, use:
 
@@ -114,7 +122,7 @@ separate interactive or enterprise-managed step.
 - Install BAM-matcher with `scripts/install_bam_matcher.sh`. It pins the upstream revision and retains its isolated Python 2 environment; do not merge these legacy dependencies into the main project environment.
 - Never use BAM-matcher's bundled GRCh37 loci with GRCh38 data. Build the portable panel with `scripts/build_bam_matcher_grch38_loci.sh`; the script requires exact dbSNP-ID mapping, biallelic SNVs, GRCh38 FASTA REF agreement, and emits a metadata manifest plus checksums.
 - PRIME, MixMHCpred and BigMHC use pinned complete source assets, not model-only or wrapper-only copies. Required markers are `lib/run_PRIME.pl`, `MixMHCpred`, and `src/predict.py`; BigMHC must also contain `models/`. Resume reuses these synchronized directories instead of downloading them again.
-- Full installs must leave FACETS, Sequenza, PURPLE/HMFTOOLS, SpecHLA, LOHHLA, and fusion callers callable without relying on interactive shell state. LOHHLA readiness also requires a readable licensed Polysolver tree, project-local BAM index/link handling, absolute LOHHLA inputs, fresh explicit LOHHLA work directories for reruns, and preservation/regeneration of root mpileup intermediates instead of reusing partial failed directories. `conf/tools.env.local.sh` receives a marked install-check block for these paths, and `bin/bedtools` is generated when the portable bedtools binary requires the bundled Conda C++ runtime. EasyFuse readiness requires its reference marker, Nextflow entrypoint, compatibility env YAML files when referenced by installed modules, deployed tool-directory fallback, FusionCatcher STAR 2.5.2b/build-version compatibility patching plus Bowtie1 genome_index complete-file validation/repair and lincrnas.txt aliasing plus legacy optional filter repair, an absolute Nextflow conda cache, and an explicit STAR index override to `starfusion_index/ref_genome.fa.star.idx` with both `Genome` and `genomeParameters.txt` readable. STAR-Fusion readiness requires the CTAT/EasyFuse starfusion index, deployed executable fallback, compatible Perl invocation for `Set::IntervalTree`, `vendor_perl` in `PERL5LIB` for modules such as `common::sense`, complete `FusionFilter`/`FusionAnnotator` sidecars with the `annot_filter.pass` filename compatibility patch, a STAR executable on PATH, and conservative default threads for reruns. Arriba readiness requires fixed blacklist assets, fixed reference lookup, and correct Arriba 2.5.1 argument mapping (`-O` for discarded output, `-p` for protein domains). NetMHCstabpan readiness must install/register a callable licensed/shim executable from the deployed licensed tools root or shared asset root, preserve the supplied license file when present, and provide a `gawk`-compatible runtime entry, and NetChop readiness must install from an authorized `netchop-3.1d.Linux.tar.gz` discovered in the licensed root or shared asset root and pin `NETCHOP_HOME`/`NEOAG_NETCHOP_BIN` into `conf/tools.env.local.sh`. Re-running `install` or `resume` replaces only the marked block/wrapper and skips already synchronized assets when their checkpoints and markers are still valid. For prediction/full tiers, NetMHCpan, MHCflurry, NetMHCstabpan, and NetChop are all hard readiness requirements because raw heavy production manifests require all four presentation predictors.
+- Full installs must leave FACETS, Sequenza, PURPLE/HMFTOOLS, SpecHLA, LOHHLA, and fusion callers callable without relying on interactive shell state. LOHHLA readiness also requires a readable licensed Polysolver tree, project-local BAM index/link handling, absolute LOHHLA inputs, fresh explicit LOHHLA work directories for reruns, and preservation/regeneration of root mpileup intermediates instead of reusing partial failed directories. `conf/tools.env.local.sh` receives a marked install-check block for these paths, and `bin/bedtools` is generated when the portable bedtools binary requires the bundled Conda C++ runtime. EasyFuse readiness requires its reference marker, Nextflow entrypoint, compatibility env YAML files when referenced by installed modules, deployed tool-directory fallback, FusionCatcher STAR 2.5.2b/build-version compatibility patching plus Bowtie1 genome_index complete-file validation/repair and lincrnas.txt aliasing plus legacy optional filter repair, an absolute Nextflow conda cache, and an explicit STAR index override to `starfusion_index/ref_genome.fa.star.idx` with both `Genome` and `genomeParameters.txt` readable. STAR-Fusion readiness requires the CTAT/EasyFuse starfusion index, deployed executable fallback, compatible Perl invocation for `Set::IntervalTree`, `vendor_perl` in `PERL5LIB` for modules such as `common::sense`, complete `FusionFilter`/`FusionAnnotator` sidecars with the `annot_filter.pass` filename compatibility patch, a STAR executable on PATH, and conservative default threads for reruns. Arriba readiness requires fixed blacklist assets, fixed reference lookup, and correct Arriba 2.5.1 argument mapping (`-O` for discarded output, `-p` for protein domains). NetMHCstabpan readiness must install/register a callable licensed/shim executable from the deployed licensed tools root or shared asset root, preserve the supplied license file when present, and provide a `gawk`-compatible runtime entry. NetMHCpan readiness must validate a real peptide-HLA prediction and prefer the container wrapper when native NetMHCpan 4.2c is incompatible with the host glibc. NetChop readiness must install from an authorized `netchop-3.1d.Linux.tar.gz` discovered in the licensed root or shared asset root, keep the license file alongside it when supplied, and pin `NETCHOP_HOME`/`NEOAG_NETCHOP_BIN` into `conf/tools.env.local.sh`. Re-running `install` or `resume` replaces only the marked block/wrapper and skips already synchronized assets when their checkpoints and markers are still valid. For prediction/full tiers, NetMHCpan, MHCflurry, NetMHCstabpan, and NetChop are all hard readiness requirements because raw heavy production manifests require all four presentation predictors.
 
 ## Outputs
 

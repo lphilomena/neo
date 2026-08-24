@@ -114,12 +114,17 @@ fi
 
 R_LIBRARY="$(conda_safe run -n "${ENV_NAME}" Rscript -e 'cat(.libPaths()[1])')"
 if ! conda_safe run -n "${ENV_NAME}" Rscript -e 'stopifnot(nzchar(system.file(package="BSgenome.Hsapiens.UCSC.hg38")))' >/dev/null 2>&1; then
-  [[ -f "${BSGENOME_PACKAGE}/DESCRIPTION" ]] || {
-    echo "ERROR: synchronized BSgenome.Hsapiens.UCSC.hg38 asset missing: ${BSGENOME_PACKAGE}" >&2
-    exit 45
-  }
-  mkdir -p "${R_LIBRARY}/BSgenome.Hsapiens.UCSC.hg38"
-  rsync -a "${BSGENOME_PACKAGE}/" "${R_LIBRARY}/BSgenome.Hsapiens.UCSC.hg38/"
+  if [[ ! -f "${BSGENOME_PACKAGE}/DESCRIPTION" && "${NEOAG_ALLOW_DOWNLOAD:-0}" == "1" ]]; then
+    echo "==> BSgenome.Hsapiens.UCSC.hg38 asset missing; installing from Bioconductor because NEOAG_ALLOW_DOWNLOAD=1"
+    conda_safe run -n "${ENV_NAME}" Rscript -e 'if (!requireNamespace("BiocManager", quietly=TRUE)) install.packages("BiocManager", repos="https://cloud.r-project.org"); BiocManager::install("BSgenome.Hsapiens.UCSC.hg38", ask=FALSE, update=FALSE)'
+  else
+    [[ -f "${BSGENOME_PACKAGE}/DESCRIPTION" ]] || {
+      echo "ERROR: synchronized BSgenome.Hsapiens.UCSC.hg38 asset missing: ${BSGENOME_PACKAGE}" >&2
+      exit 45
+    }
+    mkdir -p "${R_LIBRARY}/BSgenome.Hsapiens.UCSC.hg38"
+    rsync -a "${BSGENOME_PACKAGE}/" "${R_LIBRARY}/BSgenome.Hsapiens.UCSC.hg38/"
+  fi
 fi
 conda_safe run -n "${ENV_NAME}" Rscript -e 'p <- system.file(package="BSgenome.Hsapiens.UCSC.hg38"); d <- read.dcf(file.path(p, "DESCRIPTION")); stopifnot(d[1,"genome"] == "hg38", file.exists(file.path(p, "extdata", "single_sequences.2bit"))); cat("SpliceMutr hg38 BSgenome", d[1,"Version"], "OK\n")'
 

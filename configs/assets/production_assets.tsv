@@ -51,9 +51,8 @@ hla_la_container_image	/srv/neoag-assets/source/work/container_images/neoag-hla-
 hmf_purple_container_image	/srv/neoag-assets/source/work/container_images/neoag-purple-suite_ubuntu22.04.tar	/srv/neoag-tools/container_images/neoag-purple-suite_ubuntu22.04.tar	file	0	-	-
 netmhcpan_container_image	/srv/neoag-assets/source/work/container_images/neoag-netmhcpan_4.2c-ubuntu22.04.tar	/srv/neoag-tools/container_images/neoag-netmhcpan_4.2c-ubuntu22.04.tar	file	0	-	-
 netmhcstabpan_container_image	/srv/neoag-assets/source/work/container_images/neoag-netmhcstabpan_1.0-ubuntu22.04.tar	/srv/neoag-tools/container_images/neoag-netmhcstabpan_1.0-ubuntu22.04.tar	file	0	-	-
-salmon_index	/srv/neoag-assets/source/data/rna/salmon_index	/srv/neoag-assets/install/data/rna/salmon_index	dir	1	-	versionInfo.json
-salmon_tx2gene	/srv/neoag-assets/source/data/rna/gencode_v49/tx2gene.tsv	/srv/neoag-assets/install/data/rna/tx2gene.tsv	file	1	-	-
-salmon_tx2gene_gencode_v49	/srv/neoag-assets/source/data/rna/gencode_v49/tx2gene.tsv	/srv/neoag-assets/install/data/rna/gencode_v49/tx2gene.tsv	file	1	-	-
+salmon_index	/srv/neoag-assets/source/data/rna/gencode_v49/salmon_index	/srv/neoag-assets/install/data/rna/gencode_v49/salmon_index	dir	1	-	versionInfo.json
+salmon_tx2gene	/srv/neoag-assets/source/data/rna/gencode_v49/tx2gene.tsv	/srv/neoag-assets/install/data/rna/gencode_v49/tx2gene.tsv	file	1	-	-
 rsem_reference	/srv/neoag-assets/source/data/rna/rsem_reference	/srv/neoag-assets/install/data/rna/rsem_reference	dir	0	-	grp
 sherpa_presentation	/srv/neoag-assets/source/data/predictors/SHERPA-Presentation	/srv/neoag-tools/tools/SHERPA-Presentation	dir	0	-	-
-splicemutr_bsgenome_hg38	/srv/neoag-assets/source/data/splice/splicemutr/r_library/BSgenome.Hsapiens.UCSC.hg38	/srv/neoag-assets/install/data/splice/splicemutr/r_library/BSgenome.Hsapiens.UCSC.hg38	dir	1	-	DESCRIPTION
+splicemutr_bsgenome_hg38	/srv/neoag-assets/source/data/splice/splicemutr/r_library/BSgenome.Hsapiens.UCSC.hg38	/srv/neoag-assets/install/data/splice/splicemutr/r_library/BSgenome.Hsapiens.UCSC.hg38	dir	0	-	DESCRIPTION

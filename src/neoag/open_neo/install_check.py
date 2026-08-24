@@ -32,8 +32,8 @@ from .errors import FailureCode
 from .state import RunLayout, audit, new_run_id, safe_identifier, update_case_state
 
 
-DEFAULT_ASSET_SOURCE_HOST = "na@10.200.50.134"
-DEFAULT_ASSET_SOURCE_ROOT = "/mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git"
+DEFAULT_ASSET_SOURCE_HOST = ""
+DEFAULT_ASSET_SOURCE_ROOT = ""
 
 
 def _apply_default_asset_source(args: dict[str, Any]) -> dict[str, Any]:
@@ -185,6 +185,19 @@ def _rewrite_asset_manifest(
         writer.writeheader()
         writer.writerows(rows)
     return output
+
+
+def _asset_manifest_uses_placeholder_source(manifest: str | Path) -> bool:
+    lines = [
+        line for line in Path(manifest).read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+    reader = csv.DictReader(lines, delimiter="\t")
+    for row in reader:
+        source = str(row.get("source_path") or "")
+        if source.startswith("/srv/neoag-assets/source/"):
+            return True
+    return False
 
 
 def _required_asset_sources_missing(manifest: str | Path, source_host: str) -> list[str]:
@@ -1420,7 +1433,7 @@ def _deployment_command(args: dict[str, Any], project_root: Path, layout: RunLay
     deploy_root = Path(str(args.get("deploy_root") or "/opt/neoag"))
     script = project_root / ".agents/skills/neoag-remote-deploy/scripts/16_install_new_machine.sh"
     tier = str(args.get("deployment_tier") or "core").lower()
-    default_profile = "standard" if tier in {"prediction", "full"} else "minimal"
+    default_profile = "all-open" if tier in {"prediction", "full"} else "minimal"
     installer_profile = str(args.get("installer_profile") or default_profile)
     command = [
         "bash", str(script),
@@ -1792,6 +1805,15 @@ def run_install_check(args: dict[str, Any]) -> dict[str, Any]:
         if not args.get("asset_manifest"):
             result.blocking_issues.append(FailureCode.ASSET_SOURCE_UNCONFIGURED.value)
             result.steps.append(MacroStep("04", "asset-source", "BLOCKED", "No asset manifest is available", failure_code=FailureCode.ASSET_SOURCE_UNCONFIGURED.value))
+            result.finish("BLOCKED").write(layout.skill_result)
+            return result.to_dict()
+        if _asset_manifest_uses_placeholder_source(args["asset_manifest"]) and args.get("asset_source_host") and not args.get("asset_source_root"):
+            detail = (
+                "Asset manifest still uses the portable placeholder /srv/neoag-assets/source. "
+                "Provide --asset-source-root for the selected source tree, or pass a site-local asset manifest with real source paths."
+            )
+            result.blocking_issues.append(FailureCode.ASSET_SOURCE_UNCONFIGURED.value)
+            result.steps.append(MacroStep("04", "asset-source", "BLOCKED", detail, failure_code=FailureCode.ASSET_SOURCE_UNCONFIGURED.value))
             result.finish("BLOCKED").write(layout.skill_result)
             return result.to_dict()
         missing_sources = _required_asset_sources_missing(args["asset_manifest"], str(args.get("asset_source_host") or ""))

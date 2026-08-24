@@ -112,6 +112,29 @@ EOF
   chmod +x "${BIN_DIR}/${wrapper}"
 }
 
+
+download_verified_tarball() {
+  local label="$1" url="$2" dest="$3"
+  local attempts="${NEOAG_DOWNLOAD_RETRIES:-5}"
+  local attempt part
+  mkdir -p "$(dirname "${dest}")"
+  for attempt in $(seq 1 "${attempts}"); do
+    part="${dest}.part.${attempt}"
+    rm -f "${part}"
+    echo "==> Downloading ${label} snapshot (attempt ${attempt}/${attempts})"
+    if curl -fL --retry 3 --connect-timeout 20 --max-time "${NEOAG_DOWNLOAD_MAX_TIME:-1800}" -o "${part}" "${url}" \
+      && [[ -s "${part}" ]] \
+      && tar -tzf "${part}" >/dev/null 2>&1; then
+      mv "${part}" "${dest}"
+      return 0
+    fi
+    rm -f "${part}"
+    sleep "${NEOAG_DOWNLOAD_RETRY_SLEEP:-10}"
+  done
+  echo "ERROR: ${label} source snapshot download failed or produced an incomplete tarball: ${url}" >&2
+  exit 44
+}
+
 if [[ "${INSTALL_SNAF}" == "1" ]]; then
   SNAF_HOME="${TOOLS_ROOT}/tools/SNAF"
   if ! env_exists "${SNAF_ENV_NAME}"; then
@@ -126,9 +149,7 @@ if [[ "${INSTALL_SNAF}" == "1" ]]; then
     if [[ ! -s "${SNAF_ARCHIVE_CACHE}" ]]; then
       command -v curl >/dev/null 2>&1 || { echo "ERROR: curl is required to download SNAF" >&2; exit 43; }
       mkdir -p "$(dirname "${SNAF_ARCHIVE_CACHE}")"
-      curl -fL --retry 3 --connect-timeout 20 \
-        -o "${SNAF_ARCHIVE_CACHE}.part" "${SNAF_PACKAGE_URL}"
-      mv "${SNAF_ARCHIVE_CACHE}.part" "${SNAF_ARCHIVE_CACHE}"
+      download_verified_tarball "SNAF" "${SNAF_PACKAGE_URL}" "${SNAF_ARCHIVE_CACHE}"
     else
       echo "==> Reusing cached SNAF snapshot ${SNAF_ARCHIVE_CACHE}"
     fi

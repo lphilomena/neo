@@ -347,6 +347,40 @@ set_local_conda_pkg_cache() {
 
 
 
+download_verified_tarball_to_cache() {
+  local label="$1" url="$2" dest="$3"
+  local attempts="${NEOAG_DOWNLOAD_RETRIES:-5}"
+  local attempt part
+  mkdir -p "$(dirname "$dest")"
+  for attempt in $(seq 1 "$attempts"); do
+    part="${dest}.part.${attempt}"
+    rm -f "$part"
+    if curl -fL --retry 3 --connect-timeout 30 --max-time "${NEOAG_DOWNLOAD_MAX_TIME:-3600}" -o "$part" "$url" \
+      && [[ -s "$part" ]] \
+      && tar -tzf "$part" >/dev/null 2>&1; then
+      mv "$part" "$dest"
+      log "$label downloaded and verified: $dest"
+      return 0
+    fi
+    rm -f "$part"
+    sleep "${NEOAG_DOWNLOAD_RETRY_SLEEP:-10}"
+  done
+  echo "DOWNLOAD_FAILED: $label: $url" >&2
+  return 1
+}
+
+ensure_splicemutr_bsgenome_asset() {
+  local target="$REFERENCE_ROOT/data/splice/splicemutr/r_library/BSgenome.Hsapiens.UCSC.hg38"
+  [[ -f "$target/DESCRIPTION" ]] && return 0
+  [[ "$ALLOW_DOWNLOAD" == "1" ]] || return 0
+  local version="${NEOAG_SPLICEMUTR_BSGENOME_VERSION:-1.4.5}"
+  local url="${NEOAG_SPLICEMUTR_BSGENOME_URL:-https://bioconductor.org/packages/release/data/annotation/src/contrib/BSgenome.Hsapiens.UCSC.hg38_${version}.tar.gz}"
+  local archive="$TOOLS_ROOT/sources/BSgenome.Hsapiens.UCSC.hg38_${version}.tar.gz"
+  local tmp="$OUTDIR/bsgenome_hg38_extract"
+  run "download SpliceMutr hg38 BSgenome asset" download_verified_tarball_to_cache "BSgenome.Hsapiens.UCSC.hg38" "$url" "$archive"
+  run "stage SpliceMutr hg38 BSgenome asset" bash -lc "rm -rf '$tmp' '$target.new'; mkdir -p '$tmp' '$(dirname "$target")'; tar -xzf '$archive' -C '$tmp'; src=\$(find '$tmp' -mindepth 1 -maxdepth 1 -type d -name 'BSgenome.Hsapiens.UCSC.hg38*' | head -1); test -n \"\$src\"; mkdir -p '$target.new'; rsync -a \"\$src/\" '$target.new/'; test -f '$target.new/DESCRIPTION'; rm -rf '$target'; mv '$target.new' '$target'; rm -rf '$tmp'"
+}
+
 ensure_reference_indexes_after_asset_sync() {
   local fasta="$REFERENCE_ROOT/data/ref/hg38/Homo_sapiens_assembly38.fasta"
   if [[ -s "$fasta" && ! -s "$fasta.fai" ]]; then
@@ -430,6 +464,7 @@ sync_assets_if_requested() {
   run "sync large assets from manifest" bash .agents/skills/neoag-remote-deploy/scripts/15_sync_asset_manifest.sh "${args[@]}"
   register_synced_tool_assets
   ensure_reference_indexes_after_asset_sync
+  ensure_splicemutr_bsgenome_asset
   if [[ -f "$REFERENCE_MANIFEST" ]]; then
     verify_ref_args=("$REFERENCE_MANIFEST" --vep-version "$VEP_VERSION")
     [[ "$STRICT_VERIFY" == "1" ]] && verify_ref_args+=(--strict)
@@ -740,6 +775,11 @@ PY
 repair_netmhcpan_frontend() {
   [[ "$EXECUTE" == "1" ]] || return 0
   local nm="$LICENSED_ROOT/netMHCpan/netMHCpan"
+  local wrapper="$TOOLS_ROOT/bin/netMHCpan"
+  if [[ -x "$wrapper" ]] && grep -q 'run_netmhcpan_container.sh' "$wrapper" 2>/dev/null; then
+    run "validate NetMHCpan container wrapper prediction" bash -lc "tmp=\$(mktemp -d); trap 'rm -rf \"\$tmp\"' EXIT; printf 'SIINFEKL HLA-A02:01 0\n' > \"\$tmp/pep.pmhc\"; '$wrapper' -pmhc -BA -f \"\$tmp/pep.pmhc\" -t -99.9 > \"\$tmp/smoke.log\" 2>&1; grep -q PEPLIST \"\$tmp/smoke.log\""
+    return 0
+  fi
   if [[ -L "$LICENSED_ROOT/netMHCpan" ]]; then
     log "NetMHCpan uses an external symlink; leaving the licensed asset unchanged"
     return 0
@@ -748,7 +788,7 @@ repair_netmhcpan_frontend() {
   if grep -qE '/(home|root)/[^/]+/(mini(conda|forge)|mambaforge)' "$nm" || grep -q 'CONDA_BASE=.*mini.*forge' "$nm"; then
     run "repair NetMHCpan frontend conda sysroot path" bash -lc "cp '$nm' '$nm.bak_\$(date +%Y%m%d_%H%M%S)' && perl -0pi -e 's#CONDA_BASE=\"\\\$\\{CONDA_BASE:-[^}]+\\}\"#CONDA_BASE=\"\\\${CONDA_BASE:-$CONDA_BASE}\"#' '$nm'"
   fi
-  run "validate NetMHCpan frontend" bash -lc "CONDA_BASE='$CONDA_BASE' '$nm' -h >/dev/null"
+  run "validate NetMHCpan frontend prediction" bash -lc "tmp=\$(mktemp -d); trap 'rm -rf \"\$tmp\"' EXIT; printf 'SIINFEKL HLA-A02:01 0\n' > \"\$tmp/pep.pmhc\"; CONDA_BASE='$CONDA_BASE' '$nm' -pmhc -BA -f \"\$tmp/pep.pmhc\" -t -99.9 > \"\$tmp/smoke.log\" 2>&1; grep -q PEPLIST \"\$tmp/smoke.log\""
 }
 
 install_sherpa_if_requested() {
@@ -1037,7 +1077,7 @@ if [[ "$INSTALL_SPLICE" == "1" ]]; then
   if [[ "$INSTALL_SPLICEMUTR" == "1" && "$EXECUTE" == "1" ]]; then
     need_download_ok "SpliceMutr pinned Git source"
   fi
-  run "install splice tools" env NEOAG_INSTALL_SNAF="$INSTALL_SNAF" NEOAG_INSTALL_SPLICEMUTR="$INSTALL_SPLICEMUTR" bash scripts/install_splice_tools.sh
+  run "install splice tools" env NEOAG_INSTALL_SNAF="$INSTALL_SNAF" NEOAG_INSTALL_SPLICEMUTR="$INSTALL_SPLICEMUTR" NEOAG_ALLOW_DOWNLOAD="$ALLOW_DOWNLOAD" bash scripts/install_splice_tools.sh
 fi
 register_spechla_if_requested
 register_hlala_if_requested
