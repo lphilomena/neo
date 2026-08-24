@@ -1,4 +1,5 @@
 import hashlib
+import gzip
 import json
 from pathlib import Path
 
@@ -801,6 +802,44 @@ def test_new_patient_splice_gene_and_change_are_enriched_from_gtf(tmp_path, monk
     assert bundle.events[0]["gene"] == "GENE_NEW"
     assert bundle.peptides[0]["gene"] == "GENE_NEW"
     assert "E2.1→E4.1" in _patient_event_change(bundle.peptides[0])
+
+
+def test_patient_splice_gene_symbol_is_discovered_from_recorded_asset_root(tmp_path):
+    data_root = tmp_path / "portable_assets" / "data"
+    gtf = data_root / "rna" / "gencode_v49" / "gencode.v49.annotation.gtf.gz"
+    gtf.parent.mkdir(parents=True)
+    with gzip.open(gtf, "wt", encoding="utf-8") as handle:
+        handle.write(
+            'chr7\ttest\tgene\t100\t500\t.\t+\t.\tgene_id "ENSG00999999998.1"; '
+            'gene_type "protein_coding"; gene_name "PORTABLE_GENE";\n'
+        )
+    proteome = data_root / "normal" / "proteome" / "proteome.fa"
+    proteome.parent.mkdir(parents=True)
+    proteome.write_text(">P\nAAAA\n", encoding="utf-8")
+    event_id = "SJ|GRCh38|chr7|200|300|+"
+    bundle = load_report_bundle(
+        profile={},
+        events=[{
+            "event_id": event_id,
+            "event_type": "Splice",
+            "gene": "ENSG00999999998",
+            "canonical_junction_id": event_id,
+        }],
+        peptides=[{
+            "peptide_id": "P_PORTABLE",
+            "event_id": event_id,
+            "event_type": "Splice",
+            "gene": "ENSG00999999998",
+            "canonical_junction_id": event_id,
+            "peptide": "AAAAAAAAA",
+            "hla_allele": "HLA-A*02:01",
+        }],
+        outdir=tmp_path,
+        provenance={"input_files": {"reference_proteome": str(proteome)}},
+        sample_id="PORTABLE_PATIENT",
+    )
+    assert bundle.events[0]["gene"] == "PORTABLE_GENE"
+    assert bundle.peptides[0]["gene"] == "PORTABLE_GENE"
 
 
 def test_consensus_report_streams_source_labels_for_unresolved_new_patient_gene(tmp_path, monkeypatch):

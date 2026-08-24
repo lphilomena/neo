@@ -5,6 +5,7 @@ from __future__ import annotations
 import html
 import hashlib
 import csv
+import gzip
 import json
 import os
 import re
@@ -302,6 +303,43 @@ def _map_by(rows: list[Mapping[str, Any]], key: str) -> dict[str, dict[str, str]
     return {str(r.get(key, "")): dict(r) for r in rows if r.get(key)}
 
 
+def _path_values(payload: Any) -> list[Path]:
+    """Collect path-like provenance values without scanning the filesystem."""
+    paths: list[Path] = []
+    if isinstance(payload, Mapping):
+        for value in payload.values():
+            paths.extend(_path_values(value))
+    elif isinstance(payload, (list, tuple)):
+        for value in payload:
+            paths.extend(_path_values(value))
+    elif isinstance(payload, str) and payload.startswith("/"):
+        paths.append(Path(payload))
+    return paths
+
+
+def _asset_gtf_candidates(provenance: Mapping[str, Any]) -> list[Path]:
+    """Infer GTF locations from already-recorded asset paths.
+
+    Production manifests often record the normal proteome or other assets but
+    omit the GTF itself.  Deriving the shared ``data`` root keeps report-time
+    gene-symbol resolution portable without hard-coding a server mount.
+    """
+    candidates: list[Path] = []
+    for path in _path_values(provenance):
+        parts = path.parts
+        for index in range(len(parts) - 1, -1, -1):
+            if parts[index] != "data":
+                continue
+            data_root = Path(*parts[: index + 1])
+            candidates.extend([
+                data_root / "rna" / "gencode_v49" / "gencode.v49.annotation.gtf.gz",
+                data_root / "ref" / "hg38" / "gencode.gtf",
+                data_root / "ref" / "ctat" / "current" / "ctat_genome_lib_build_dir" / "ref_annot.gtf",
+            ])
+            break
+    return list(dict.fromkeys(candidates))
+
+
 def _read_longrna_junction_genes(
     root: Path | None,
     extra_gene_ids: set[str] | None = None,
@@ -321,17 +359,20 @@ def _read_longrna_junction_genes(
     }
     gene_names: dict[str, str] = {}
     gene_intervals: list[tuple[str, int, int, str, str]] = []
-    gtf_candidates = list(gtf_paths or []) + [
-        root.parents[2] / "data" / "ref" / "hg38" / "gencode.gtf",
-        root.parents[2] / "data" / "ref" / "ctat" / "current" / "ctat_genome_lib_build_dir" / "ref_annot.gtf",
-    ]
-    for gtf in gtf_candidates:
+    gtf_candidates = list(gtf_paths or [])
+    if len(root.parents) > 2:
+        gtf_candidates.extend([
+            root.parents[2] / "data" / "ref" / "hg38" / "gencode.gtf",
+            root.parents[2] / "data" / "ref" / "ctat" / "current" / "ctat_genome_lib_build_dir" / "ref_annot.gtf",
+        ])
+    for gtf in dict.fromkeys(gtf_candidates):
         if not gtf.is_file() or not (gene_ids or transcript_ids):
             continue
-        with gtf.open("r", encoding="utf-8", errors="replace") as handle:
+        opener = gzip.open if gtf.suffix == ".gz" else open
+        with opener(gtf, "rt", encoding="utf-8", errors="replace") as handle:
             for line in handle:
                 if "\tgene\t" in line:
-                    match = re.search(r'gene_id "(ENSG\d+)";.*?gene_name "([^"]+)";', line)
+                    match = re.search(r'gene_id "(ENSG\d+)(?:\.\d+)?";.*?gene_name "([^"]+)";', line)
                     if match and match.group(1) in gene_ids:
                         gene_names[match.group(1)] = match.group(2)
                     if match:
@@ -340,10 +381,15 @@ def _read_longrna_junction_genes(
                             chrom = fields[0] if fields[0].startswith("chr") else "chr" + fields[0]
                             gene_intervals.append((chrom, int(fields[3]), int(fields[4]), fields[6], match.group(2)))
                 elif "\ttranscript\t" in line and transcript_ids:
-                    match = re.search(r'gene_id "(ENSG\d+)";.*?transcript_id "(ENS[TG]\d+)";.*?gene_name "([^"]+)";', line)
+                    match = re.search(
+                        r'gene_id "(ENSG\d+)(?:\.\d+)?";.*?transcript_id "(ENS[TG]\d+)(?:\.\d+)?";.*?gene_name "([^"]+)";',
+                        line,
+                    )
                     if match and match.group(2) in transcript_ids:
                         gene_names[match.group(2)] = match.group(3)
-        if gene_names:
+        resolved_gene_ids = {gene_id for gene_id in gene_ids if gene_id in gene_names}
+        resolved_transcripts = {transcript for transcript in transcript_ids if transcript in gene_names}
+        if resolved_gene_ids == gene_ids and resolved_transcripts == transcript_ids:
             break
     junction_genes: dict[str, str] = {}
     for row in rows:
@@ -822,6 +868,7 @@ def load_report_bundle(
         value = os.environ.get(env_key, "").strip()
         if value:
             gtf_candidates.append(Path(value))
+    gtf_candidates.extend(_asset_gtf_candidates(prov))
     junction_genes = _read_longrna_junction_genes(root, extra_gene_ids, gtf_candidates)
     enriched_peptides = _enrich_rows_from_sources(
         peptides, source_peptides or peptides, source_events, junction_genes, evidence_source_label,

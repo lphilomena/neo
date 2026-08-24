@@ -226,6 +226,8 @@ def _input_files(final_dir: Path, manifest: Mapping[str, Any], generated: Mappin
         ("hla_loh", "hla_loh_consensus"),
         ("raw_events", "combined_raw_events"),
         ("raw_peptides", "combined_raw_peptides"),
+        ("reference_proteome", "reference_proteome"),
+        ("gencode_gtf", "gencode_gtf"),
     ):
         value = str(inputs.get(key) or "")
         if value:

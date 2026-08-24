@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from neoag.report_from_final import _purity_records
+from neoag.report_from_final import _input_files, _purity_records
 
 
 def test_purity_records_keep_declared_tool_without_estimate(tmp_path: Path):
@@ -33,3 +33,19 @@ def test_purity_records_keep_declared_tool_without_estimate(tmp_path: Path):
     assert consensus["recommended_purity"] == "0.2699"
     assert "FACETS=0.2299" in consensus["basis"]
     assert "PURPLE=0.3100" in consensus["basis"]
+
+
+def test_input_files_preserve_reference_assets_for_report_enrichment(tmp_path: Path):
+    final = tmp_path / "production" / "final"
+    final.mkdir(parents=True)
+    generated = {
+        "inputs": {
+            "reference_proteome": "/assets/data/normal/proteome/gencode.fa",
+            "gencode_gtf": "/assets/data/rna/gencode_v49/gencode.v49.annotation.gtf.gz",
+        }
+    }
+
+    files = _input_files(final, {}, generated)
+
+    assert files["reference_proteome"].endswith("gencode.fa")
+    assert files["gencode_gtf"].endswith("gencode.v49.annotation.gtf.gz")
