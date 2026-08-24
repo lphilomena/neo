@@ -3,7 +3,7 @@ from __future__ import annotations
 import html
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 from neoag.agent_skills.appm_review import main as appm_review_main
 from neoag.agent_skills.ccf_review import main as ccf_review_main
@@ -502,6 +502,17 @@ def _summary_mapping(path: str | Path | None) -> dict[str, Any]:
     return dict(rows[0])
 
 
+def _merge_review_context(
+    provenance: dict[str, Any], context: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Overlay current structured clinical context on historical run metadata."""
+    merged = dict(provenance)
+    for key, value in context.items():
+        if str(value or "").strip():
+            merged[key] = value
+    return merged
+
+
 def _formal_patient_report(
     layout: RunLayout,
     result_dir: Path,
@@ -522,8 +533,7 @@ def _formal_patient_report(
     provenance = _read_json_mapping(artifacts.get("run_manifest"))
     provenance.update(_read_json_mapping(artifacts.get("provenance")))
     provenance["report_role"] = "final_review"
-    for key, value in context.items():
-        provenance.setdefault(key, value)
+    provenance = _merge_review_context(provenance, context)
     provenance.setdefault("parallel_rankings", {})
     if isinstance(provenance["parallel_rankings"], dict):
         provenance["parallel_rankings"].update({

@@ -29,7 +29,7 @@ from neoag.open_neo.install_check import (
 )
 from neoag.open_neo.auto_config import configure_machine
 from neoag.open_neo.cli import build_parser
-from neoag.open_neo.review import _event_kind, build_review_rows, run_review, select_first_batch
+from neoag.open_neo.review import _event_kind, _merge_review_context, build_review_rows, run_review, select_first_batch
 from neoag.open_neo.routing import inspect_manifest
 from neoag.open_neo.run import run_open_neo
 from neoag.controlled_execution.pipeline_runner import _manifest_file_hashes
@@ -116,6 +116,17 @@ def test_review_cli_accepts_report_selection():
     assert validate_json_schema(vars(args), schema) == []
     invalid = dict(vars(args), reports=["clinical"])
     assert "INVALID_ITEM_ENUM:reports" in validate_json_schema(invalid, schema)
+
+
+def test_review_clinical_context_overrides_stale_run_metadata():
+    merged = _merge_review_context(
+        {"disease": "sarcoma_profile", "sample_id": "CASE001"},
+        {"disease": "DSRCT", "analysis_goal": "neoantigen review", "notes": ""},
+    )
+    assert merged["disease"] == "DSRCT"
+    assert merged["analysis_goal"] == "neoantigen review"
+    assert merged["sample_id"] == "CASE001"
+    assert "notes" not in merged
 
 
 def test_public_macro_registry_and_internal_composition():

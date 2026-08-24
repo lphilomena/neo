@@ -3,7 +3,7 @@ import gzip
 import json
 from pathlib import Path
 
-from neoag.reports_dual import ReportBundle, _apply_patient_gene_expression, _augment_runtime_tool_provenance, _patient_conflict_summary, _patient_dna_evidence, _patient_event_grade_counts, _patient_evidence_audit_rows, _patient_evidence_summary, _patient_event_change, _patient_expression_tpm_map, _patient_key_gaps, _patient_limitation, _patient_manual_review_rows, _patient_metric, _patient_presentation_metric, _patient_rna_measurements, _patient_rna_metric, _patient_safety_gap, _patient_tool_rows, _patient_track, _patient_validation, _replace_gene_ids, load_report_bundle, make_dual_reports, make_patient_report, make_technical_report
+from neoag.reports_dual import ReportBundle, _apply_patient_gene_expression, _augment_runtime_tool_provenance, _patient_conflict_summary, _patient_disease_background, _patient_dna_evidence, _patient_event_grade_counts, _patient_evidence_audit_rows, _patient_evidence_summary, _patient_event_change, _patient_expression_tpm_map, _patient_key_gaps, _patient_limitation, _patient_manual_review_rows, _patient_metric, _patient_presentation_metric, _patient_rna_measurements, _patient_rna_metric, _patient_safety_gap, _patient_tool_rows, _patient_track, _patient_validation, _replace_gene_ids, load_report_bundle, make_dual_reports, make_patient_report, make_technical_report
 from neoag.utils import write_tsv
 
 
@@ -333,6 +333,44 @@ def test_patient_tool_coverage_discovers_event_only_splicemutr(tmp_path):
     rows = {row["流程/工具"]: row for row in _patient_tool_rows(bundle)}
     assert rows["SpliceMutr"]["状态"] == "事件来源记录已确认（1个事件）"
     assert rows["SpliceMutr"]["作用"] == "异常剪接交叉验证"
+
+
+def test_patient_disease_background_prefers_structured_clinical_context():
+    bundle = ReportBundle(
+        profile={"_profile_name": "sarcoma_profile"}, events=[], peptides=[],
+        provenance={
+            "profile": "default",
+            "clinical_context": {"diagnosis": "DSRCT"},
+            "rules_name": "sarcoma_rules",
+        },
+    )
+    result, basis = _patient_disease_background(bundle)
+    assert result == "DSRCT"
+    assert "clinical_context.diagnosis" in basis
+
+
+def test_patient_disease_background_uses_nondefault_profile_then_rules():
+    profile_bundle = ReportBundle(
+        profile={"_profile_name": "/profiles/sarcoma_rna_supported.toml"},
+        events=[], peptides=[], provenance={"profile": "default", "rules_name": "fallback_rules"},
+    )
+    assert _patient_disease_background(profile_bundle)[0] == "分析配置：sarcoma_rna_supported"
+
+    rules_bundle = ReportBundle(
+        profile={"_profile_name": "default"}, events=[], peptides=[],
+        provenance={"profile": "default", "rules": {"path": "/rules/sarcoma_consensus.toml"}},
+    )
+    result, basis = _patient_disease_background(rules_bundle)
+    assert result == "分析配置：sarcoma_consensus"
+    assert "排序/分析配置" in basis
+
+
+def test_patient_disease_background_does_not_guess_from_paths():
+    bundle = ReportBundle(
+        profile={"_profile_name": "default"}, events=[], peptides=[],
+        provenance={"input_files": {"tumor_bam": "/data/dsrct/patient/tumor.bam"}},
+    )
+    assert _patient_disease_background(bundle)[0] == "未记录"
 
 
 def test_patient_manual_review_keeps_configured_key_fusion_with_junction_guidance():

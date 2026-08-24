@@ -3263,11 +3263,57 @@ def _patient_purity_consensus(bundle: ReportBundle) -> tuple[str, str]:
     return fallback, "未提供结构化多工具共识；不得静默选择单一工具"
 
 
+def _patient_disease_background(bundle: ReportBundle) -> tuple[str, str]:
+    """Resolve clinical disease context without inferring it from sample paths."""
+    provenance = bundle.provenance
+    clinical_keys = ("disease", "diagnosis", "disease_name", "cancer_type", "tumor_type")
+
+    def meaningful(value: Any) -> str:
+        text = str(value or "").strip()
+        return "" if text.lower() in {"", "none", "na", "n/a", "unknown", "unassessed", "default"} else text
+
+    for key in clinical_keys:
+        value = meaningful(provenance.get(key))
+        if value:
+            return value, f"来源：结构化临床背景字段 {key}"
+
+    for container_key in ("clinical_context", "disease_profile", "patient_context", "clinical"):
+        container = provenance.get(container_key)
+        if not isinstance(container, Mapping):
+            continue
+        for key in clinical_keys:
+            value = meaningful(container.get(key))
+            if value:
+                return value, f"来源：结构化临床背景 {container_key}.{key}"
+
+    for key in clinical_keys:
+        value = meaningful(bundle.profile.get(key))
+        if value:
+            return value, f"来源：疾病/分析 profile 字段 {key}"
+
+    profile_name = meaningful(bundle.profile.get("_profile_name") or provenance.get("profile"))
+    if profile_name and profile_name.lower() not in {"evidence_consensus"}:
+        return f"分析配置：{Path(profile_name).stem}", "未提供结构化临床诊断；回退采用非默认疾病/分析 profile"
+
+    rules_name = meaningful(provenance.get("rules_name"))
+    if not rules_name:
+        rules = provenance.get("rules")
+        if isinstance(rules, Mapping):
+            rules_name = meaningful(rules.get("name") or rules.get("path"))
+        elif rules:
+            rules_name = meaningful(rules)
+    if rules_name:
+        return f"分析配置：{Path(rules_name).stem}", "未提供结构化临床诊断；回退采用排序/分析配置"
+
+    return "未记录", "未提供结构化临床背景、非默认分析 profile 或排序配置"
+
+
 def _patient_qc_rows(bundle: ReportBundle) -> list[dict[str, str]]:
     provenance = bundle.provenance
     purity_result, purity_basis = _patient_purity_consensus(bundle)
+    disease_result, disease_basis = _patient_disease_background(bundle)
     rows = [
-        {"项目": "疾病/分析背景", "结果": str(provenance.get("disease") or "未记录"), "解释": "优先采用结构化临床背景，其次采用分析配置"},
+        {"项目": "疾病/分析背景", "结果": disease_result, "解释": disease_basis},
         {"项目": "肿瘤/正常配对", "结果": str(provenance.get("pairing_status") or "未评估"), "解释": "区分已使用配对输入与已完成指纹确认"},
         {"项目": "肿瘤纯度/倍性", "结果": purity_result, "解释": "用于CNV、CCF和LOH解释；工具冲突必须保留"},
         {"项目": "肿瘤DNA深度", "结果": str(provenance.get("tumor_dna_depth") or "未评估"), "解释": "默认汇总去重事件位点有效深度；低深度会降低检出能力"},
