@@ -1071,6 +1071,7 @@ def test_ensembl_gene_ids_are_replaced_with_symbols():
         "GENE|ENSG00000101871": "MID1",
     }) == "ARHGAP6::MID1"
     assert _replace_gene_ids("CPSF6::ENSG00000170846", {}) == "CPSF6::MRFAP1L2"
+    assert _replace_gene_ids("ENSG00000232325", {}) == "AC093627.1"
 
 
 def test_scoring_all_tool_results_counts_as_canonical(tmp_path):
