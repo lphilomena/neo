@@ -31,7 +31,14 @@ The pipeline can:
 - Produce both patient-facing and technical HTML reports.
 - Run fixture workflows through the CLI or the included Nextflow wrappers.
 
-## System Requirements
+## Tools Organization
+
+This project include a collection of tools and models covering all key aspects necessary for neo-antigen detection, analysis, and prediction. They include: gene data processing, biological function check, tumor status check, variant calling, pepetide generation, HLA typing, peptide property prediction, etc.
+The key advantage is the neo peptiede identification process is expert-directed and verified, which set the selection and ranking algorithm, and properties and tools used for it.
+
+## Usage
+
+### System Requirements
 
 Requirements depend on assay size and enabled tools. The following baseline is intended for full production DNA/RNA analysis; review-only use can run with substantially fewer resources.
 
@@ -44,7 +51,7 @@ Requirements depend on assay size and enabled tools. The following baseline is i
 - **Input conventions:** use one consistent genome build, normally GRCh38. BAM/CRAM inputs must be indexed; VCF inputs should be normalized, compressed, and indexed where applicable; paired FASTQ files must have consistent sample and read-pair naming.
 - **Gateway:** production execution requires NeoAg Gateway. Bind it to `127.0.0.1` by default and authorize only the intended result directories with `allowed-root` settings.
 
-## New Machine Install And Run: Three Macro Skills
+### New Machine Install And Run: Three Macro Skills
 
 Use the three public Open-Neo macro Skills for new-machine deployment and case execution. The machine-readable manifests remain the source of truth. Production-required tools, cross-validation gates, and accepted upstream-result inputs are summarized in `docs/PRODUCTION_REQUIRED_TOOLS.md`. Production ranking requires both NetMHCstabpan stability and NetChop 3.1d cleavage evidence; missing results block production release rather than being silently skipped:
 
@@ -79,11 +86,10 @@ open-neo install-check \
   --deployment-tier full \
   --mode install \
   --installer-profile all-open \
-  --asset-source-host na@10.200.50.134 \
-  --asset-source-root /mnt/zjl-bgi-zzb/peixunban/gl/liup/neodata4git \
+  --asset-source-root <your install asset dir> \
   --tools-root /home/na/project/open-neo-deploy/env_tool \
   --reference-root /home/na/project/open-neo-deploy/refs \
-  --conda-base /home/na/miniforge3 \
+  --conda-base <your conda base dir> \
   --allow-download \
   --approved \
   --outdir work/install-check-full
@@ -119,7 +125,7 @@ nohup env PYTHONPATH="$PWD/src" \
   --project-root "$PWD" \
   --outdir "$PWD/work/neoag_gateway" \
   --allowed-root "$PWD/work" \
-  --allowed-root /mnt/zzbnew/Public/neoag_results \
+  --allowed-root <your output dir> \
   > work/neoag_gateway/gateway.log 2>&1 &
 
 curl -s http://127.0.0.1:8000/health
@@ -132,7 +138,7 @@ open-neo run \
   --sample-manifest configs/local/sample.yaml \
   --tools-manifest configs/local/tools_manifest.configured.yaml \
   --reference-manifest configs/local/reference_manifest.configured.yaml \
-  --outdir /mnt/zzbnew/Public/neoag_results/CASE001 \
+  --outdir <your output dir> \
   --mode execute \
   --approved \
   --gateway-url http://127.0.0.1:8000 \
@@ -149,7 +155,7 @@ open-neo run \
   --somatic-vcf /path/to/somatic.pass.vcf.gz \
   --tumor-rna-fastq /path/to/R1.fq.gz /path/to/R2.fq.gz \
   --rna-threads 12 \
-  --outdir /mnt/zzbnew/Public/neoag_results/CASE001 \
+  --outdir <your output dir> \
   --mode execute \
   --approved \
   --gateway-url http://127.0.0.1:8000 \
@@ -162,7 +168,7 @@ Resume an interrupted case with:
 
 ```bash
 open-neo run \
-  --result-dir /mnt/zzbnew/Public/neoag_results/CASE001 \
+  --result-dir <your output dir> \
   --mode resume \
   --approved \
   --gateway-url http://127.0.0.1:8000 \
@@ -175,38 +181,46 @@ After Skill2 finishes ranking, run Skill3 read-only on the result directory:
 
 ```bash
 open-neo review \
-  --result-dir /mnt/zzbnew/Public/neoag_results/CASE001 \
+  --result-dir <your output dir> \
   --reports patient,technical,onepage \
-  --outdir /mnt/zzbnew/Public/neoag_results/CASE001/review
+  --outdir <your output dir>/review
 ```
 
 Skill3 does not rerun heavy tools. It checks result integrity, compares weighted and evidence-consensus rankings, emits event-level experiment-priority tables, and writes bounded patient/technical reports. Missing or single-tool evidence is reported as partial evidence, never as a negative biological result.
 
-## Output Files By Function
+### Test Data
+
+| case | data type | location |
+| --- | --- | --- |
+| breast cancer cell | wgs bam	| <your install asset dir>/neoag-data/for_opensource/0821newdata/0821/WGS_EA_T_1.bwa.dedup.bam |
+| EBV, B lymphoblast | wgs bam | <your install asset dir>/neoag-data/for_opensource/0821newdata/0821/WGS_EA_N_1.bwa.dedup.bam |
+| tumor + peripheral blood | wgs svcf | <your install asset dir>/neoag-data/for_opensource/0821newdata/体细胞分析结果/opensource/results_WGS_EA_T_1-somatic/WGS_EA_T_1-somatic.somatic.pass.vcf.gz |
+
+### Prediction Output
 
 The exact directory set depends on available inputs and enabled tools. The generated run/output manifests and provenance files are the authoritative inventory. Common production outputs are grouped below.
 
-### Input QC, Planning, And Audit
+**Input QC, Planning, And Audit**
 
 - `input_qc/`: input inventory, missing/ambiguous input checks, and the selected route plan.
 - `manifests/`: effective sample, tool, reference, capability, and production manifests used for the run.
 - `production_stage_status.tsv` and `provenance.json`: stage status, reused/generated evidence, commands, source files, versions, and audit links.
 
-### HLA, Purity/CNV, And Immune Escape
+**HLA, Purity/CNV, And Immune Escape**
 
 - `hla/consensus/`: normalized HLA typing results and cross-tool HLA consensus.
 - `purity/consensus/`: per-tool purity/ploidy summaries, recommended purity, CNV segments, and consensus confidence.
 - `hla_loh/`: LOHHLA and SpecHLA allele-level outputs plus HLA-LOH consensus; failed or single-tool evidence remains explicit.
 - `appm/` and `immune_escape/`: antigen-processing/presentation machinery evidence and peptide-level immune-escape flags.
 
-### Events, RNA Evidence, And Candidate Peptides
+**Events, RNA Evidence, And Candidate Peptides**
 
 - `branches/snv/`, `branches/fusion/`, `branches/splice/`, and `branches/sv/`: source-specific raw events, raw peptides, normalized caller evidence, and branch consensus outputs.
 - `rna/expression/`: gene- and transcript-level expression tables from supported quantification tools.
 - `rna/rna_alt_vaf.tsv` and junction evidence: RNA depth, ALT reads, RNA VAF, exact-junction support, and source-to-event linkage where the required RNA evidence is available.
 - `merged/raw_events.tsv` and `merged/raw_peptides.tsv`: the unified event and peptide inputs used by downstream evidence and ranking stages.
 
-### Presentation, Safety, Ranking, And Reports
+**Presentation, Safety, Ranking, And Reports**
 
 - `presentation/` or predictor-specific evidence tables: NetMHCpan, MHCflurry, NetMHCstabpan, NetChop, and configured supplementary predictor results, followed by presentation consensus.
 - `safety/`: normal-proteome, normal-expression, ligandome, matched-normal, and normal-junction background assessments.
