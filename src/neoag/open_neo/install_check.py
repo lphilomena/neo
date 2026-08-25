@@ -29,6 +29,7 @@ from neoag.controlled_execution.io_utils import (
 from .contracts import MacroResult, MacroStep
 from .auto_config import configure_machine
 from .errors import FailureCode
+from .public_assets import PublicAssetSyncError, sync_public_assets
 from .state import RunLayout, audit, new_run_id, safe_identifier, update_case_state
 
 
@@ -1698,6 +1699,18 @@ def run_install_check(args: dict[str, Any]) -> dict[str, Any]:
     if tier not in TIER_REQUIRED_TOOLS:
         tier = "core"
     layout = RunLayout.create(args.get("outdir") or f"work/open-neo-install-check/{case_id}")
+    deploy_root = Path(str(args.get("deploy_root") or "/opt/neoag")).expanduser().resolve()
+    use_public_assets = bool(args.get("sync_public_assets", True)) and not (
+        args.get("asset_source_host") or args.get("asset_source_root") or args.get("no_sync_assets")
+    )
+    public_asset_root = Path(str(
+        args.get("public_asset_root") or args.get("reference_root") or deploy_root / "refs"
+    )).expanduser().resolve()
+    public_asset_cache = Path(str(
+        args.get("public_asset_cache") or public_asset_root.parent / "cache" / "open-neo-public-assets"
+    )).expanduser().resolve()
+    if use_public_assets:
+        args["reference_root"] = str(public_asset_root)
     result = MacroResult(
         "open-neo-install-check", case_id, new_run_id(case_id, "install"), mode,
         approval_required=mode in EXECUTION_MODES, approved=bool(args.get("approved", False)),
@@ -1768,6 +1781,27 @@ def run_install_check(args: dict[str, Any]) -> dict[str, Any]:
     if templates.get("asset_manifest_local"):
         args["asset_manifest"] = templates["asset_manifest_local"]
 
+    public_sync_plan: dict[str, Any] | None = None
+    if use_public_assets:
+        public_sync_plan = sync_public_assets(
+            public_asset_root,
+            cache_dir=public_asset_cache,
+            repo_id=str(args.get("public_asset_repo") or "open-neo/open-neo-public-assets"),
+            revision=str(args.get("public_asset_revision") or "main"),
+            execute=False,
+        )
+        result.outputs["public_asset_marker"] = str(public_sync_plan["marker"])
+        result.steps.append(MacroStep(
+            "03c", "public-fixed-assets",
+            str(public_sync_plan["status"]),
+            "Public assets are restored from Hugging Face; licensed assets remain external.",
+            outputs={
+                "asset_root": str(public_asset_root),
+                "cache_dir": str(public_asset_cache),
+                "marker": str(public_sync_plan["marker"]),
+            },
+        ))
+
     deploy_root = Path(str(args.get("deploy_root") or "/opt/neoag"))
     auto_before = configure_machine(
         project_root=project_root,
@@ -1800,6 +1834,42 @@ def run_install_check(args: dict[str, Any]) -> dict[str, Any]:
         ))
         result.finish("APPROVAL_REQUIRED").write(layout.skill_result)
         return result.to_dict()
+
+    if mode in EXECUTION_MODES and use_public_assets:
+        if public_sync_plan and public_sync_plan["status"] != "REUSED" and not bool(args.get("allow_download", False)):
+            result.blocking_issues.append(FailureCode.APPROVAL_REQUIRED.value)
+            result.steps.append(MacroStep(
+                "04", "public-assets-download-approval", "APPROVAL_REQUIRED",
+                "Initial public fixed-asset synchronization requires --allow-download.",
+                failure_code=FailureCode.APPROVAL_REQUIRED.value,
+            ))
+            result.finish("APPROVAL_REQUIRED").write(layout.skill_result)
+            return result.to_dict()
+        try:
+            public_sync = sync_public_assets(
+                public_asset_root,
+                cache_dir=public_asset_cache,
+                repo_id=str(args.get("public_asset_repo") or "open-neo/open-neo-public-assets"),
+                revision=str(args.get("public_asset_revision") or "main"),
+                execute=True,
+            )
+        except PublicAssetSyncError as exc:
+            result.blocking_issues.append(FailureCode.ASSET_SOURCE_UNCONFIGURED.value)
+            result.steps.append(MacroStep(
+                "04", "public-fixed-assets", "FAILED", str(exc),
+                failure_code=FailureCode.ASSET_SOURCE_UNCONFIGURED.value,
+            ))
+            result.finish("BLOCKED").write(layout.skill_result)
+            return result.to_dict()
+        result.outputs["public_asset_marker"] = str(public_sync["marker"])
+        result.steps.append(MacroStep(
+            "04", "public-fixed-assets", "PASS",
+            f"repo={public_sync['repo_id']}@{public_sync['commit_sha']}; archive_parts={public_sync['archive_parts']}",
+            outputs={"marker": str(public_sync["marker"]), "asset_root": str(public_asset_root)},
+        ))
+        # Public assets are already restored directly into the final reference
+        # root. The installer must not copy the same tree onto itself.
+        args["no_sync_assets"] = True
 
     if mode in EXECUTION_MODES and not bool(args.get("no_sync_assets", False)):
         if not args.get("asset_manifest"):

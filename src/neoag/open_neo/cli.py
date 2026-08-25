@@ -89,6 +89,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     install.add_argument("--asset-source-host")
     install.add_argument("--asset-source-root")
+    install.add_argument(
+        "--sync-public-assets", action=argparse.BooleanOptionalAction, default=True,
+        help="Use the public Hugging Face fixed-asset Dataset when no explicit asset source is supplied",
+    )
+    install.add_argument("--public-asset-repo", default="open-neo/open-neo-public-assets")
+    install.add_argument("--public-asset-revision", default="main")
+    install.add_argument("--public-asset-root")
+    install.add_argument("--public-asset-cache")
     install.add_argument("--asset-manifest")
     install.add_argument("--deployment-reference-manifest")
     install.add_argument(
@@ -176,6 +184,14 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--rna-threads", type=int, default=16)
     run.add_argument("--case-root")
     run.add_argument("--asset-root")
+    run.add_argument(
+        "--sync-public-assets", action=argparse.BooleanOptionalAction, default=True,
+        help="Synchronize missing redistributable fixed assets from Hugging Face before execution",
+    )
+    run.add_argument("--public-asset-repo", default="open-neo/open-neo-public-assets")
+    run.add_argument("--public-asset-revision", default="main")
+    run.add_argument("--public-asset-root")
+    run.add_argument("--public-asset-cache")
     run.add_argument("--predictor-deps", "--pred-deps", dest="predictor_deps")
     run.add_argument("--netmhcpan-home")
     run.add_argument("--netmhcstabpan-home")

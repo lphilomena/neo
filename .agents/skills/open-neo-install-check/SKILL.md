@@ -64,19 +64,33 @@ an unavailable `--retry-all-errors` capability is not a machine-configuration
 failure. The immunogenicity source downloader can additionally fall back to
 `wget`.
 
-For asset synchronization, approved `install`, `repair`, and `resume` runs must
-use an explicit asset source. Set `--asset-source-root /mounted/assets` for a
-local/mounted asset tree, or set both `--asset-source-host user@host` and
-`--asset-source-root /path/on/source/host` for remote rsync. The repository
-manifest uses the portable placeholder `/srv/neoag-assets/source`; Skill1 rewrites
-that placeholder only after an explicit source root is supplied. It no longer
-defaults to a lab-specific host or username. Approved execution records source
-reachability and stops before installation when a required asset source cannot
-be read. Optional assets are reported as missing/failed optional assets and do
-not masquerade as installed references. Use `--asset-ssh-key ~/.ssh/id_ed25519`
-or `OPEN_NEO_ASSET_SSH_KEY` when the asset host requires a specific key. The key
-is passed only to the rsync asset sync step and is recorded in `manifests/paths.env`
-without copying the key.
+For public fixed-asset synchronization, Skill1 defaults to the public Hugging
+Face Dataset `open-neo/open-neo-public-assets` when no explicit site asset source
+is supplied. Approved `install`, `repair`, and `resume` runs with
+`--allow-download` download the split archive with retry/resume support, verify
+every published SHA-256, stream-extract it under the selected reference root,
+and synchronize the separately published RSEM and SpliceMutr BSgenome additions.
+A repository-commit marker makes resume idempotent; complete files and an already
+verified extraction are skipped. Override the mirror with
+`--public-asset-repo`, revision with `--public-asset-revision`, locations with
+`--public-asset-root`/`--public-asset-cache`, or disable this fallback with
+`--no-sync-public-assets`.
+
+An explicit site source still takes precedence. Set `--asset-source-root
+/mounted/assets` for a local/mounted tree, or set both `--asset-source-host
+user@host` and `--asset-source-root /path/on/source/host` for remote rsync. The
+repository manifest uses the portable placeholder `/srv/neoag-assets/source`;
+Skill1 rewrites it only after an explicit source root is supplied. No workflow
+may default to a lab-specific host or username. Use `--asset-ssh-key
+~/.ssh/id_ed25519` or `OPEN_NEO_ASSET_SSH_KEY` when the selected site source
+requires a key.
+
+The public Dataset intentionally excludes `hla`, `lohhla`, `predictors`,
+`presentation`, `tools`, licensed containers, NetMHCpan, NetMHCstabpan,
+NetChop, POLYSOLVER and novoalign material. Skill1 never substitutes public
+downloads for these assets; the operator must stage authorized copies under
+`--licensed-root`, and readiness remains blocked when a hard licensed
+requirement is absent.
 
 Licensed presentation assets should be staged under the selected licensed root
 or the selected asset source before installation. For NetChop this means both
@@ -92,6 +106,21 @@ open-neo install-check \
   --project-root . \
   --mode verify \
   --conda-base /nas/path/to/miniforge3 \
+  --outdir work/install-check
+```
+
+For a new machine using the public fixed-asset mirror:
+
+```bash
+open-neo install-check \
+  --project-root . \
+  --mode install \
+  --deployment-tier full \
+  --approved \
+  --allow-download \
+  --public-asset-root /srv/open-neo/refs \
+  --public-asset-cache /srv/open-neo/download-cache \
+  --licensed-root /srv/open-neo/licensed_tools \
   --outdir work/install-check
 ```
 

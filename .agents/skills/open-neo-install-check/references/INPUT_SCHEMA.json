@@ -93,6 +93,22 @@
       "type": "string",
       "description": "Asset source root corresponding to /srv/neoag-assets/source in the portable manifest; provide explicitly for approved asset sync."
     },
+    "sync_public_assets": {
+      "type": "boolean",
+      "description": "Use the public Hugging Face Dataset when an explicit site asset source is not supplied."
+    },
+    "public_asset_repo": {
+      "type": "string"
+    },
+    "public_asset_revision": {
+      "type": "string"
+    },
+    "public_asset_root": {
+      "type": "string"
+    },
+    "public_asset_cache": {
+      "type": "string"
+    },
     "asset_manifest": {
       "type": "string"
     },

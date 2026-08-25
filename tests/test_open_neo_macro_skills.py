@@ -32,6 +32,7 @@ from neoag.open_neo.cli import build_parser
 from neoag.open_neo.review import _event_kind, _merge_review_context, build_review_rows, run_review, select_first_batch
 from neoag.open_neo.routing import inspect_manifest
 from neoag.open_neo.run import run_open_neo
+from neoag.open_neo.public_assets import _extract_split_archive, sync_public_assets
 from neoag.controlled_execution.pipeline_runner import _manifest_file_hashes
 from neoag.open_neo.state import RunLayout, load_run_state, resume_step_decision
 from neoag.open_neo.rna_preprocessing import prepare_rna_evidence
@@ -63,6 +64,48 @@ def test_run_input_contract_and_public_schema_accept_rna_fastq():
     invalid = dict(request, rna_threads=0, tumor_rna_fastq=[1])
     assert "BELOW_MINIMUM:rna_threads:1" in validate_json_schema(invalid, schema)
     assert "INVALID_ITEM_TYPE:tumor_rna_fastq" in validate_json_schema(invalid, schema)
+
+
+def test_public_asset_cli_defaults_and_opt_out():
+    install = build_parser().parse_args([
+        "install-check", "--outdir", "work/install", "--no-sync-public-assets",
+    ])
+    run = build_parser().parse_args([
+        "run", "--outdir", "work/run", "--input-dir", "inputs",
+        "--public-asset-root", "/srv/open-neo/refs",
+    ])
+    assert install.sync_public_assets is False
+    assert run.sync_public_assets is True
+    assert run.public_asset_repo == "open-neo/open-neo-public-assets"
+    assert run.public_asset_root == "/srv/open-neo/refs"
+
+
+def test_public_asset_plan_is_offline_and_detects_marker(tmp_path: Path):
+    root = tmp_path / "refs"
+    planned = sync_public_assets(root, cache_dir=tmp_path / "cache", execute=False)
+    assert planned["status"] == "PLANNED"
+    for relative in ("data/ref", "data/normal", "data/easyfuse"):
+        (root / relative).mkdir(parents=True, exist_ok=True)
+    (root / ".open_neo_public_assets.json").write_text("{}\n", encoding="utf-8")
+    reused = sync_public_assets(root, cache_dir=tmp_path / "cache", execute=False)
+    assert reused["status"] == "REUSED"
+
+
+def test_public_asset_split_archive_extracts_safely(tmp_path: Path):
+    payload = io.BytesIO()
+    with tarfile.open(fileobj=payload, mode="w:gz") as archive:
+        info = tarfile.TarInfo("ref/example.txt")
+        content = b"open-neo\n"
+        info.size = len(content)
+        archive.addfile(info, io.BytesIO(content))
+    raw = payload.getvalue()
+    split = len(raw) // 2
+    parts = [tmp_path / "part-000", tmp_path / "part-001"]
+    parts[0].write_bytes(raw[:split])
+    parts[1].write_bytes(raw[split:])
+    destination = tmp_path / "data"
+    _extract_split_archive(parts, destination)
+    assert (destination / "ref/example.txt").read_text(encoding="utf-8") == "open-neo\n"
 
 
 def test_run_state_requires_matching_output_signature_for_reuse(tmp_path: Path):

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import platform
 from dataclasses import asdict
 from pathlib import Path
@@ -16,6 +17,7 @@ from neoag.utils import read_tsv as read_rows
 
 from .contracts import MacroResult, MacroStep
 from .errors import FailureCode
+from .public_assets import PublicAssetSyncError, sync_public_assets
 from .execution_adapters import (
     discover_result_artifacts,
     ensure_parallel_ranking,
@@ -434,6 +436,47 @@ def run_open_neo(args: dict[str, Any]) -> dict[str, Any]:
         return result.to_dict()
 
     execute = mode in {"execute", "resume"}
+    if bool(args.get("sync_public_assets", True)) and mode != "ranking-only":
+        public_asset_root = Path(str(
+            args.get("public_asset_root")
+            or args.get("asset_root")
+            or os.environ.get("OPEN_NEO_PUBLIC_ASSET_ROOT")
+            or os.environ.get("OPEN_NEO_REFERENCE_ROOT")
+            or "/opt/neoag/refs"
+        )).expanduser().resolve()
+        public_asset_cache = Path(str(
+            args.get("public_asset_cache")
+            or os.environ.get("OPEN_NEO_PUBLIC_ASSET_CACHE")
+            or public_asset_root.parent / "cache" / "open-neo-public-assets"
+        )).expanduser().resolve()
+        try:
+            public_sync = sync_public_assets(
+                public_asset_root,
+                cache_dir=public_asset_cache,
+                repo_id=str(args.get("public_asset_repo") or "open-neo/open-neo-public-assets"),
+                revision=str(args.get("public_asset_revision") or "main"),
+                execute=execute,
+            )
+        except PublicAssetSyncError as exc:
+            result.steps.append(MacroStep(
+                "02p", "public-fixed-assets", "FAILED", str(exc),
+                failure_code=FailureCode.ASSET_SOURCE_UNCONFIGURED.value,
+            ))
+            result.blocking_issues.append(FailureCode.ASSET_SOURCE_UNCONFIGURED.value)
+            result.finish("BLOCKED").write(layout.skill_result)
+            return result.to_dict()
+        args["asset_root"] = str(public_asset_root)
+        routing.inputs["asset_root"] = str(public_asset_root)
+        result.outputs["public_asset_marker"] = str(public_sync["marker"])
+        result.steps.append(MacroStep(
+            "02p", "public-fixed-assets", str(public_sync["status"]),
+            "Redistributable references come from the public Dataset; licensed assets remain machine-local.",
+            outputs={
+                "asset_root": str(public_asset_root),
+                "cache_dir": str(public_asset_cache),
+                "marker": str(public_sync["marker"]),
+            },
+        ))
     if mode == "resume" and not (
         routing.inputs.get("production_manifest")
         or routing.inputs.get("result_dir")

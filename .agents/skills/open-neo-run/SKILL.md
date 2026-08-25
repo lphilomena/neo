@@ -82,6 +82,24 @@ DAG for new heavy DNA/RNA tool execution.
 - `resume`: reuse completed stages and rerun missing/failed stages; explicit approval is required.
 - `ranking-only`: reuse comprehensive evidence and the weighted baseline.
 
+## Fixed assets
+
+Skill2 defaults to `open-neo/open-neo-public-assets` for redistributable fixed
+assets. In `plan`/`dry-run` it only records whether the local Dataset marker is
+ready. In an approved `execute`/`resume` (inside the Gateway for raw heavy runs)
+it resumes missing downloads, verifies archive checksums, extracts only when the
+published archive identity changed, and then reuses the local tree. Select the
+deployment location with `--public-asset-root` or
+`OPEN_NEO_PUBLIC_ASSET_ROOT`; `--asset-root` and
+`OPEN_NEO_REFERENCE_ROOT` are accepted as existing deployment locations. Use
+`--public-asset-cache` for the resumable archive cache and
+`--no-sync-public-assets` to require a pre-provisioned tree.
+
+The Dataset excludes licensed HLA/LOH/presentation/predictor assets. Skill2
+continues to resolve those from the machine-local licensed/tool configuration
+created by Skill1 and reports them missing instead of attempting public
+download.
+
 ## Procedure
 
 1. Detect inputs in deterministic order: manifest declarations, explicit CLI fill-ins, directory scanning, then extension/header inference. Validate non-empty files, HLA syntax, VCF samples/build, BAM indexes, capture BED and output writability.
