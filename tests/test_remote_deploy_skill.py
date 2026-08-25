@@ -106,6 +106,39 @@ def test_production_asset_manifest_keeps_pinned_reference_assets() -> None:
     assert by_name["prime_source"]["marker"] == "lib/run_PRIME.pl"
     assert by_name["mixmhcpred_source"]["marker"] == "MixMHCpred"
     assert by_name["bigmhc_source"]["marker"] == "src/predict.py"
+    assert by_name["polysolver_distribution"]["marker"] == "scripts/shell_call_hla_type"
+    assert by_name["rsem_reference"]["marker"] == "gencode_v49/gencode_v49_gene_first.grp"
+    assert by_name["splicemutr_bsgenome_hg38"]["marker"] == "DESCRIPTION"
+
+
+def test_asset_sync_accepts_nested_directory_marker(tmp_path: Path) -> None:
+    source = tmp_path / "source" / "polysolver"
+    marker = source / "scripts" / "shell_call_hla_type"
+    marker.parent.mkdir(parents=True)
+    marker.write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+    manifest = tmp_path / "assets.tsv"
+    manifest.write_text(
+        "asset_name\tsource_path\ttarget_path\tkind\trequired\tsha256\tmarker\n"
+        f"polysolver\t{source}\t/srv/neoag-licensed/polysolver\tdir\t1\t-\t"
+        "scripts/shell_call_hla_type\n",
+        encoding="utf-8",
+    )
+    licensed = tmp_path / "licensed"
+    proc = _run(
+        "bash", SCRIPTS / "15_sync_asset_manifest.sh",
+        "--project-root", ROOT,
+        "--asset-manifest", manifest,
+        "--reference-root", tmp_path / "refs",
+        "--tools-root", tmp_path / "tools",
+        "--licensed-root", licensed,
+        "--outdir", tmp_path / "out",
+        "--execute",
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert (licensed / "polysolver" / "scripts" / "shell_call_hla_type").is_file()
+    report = (tmp_path / "out" / "asset_sync_report.tsv").read_text(encoding="utf-8")
+    assert "polysolver\tdir\t1" in report
+    assert "\tsynced\tcopy and verification completed" in report
 
 
 def test_shared_asset_mode_creates_links_without_replacing_targets(tmp_path: Path) -> None:

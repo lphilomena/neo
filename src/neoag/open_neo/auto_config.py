@@ -158,7 +158,9 @@ REFERENCE_CANDIDATES = {
     "salmon_index": ("data/rna/salmon_index", "data/rna/gencode_v49/salmon_index"),
     "salmon_tx2gene": ("data/rna/tx2gene.tsv", "data/rna/gencode_v49/tx2gene.tsv"),
     "tx2gene": ("data/rna/tx2gene.tsv", "data/rna/gencode_v49/tx2gene.tsv"),
-    "rsem_reference": ("data/rna/rsem_reference",),
+    "rsem_reference": (
+        "data/rna/rsem_reference/gencode_v49/gencode_v49_gene_first",
+    ),
     "bigmhc_models": ("data/predictors/bigmhc/models",),
     "lohhla_reference": ("data/lohhla/polysolver", "data/tools/lohhla"),
     "iedb_human_ms_ligands_detail": ("data/normal/iedb_mhc_ligand/2026-07-14/build/iedb_human_ms_ligands_detail.tsv",),

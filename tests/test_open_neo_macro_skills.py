@@ -311,6 +311,8 @@ def test_install_check_writes_comprehensive_local_manifests(tmp_path: Path):
     assert "/data/hla/spechla/db" in refs
     assert "marker: versionInfo.json" in refs
     assert "salmon_tx2gene:" in refs
+    assert "/data/rna/rsem_reference/gencode_v49/gencode_v49_gene_first" in refs
+    assert "marker: .grp" in refs
     assert "G1000_loci_hg38.txt" not in refs
     assert "G1000_alleles_hg38.txt" not in refs
     assert "snaf.workflow.yaml" not in refs
@@ -541,7 +543,7 @@ def test_deployment_profile_defaults_follow_requested_tier(tmp_path: Path):
     explicit = _deployment_command(
         {"deployment_tier": "full", "installer_profile": "all-open"}, project, layout, execute=False,
     )
-    assert "--standard" in full
+    assert "--all-open" in full
     assert "--minimal" in core
     assert "--all-open" in explicit
 

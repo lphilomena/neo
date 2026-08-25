@@ -156,10 +156,10 @@ references:
     required: false
 
   rsem_reference:
-    path: ${OPEN_NEO_REFERENCE_ROOT}/data/rna/rsem_reference
-    source: RSEM reference prefix directory
-    version: GRCh38_matching_project_gtf
-    marker: grp
+    path: ${OPEN_NEO_REFERENCE_ROOT}/data/rna/rsem_reference/gencode_v49/gencode_v49_gene_first
+    source: GENCODE v49 GRCh38 RSEM reference prefix
+    version: GENCODE_v49_GRCh38
+    marker: .grp
     required: false
 
   star_index:
