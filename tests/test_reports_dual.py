@@ -1511,3 +1511,11 @@ def test_release_metadata_reads_parallel_ranking_rules_version():
     meta = _patient_release_metadata(bundle)
     assert meta["rules_version"] == "2.1"
     assert meta["run_id"].startswith("S1-")
+
+
+def test_patient_assessed_accepts_a_valid_metric_after_unassessed_status():
+    from neoag.reports_dual import _patient_assessed
+
+    row = {"processing_status": "UNASSESSED", "processing_score": "0.82"}
+    assert _patient_assessed(row, "processing_status", "processing_score")
+    assert not _patient_assessed(row, "processing_status", "missing_score")

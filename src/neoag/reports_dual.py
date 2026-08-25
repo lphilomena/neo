@@ -2136,8 +2136,13 @@ def _patient_value(row: Mapping[str, Any], *fields: str, default: str = "UNASSES
 
 
 def _patient_assessed(row: Mapping[str, Any], *fields: str) -> bool:
-    value = _patient_value(row, *fields, default="").upper()
-    return bool(value) and not any(token in value for token in ("UNASSESSED", "NOT_AVAILABLE", "NOT_RUN"))
+    unavailable = ("UNASSESSED", "NOT_AVAILABLE", "NOT_RUN")
+    for field_name in fields:
+        value = str(row.get(field_name) or "").strip().upper()
+        if not value or any(token in value for token in unavailable):
+            continue
+        return True
+    return False
 
 
 def _patient_metric(label: str, row: Mapping[str, Any], *fields: str) -> str:
