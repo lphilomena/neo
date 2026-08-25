@@ -1253,6 +1253,21 @@ def test_patient_ccf_audit_separates_reliable_low_confidence_and_unresolved():
     assert "不作为正向加分或阴性结论" in ccf_row["判定口径"]
 
 
+def test_patient_evidence_audit_counts_later_tool_field_after_unassessed_placeholder():
+    rows = [{
+        "event_type": "Splice",
+        "netmhcstabpan_rank": "UNASSESSED",
+        "netchop_processing_status": "ASSESSED",
+        "mutant_specificity_status": "UNASSESSED",
+        "mutant_specificity_state": "NOVEL_SEQUENCE",
+    }]
+    audit = {row["证据维度"]: row for row in _patient_evidence_audit_rows(rows)}
+    assert audit["加工/稳定性"]["可作为当前分层证据"].startswith("1（")
+    assert "NetChop 1" in audit["加工/稳定性"]["判定口径"]
+    assert audit["MT/WT特异性"]["可作为当前分层证据"] == "1（传统MT/WT 0；异常连接新序列 1）"
+    assert "正常连接或正常异构体肽对照" in audit["MT/WT特异性"]["判定口径"]
+
+
 def test_patient_report_lists_input_files_and_purity_consensus(tmp_path):
     base = _bundle()
     provenance = {

@@ -2540,7 +2540,7 @@ def _patient_evidence_audit_rows(rows: list[dict[str, str]], bundle: ReportBundl
         ("事件真实性", ("event_authenticity_state", "cross_platform_status")),
         ("RNA直接证据", ("rna_support_state", "rna_support_status")),
         ("核心呈递共识", ("presentation_consensus_state", "presentation_evidence_grade")),
-        ("加工/稳定性", ("mhcflurry_processing_score", "netmhcstabpan_rank", "netchop_31d_cterm_score", "netchop_31d_max_score", "tap_processing_status")),
+        ("加工/稳定性", ("mhcflurry_processing_score", "netmhcstabpan_rank", "netmhcstabpan_score", "netchop_31d_cterm_score", "netchop_31d_max_score", "netchop_processing_status", "tap_processing_status")),
         ("MT/WT特异性", ("mutant_specificity_status", "mutant_specificity_state")),
         ("安全性", ("safety_state", "safety_status")),
         ("免疫原性", ("immunogenicity_composite_score", "immunogenicity_score", "bigmhc_im_score")),
@@ -2549,12 +2549,75 @@ def _patient_evidence_audit_rows(rows: list[dict[str, str]], bundle: ReportBundl
     total = len(rows)
     result = []
     for label, fields in dimensions:
-        assessed = sum(1 for row in rows if _patient_assessed(row, *fields))
+        # A leading UNASSESSED placeholder must not hide a usable result in a
+        # later tool/state field. Audit each source independently.
+        assessed = sum(
+            1 for row in rows
+            if any(_patient_assessed(row, field) for field in fields)
+        )
+        available = str(assessed)
+        unavailable = str(total - assessed)
+        criterion = f"Top {total}；缺失或未评估不按阴性处理"
+        if label == "加工/稳定性":
+            tool_counts = {
+                "MHCflurry processing": sum(
+                    1 for row in rows if _patient_assessed(row, "mhcflurry_processing_score")
+                ),
+                "NetMHCstabpan": sum(
+                    1 for row in rows
+                    if any(_patient_assessed(row, field) for field in ("netmhcstabpan_rank", "netmhcstabpan_score"))
+                ),
+                "NetChop": sum(
+                    1 for row in rows
+                    if any(_patient_assessed(row, field) for field in ("netchop_31d_cterm_score", "netchop_31d_max_score", "netchop_processing_status"))
+                ),
+                "独立TAP": sum(
+                    1 for row in rows if _patient_assessed(row, "tap_processing_status")
+                ),
+            }
+            available = f"{assessed}（至少一项候选级结果）"
+            unavailable = f"{total - assessed}（尚无候选级加工/稳定性值）"
+            criterion = (
+                f"Top {total}；" + "、".join(f"{name} {count}" for name, count in tool_counts.items())
+                + "；样本级APPM另行展示，不能替代候选级加工/稳定性结果"
+            )
+        elif label == "MT/WT特异性":
+            novel_sequence = sum(
+                1 for row in rows
+                if _patient_observed_source(row, "mutant_specificity_state", "mutant_specificity_status") == "NOVEL_SEQUENCE"
+            )
+            traditional = sum(
+                1 for row in rows
+                if _patient_track(row) in {"SNV", "InDel"}
+                and any(
+                    _patient_assessed(row, field)
+                    for field in ("mutant_specificity_status", "mutant_specificity_state")
+                )
+            )
+            usable = len({
+                index for index, row in enumerate(rows)
+                if (
+                    _patient_observed_source(row, "mutant_specificity_state", "mutant_specificity_status") == "NOVEL_SEQUENCE"
+                    or (
+                        _patient_track(row) in {"SNV", "InDel"}
+                        and any(
+                            _patient_assessed(row, field)
+                            for field in ("mutant_specificity_status", "mutant_specificity_state")
+                        )
+                    )
+                )
+            })
+            available = f"{usable}（传统MT/WT {traditional}；异常连接新序列 {novel_sequence}）"
+            unavailable = f"{total - usable}（尚未形成适用的特异性证据）"
+            criterion = (
+                f"Top {total}；SNV/InDel使用传统MT/WT比较；Fusion/Splice的NOVEL_SEQUENCE作为异常连接新序列证据，"
+                "但仍需正常连接或正常异构体肽对照"
+            )
         result.append({
             "证据维度": label,
-            "可作为当前分层证据": str(assessed),
-            "尚不能作为可靠证据": str(total - assessed),
-            "判定口径": f"Top {total}；缺失或未评估不按阴性处理",
+            "可作为当前分层证据": available,
+            "尚不能作为可靠证据": unavailable,
+            "判定口径": criterion,
         })
     hla_assessed = total if _patient_candidate_hla_status(bundle) != "未评估" else 0
     appm_assessed = total if _patient_candidate_appm_status(bundle) != "未评估" else 0
