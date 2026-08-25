@@ -201,3 +201,45 @@ def test_cross_site_fields_are_preserved(tmp_path):
     row = read_tsv(output)[0]
     assert row["cross_site_status"] == "EXACT_SHARED"
     assert row["secondary_sample_id"] == "ASCITES"
+
+
+def test_presentation_evidence_exact_pair_fallback_recovers_renamed_peptide_id(tmp_path):
+    ranked = tmp_path / "ranked.tsv"
+    presentation = tmp_path / "presentation.tsv"
+    output = tmp_path / "comprehensive.tsv"
+    write_tsv(ranked, [{
+        "peptide_id": "PEP|NEW", "event_id": "SEV|NEW", "event_type": "Splice",
+        "peptide": "AAAAAAAAA", "hla_allele": "HLA-A*02:01",
+    }])
+    write_tsv(presentation, [{
+        "peptide_id": "SPLICE_OLD", "peptide": "AAAAAAAAA", "hla_allele": "A0201",
+        "netmhcpan_el_rank": "0.4", "prime_score": "0.7", "netchop_31d_cterm_score": "0.8",
+    }])
+    build_comprehensive_peptide_evidence(
+        output_tsv=output, ranked_peptides=ranked, presentation_evidence=presentation,
+    )
+    row = read_tsv(output)[0]
+    assert row["netmhcpan_el_rank"] == "0.4"
+    assert row["prime_score"] == "0.7"
+    assert row["netchop_31d_cterm_score"] == "0.8"
+    assert row["presentation_evidence_match_method"] == "EXACT_PEPTIDE_HLA"
+    manifest = json.loads((tmp_path / "comprehensive_evidence_manifest.json").read_text())
+    assert manifest["exact_match_policy"]["counts"]["peptide_hla"] == 1
+
+
+def test_exact_pair_fallback_rejects_conflicting_predictor_values(tmp_path):
+    ranked = tmp_path / "ranked.tsv"
+    presentation = tmp_path / "presentation.tsv"
+    output = tmp_path / "comprehensive.tsv"
+    write_tsv(ranked, [{
+        "peptide_id": "NEW", "event_id": "E1", "peptide": "AAAAAAAAA",
+        "hla_allele": "HLA-A*02:01",
+    }])
+    write_tsv(presentation, [
+        {"peptide_id": "OLD1", "peptide": "AAAAAAAAA", "hla_allele": "HLA-A*02:01", "prime_score": "0.1"},
+        {"peptide_id": "OLD2", "peptide": "AAAAAAAAA", "hla_allele": "HLA-A*02:01", "prime_score": "0.9"},
+    ])
+    build_comprehensive_peptide_evidence(
+        output_tsv=output, ranked_peptides=ranked, presentation_evidence=presentation,
+    )
+    assert read_tsv(output)[0].get("prime_score", "") == ""

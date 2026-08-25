@@ -3,9 +3,19 @@ from pathlib import Path
 from .utils import read_tsv, write_tsv, to_float, norm_rank, clamp, safe_id
 from .schemas import PRESENTATION_FIELDS
 from .evidence_provenance import ProvenanceRecord, ProvenanceRegistry, provenance_derived, attach_provenance
+from .adapters.peptide_input import normalize_hla_allele
 
 def by_key(rows):
-    return {r.get("peptide_hla_key") or safe_id(f"{r.get('peptide','')}_{r.get('hla_allele','')}"): r for r in rows}
+    result = {}
+    for row in rows:
+        peptide = str(row.get("peptide") or "").strip().upper()
+        hla = normalize_hla_allele(str(row.get("hla_allele") or ""))
+        # A caller-local peptide_hla_key may refer to an older peptide ID.
+        # Exact sequence + normalized HLA is the canonical biological key.
+        key = safe_id(f"{peptide}_{hla}") if peptide and hla else str(row.get("peptide_hla_key") or "")
+        if key:
+            result[key] = row
+    return result
 
 def grade(binding, presentation, complete):
     if complete <= 0:
@@ -43,9 +53,10 @@ def build_presentation_evidence(
     w_chop = float(w.get("netchop_processing", 0.10))
     rows = []
     for p in peptides:
-        key = safe_id(f"{p.get('peptide','')}_{p.get('hla_allele','')}")
+        hla = normalize_hla_allele(str(p.get("hla_allele") or ""))
+        key = safe_id(f"{str(p.get('peptide','')).strip().upper()}_{hla}")
         wt_peptide = p.get("wildtype_peptide", "")
-        wt_key = safe_id(f"{wt_peptide}_{p.get('hla_allele','')}") if wt_peptide else ""
+        wt_key = safe_id(f"{str(wt_peptide).strip().upper()}_{hla}") if wt_peptide else ""
         n = net.get(key, {})
         m = mhc.get(key, {})
         wt_n = net.get(wt_key, {}) if wt_key else {}

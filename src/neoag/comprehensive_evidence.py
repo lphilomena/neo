@@ -8,11 +8,17 @@ import math
 from pathlib import Path
 from typing import Any
 
+from .adapters.peptide_input import normalize_hla_allele, normalize_peptide
 from .utils import read_tsv, write_tsv
 
 
 EVIDENCE_SOURCE_PRECEDENCE_VERSION = "1.0"
-COMPREHENSIVE_EVIDENCE_SCHEMA_VERSION = "1.1"
+COMPREHENSIVE_EVIDENCE_SCHEMA_VERSION = "1.2"
+
+NETCHOP_FIELDS = {
+    "netchop_31d_max_score", "netchop_31d_mean_score", "netchop_31d_cterm_score",
+    "netchop_31d_cleavage_sites", "netchop_processing_status",
+}
 
 IDENTITY_FIELDS = {
     "peptide_id", "event_id", "sample_id", "peptide", "mutant_peptide",
@@ -197,6 +203,68 @@ def _index(rows: list[dict[str, str]], key: str) -> dict[str, dict[str, str]]:
     return result
 
 
+def _peptide_sequence(row: dict[str, str]) -> str:
+    return normalize_peptide(
+        str(row.get("peptide") or row.get("mutant_peptide") or ""),
+        require_standard_aa=False,
+    ) or ""
+
+
+def _peptide_hla_key(row: dict[str, str]) -> tuple[str, str] | None:
+    peptide = _peptide_sequence(row)
+    hla = normalize_hla_allele(str(row.get("hla_allele") or ""))
+    return (peptide, hla) if peptide and hla else None
+
+
+def _hydrate_presentation_identity(
+    rows: list[dict[str, str]],
+    identity_rows: Iterable[dict[str, str]],
+) -> list[dict[str, str]]:
+    """Attach exact peptide/HLA identity to legacy predictor rows when available."""
+    identity = _index(list(identity_rows), "peptide_id")
+    hydrated: list[dict[str, str]] = []
+    for original in rows:
+        row = dict(original)
+        source = identity.get(str(row.get("peptide_id") or ""), {})
+        for field in ("peptide", "mutant_peptide", "hla_allele"):
+            if not row.get(field) and source.get(field):
+                row[field] = source[field]
+        hydrated.append(row)
+    return hydrated
+
+
+def _strict_exact_index(
+    rows: list[dict[str, str]],
+    *,
+    key_fn: Any,
+    allowed_fields: set[str],
+) -> dict[Any, dict[str, str]]:
+    """Index exact biological keys, excluding keys with conflicting predictor values."""
+    grouped: dict[Any, list[dict[str, str]]] = {}
+    for row in rows:
+        key = key_fn(row)
+        if key:
+            grouped.setdefault(key, []).append(row)
+    result: dict[Any, dict[str, str]] = {}
+    for key, candidates in grouped.items():
+        merged: dict[str, str] = {}
+        ambiguous = False
+        for field in allowed_fields:
+            values: list[str] = []
+            for row in candidates:
+                value = str(row.get(field) or "").strip()
+                if value and not any(_equivalent(value, existing) for existing in values):
+                    values.append(value)
+            if len(values) > 1:
+                ambiguous = True
+                break
+            if values:
+                merged[field] = values[0]
+        if merged and not ambiguous:
+            result[key] = merged
+    return result
+
+
 def _event_index(rows: list[dict[str, str]]) -> dict[str, dict[str, str]]:
     result = _index(rows, "event_id")
     alias_candidates: dict[str, set[str]] = {}
@@ -333,12 +401,27 @@ def build_comprehensive_peptide_evidence(
         "validation_plan": validation_plan,
     }
     source_rows = {name: _read_optional(path) for name, path in source_paths.items()}
+    source_rows["presentation_evidence"] = _hydrate_presentation_identity(
+        source_rows["presentation_evidence"],
+        [*base_rows, *source_rows["raw_peptides"], *source_rows["ranked_peptides"]],
+    )
     peptide_indexes = {name: _index(source_rows[name], "peptide_id") for name in PEPTIDE_SOURCES}
     event_indexes = {name: _event_index(source_rows[name]) for name in EVENT_SOURCES}
+    presentation_pair_index = _strict_exact_index(
+        source_rows["presentation_evidence"],
+        key_fn=_peptide_hla_key,
+        allowed_fields=PRESENTATION_FIELDS - {"source_tool"},
+    )
+    netchop_sequence_index = _strict_exact_index(
+        source_rows["presentation_evidence"],
+        key_fn=_peptide_sequence,
+        allowed_fields=NETCHOP_FIELDS,
+    )
 
     output_rows: list[dict[str, str]] = []
     conflict_rows: list[dict[str, str]] = []
     source_counts: dict[str, int] = {name: 0 for name in (base_name, *source_paths)}
+    exact_match_counts = {"peptide_hla": 0, "peptide_sequence": 0}
     for base in base_rows:
         peptide_id = str(base.get("peptide_id") or "")
         event_id = str(base.get("event_id") or "")
@@ -353,6 +436,17 @@ def build_comprehensive_peptide_evidence(
             evidence = peptide_indexes[name].get(peptide_id)
             if evidence and name != base_name:
                 matches.append((name, evidence))
+        if not peptide_indexes["presentation_evidence"].get(peptide_id):
+            pair_evidence = presentation_pair_index.get(_peptide_hla_key(base))
+            sequence_evidence = netchop_sequence_index.get(_peptide_sequence(base))
+            exact_evidence = dict(pair_evidence or {})
+            for field, value in (sequence_evidence or {}).items():
+                exact_evidence.setdefault(field, value)
+            if exact_evidence:
+                match_method = "EXACT_PEPTIDE_HLA" if pair_evidence else "EXACT_PEPTIDE_SEQUENCE"
+                exact_evidence["presentation_evidence_match_method"] = match_method
+                exact_match_counts["peptide_hla" if pair_evidence else "peptide_sequence"] += 1
+                matches.append(("presentation_evidence", exact_evidence))
         for name in EVENT_SOURCES:
             evidence = next(
                 (event_indexes[name][key] for key in event_lookup_keys if key in event_indexes[name]),
@@ -480,6 +574,11 @@ def build_comprehensive_peptide_evidence(
         "generated_at": datetime.datetime.now(datetime.UTC).isoformat().replace("+00:00", "Z"),
         "record_type": "PEPTIDE_HLA_EVIDENCE",
         "source_precedence_version": EVIDENCE_SOURCE_PRECEDENCE_VERSION,
+        "exact_match_policy": {
+            "peptide_hla": "exact peptide sequence plus normalized HLA; conflicting predictor values are rejected",
+            "peptide_sequence": "exact peptide sequence; restricted to NetChop sequence-only fields",
+            "counts": exact_match_counts,
+        },
         "base_source": base_name,
         "inputs": manifest_sources,
         "output": {
@@ -506,5 +605,6 @@ def build_comprehensive_peptide_evidence(
         "precedence_version": EVIDENCE_SOURCE_PRECEDENCE_VERSION,
         "base_source": base_name,
         "source_counts": source_counts,
+        "exact_match_counts": exact_match_counts,
         "manifest": str(manifest_path),
     }

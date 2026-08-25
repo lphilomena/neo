@@ -10,10 +10,11 @@ from typing import Mapping
 from ..utils import read_tsv
 from ..evidence_provenance import ProvenanceRecord, provenance_from_file, without_provenance, write_evidence_tsv
 from ..schemas import PRIME_EVIDENCE_FIELDS
+from .peptide_input import normalize_hla_allele
 
 
 def _pair_key(peptide: str, hla: str) -> tuple[str, str]:
-    return peptide.strip().upper(), hla.strip()
+    return peptide.strip().upper(), normalize_hla_allele(hla)
 
 
 def prime_parallel_jobs(default: int = 4) -> int:

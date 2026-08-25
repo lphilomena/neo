@@ -2678,6 +2678,35 @@ _PATIENT_RESULT_TOOL_SPECS = {
     ),
 }
 
+_STANDARD_PEPTIDE_AA = frozenset("ACDEFGHIKLMNPQRSTVWY")
+
+
+def _patient_tool_applicable(row: Mapping[str, Any], tool_key: str) -> bool:
+    """Return whether a candidate is in a tool's documented peptide/HLA domain."""
+    peptide = str(row.get("peptide") or row.get("mutant_peptide") or "").strip().upper()
+    hla = str(row.get("hla_allele") or "").strip()
+    if not peptide or not hla or not set(peptide).issubset(_STANDARD_PEPTIDE_AA):
+        return False
+    if tool_key == "deepimmuno":
+        return len(peptide) in {9, 10}
+    if tool_key in _PATIENT_RESULT_TOOL_SPECS:
+        return 8 <= len(peptide) <= 11
+    return True
+
+
+def _patient_tool_coverage_status(
+    rows: list[dict[str, str]], tool_key: str, fields: tuple[str, ...], count: int,
+) -> str:
+    applicable = sum(_patient_tool_applicable(row, tool_key) for row in rows)
+    not_applicable = len(rows) - applicable
+    if not count:
+        status = f"未评估（适用的标准肽段-HLA组合 {applicable} 个中无结果值）"
+    else:
+        status = f"综合证据表已载入结果值（{count}/{applicable} 个适用组合）"
+    if not_applicable:
+        status += f"；另 {not_applicable} 个因肽长、字符或HLA输入不符合该工具范围而不适用"
+    return status
+
 _PATIENT_SOURCE_TOOL_ALIASES = {
     "bigmhc_im": "bigmhc", "bigmhc": "bigmhc", "deepimmuno": "deepimmuno",
     "netmhcpan": "netmhcpan", "mhcflurry": "mhcflurry", "netmhcstabpan": "netmhcstabpan",
@@ -2754,7 +2783,7 @@ def _patient_inferred_tool_rows(rows: list[dict[str, str]], tool_versions: Mappi
             else:
                 status += "；独立TAP候选级状态未单列"
         else:
-            status = f"综合证据表已载入结果值（{count}/{len(rows)}）" if count else "未评估（本次综合证据表无结果值）"
+            status = _patient_tool_coverage_status(rows, tool_key, fields, count)
         record = versions.get(tool_key) or versions.get(name.lower()) or versions.get(name.lower().replace("/", "_")) or {}
         default_version = "NeoAg APPM 2.0" if tool_key == "tap_appm" and count else "原始运行版本未记录（需补工具版本清单）"
         default_evidence = "APPM汇总和肽段修饰结果" if tool_key == "tap_appm" and count else "综合结果仅证明工具结果存在，不能反推版本"
@@ -3860,7 +3889,8 @@ def _patient_tool_rows(bundle: ReportBundle) -> list[dict[str, str]]:
                 purpose = spec[2] if spec else source_meta[1] if source_meta else str(record.get("mode") or "结果证据生成")
             fields = spec[1] if spec else ()
             result_count = sum(1 for row in bundle.peptides if fields and _patient_assessed(row, *fields))
-            result_count = max(result_count, source_counts.get(key, 0))
+            if not spec:
+                result_count = max(result_count, source_counts.get(key, 0))
             event_result_count = int(record.get("evidence_event_rows") or 0)
             recorded_status = str(record.get("status") or "UNASSESSED")
             if key == "tap_appm" and result_count:
@@ -3875,7 +3905,7 @@ def _patient_tool_rows(bundle: ReportBundle) -> list[dict[str, str]]:
                     status += "；独立TAP候选级状态未单列"
                 status_basis = "；依据APPM汇总和肽段修饰结果"
             elif result_count:
-                status = f"综合证据表已载入结果值（{result_count}/{len(bundle.peptides)}）"
+                status = _patient_tool_coverage_status(bundle.peptides, key, fields, result_count)
                 status_basis = "；结果值优先于可能过期的运行清单状态"
             elif event_result_count:
                 status = f"事件来源记录已确认（{event_result_count}个事件）"

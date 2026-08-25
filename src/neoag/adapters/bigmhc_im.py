@@ -8,10 +8,11 @@ from pathlib import Path
 from ..utils import read_csv
 from ..evidence_provenance import ProvenanceRecord, provenance_from_file, provenance_stub, without_provenance, write_evidence_tsv
 from ..schemas import BIGMHC_IM_EVIDENCE_FIELDS
+from .peptide_input import normalize_hla_allele
 
 
 def _pair_key(peptide: str, hla: str) -> tuple[str, str]:
-    return peptide.strip().upper(), hla.strip()
+    return peptide.strip().upper(), normalize_hla_allele(hla)
 
 
 def predict_pair_stub(peptide: str, hla: str) -> str:

@@ -858,7 +858,7 @@ def test_patient_tool_table_overrides_stale_deepimmuno_not_used_status(tmp_path)
     out = tmp_path / "patient_deepimmuno.html"
     make_patient_report(out, bundle)
     text = out.read_text(encoding="utf-8")
-    assert "综合证据表已载入结果值（1/1）" in text
+    assert "综合证据表已载入结果值（1/1 个适用组合）" in text
     assert "结果值优先于可能过期的运行清单状态" in text
     deep_row = text.split("<td>DeepImmuno</td>", 1)[1].split("</tr>", 1)[0]
     assert "not_used" not in deep_row
@@ -932,7 +932,18 @@ def test_patient_tool_table_discovers_source_tools_not_listed_in_provenance(tmp_
     text = out.read_text(encoding="utf-8")
     for tool in ("EasyFuse", "JAFFAL", "SNAF", "SpliceMutr"):
         assert f"<td>{tool}</td>" in text
-    assert "综合证据表已载入结果值（1/1）" in text
+    assert "综合证据表已载入结果值（1/1 个适用组合）" in text
+
+
+def test_patient_tool_coverage_uses_applicable_denominator_and_reports_nonapplicable():
+    bundle = _bundle()
+    bundle.peptides.extend([
+        {"peptide_id": "LONG", "peptide": "AAAAAAAAAAAAAAA", "hla_allele": "HLA-A*02:01"},
+        {"peptide_id": "NOHLA", "peptide": "AAAAAAAAA", "hla_allele": ""},
+    ])
+    rows = {row["流程/工具"]: row for row in _patient_tool_rows(bundle)}
+    assert "1/1 个适用组合" in rows["NetMHCpan"]["状态"]
+    assert "另 2 个" in rows["NetMHCpan"]["状态"]
 
 
 def test_patient_tool_table_discovers_standard_runtime_outputs(tmp_path):
