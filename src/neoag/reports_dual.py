@@ -2603,7 +2603,16 @@ _PATIENT_RESULT_TOOL_SPECS = {
     "deepimmuno": ("DeepImmuno", ("deepimmuno_score",), "免疫原性辅助（适用于支持的9/10-mer peptide-HLA组合）"),
     "netmhcstabpan": ("NetMHCstabpan", ("netmhcstabpan_rank", "netmhcstabpan_score"), "肽-HLA稳定性"),
     "netchop": ("NetChop 3.1d", ("netchop_processing_status", "netchop_31d_cterm_score", "netchop_31d_max_score"), "蛋白酶体C端酶切加工"),
-    "tap_appm": ("TAP/APPM", ("tap_processing_status",), "TAP转运与加工通路"),
+    "tap_appm": (
+        "TAP/APPM",
+        (
+            "tap_processing_status",
+            "appm_integrity_status",
+            "appm_evidence_completeness",
+            "appm_multiplier",
+        ),
+        "TAP转运与抗原加工呈递通路",
+    ),
 }
 
 _PATIENT_SOURCE_TOOL_ALIASES = {
@@ -2670,15 +2679,24 @@ def _patient_source_tool_counts(rows: list[dict[str, str]]) -> Counter[str]:
 
 
 def _patient_inferred_tool_rows(rows: list[dict[str, str]], tool_versions: Mapping[str, Mapping[str, str]] | None = None) -> list[dict[str, str]]:
-    tools = list(_PATIENT_RESULT_TOOL_SPECS.values())
     result = []
     versions = {str(key).lower(): value for key, value in (tool_versions or {}).items()}
-    for name, fields, purpose in tools:
+    for tool_key, (name, fields, purpose) in _PATIENT_RESULT_TOOL_SPECS.items():
         count = sum(1 for row in rows if _patient_assessed(row, *fields))
-        status = f"综合证据表已载入结果值（{count}/{len(rows)}）" if count else "未评估（本次综合证据表无结果值）"
-        record = versions.get(name.lower()) or versions.get(name.lower().replace("/", "_")) or {}
-        version = str(record.get("version") or "原始运行版本未记录（需补工具版本清单）")
-        version_evidence = str(record.get("evidence") or "综合结果仅证明工具结果存在，不能反推版本")
+        if tool_key == "tap_appm" and count:
+            tap_count = sum(1 for row in rows if _patient_assessed(row, "tap_processing_status"))
+            status = f"APPM已评估（候选修饰值 {count}/{len(rows)}）"
+            if tap_count:
+                status += f"；独立TAP状态 {tap_count}/{len(rows)}"
+            else:
+                status += "；独立TAP候选级状态未单列"
+        else:
+            status = f"综合证据表已载入结果值（{count}/{len(rows)}）" if count else "未评估（本次综合证据表无结果值）"
+        record = versions.get(tool_key) or versions.get(name.lower()) or versions.get(name.lower().replace("/", "_")) or {}
+        default_version = "NeoAg APPM 2.0" if tool_key == "tap_appm" and count else "原始运行版本未记录（需补工具版本清单）"
+        default_evidence = "APPM汇总和肽段修饰结果" if tool_key == "tap_appm" and count else "综合结果仅证明工具结果存在，不能反推版本"
+        version = str(record.get("version") or default_version)
+        version_evidence = str(record.get("evidence") or default_evidence)
         result.append({"流程/工具": name, "版本": version, "版本依据": version_evidence, "状态": status, "作用": purpose})
     return result
 
@@ -2777,9 +2795,9 @@ def _patient_missing_rna_label(row: Mapping[str, Any], label: str, *, expression
             "transcript_expression_source",
         )
         if transcript and _patient_track(row) == "Fusion":
-            return "转录本表达未精确匹配；融合断点肽按融合伙伴基因表达和断点支持reads解读"
+            return "转录本表达无法精确匹配（融合转录本无法唯一对应定量矩阵中的标准转录本）；按融合伙伴基因表达和断点支持reads解读"
         if transcript and _patient_track(row) == "Splice":
-            return "转录本表达未精确匹配；异常剪接候选按基因表达和junction reads解读"
+            return "转录本表达无法精确匹配（异常剪接异构体无法唯一对应定量矩阵中的标准转录本）；按基因表达和精确junction reads解读"
         if status == "UNASSESSED_ID_NOT_MAPPED":
             return f"{label}未匹配到表达矩阵ID"
         if source:
@@ -2906,6 +2924,7 @@ def _patient_junction_reads_measurement(row: Mapping[str, Any], junction_reads: 
     match_status = (_patient_observed_source(row, "junction_match_status") or "").strip().upper()
     match_method = (_patient_observed_source(row, "junction_match_method") or "").strip().lower()
     support_status = (_patient_observed_source(row, "junction_support_status") or "").strip().upper()
+    resolution_status = (_patient_observed_source(row, "junction_resolution_status") or "").strip().upper()
     canonical = (_patient_observed_source(row, "canonical_junction_id") or "").strip()
     source = (_patient_observed_source(row, "rna_junction_source", "junction_source") or "").strip().lower()
     source_tools = (
@@ -2918,11 +2937,17 @@ def _patient_junction_reads_measurement(row: Mapping[str, Any], junction_reads: 
         "EXACT", "EXACT_MATCH", "MATCHED", "VERIFIED", "RESOLVED", "PILEUP_VERIFIED", "BAM_VERIFIED",
     }
     verified_methods = ("pileup", "samtools", "regtools", "bam_recount", "bam_support")
-    exact_primary_support = bool(canonical) and support_status in {
-        "SUPPORTED_EXACT_JUNCTION", "MATCHED_ZERO_READS",
-    }
-    independently_verified = exact_primary_support or match_status in verified_statuses or any(
+    independently_verified = match_status in verified_statuses or any(
         token in match_method for token in verified_methods
+    )
+    exact_canonical_link = bool(canonical) and (
+        match_status in {"MATCHED_EXACT_CANONICAL", "EXACT_CANONICAL"}
+        or resolution_status in {"RESOLVED_EXACT_CANONICAL", "RESOLVED_EXACT"}
+        or support_status in {
+            "SUPPORTED_EXACT_JUNCTION",
+            "SUPPORTED_ALL_EVENT_JUNCTIONS_EXACT",
+            "MATCHED_ZERO_READS",
+        }
     )
     source_record_linked = bool(source_record and source_location)
     strict_cross_validated = (
@@ -2947,6 +2972,8 @@ def _patient_junction_reads_measurement(row: Mapping[str, Any], junction_reads: 
         return "junction reads未提供（核实状态未确认）"
     if independently_verified:
         return f"主比对表已按精确junction回链，unique junction reads {junction_reads}"
+    if exact_canonical_link:
+        return f"已按标准化精确junction坐标回链，junction reads {junction_reads}"
     if track == "Splice" and exact_cross_tool_link:
         return f"已按event/junction精确回链的剪接工具支持reads {junction_reads}"
     if source_record_linked:
@@ -3091,23 +3118,69 @@ def _patient_cross_site_rna(row: Mapping[str, Any]) -> str:
 
 def _patient_event_evidence_and_next_step(
     row: Mapping[str, Any], bundle: ReportBundle, val_map: Mapping[str, Mapping[str, str]],
+    *, compact_common: bool = False,
 ) -> str:
+    track = _patient_track(row)
     evidence = [
         _patient_metric("事件", row, "event_authenticity_state", "cross_platform_status"),
         _patient_rna_metric(row),
         _patient_presentation_metric(row),
-        _patient_metric("MT/WT", row, "mutant_specificity_status", "mutant_specificity_state"),
     ]
+    if not (compact_common and track in {"Fusion", "Splice"}):
+        evidence.append(_patient_metric("MT/WT", row, "mutant_specificity_status", "mutant_specificity_state"))
     gaps = _patient_key_gaps(row, bundle)
     gap_text = "；".join(gaps) if gaps else "未见明确关键缺口"
+    dna_evidence = _patient_dna_evidence(row)
+    if compact_common and track == "Splice":
+        dna_evidence = ""
+    elif compact_common and track == "Fusion" and not _patient_dna_sv_measurements(row):
+        dna_evidence = ""
     return (
         f"核心证据：{'；'.join(evidence)}。"
-        f"{_patient_dna_evidence(row)}。"
+        f"{dna_evidence + '。' if dna_evidence else ''}"
         f"RNA数据：{_patient_rna_measurements(row)}。"
         f"{_patient_dna_rna_interpretation(row) + '。' if _patient_dna_rna_interpretation(row) else ''}"
         f"{_patient_cross_site_rna(row) + '。' if _patient_cross_site_rna(row) else ''}"
         f"主要缺口：{gap_text}。"
         f"下一步：{_patient_validation(row, val_map)}"
+    )
+
+
+_PATIENT_TRACK_EVIDENCE_NOTES = {
+    "SNV": (
+        "适用：肿瘤/正常DNA位点深度与VAF、RNA alt reads/VAF、MT/WT突变特异性、"
+        "HLA呈递、HLA-LOH/APPM、CCF与正常背景安全性。"
+        "通常不适用：融合/剪接junction reads、PSI和异常连接ORF。"
+    ),
+    "InDel": (
+        "适用：DNA深度/VAF、局部重比对与左对齐、RNA突变转录本支持、"
+        "阅读框/新生尾部、NMD、HLA呈递、HLA-LOH/APPM、CCF和安全性。"
+        "通常不适用：异常junction/PSI；除非该InDel本身导致剪接改变。"
+    ),
+    "Fusion": (
+        "适用：精确融合断点、junction/split-read支持、方向与阅读框、跨断点新序列、"
+        "正常read-through背景、HLA呈递、HLA-LOH/APPM和安全性。"
+        "不适用：普通点突变式DNA VAF和传统MT/WT配对；RNA-only融合不应把缺失DNA CCF解释为0。"
+        "若有独立DNA-SV支持，在候选行中单独展示。"
+    ),
+    "Splice": (
+        "适用：精确异常junction、unique reads/PSI、转录本假设与ORF、跨连接新序列、"
+        "正常异构体/junction背景、HLA呈递、HLA-LOH/APPM和安全性。"
+        "不适用：普通点突变式DNA VAF、传统MT/WT配对和DNA CCF；"
+        "应改用正常连接或正常异构体肽作为对照。"
+    ),
+    "DNA SV": (
+        "适用：DNA断点、split reads/discordant pairs、重构转录本和ORF、RNA正交支持、"
+        "HLA呈递、HLA-LOH/APPM、CCF和安全性。"
+        "不适用：普通SNV式MT/WT规则；应使用断点前后的正常结构对照。"
+    ),
+}
+
+
+def _patient_track_evidence_note(track: str) -> str:
+    return _PATIENT_TRACK_EVIDENCE_NOTES.get(
+        track,
+        "适用和不适用证据按事件类型判定；缺失或不适用均不按阴性处理。",
     )
 
 
@@ -3727,7 +3800,18 @@ def _patient_tool_rows(bundle: ReportBundle) -> list[dict[str, str]]:
             result_count = max(result_count, source_counts.get(key, 0))
             event_result_count = int(record.get("evidence_event_rows") or 0)
             recorded_status = str(record.get("status") or "UNASSESSED")
-            if result_count:
+            if key == "tap_appm" and result_count:
+                tap_count = sum(
+                    1 for row in bundle.peptides
+                    if _patient_assessed(row, "tap_processing_status")
+                )
+                status = f"APPM已评估（候选修饰值 {result_count}/{len(bundle.peptides)}）"
+                if tap_count:
+                    status += f"；独立TAP状态 {tap_count}/{len(bundle.peptides)}"
+                else:
+                    status += "；独立TAP候选级状态未单列"
+                status_basis = "；依据APPM汇总和肽段修饰结果"
+            elif result_count:
                 status = f"综合证据表已载入结果值（{result_count}/{len(bundle.peptides)}）"
                 status_basis = "；结果值优先于可能过期的运行清单状态"
             elif event_result_count:
@@ -3742,9 +3826,10 @@ def _patient_tool_rows(bundle: ReportBundle) -> list[dict[str, str]]:
                 or bundle.tool_versions.get(key)
                 or {}
             )
+            default_version = "NeoAg APPM 2.0" if key == "tap_appm" and result_count else "原始运行版本未记录（需补工具版本清单）"
             rows.append({
                 "流程/工具": display_name,
-                "版本": str(version_record.get("version") or record.get("version") or "原始运行版本未记录（需补工具版本清单）"),
+                "版本": str(version_record.get("version") or record.get("version") or default_version),
                 "版本依据": str(version_record.get("evidence") or record.get("version_evidence") or "运行清单") + status_basis,
                 "状态": status,
                 "作用": purpose,
@@ -4011,9 +4096,16 @@ def make_patient_report(
                 "改变": _patient_event_change(row),
                 "肽段-HLA": peptide_hla,
                 "R等级": _patient_event_row_grade(row, event_grade_map),
-                "关键证据与下一步": _patient_event_evidence_and_next_step(row, bundle, val_map),
+                "关键证据与下一步": _patient_event_evidence_and_next_step(
+                    row, bundle, val_map, compact_common=True,
+                ),
             })
-        out.append(f"<h3>{esc(track)} Top {event_top_n}</h3>" + _table(rows, ["排名", "基因/事件", "改变", "肽段-HLA", "R等级", "关键证据与下一步"]))
+        out.append(f"<h3>{esc(track)} Top {event_top_n}</h3>")
+        out.append(
+            f"<p class='small'><b>本赛道证据口径：</b>{esc(_patient_track_evidence_note(track))}"
+            "下表仅展示候选间存在差异的实测证据和特异性缺口，不再逐行重复不适用项。</p>"
+        )
+        out.append(_table(rows, ["排名", "基因/事件", "改变", "肽段-HLA", "R等级", "关键证据与下一步"]))
     out.append(f"<p class='small'>不同事件赛道的证据结构不同，Top {event_top_n}用于赛道内审阅，不应仅凭序号直接跨赛道比较。</p></div>")
 
     manual_review_rows = _patient_manual_review_rows(bundle.events, ranked, bundle, val_map)
@@ -4053,10 +4145,16 @@ def make_patient_report(
     out.append(_table(patient_candidate_rows(top), candidate_headers))
     out.append(f"<p class='small'>当前暂缓/不推进及完整性门槛未通过的{len(paused_representatives)}个事件代表候选不进入患者版重点表，仅保留在科研技术版审阅池。排序仍采用R1–R4、同赛道Pareto、确定性tie-break和事件去重。</p></div>")
 
-    out.append("<div class='section'><h2>6. Top候选综合证据与实验建议</h2>")
-    out.append("<p>建议顺序：先确认事件和异常转录本真实性，再补RNA alt/VAF或精确junction证据，完成MT/WT、正常背景和限制性HLA复核，最后开展短肽、长肽、minigene及T细胞功能实验。</p>")
+    interpretation_top_n = min(20, candidate_top_n)
+    interpretation_top = top[:interpretation_top_n]
+    out.append(f"<div class='section'><h2>6. Top候选综合证据与实验建议（前{interpretation_top_n}项）</h2>")
+    out.append(
+        f"<p>本节只解读正式候选排序最前的{interpretation_top_n}项；建议顺序：先确认事件和异常转录本真实性，"
+        "再补RNA alt/VAF或精确junction证据，完成MT/WT、正常背景和限制性HLA复核，最后开展短肽、长肽、"
+        "minigene及T细胞功能实验。</p>"
+    )
     interpretation_rows = []
-    for row in top:
+    for row in interpretation_top:
         interpretation_rows.append({
             "候选": f"{row.get('gene', '')} | {row.get('peptide', '')} | {row.get('hla_allele', '')}",
             "为什么值得关注": _patient_candidate_attention(row, bundle),

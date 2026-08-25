@@ -53,7 +53,7 @@ def test_patient_report_is_plain_language(tmp_path):
     assert "关键人工审阅事件" in text
     assert "进入本表不等于自动升级为R1/R2" in text
     assert "关键证据与下一步" in text
-    section6 = text.split("6. Top候选综合证据与实验建议", 1)[1].split("7. 分析方法与工具状态", 1)[0]
+    section6 = text.split("6. Top候选综合证据与实验建议（前20项）", 1)[1].split("7. 分析方法与工具状态", 1)[0]
     assert "<th>候选</th>" in section6
     assert "<th>为什么值得关注</th>" in section6
     assert "<th>当前不确定性</th>" in section6
@@ -67,7 +67,7 @@ def test_patient_report_is_plain_language(tmp_path):
     assert "RNA VAF 0.2000" in text
     assert "5. 候选肽段Top 50（跨赛道、按事件去重）" in text
     assert "重点候选 Top 50" in text
-    candidate_section = text.split("5. 候选肽段Top 50（跨赛道、按事件去重）", 1)[1].split("6. Top候选综合证据与实验建议", 1)[0]
+    candidate_section = text.split("5. 候选肽段Top 50（跨赛道、按事件去重）", 1)[1].split("6. Top候选综合证据与实验建议（前20项）", 1)[0]
     assert "<th>关键证据与下一步</th>" in candidate_section
     assert "<th>关键证据</th>" not in candidate_section
     assert "<th>主要限制</th>" not in candidate_section
@@ -125,6 +125,11 @@ def test_patient_top_candidates_include_non_r4_technical_review_rows(tmp_path):
     assert section.count("<td>R3-REVIEW</td>") == 100
     assert "G99" in section
     assert "G100" not in section
+
+    interpretation = text.split("6. Top候选综合证据与实验建议（前20项）", 1)[1].split("7. 分析方法与工具状态", 1)[0]
+    assert interpretation.count("<tr>") - 1 == 20
+    assert "G19 |" in interpretation
+    assert "G20 |" not in interpretation
 
 
 def test_splice_dna_evidence_does_not_render_placeholder_vcf_zero():
@@ -526,6 +531,20 @@ def test_patient_splice_labels_exact_cross_tool_junction_link():
     assert "126（尚未精确回链）" not in measurements
 
 
+def test_patient_splice_recognizes_v051_exact_canonical_statuses():
+    measurements = _patient_rna_measurements({
+        "event_type": "Splice",
+        "canonical_junction_id": "SJ|GRCh38|chr19|56177196|56182171|+",
+        "junction_match_status": "MATCHED_EXACT_CANONICAL",
+        "junction_resolution_status": "RESOLVED_EXACT_CANONICAL",
+        "junction_support_status": "SUPPORTED_ALL_EVENT_JUNCTIONS_EXACT",
+        "rna_junction_reads": "2589",
+        "provided_rna_junction_reads": "2357",
+    })
+    assert "已按标准化精确junction坐标回链，junction reads 2589" in measurements
+    assert "尚无独立主比对表核实" not in measurements
+
+
 def test_patient_safety_gap_distinguishes_gene_absent_from_reference():
     gap = _patient_safety_gap({
         "safety_status": "SAFETY_PARTIAL",
@@ -843,6 +862,66 @@ def test_patient_tool_table_overrides_stale_deepimmuno_not_used_status(tmp_path)
     assert "结果值优先于可能过期的运行清单状态" in text
     deep_row = text.split("<td>DeepImmuno</td>", 1)[1].split("</tr>", 1)[0]
     assert "not_used" not in deep_row
+
+
+def test_patient_tool_table_recognizes_appm_candidate_modifiers(tmp_path):
+    bundle = _bundle()
+    bundle.peptides[0]["appm_multiplier"] = "0.4500"
+    out = tmp_path / "patient_appm.html"
+    make_patient_report(out, bundle)
+    text = out.read_text(encoding="utf-8")
+    appm_row = text.split("<td>TAP/APPM</td>", 1)[1].split("</tr>", 1)[0]
+    assert "NeoAg APPM 2.0" in appm_row
+    assert "APPM已评估（候选修饰值 1/1）" in appm_row
+    assert "独立TAP候选级状态未单列" in appm_row
+
+
+def test_patient_splice_missing_transcript_tpm_explains_mapping_boundary():
+    text = _patient_rna_measurements({
+        "event_type": "Splice",
+        "gene": "GENE1",
+        "gene_expression_tpm": "12.5",
+        "transcript_expression_tpm": "",
+    })
+    assert "基因表达 12.5000 TPM" in text
+    assert "异常剪接异构体无法唯一对应定量矩阵中的标准转录本" in text
+    assert "表达证据未接入" not in text
+
+
+def test_patient_event_top_moves_track_common_not_applicable_evidence_to_intro(tmp_path):
+    bundle = _bundle()
+    bundle.events = [{
+        "event_id": "SJ|GRCh38|chr1|101|200|+",
+        "event_type": "Splice",
+        "gene": "GENE1",
+        "evidence_grade": "R3-REVIEW",
+    }]
+    bundle.peptides = [{
+        "peptide_id": "SP1",
+        "event_id": "SJ|GRCh38|chr1|101|200|+",
+        "event_type": "Splice",
+        "gene": "GENE1",
+        "peptide": "AAAAAAAAA",
+        "hla_allele": "HLA-A*02:01",
+        "crosses_junction": "true",
+        "rna_junction_reads": "12",
+        "event_authenticity_state": "EVENT_CONFIRMED",
+        "rna_support_state": "RNA_CONFIRMED",
+        "presentation_consensus_state": "PRESENTATION_MODERATE",
+        "mutant_specificity_state": "UNASSESSED",
+        "evidence_grade": "R3-REVIEW",
+    }]
+    out = tmp_path / "patient_track_intro.html"
+    make_patient_report(out, bundle, event_top_n=1)
+    text = out.read_text(encoding="utf-8")
+    section = text.split("<h3>Splice Top 1</h3>", 1)[1].split("</table>", 1)[0]
+    intro, table = section.split("<table>", 1)
+    assert "本赛道证据口径" in intro
+    assert "普通点突变式DNA VAF" in intro
+    assert "传统MT/WT配对" in intro
+    assert "不再逐行重复不适用项" in intro
+    assert "MT/WT=传统点突变式配对不适用" not in table
+    assert "DNA证据：点突变VCF口径不适用" not in table
 
 
 def test_patient_tool_table_discovers_source_tools_not_listed_in_provenance(tmp_path):
