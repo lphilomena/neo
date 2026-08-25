@@ -2905,18 +2905,26 @@ def _patient_junction_reads_measurement(row: Mapping[str, Any], junction_reads: 
     track = _patient_track(row)
     match_status = (_patient_observed_source(row, "junction_match_status") or "").strip().upper()
     match_method = (_patient_observed_source(row, "junction_match_method") or "").strip().lower()
+    support_status = (_patient_observed_source(row, "junction_support_status") or "").strip().upper()
+    canonical = (_patient_observed_source(row, "canonical_junction_id") or "").strip()
     source = (_patient_observed_source(row, "rna_junction_source", "junction_source") or "").strip().lower()
     source_tools = (
         _patient_observed_source(row, "source_tools", "source_tool", "junction_source_tool") or ""
     ).strip().lower()
+    source_record = (_patient_observed_source(row, "source_record_id", "source_records") or "").strip()
+    source_location = (_patient_observed_source(row, "source_file", "source") or "").strip()
 
     verified_statuses = {
-        "EXACT_MATCH", "MATCHED", "VERIFIED", "RESOLVED", "PILEUP_VERIFIED", "BAM_VERIFIED",
+        "EXACT", "EXACT_MATCH", "MATCHED", "VERIFIED", "RESOLVED", "PILEUP_VERIFIED", "BAM_VERIFIED",
     }
     verified_methods = ("pileup", "samtools", "regtools", "bam_recount", "bam_support")
-    independently_verified = match_status in verified_statuses or any(
+    exact_primary_support = bool(canonical) and support_status in {
+        "SUPPORTED_EXACT_JUNCTION", "MATCHED_ZERO_READS",
+    }
+    independently_verified = exact_primary_support or match_status in verified_statuses or any(
         token in match_method for token in verified_methods
     )
+    source_record_linked = bool(source_record and source_location)
     caller_tokens = (
         "raw_events", "caller", "targeted_rescue", "easyfuse", "arriba",
         "star-fusion", "star_fusion", "fusioncatcher", "snaf", "splicemutr",
@@ -2928,7 +2936,10 @@ def _patient_junction_reads_measurement(row: Mapping[str, Any], junction_reads: 
             return "caller报告junction reads未提供（尚未独立回链核实）"
         return "junction reads未提供（核实状态未确认）"
     if independently_verified:
-        return f"已回链核实junction reads {junction_reads}"
+        return f"主比对表已按精确junction回链，unique junction reads {junction_reads}"
+    if source_record_linked:
+        origin = "融合caller" if track == "Fusion" else "剪接caller" if track == "Splice" else "上游caller"
+        return f"{origin}原始记录已回链，junction reads {junction_reads}（尚无独立主比对表核实）"
     if caller_reported:
         if track == "Fusion" and "targeted_rescue" in source_tools:
             origin = "融合caller/定向rescue汇总"
@@ -2941,6 +2952,45 @@ def _patient_junction_reads_measurement(row: Mapping[str, Any], junction_reads: 
         return f"{origin}报告junction reads {junction_reads}（尚未独立回链核实）"
     source_note = f"，来源 {source}" if source else ""
     return f"junction reads {junction_reads}（核实状态未确认{source_note}）"
+
+
+def _patient_junction_count_comparison(
+    row: Mapping[str, Any],
+    *,
+    provided_text: str,
+    provided_value: float,
+    verified_text: str,
+    verified_value: float,
+) -> str:
+    """Explain differing exact-source junction counts without treating their delta as reads."""
+    canonical = str(row.get("canonical_junction_id") or "").strip()
+    match_status = str(row.get("junction_match_status") or "").strip().upper()
+    support_status = str(row.get("junction_support_status") or "").strip().upper()
+    exact_primary = bool(canonical) and support_status == "SUPPORTED_EXACT_JUNCTION"
+    exact_caller = exact_primary and match_status in {"EXACT", "EXACT_MATCH", "MATCHED", "RESOLVED"}
+    if exact_caller:
+        return (
+            f"同一精确canonical junction存在两种计数口径：caller原始记录 {provided_text}，"
+            f"主比对表unique reads {verified_text}；两者均已坐标回链，差异不代表未归属reads，"
+            f"不相减或累加，排序保守采用主比对表 {verified_text}"
+        )
+    if provided_value >= verified_value:
+        unresolved = provided_value - verified_value
+        unresolved_text = str(int(unresolved)) if unresolved.is_integer() else f"{unresolved:g}"
+        strand = str(row.get("junction_strand") or "").strip()
+        if verified_value <= 0 and (canonical.endswith("|.") or strand in {".", "?"}):
+            return (
+                f"上游工具汇总同坐标junction reads {provided_text}；因链方向未解析，"
+                "当前严格规则未将其计入已核实reads（不等同于检测为0）"
+            )
+        return (
+            f"上游工具汇总junction reads {provided_text}；其中 {verified_text} 条已按同一"
+            f"canonical junction精确核实，差额 {unresolved_text} 条尚未归属，未计入已核实支持"
+        )
+    return (
+        f"上游工具汇总junction reads {provided_text}，与已核实值 {verified_text} 的"
+        "统计口径不一致，需复核来源记录"
+    )
 
 
 def _patient_rna_measurements(row: Mapping[str, Any]) -> str:
@@ -2977,25 +3027,14 @@ def _patient_rna_measurements(row: Mapping[str, Any]) -> str:
         )
         values.append(_patient_junction_reads_measurement(row, junction_reads))
         if provided_reads is not None and provided_reads != junction_reads:
-            if (
-                provided_value is not None
-                and verified_value is not None
-                and provided_value >= verified_value
-            ):
-                unresolved = provided_value - verified_value
-                unresolved_text = str(int(unresolved)) if unresolved.is_integer() else f"{unresolved:g}"
-                canonical = str(row.get("canonical_junction_id") or "")
-                strand = str(row.get("junction_strand") or "").strip()
-                if verified_value <= 0 and (canonical.endswith("|.") or strand in {".", "?"}):
-                    values.append(
-                        f"上游工具汇总同坐标junction reads {provided_text}；因链方向未解析，"
-                        "当前严格规则未将其计入已核实reads（不等同于检测为0）"
-                    )
-                else:
-                    values.append(
-                        f"上游工具汇总junction reads {provided_text}；其中 {verified_text} 条已按同一"
-                        f"canonical junction精确核实，差额 {unresolved_text} 条尚未归属，未计入已核实支持"
-                    )
+            if provided_value is not None and verified_value is not None:
+                values.append(_patient_junction_count_comparison(
+                    row,
+                    provided_text=provided_text,
+                    provided_value=provided_value,
+                    verified_text=verified_text,
+                    verified_value=verified_value,
+                ))
             else:
                 values.append(
                     f"上游工具汇总junction reads {provided_reads}，与已核实值 {junction_reads} 的"

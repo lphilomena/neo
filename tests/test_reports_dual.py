@@ -443,12 +443,30 @@ def test_patient_splice_reports_provided_reads_separately_from_verified_reads():
 def test_patient_splice_reports_only_the_unresolved_read_difference():
     measurements = _patient_rna_measurements({
         "event_type": "Splice",
+        "canonical_junction_id": "SJ|GRCh38|chr2|232337162|232344092|-",
+        "junction_match_status": "EXACT",
+        "junction_support_status": "SUPPORTED_EXACT_JUNCTION",
         "provided_rna_junction_reads": "126",
         "rna_junction_reads": "108",
     })
-    assert "其中 108 条已按同一canonical junction精确核实" in measurements
-    assert "差额 18 条尚未归属" in measurements
-    assert "126（尚未精确回链）" not in measurements
+    assert "caller原始记录 126" in measurements
+    assert "主比对表unique reads 108" in measurements
+    assert "两者均已坐标回链" in measurements
+    assert "差异不代表未归属reads" in measurements
+    assert "差额 18 条尚未归属" not in measurements
+
+
+def test_patient_fusion_reports_source_record_backlink_separately_from_alignment_verification():
+    measurements = _patient_rna_measurements({
+        "event_type": "Fusion",
+        "rna_junction_reads": "11",
+        "source_tool": "Arriba",
+        "source_file": "/analysis/arriba/fusions.tsv",
+        "source_record_id": "FUSION_A_B_chr1_100_chr2_200",
+    })
+    assert "融合caller原始记录已回链，junction reads 11" in measurements
+    assert "尚无独立主比对表核实" in measurements
+    assert "尚未独立回链核实" not in measurements
 
 
 def test_patient_safety_gap_distinguishes_gene_absent_from_reference():
