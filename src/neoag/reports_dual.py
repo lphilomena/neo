@@ -236,9 +236,22 @@ def _numeric_median(values: list[float]) -> float | None:
     return ordered[len(ordered) // 2]
 
 
+def _float_or_none(value: Any) -> float | None:
+    try:
+        return float(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+
+
 def _depth_summary(rows: list[Mapping[str, Any]], *fields: str) -> str:
     values: list[float] = []
+    seen: set[str] = set()
     for row in rows:
+        variant_key = "|".join(str(row.get(key) or "").strip() for key in ("chrom", "pos", "ref", "alt"))
+        event_key = str(row.get("event_group_id") or row.get("event_id") or row.get("source_event_id") or "").strip()
+        key = variant_key if variant_key.strip("|") else event_key
+        if key and key in seen:
+            continue
         for field in fields:
             try:
                 value = float(str(row.get(field) or "").strip())
@@ -246,11 +259,79 @@ def _depth_summary(rows: list[Mapping[str, Any]], *fields: str) -> str:
                 continue
             if value > 0:
                 values.append(value)
+                if key:
+                    seen.add(key)
                 break
     median = _numeric_median(values)
     if median is None:
         return ""
     return f"候选位点中位深度 {median:.0f}x（n={len(values)}）"
+
+
+def _rna_qc_summary(rows: list[Mapping[str, Any]]) -> str:
+    """Summarize RNA evidence by unique biological event, not peptide-HLA rows."""
+    variants: dict[str, tuple[float | None, float | None]] = {}
+    junctions: dict[str, float | None] = {}
+    expression_loaded = False
+    for row in rows:
+        expression_loaded = expression_loaded or any(
+            str(row.get(field) or "").strip() not in {"", "UNASSESSED", "NOT_AVAILABLE"}
+            for field in ("gene_expression_tpm", "transcript_expression_tpm")
+        )
+        event_type = str(row.get("event_type") or row.get("variant_type") or "").strip().upper()
+        variant_key = "|".join(str(row.get(key) or "").strip() for key in ("chrom", "pos", "ref", "alt"))
+        junction_key = str(
+            row.get("canonical_junction_id") or row.get("junction_key") or row.get("source_junction_id") or ""
+        ).strip()
+        if not junction_key and event_type in {"FUSION", "SPLICE", "SPLICE_JUNCTION"}:
+            junction_key = "|".join(
+                str(row.get(key) or "").strip()
+                for key in ("gene", "breakpoint1", "breakpoint2")
+            )
+        event_key = (
+            variant_key if variant_key.strip("|") and event_type in {"SNV", "INDEL", "MNV"}
+            else junction_key if junction_key.strip("|")
+            else str(row.get("event_group_id") or row.get("event_id") or row.get("source_event_id") or "").strip()
+        )
+        if not event_key.strip("|"):
+            continue
+        if event_type in {"SNV", "INDEL", "MNV"}:
+            depth = _float_or_none(row.get("rna_depth"))
+            alt = _float_or_none(row.get("rna_alt_reads"))
+            if depth is None and alt is None:
+                continue
+            previous = variants.get(event_key)
+            if previous is None or (depth or -1) > (previous[0] or -1):
+                variants[event_key] = (depth, alt)
+        elif event_type in {"FUSION", "SPLICE", "SPLICE_JUNCTION"}:
+            reads = _float_or_none(row.get("rna_junction_reads") or row.get("junction_reads"))
+            if reads is None:
+                continue
+            if event_key not in junctions or (reads or -1) > (junctions[event_key] or -1):
+                junctions[event_key] = reads
+
+    parts: list[str] = []
+    if expression_loaded:
+        parts.append("已载入基因/转录本表达")
+    if variants:
+        assessed = [(depth, alt) for depth, alt in variants.values() if depth is not None or alt is not None]
+        covered = [(depth, alt) for depth, alt in assessed if (depth or 0) > 0]
+        alt1 = sum(1 for _, alt in covered if (alt or 0) >= 1)
+        alt3 = sum(1 for _, alt in covered if (alt or 0) >= 3)
+        alt5 = sum(1 for _, alt in covered if (alt or 0) >= 5)
+        zero_depth = sum(1 for depth, _ in assessed if (depth or 0) <= 0)
+        parts.append(
+            f"SNV/InDel位点级RNA已评估 {len(assessed)}/{len(variants)} 个独立事件；"
+            f"有覆盖 {len(covered)}，ALT reads≥1/3/5：{alt1}/{alt3}/{alt5}，深度0：{zero_depth}"
+        )
+    if junctions:
+        assessed_junctions = [value for value in junctions.values() if value is not None]
+        supported = sum(1 for value in assessed_junctions if (value or 0) > 0)
+        parts.append(
+            f"Fusion/Splice连接证据已评估 {len(assessed_junctions)}/{len(junctions)} 个独立事件，"
+            f"junction reads>0：{supported}"
+        )
+    return "；".join(parts)
 
 
 def _depth_summary_from_tsv(path: Path | None, *fields: str, limit: int | None = None) -> str:
@@ -1154,6 +1235,126 @@ class ReportBundle:
     purity_consensus: dict[str, Any] = field(default_factory=dict)
     hla_loh_tool_results: list[dict[str, str]] = field(default_factory=list)
     tool_versions: dict[str, dict[str, str]] = field(default_factory=dict)
+    disease_knowledge: dict[str, Any] = field(default_factory=dict)
+
+
+def _load_disease_knowledge(
+    profile: Mapping[str, Any], provenance: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Load an optional disease knowledge profile without embedding diseases in code."""
+    config = profile.get("disease_knowledge") if isinstance(profile, Mapping) else None
+    config = config if isinstance(config, Mapping) else {}
+    explicit = str(
+        config.get("path")
+        or profile.get("disease_knowledge_file")
+        or provenance.get("disease_knowledge_file")
+        or ""
+    ).strip()
+    repo_root = Path(__file__).resolve().parents[2]
+    if config.get("anchors"):
+        return dict(config)
+    candidates: list[Path] = []
+    if explicit:
+        path = Path(explicit)
+        candidates.append(path)
+        if not path.is_absolute():
+            candidates.append(repo_root / path)
+    else:
+        candidates.extend(sorted((repo_root / "configs" / "disease_knowledge").glob("*.json")))
+
+    observed_context: list[str] = []
+    for payload in (provenance, profile):
+        if not isinstance(payload, Mapping):
+            continue
+        for key in ("disease", "diagnosis", "disease_name", "cancer_type", "tumor_type"):
+            value = str(payload.get(key) or "").strip()
+            if value:
+                observed_context.append(value.upper())
+        for container_key in ("clinical_context", "disease_profile", "patient_context", "clinical"):
+            nested = payload.get(container_key)
+            if isinstance(nested, Mapping):
+                for key in ("disease", "diagnosis", "disease_name", "cancer_type", "tumor_type"):
+                    value = str(nested.get(key) or "").strip()
+                    if value:
+                        observed_context.append(value.upper())
+
+    source: Path | None = None
+    payload: Mapping[str, Any] | None = None
+    for candidate in candidates:
+        if not candidate.is_file():
+            continue
+        try:
+            parsed = json.loads(candidate.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            continue
+        if not isinstance(parsed, Mapping):
+            continue
+        aliases = [
+            str(value).upper() for value in [
+                parsed.get("disease_id"), parsed.get("display_name"), *(parsed.get("disease_aliases") or []),
+            ] if str(value or "").strip()
+        ]
+        if explicit or not observed_context or any(
+            alias in context or context in alias
+            for alias in aliases for context in observed_context
+        ):
+            source, payload = candidate, parsed
+            break
+    if source is None:
+        return {"status": "MISSING", "source": explicit, "anchors": []} if explicit else {}
+    assert payload is not None
+    result = dict(payload)
+    result.update({key: value for key, value in config.items() if key not in {"path", "anchors"}})
+    result["status"] = "LOADED"
+    result["source"] = str(source)
+    return result
+
+
+def _normalized_event_label(value: Any) -> str:
+    return re.sub(r"[^A-Z0-9]+", "::", str(value or "").upper()).strip(":")
+
+
+def _disease_anchor(row: Mapping[str, Any], bundle: ReportBundle | None) -> dict[str, Any]:
+    if bundle is None:
+        return {}
+    observed = {
+        _normalized_event_label(row.get(field))
+        for field in ("gene", "event_name", "event_id", "source_event_id")
+        if str(row.get(field) or "").strip()
+    }
+    peptide = str(row.get("peptide") or "").strip().upper()
+    allele = str(row.get("hla_allele") or row.get("allele") or "").strip().upper()
+    for anchor in bundle.disease_knowledge.get("anchors", []):
+        if not isinstance(anchor, Mapping):
+            continue
+        aliases = {
+            _normalized_event_label(value)
+            for value in [anchor.get("event"), *(anchor.get("aliases") or [])]
+            if str(value or "").strip()
+        }
+        if not observed.intersection(aliases):
+            continue
+        matched = dict(anchor)
+        matched["peptide_evidence"] = ""
+        for item in anchor.get("public_neoantigens", []):
+            if not isinstance(item, Mapping) or str(item.get("sequence") or "").upper() != peptide:
+                continue
+            hla_prefixes = [str(value).upper() for value in item.get("hla_prefixes", [])]
+            if not hla_prefixes or any(allele.startswith(prefix) for prefix in hla_prefixes):
+                matched["peptide_evidence"] = str(item.get("evidence") or "external evidence recorded")
+                break
+        return matched
+    return {}
+
+
+def _patient_disease_anchor_note(row: Mapping[str, Any], bundle: ReportBundle | None) -> str:
+    anchor = _disease_anchor(row, bundle)
+    if not anchor:
+        return ""
+    note = str(anchor.get("label") or "疾病锚定事件")
+    if anchor.get("peptide_evidence"):
+        note += f"；该Peptide-HLA组合已记录外部功能/呈递证据（{anchor['peptide_evidence']}）"
+    return note + "；仅优先展示，不自动提升R等级"
 
 
 def _augment_runtime_tool_provenance(root: Path, provenance: dict[str, Any]) -> None:
@@ -1449,9 +1650,14 @@ def load_report_bundle(
             if build and build.upper() not in {"UNASSESSED", "NA", "N/A"}:
                 prov["genome_build"] = build
                 break
-    if not prov.get("rna_qc_status"):
-        if any(str(row.get("gene_expression_tpm") or row.get("transcript_expression_tpm") or "").strip() for row in events + peptides):
-            prov["rna_qc_status"] = "已载入基因/转录本表达；位点级RNA pileup未评估"
+    derived_rna_qc = _rna_qc_summary(events + peptides + source_peptides)
+    recorded_rna_qc = str(prov.get("rna_qc_status") or "")
+    if derived_rna_qc and (
+        not recorded_rna_qc
+        or "pileup未评估" in recorded_rna_qc
+        or "位点级RNA pileup未评估" in recorded_rna_qc
+    ):
+        prov["rna_qc_status"] = derived_rna_qc
 
     if canonical_evidence_path and not source_peptides:
         report_enrichment_rows = _read_report_enrichment_rows(
@@ -1568,6 +1774,7 @@ def load_report_bundle(
         purity_consensus=dict(prov.get("purity_cnv_consensus") or {}),
         hla_loh_tool_results=_read_hla_loh_tool_results(root, prov),
         tool_versions=_read_tool_version_manifest(root),
+        disease_knowledge=_load_disease_knowledge(profile, prov),
     )
 
 
@@ -3327,7 +3534,10 @@ def _patient_event_evidence_and_next_step(
         dna_evidence = ""
     elif compact_common and track == "Fusion" and not _patient_dna_sv_measurements(row):
         dna_evidence = ""
+    disease_note = _patient_disease_anchor_note(row, bundle)
     return (
+        f"疾病知识：{disease_note}。" if disease_note else ""
+    ) + (
         f"核心证据：{'；'.join(evidence)}。"
         f"{dna_evidence + '。' if dna_evidence else ''}"
         f"RNA数据：{_patient_rna_measurements(row)}。"
@@ -3352,12 +3562,15 @@ _PATIENT_TRACK_EVIDENCE_NOTES = {
     "Fusion": (
         "适用：精确融合断点、junction/split-read支持、方向与阅读框、跨断点新序列、"
         "正常read-through背景、HLA呈递、HLA-LOH/APPM和安全性。"
+        "安全性必须按精确跨断点肽查询正常蛋白组、转录组、junction库和ligandome；"
+        "融合伙伴基因的正常TPM只作背景，不直接判定跨断点肽高风险。"
         "不适用：普通点突变式DNA VAF和传统MT/WT配对；RNA-only融合不应把缺失DNA CCF解释为0。"
         "若有独立DNA-SV支持，在候选行中单独展示。"
     ),
     "Splice": (
         "适用：精确异常junction、unique reads/PSI、转录本假设与ORF、跨连接新序列、"
         "正常异构体/junction背景、HLA呈递、HLA-LOH/APPM和安全性。"
+        "安全性必须按精确跨junction肽和正常异构体评估；基因整体正常TPM不能代替连接特异性评估。"
         "不适用：普通点突变式DNA VAF、传统MT/WT配对和DNA CCF；"
         "应改用正常连接或正常异构体肽作为对照。"
     ),
@@ -3401,6 +3614,23 @@ def _patient_safety_gap(row: Mapping[str, Any]) -> str:
         key = token.strip().lower()
         if key and key not in missing_keys:
             missing_keys.append(key)
+    junction_track = _patient_track(row) in {"Fusion", "Splice"}
+    exact_sequence_reasons = (
+        "normal_hla_ligand", "normal_junction", "reference_proteome_exact_match",
+        "matched_normal_support", "high_self_similarity",
+    )
+    if junction_track:
+        # Partner-gene expression is contextual for a novel junction peptide.
+        # Safety decisions must follow the exact novel sequence and junction.
+        missing_keys = [key for key in missing_keys if key not in {"normal_expression", "normal_hspc"}]
+        exact_layers = {
+            "reference_proteome": row.get("reference_proteome_status"),
+            "normal_ligandome": row.get("normal_ligandome_status"),
+            "normal_junction": row.get("normal_junction_assessment_status"),
+        }
+        for key, value in exact_layers.items():
+            if str(value or "").strip().upper() not in {"ASSESSED", "PASS", "NEGATIVE", "NOT_FOUND"} and key not in missing_keys:
+                missing_keys.append(key)
 
     if safety in {"SAFETY_PARTIAL", "PARTIAL", "UNASSESSED"}:
         if not missing_keys:
@@ -3413,6 +3643,8 @@ def _patient_safety_gap(row: Mapping[str, Any]) -> str:
                 "normal_junction": row.get("normal_junction_assessment_status"),
             }
             for key, value in layer_statuses.items():
+                if junction_track and key in {"normal_expression", "normal_hspc", "anchor_only"}:
+                    continue
                 status = str(value or "").strip().upper()
                 if status and status not in {"ASSESSED", "NOT_APPLICABLE"} and key not in missing_keys:
                     missing_keys.append(key)
@@ -3436,6 +3668,11 @@ def _patient_safety_gap(row: Mapping[str, Any]) -> str:
             if label not in missing:
                 missing.append(label)
         if not missing:
+            if junction_track:
+                return (
+                    "连接事件安全性需按精确新生序列复核；"
+                    "伙伴基因正常组织/HSPC表达仅作背景，不直接判定该连接肽高风险"
+                )
             observed: list[str] = []
             if normal_tpm is not None:
                 observed.append(f"正常组织最高 {normal_tpm} TPM（{normal_tissue}）")
@@ -3454,12 +3691,12 @@ def _patient_safety_gap(row: Mapping[str, Any]) -> str:
     critical_tissue = _patient_value(
         row, "critical_tissue_name", "critical_tissue_max_tissue", default="正常关键组织"
     )
-    if "critical_tissue" in reason_text or str(row.get("critical_tissue_hit") or "").lower() in {"yes", "true", "1"}:
+    if not junction_track and ("critical_tissue" in reason_text or str(row.get("critical_tissue_hit") or "").lower() in {"yes", "true", "1"}):
         detail = f"{critical_tissue}表达信号"
         if critical_tpm is not None:
             detail += f" {critical_tpm} TPM"
         review_reasons.append(detail)
-    if "normal_hspc_expression" in reason_text:
+    if not junction_track and "normal_hspc_expression" in reason_text:
         hspc_tpm = _patient_numeric_display(_patient_observed_value(row, "normal_hspc_tpm"), 4)
         hspc_unit = _patient_value(row, "normal_hspc_unit", default="")
         detail = "HSPC/正常造血参考中检测到表达信号"
@@ -3477,6 +3714,20 @@ def _patient_safety_gap(row: Mapping[str, Any]) -> str:
     for token, label in reason_labels:
         if token in reason_text and label not in review_reasons:
             review_reasons.append(label)
+    if junction_track and not any(token in reason_text for token in exact_sequence_reasons):
+        missing_exact = [
+            _PATIENT_SAFETY_LAYER_LABELS[key]
+            for key in ("reference_proteome", "normal_ligandome", "normal_junction")
+            if str(row.get({
+                "reference_proteome": "reference_proteome_status",
+                "normal_ligandome": "normal_ligandome_status",
+                "normal_junction": "normal_junction_assessment_status",
+            }[key]) or "").strip().upper() not in {"ASSESSED", "PASS", "NEGATIVE", "NOT_FOUND"}
+        ]
+        return (
+            "连接事件安全性需按精确新生序列复核；伙伴基因正常组织/HSPC表达仅作背景，不直接判定该连接肽高风险"
+            + ("；" + "、".join(missing_exact) if missing_exact else "")
+        )
     if not review_reasons:
         normal_tpm = _patient_numeric_display(_patient_observed_value(row, "normal_tissue_max_tpm"), 4)
         normal_tissue = _patient_value(row, "normal_tissue_max_tissue", "critical_tissue_name", default="正常组织")
@@ -3526,6 +3777,9 @@ def _patient_key_gaps(row: Mapping[str, Any], bundle: ReportBundle) -> list[str]
     safety_gap = _patient_safety_gap(row)
     if safety_gap:
         gaps.append(safety_gap)
+    fusion_artifact = _patient_fusion_artifact_review(row)
+    if fusion_artifact:
+        gaps.append(fusion_artifact)
     conflict_summary = _patient_conflict_summary(row)
     if conflict_summary:
         gaps.append("具体证据冲突：" + conflict_summary)
@@ -3535,11 +3789,30 @@ def _patient_key_gaps(row: Mapping[str, Any], bundle: ReportBundle) -> list[str]
     return list(dict.fromkeys(gaps))
 
 
-def _patient_attention_reasons(row: Mapping[str, Any]) -> list[str]:
+def _patient_fusion_artifact_review(row: Mapping[str, Any]) -> str:
+    """Flag generic fusion patterns that require artifact-focused review."""
+    if _patient_track(row) != "Fusion":
+        return ""
+    label = str(row.get("gene") or row.get("event_name") or row.get("fusion_gene") or "").strip()
+    if not label:
+        return ""
+    parts = [part.strip() for part in re.split(r"::|--", label) if part.strip()]
+    canonical = [re.sub(r"\([^)]*\)", "", part).split(",", 1)[0].strip().upper() for part in parts]
+    fusion_type = str(row.get("fusion_type") or row.get("type") or "").lower()
+    if len(canonical) == 2 and canonical[0] == canonical[1]:
+        return "融合伪影复核：同基因连接，需排查内部重排、环状RNA、转录本错配和比对伪影"
+    if len(parts) != 2 or "," in label or ";" in label or sum("ENSG" in part.upper() for part in parts) > 1:
+        return "融合伪影复核：复杂/多伙伴标注，需重建唯一的5'::3'断点、方向、转录本和ORF"
+    if any(token in fusion_type for token in ("readthrough", "read-through", "cis-near", "adjacent")):
+        return "融合伪影复核：可能的read-through/邻近基因连接，需对照正常junction背景"
+    return ""
+
+
+def _patient_attention_reasons(row: Mapping[str, Any], bundle: ReportBundle | None = None) -> list[str]:
     reasons: list[str] = []
-    gene = str(row.get("gene") or row.get("event_name") or "").upper().replace("--", "::")
-    if gene in {"EWSR1::WT1", "WT1::EWSR1"}:
-        reasons.append("DSRCT标志性驱动融合，需独立保留机制与融合肽审阅")
+    anchor = _disease_anchor(row, bundle)
+    if anchor:
+        reasons.append(str(anchor.get("label") or "当前疾病知识库标记的锚定事件"))
     driver = str(row.get("cancer_driver_context") or "").upper()
     if driver == "DRIVER_CONTEXT" or str(row.get("cancer_gene_types") or "").strip():
         reasons.append("具有癌症基因或驱动机制背景")
@@ -3640,14 +3913,13 @@ def _patient_manual_review_rows(
         peptide = next((peptide_by_event[key] for key in keys if key in peptide_by_event), None)
         row = dict(peptide or {})
         row.update({key: value for key, value in event.items() if str(value or "").strip()})
-        reasons = _patient_attention_reasons(row)
+        reasons = _patient_attention_reasons(row, bundle)
         configured = _patient_configured_manual_review(row, bundle.profile)
         if configured:
             reasons.insert(0, "由当前疾病/证据规则明确指定为关键人工审阅事件")
         if not reasons:
             continue
-        gene = str(row.get("gene") or row.get("event_name") or "").upper().replace("--", "::")
-        mechanism_priority = gene in {"EWSR1::WT1", "WT1::EWSR1"}
+        mechanism_priority = bool(_disease_anchor(row, bundle))
         scored.append((0 if configured or mechanism_priority else 1, -len(reasons), index, row, list(dict.fromkeys(reasons))))
     result: list[dict[str, str]] = []
     displayed: set[str] = set()
@@ -3927,16 +4199,19 @@ def _patient_hla_loh_consensus(bundle: ReportBundle) -> tuple[list[dict[str, str
     lost = [allele for allele, status in aggregate if status == "LOST"]
     conflicts = [allele for allele, status in aggregate if status == "CONFLICT"]
     assessed = [status for _, status in aggregate if status != "UNASSESSED"]
-    tools_present = {tool for tool, calls in by_tool.items() if calls}
+    assessed_tools = {
+        tool for tool, calls in by_tool.items()
+        if any(status != "UNASSESSED" for statuses in calls.values() for status in statuses)
+    }
     if lost:
         overall = "检出限制性HLA-I LOH：" + "、".join(lost)
     elif conflicts:
         overall = "HLA-I LOH工具结果冲突：" + "、".join(conflicts)
     elif assessed and all(status == "RETAINED" for status in assessed):
-        if tools_present == {"LOHHLA", "SpecHLA"}:
+        if assessed_tools == {"LOHHLA", "SpecHLA"}:
             overall = "多工具一致未见限制性HLA-I LOH（保留）"
-        elif tools_present:
-            overall = f"未见限制性HLA-I LOH（仅{next(iter(tools_present))}，证据有限）"
+        elif assessed_tools:
+            overall = f"未见限制性HLA-I LOH（仅{next(iter(assessed_tools))}，证据有限）"
         else:
             overall = "限制性HLA-I LOH未评估"
     else:
@@ -4124,6 +4399,16 @@ def make_patient_report(
     ranked = list(bundle.peptides)
     event_grade_map = _patient_event_grade_map(bundle.events)
     all_representatives = _patient_representatives(ranked, len(ranked))
+    all_representatives = [
+        row for _, row in sorted(
+            enumerate(all_representatives),
+            key=lambda item: (
+                0 if _disease_anchor(item[1], bundle) else 1,
+                1 if _patient_fusion_artifact_review(item[1]) else 0,
+                item[0],
+            ),
+        )
+    ]
     dispositions = {
         str(row.get("peptide_id") or row.get("event_id") or index): _patient_candidate_disposition(row, val_map, event_grade_map)
         for index, row in enumerate(all_representatives)
@@ -4243,6 +4528,11 @@ def make_patient_report(
     out.append(_table(event_grade_rows, ["事件等级", "事件数", "含义", "下一步"]))
     focus_count = len(top)
     out.append(f"<p><b>本次重点审阅：</b>{focus_count}个事件。它们是本报告综合证据表中优先展示的代表事件，不等同于已有{focus_count}个经实验确认的新抗原。</p>")
+    if bundle.disease_knowledge.get("anchors"):
+        out.append(
+            "<p class='small'>已加载疾病知识配置：命中的锚定事件优先展示，"
+            "但不会绕过事件真实性、精确断点、HLA、安全性或实验验证门槛，也不自动提升R等级。</p>"
+        )
     out.append(f"<p>候选选择同时考虑事件真实性、RNA支持、HLA呈递、MT/WT突变特异性、克隆性、限制性HLA状态、APPM和安全性；缺失证据统一视为未评估，不作为阴性结论。另有{len(paused_representatives)}个事件代表候选因当前不推进或完整性门槛未通过，仅保留在技术审阅池。</p></div>")
 
     out.append("<div class='section'><h2>2. 患者样本与测序数据</h2>")
@@ -4275,9 +4565,22 @@ def make_patient_report(
     overall = [{"事件类型": track, "事件数": count, "主要复核重点": {"SNV": "DNA深度/VAF、RNA alt、MT/WT", "InDel": "局部重比对、阅读框、NMD和phasing", "Fusion": "精确断点、junction reads、frame和正常read-through", "Splice": "精确junction、PSI/reads、正常isoform和ORF", "DNA SV": "断点与异常转录本"}.get(track, "事件真实性和证据完整性")} for track, count in sorted(track_counts.items())]
     out.append(_table(overall, ["事件类型", "事件数", "主要复核重点"]))
     for track in ("SNV", "InDel", "Fusion", "Splice", "DNA SV"):
-        representatives = _patient_event_representatives(bundle.events, ranked, event_top_n, track)
+        representatives = _patient_event_representatives(
+            bundle.events, ranked, max(event_top_n, len(bundle.events), len(ranked)), track,
+        )
         if not representatives:
             continue
+        representatives = [
+            row for _, row in sorted(
+                enumerate(representatives),
+                key=lambda item: (
+                    0 if _disease_anchor(item[1], bundle) else 1,
+                    1 if _patient_fusion_artifact_review(item[1]) else 0,
+                    item[0],
+                ),
+            )
+        ]
+        representatives = representatives[:event_top_n]
         rows = []
         for rank, row in enumerate(representatives, 1):
             peptide = str(row.get("peptide") or "").strip()

@@ -55,6 +55,10 @@ junction_strong_reads = 10
 genes = ["KRAS", "TP53"]
 events = ["EWSR1::WT1"]
 
+[disease_knowledge]
+path = "configs/disease_knowledge/dsrct.json"
+mode = "display_priority_without_grade_override"
+
 [output]
 peptide_id_tie_break = true
 event_deduplicate = true

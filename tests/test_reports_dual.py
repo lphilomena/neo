@@ -3,7 +3,7 @@ import gzip
 import json
 from pathlib import Path
 
-from neoag.reports_dual import ReportBundle, _apply_patient_gene_expression, _augment_runtime_tool_provenance, _find_bam_input, _patient_conflict_summary, _patient_disease_background, _patient_dna_evidence, _patient_event_grade_counts, _patient_evidence_audit_rows, _patient_evidence_summary, _patient_event_change, _patient_expression_tpm_map, _patient_key_gaps, _patient_limitation, _patient_manual_review_rows, _patient_metric, _patient_presentation_metric, _patient_rna_measurements, _patient_rna_metric, _patient_safety_gap, _patient_tool_rows, _patient_track, _patient_validation, _replace_gene_ids, load_report_bundle, make_dual_reports, make_patient_report, make_technical_report
+from neoag.reports_dual import ReportBundle, _apply_patient_gene_expression, _augment_runtime_tool_provenance, _find_bam_input, _patient_conflict_summary, _patient_disease_background, _patient_dna_evidence, _patient_event_grade_counts, _patient_evidence_audit_rows, _patient_evidence_summary, _patient_event_change, _patient_expression_tpm_map, _patient_fusion_artifact_review, _patient_hla_loh_consensus, _patient_key_gaps, _patient_limitation, _patient_manual_review_rows, _patient_metric, _patient_presentation_metric, _patient_rna_measurements, _patient_rna_metric, _patient_safety_gap, _patient_tool_rows, _patient_track, _patient_validation, _replace_gene_ids, load_report_bundle, make_dual_reports, make_patient_report, make_technical_report
 from neoag.utils import write_tsv
 
 
@@ -259,6 +259,9 @@ def test_dsrct_defining_fusion_is_retained_once_in_manual_review_top_five():
     })
     bundle.events = events
     bundle.peptides = peptides
+    bundle.disease_knowledge = {
+        "anchors": [{"event": "EWSR1::WT1", "label": "DSRCT disease anchor"}],
+    }
     rows = _patient_manual_review_rows(events, peptides, bundle, {}, limit=5)
     assert sum(row["事件"] == "EWSR1::WT1" for row in rows) == 1
 
@@ -1002,8 +1005,10 @@ def test_patient_key_gaps_describes_safety_review_signals():
     }
     gaps = _patient_key_gaps(row, _bundle())
     text = "；".join(gaps)
-    assert "Brain_Cerebellar_Hemisphere表达信号 201.5590 TPM" in text
-    assert "HSPC/正常造血参考中检测到表达信号 160.7000 HPA_nCPM" in text
+    assert "连接事件安全性需按精确新生序列复核" in text
+    assert "伙伴基因正常组织/HSPC表达仅作背景" in text
+    assert "201.5590 TPM" not in text
+    assert "160.7000 HPA_nCPM" not in text
     assert "安全性证据不完整" not in text
 
 
@@ -1569,3 +1574,133 @@ def test_patient_assessed_accepts_a_valid_metric_after_unassessed_status():
     row = {"processing_status": "UNASSESSED", "processing_score": "0.82"}
     assert _patient_assessed(row, "processing_status", "processing_score")
     assert not _patient_assessed(row, "processing_status", "missing_score")
+
+
+def test_junction_safety_uses_exact_sequence_not_partner_expression():
+    gap = _patient_safety_gap({
+        "event_type": "Fusion",
+        "safety_status": "SAFETY_REVIEW",
+        "safety_reason": "critical_tissue_expression;normal_hspc_expression",
+        "critical_tissue_name": "Brain",
+        "critical_tissue_max_tpm": "201.5",
+        "normal_hspc_tpm": "160.7",
+        "reference_proteome_status": "UNASSESSED",
+        "normal_ligandome_status": "UNASSESSED",
+        "normal_junction_assessment_status": "UNASSESSED",
+    })
+    assert "精确新生序列" in gap
+    assert "伙伴基因正常组织/HSPC表达仅作背景" in gap
+    assert "201.5" not in gap
+    assert "160.7" not in gap
+
+    partial_gap = _patient_safety_gap({
+        "event_type": "Fusion", "safety_status": "SAFETY_PARTIAL",
+        "normal_tissue_max_tpm": "213.994", "normal_tissue_max_tissue": "Nerve_Tibial",
+        "normal_hspc_tpm": "18.0",
+        "reference_proteome_status": "ASSESSED",
+        "normal_ligandome_status": "ASSESSED",
+        "normal_junction_assessment_status": "ASSESSED",
+    })
+    assert "精确新生序列" in partial_gap
+    assert "213.994" not in partial_gap
+    assert "18.0" not in partial_gap
+
+
+def test_generic_fusion_artifact_review_flags_same_gene_and_complex_labels():
+    same_gene = _patient_fusion_artifact_review({
+        "event_type": "Fusion", "gene": "PPP1R9B::PPP1R9B",
+    })
+    complex_label = _patient_fusion_artifact_review({
+        "event_type": "Fusion", "gene": "UNCX::ENSG00000233082(11139),MICALL2(148059)",
+    })
+    assert "同基因连接" in same_gene
+    assert "复杂/多伙伴标注" in complex_label
+
+
+def test_hla_loh_qc_only_record_does_not_count_as_assessed_tool():
+    bundle = _bundle()
+    bundle.hla_loh_tool_results = [
+        {
+            "_report_tool": "LOHHLA", "hla_allele": "HLA-A*02:01",
+            "loh_status": "UNASSESSED", "lohhla_copy_number": "1.8",
+        },
+        {
+            "_report_tool": "SpecHLA", "hla_allele": "HLA-A*02:01",
+            "loh_status": "no",
+        },
+    ]
+    rows, overall = _patient_hla_loh_consensus(bundle)
+    assert "仅SpecHLA" in overall
+    assert "多工具一致" not in overall
+    assert rows[0]["LOHHLA"] == "未形成判断（QC不足）"
+
+
+def test_depth_and_rna_qc_are_summarized_by_unique_event():
+    base = _bundle()
+    duplicate = dict(base.peptides[0])
+    duplicate["peptide_id"] = "P1_ALT"
+    duplicate["hla_allele"] = "HLA-B*07:02"
+    second = dict(base.peptides[0])
+    second.update({
+        "peptide_id": "P2", "event_id": "E2", "tumor_depth": "80",
+        "rna_depth": "0", "rna_alt_reads": "0",
+    })
+    base.peptides[0]["tumor_depth"] = "100"
+    bundle = load_report_bundle(
+        profile=base.profile,
+        events=[],
+        peptides=[base.peptides[0], duplicate, second],
+        provenance={"rna_qc_status": "已载入表达；位点级RNA pileup未评估"},
+    )
+    assert "n=2" in bundle.provenance["tumor_dna_depth"]
+    assert "SNV/InDel位点级RNA已评估 2/2 个独立事件" in bundle.provenance["rna_qc_status"]
+    assert "ALT reads≥1/3/5：1/1/0" in bundle.provenance["rna_qc_status"]
+
+
+def test_disease_knowledge_prioritizes_display_without_changing_r_grade(tmp_path):
+    bundle = _bundle()
+    common = {
+        "event_type": "Fusion", "source_chain_confidence_tier": "C2",
+        "netmhcpan_el_rank": "0.5", "evidence_grade": "R3",
+        "best_evidence_grade": "R3", "safety_status": "PASS",
+    }
+    bundle.events = [
+        {**common, "event_id": "F1", "gene": "PPP1R9B::PPP1R9B"},
+        {**common, "event_id": "F2", "gene": "EWSR1::WT1"},
+    ]
+    bundle.peptides = [
+        {**common, "peptide_id": "P1", "event_id": "F1", "gene": "PPP1R9B::PPP1R9B", "peptide": "AAAAAAAAA", "hla_allele": "HLA-A*11:01"},
+        {**common, "peptide_id": "P2", "event_id": "F2", "gene": "EWSR1::WT1", "peptide": "SSYGQQSEK", "hla_allele": "HLA-A*11:01"},
+    ]
+    bundle.disease_knowledge = {
+        "anchors": [{
+            "event": "EWSR1::WT1", "aliases": ["EWSR1--WT1"],
+            "label": "DSRCT disease anchor",
+            "public_neoantigens": [{
+                "sequence": "SSYGQQSEK", "hla_prefixes": ["HLA-A*11"],
+                "evidence": "HLA-IP/MS",
+            }],
+        }],
+    }
+    out = tmp_path / "patient_anchor.html"
+    make_patient_report(out, bundle, event_top_n=2, candidate_top_n=2)
+    text = out.read_text(encoding="utf-8")
+    section = text.split("重点候选 Top 2", 1)[1].split("</table>", 1)[0]
+    assert section.index("EWSR1::WT1") < section.index("PPP1R9B::PPP1R9B")
+    assert "仅优先展示，不自动提升R等级" in text
+    assert "<td>R3-" in section
+    assert "<td>R1</td>" not in section
+    assert "<td>R2</td>" not in section
+
+
+def test_disease_knowledge_is_auto_discovered_from_structured_disease():
+    base = _bundle()
+    bundle = load_report_bundle(
+        profile=base.profile,
+        events=base.events,
+        peptides=base.peptides,
+        provenance={"clinical_context": {"disease": "促结缔组织增生性小圆细胞肿瘤（DSRCT）"}},
+    )
+    assert bundle.disease_knowledge["status"] == "LOADED"
+    assert bundle.disease_knowledge["disease_id"] == "DSRCT"
+    assert bundle.disease_knowledge["anchors"][0]["event"] == "EWSR1::WT1"

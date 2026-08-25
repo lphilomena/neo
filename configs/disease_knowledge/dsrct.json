@@ -1,0 +1,25 @@
+{
+  "schema_version": "open-neo-disease-knowledge-v1",
+  "disease_id": "DSRCT",
+  "display_name": "Desmoplastic small round cell tumor",
+  "disease_aliases": [
+    "desmoplastic small round cell tumor",
+    "desmoplastic small round cell tumour",
+    "促结缔组织增生性小圆细胞肿瘤"
+  ],
+  "anchors": [
+    {
+      "event": "EWSR1::WT1",
+      "aliases": ["EWSR1--WT1", "EWSR1_WT1"],
+      "label": "DSRCT disease anchor: pathognomonic EWSR1::WT1 driver fusion",
+      "review_priority": 1,
+      "public_neoantigens": [
+        {
+          "sequence": "SSYGQQSEK",
+          "hla_prefixes": ["HLA-A*03", "HLA-A*11"],
+          "evidence": "HLA-IP/MS presentation and preclinical functional T-cell evidence"
+        }
+      ]
+    }
+  ]
+}
