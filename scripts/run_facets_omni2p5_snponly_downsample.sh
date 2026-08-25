@@ -79,8 +79,8 @@ check_prereqs() {
   [[ -s "${FACETS_SNP_VCF}" ]] || { echo "ERROR: missing FACETS_SNP_VCF: ${FACETS_SNP_VCF}" >&2; exit 1; }
   [[ -s "${TUMOR_BAM}" ]] || { echo "ERROR: missing TUMOR_BAM: ${TUMOR_BAM}" >&2; exit 1; }
   [[ -s "${NORMAL_BAM}" ]] || { echo "ERROR: missing NORMAL_BAM: ${NORMAL_BAM}" >&2; exit 1; }
-  [[ -s "${TUMOR_BAM}.bai" ]] || { echo "ERROR: missing tumor BAI: ${TUMOR_BAM}.bai" >&2; exit 1; }
-  [[ -s "${NORMAL_BAM}.bai" ]] || { echo "ERROR: missing normal BAI: ${NORMAL_BAM}.bai" >&2; exit 1; }
+  [[ -s "${TUMOR_BAM}.bai" || -s "${TUMOR_BAM%.bam}.bai" ]] || { echo "ERROR: missing tumor BAI for ${TUMOR_BAM}" >&2; exit 1; }
+  [[ -s "${NORMAL_BAM}.bai" || -s "${NORMAL_BAM%.bam}.bai" ]] || { echo "ERROR: missing normal BAI for ${NORMAL_BAM}" >&2; exit 1; }
   if ! "${RSCRIPT}" -e 'stopifnot(requireNamespace("facets", quietly=TRUE))' 2>/dev/null; then
     echo "ERROR: facets R package missing in ${RSCRIPT}" >&2
     exit 1

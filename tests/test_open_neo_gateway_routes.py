@@ -26,7 +26,14 @@ def test_open_neo_gateway_accepts_rna_fusion_splice_profile_fields():
     assert {
         "star_index", "ctat_genome_lib", "easyfuse_ref", "normal_readthrough",
         "snaf_workflow", "splicemutr_workflow", "rna_threads",
+        "star_sjdb_overhang", "fusion_caller_root",
+        "event_top_n", "candidate_top_n",
     } <= optional
+
+
+def test_open_neo_gateway_accepts_review_ranking_limits():
+    optional = set(ROUTE_SPECS["/open/review"].optional)
+    assert {"event_top_n", "candidate_top_n"} <= optional
 
 
 def test_open_neo_gateway_manifest_risk_uses_declared_inputs(tmp_path):

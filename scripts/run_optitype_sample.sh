@@ -33,6 +33,7 @@ done
 [[ -s "$BAM" && -n "$SAMPLE_ID" && -n "$OUTDIR" ]] || { usage >&2; exit 2; }
 [[ -s "$BAM.bai" || -s "${BAM%.bam}.bai" ]] || { echo "ERROR: BAM index missing" >&2; exit 3; }
 [[ -x "$OPTITYPE_BIN" ]] || { echo "ERROR: OptiType executable missing" >&2; exit 127; }
+export PATH="$(dirname "$OPTITYPE_BIN"):$PATH"
 command -v samtools >/dev/null 2>&1 || { echo "ERROR: samtools missing" >&2; exit 127; }
 [[ "$THREADS" =~ ^[1-9][0-9]*$ ]] || { echo "ERROR: invalid threads" >&2; exit 2; }
 

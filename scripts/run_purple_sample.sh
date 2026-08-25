@@ -28,6 +28,23 @@ REF_FASTA="${HMFTOOLS_REFERENCE_FASTA:-${SEQUENZA_FASTA:-${NEOAG_REFERENCE_FASTA
 AMBER_LOCI="${HMFTOOLS_AMBER_LOCI:-$REF_ROOT/amber/GermlineHetPon.38.vcf.gz}"
 GC_PROFILE="${HMFTOOLS_GC_PROFILE:-$REF_ROOT/cobalt/GC_profile.1000bp.38.cnp}"
 ENSEMBL_DIR="${HMFTOOLS_ENSEMBL_DATA_DIR:-$REF_ROOT/ensembl_data_cache_38}"
+INPUT_DIR="$OUTDIR/input"
+mkdir -p "$INPUT_DIR"
+stage_bam_with_index() {
+  local source_bam="$1" label="$2"
+  if [[ -s "$source_bam.bai" ]]; then
+    printf '%s\n' "$source_bam"
+    return
+  fi
+  local alternate_index="${source_bam%.bam}.bai"
+  [[ -s "$alternate_index" ]] || { echo "ERROR: missing BAM index for $source_bam" >&2; return 3; }
+  local staged_bam="$INPUT_DIR/${label}.bam"
+  ln -sfn "$source_bam" "$staged_bam"
+  ln -sfn "$alternate_index" "$staged_bam.bai"
+  printf '%s\n' "$staged_bam"
+}
+TUMOR_BAM="$(stage_bam_with_index "$TUMOR_BAM" tumor)"
+NORMAL_BAM="$(stage_bam_with_index "$NORMAL_BAM" normal)"
 
 for exe in amber cobalt purple; do [[ -x "$HMF_ENV/bin/$exe" ]] || { echo "ERROR: missing $HMF_ENV/bin/$exe" >&2; exit 127; }; done
 for file in "$TUMOR_BAM" "$TUMOR_BAM.bai" "$NORMAL_BAM" "$NORMAL_BAM.bai" "$REF_FASTA" "$REF_FASTA.fai" "$AMBER_LOCI" "$GC_PROFILE"; do

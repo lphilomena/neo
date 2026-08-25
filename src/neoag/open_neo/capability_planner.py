@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import sys
 import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -40,6 +41,7 @@ TOOL_EXECUTABLES = {
     "netmhcpan": "netMHCpan",
     "mhcflurry": "mhcflurry-predict",
     "netmhcstabpan": "netMHCstabpan",
+    "netchop": "netChop",
     "prime": "PRIME",
     "bigmhc_im": "bigmhc_predict",
     "deepimmuno": "deepimmuno-cnn.py",
@@ -272,7 +274,9 @@ def build_automatic_production_plan(
             selected.append(tool)
 
     def add_stage(name: str, *, command: str, outputs: dict[str, str], required: bool = False, source: str = "", depends: list[str] | None = None) -> None:
-        stages[name] = {"required": required, "command": command, "outputs": outputs}
+        python_bin_dir = Path(sys.executable).resolve().parent
+        runtime_command = f'PATH="{python_bin_dir}:$PATH" {command}'
+        stages[name] = {"required": required, "command": runtime_command, "outputs": outputs}
         if source:
             stages[name]["source"] = source
         if depends:
@@ -351,6 +355,8 @@ def build_automatic_production_plan(
             "sample_id": sample_id,
         }
         matcher_command = _template_command(matcher_template, values)
+        if matcher_command and matcher_exe:
+            matcher_command = f"PATH={Path(matcher_exe).parent}:$PATH {matcher_command}"
         if matcher_available and refs.get("reference_fasta") and matcher_loci:
             matcher_command = matcher_command or (
                 f"bash {root / 'scripts/run_bam_matcher_pair.sh'} --bam1 {normal_bam} --bam2 {tumor_bam} "
@@ -400,7 +406,10 @@ def build_automatic_production_plan(
             if available and not command:
                 command = f"optitype run -i {pair[0]} -i {pair[1]} --dna -o {{outdir}}/hla/optitype --solver cbc --threads {threads}"
             if available and command:
-                add_stage("hla_optitype", command=command, outputs={"result_dir": "{outdir}/hla/optitype"}, depends=alignment_deps)
+                add_stage("hla_optitype", command=command, outputs={
+                    "result_dir": "{outdir}/hla/optitype",
+                    "complete_marker": "{outdir}/hla/optitype/.complete",
+                }, depends=alignment_deps)
                 hla_results.append("{outdir}/hla/optitype")
                 decide("hla_typing", "optitype", "SELECTED", "paired DNA FASTQ is compatible", stage="hla_optitype", executable=executable)
             else:
@@ -416,10 +425,14 @@ def build_automatic_production_plan(
                     optitype_command = (
                         f"bash {root / 'scripts/run_optitype_sample.sh'} --bam {typing_input_bam} "
                         f"--sample-id {normal_id if normal_bam else tumor_id} --threads {threads} "
-                        "--outdir {outdir}/hla/optitype"
+                        "--outdir {outdir}/hla/optitype "
+                        f"--optitype-bin {optitype_executable}"
                     )
                 if optitype_available and optitype_command:
-                    add_stage("hla_optitype", command=optitype_command, outputs={"result_dir": "{outdir}/hla/optitype"}, depends=alignment_deps)
+                    add_stage("hla_optitype", command=optitype_command, outputs={
+                        "result_dir": "{outdir}/hla/optitype",
+                        "complete_marker": "{outdir}/hla/optitype/.complete",
+                    }, depends=alignment_deps)
                     hla_results.append("{outdir}/hla/optitype")
                     decide("hla_typing", "optitype", "SELECTED", "repository-owned BAM-to-HLA-read runner is available", stage="hla_optitype", executable=optitype_executable)
                 else:
@@ -442,7 +455,10 @@ def build_automatic_production_plan(
                     )
                 if available and command and (not graph_ref or refs.get(graph_ref)):
                     stage = f"hla_{tool}"
-                    add_stage(stage, command=command, outputs={"result_dir": f"{{outdir}}/hla/{tool}"}, depends=alignment_deps)
+                    outputs = {"result_dir": f"{{outdir}}/hla/{tool}"}
+                    if tool == "spechla":
+                        outputs["complete_marker"] = "{outdir}/hla/spechla/.complete"
+                    add_stage(stage, command=command, outputs=outputs, depends=alignment_deps)
                     hla_results.append(f"{{outdir}}/hla/{tool}")
                     decide("hla_typing", tool, "SELECTED", "BAM input and a validated template or repository-owned runner are available", stage=stage, executable=executable, references=[graph_ref])
                 elif available and not command:
@@ -509,7 +525,10 @@ def build_automatic_production_plan(
             add_stage(
                 "purity_facets",
                 command=command,
-                outputs={"result_dir": "{outdir}/purity/facets"},
+                outputs={
+                    "result_dir": "{outdir}/purity/facets",
+                    "summary": "{outdir}/purity/facets/facets_omni2p5_summary.tsv",
+                },
                 depends=paired_analysis_deps,
             )
             purity_dirs.append("{outdir}/purity/facets")
@@ -543,6 +562,7 @@ def build_automatic_production_plan(
             })
             if tool == "purple" and available and refs.get("purple_reference") and not command:
                 command = (
+                    f"HMF_ENV={Path(executable).parent} "
                     f"HMFTOOLS_REFERENCE_ROOT={refs['purple_reference']} "
                     f"HMFTOOLS_REFERENCE_FASTA={refs.get('reference_fasta', '')} "
                     f"bash {root / 'scripts/run_purple_sample.sh'} --sample-id {sample_id} "
@@ -551,7 +571,10 @@ def build_automatic_production_plan(
                 )
             if available and command:
                 stage = f"purity_{tool}"
-                add_stage(stage, command=command, outputs={"result_dir": f"{{outdir}}/purity/{tool}"}, depends=paired_analysis_deps)
+                outputs = {"result_dir": f"{{outdir}}/purity/{tool}"}
+                if tool == "purple":
+                    outputs["complete_marker"] = "{outdir}/purity/purple/.complete"
+                add_stage(stage, command=command, outputs=outputs, depends=paired_analysis_deps)
                 purity_dirs.append(f"{{outdir}}/purity/{tool}")
                 decide("purity_cnv", tool, "SELECTED", "validated command_template or repository-owned runner is available", stage=stage, executable=executable, references=["purple_reference"] if tool == "purple" else [])
             elif available:

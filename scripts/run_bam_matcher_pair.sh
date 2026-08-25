@@ -18,9 +18,16 @@ while [[ $# -gt 0 ]]; do
 done
 for value in "$BAM1" "$BAM2" "$REF" "$LOCI"; do [[ -s "$value" ]] || { echo "ERROR: missing input $value" >&2; exit 2; }; done
 [[ -n "$OUTDIR" ]] || { usage; exit 2; }
-command -v bam-matcher >/dev/null 2>&1 || { echo "ERROR: bam-matcher wrapper unavailable" >&2; exit 127; }
+BAM_MATCHER_BIN="${BAM_MATCHER_BIN:-$(command -v bam-matcher 2>/dev/null || true)}"
+[[ -x "$BAM_MATCHER_BIN" ]] || { echo "ERROR: bam-matcher wrapper unavailable" >&2; exit 127; }
 ENV_NAME="${NEOAG_BAM_MATCHER_ENV:-neoag-bam-matcher}"
-ENV_BIN="${NEOAG_CONDA_BASE:-}/envs/$ENV_NAME/bin"
+if [[ -n "${NEOAG_BAM_MATCHER_ENV_PREFIX:-}" ]]; then
+  ENV_BIN="$NEOAG_BAM_MATCHER_ENV_PREFIX/bin"
+else
+  matcher_tools_root="$(cd "$(dirname "$BAM_MATCHER_BIN")/.." && pwd -P)"
+  ENV_BIN="$matcher_tools_root/conda_envs/$ENV_NAME/bin"
+  [[ -d "$ENV_BIN" ]] || ENV_BIN="${NEOAG_CONDA_BASE:-}/envs/$ENV_NAME/bin"
+fi
 SAMTOOLS_BIN="${BAM_MATCHER_SAMTOOLS:-$(command -v samtools 2>/dev/null || true)}"
 FREEBAYES_BIN="${BAM_MATCHER_FREEBAYES:-$(command -v freebayes 2>/dev/null || true)}"
 [[ -x "$SAMTOOLS_BIN" ]] || SAMTOOLS_BIN="$ENV_BIN/samtools"
@@ -56,7 +63,7 @@ CHROM_MAP:
 CACHE_DIR: $OUTDIR/cache
 [Miscellaneous]
 EOF
-bam-matcher --bam1 "$BAM1" --bam2 "$BAM2" --config "$CONFIG" --output "$RAW" \
+"$BAM_MATCHER_BIN" --bam1 "$BAM1" --bam2 "$BAM2" --config "$CONFIG" --output "$RAW" \
   --scratch-dir "$OUTDIR/scratch" --debug --short-output
 PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}" python "$ROOT/scripts/parse_bam_matcher.py" \
   --input "$RAW" --output "$OUTDIR/sample_identity.tsv" --fail-on-mismatch

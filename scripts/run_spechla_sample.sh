@@ -18,6 +18,14 @@ done
 [[ -s "$BAM" && -n "$SAMPLE_ID" && -n "$OUTDIR" ]] || { usage; exit 2; }
 [[ -s "$BAM.bai" || -s "${BAM%.bam}.bai" ]] || { echo "ERROR: BAM index missing" >&2; exit 3; }
 mkdir -p "$OUTDIR/reads" "$OUTDIR/typing"
+CONTAINER_BAM="$BAM"
+if [[ ! -s "$BAM.bai" && -s "${BAM%.bam}.bai" ]]; then
+  # SpecHLA only recognizes BAM.bai. Stage links locally so a valid alternate
+  # index name can be reused without modifying or re-indexing source data.
+  CONTAINER_BAM="$OUTDIR/reads/input.bam"
+  ln -sfn "$BAM" "$CONTAINER_BAM"
+  ln -sfn "${BAM%.bam}.bai" "$CONTAINER_BAM.bai"
+fi
 if [[ -s "$OUTDIR/.complete" && "$FORCE" != 1 ]]; then echo "SpecHLA already complete: $OUTDIR"; exit 0; fi
 rm -f "$OUTDIR/.complete"
 
@@ -45,7 +53,7 @@ direct_mhc_extract() {
 
 set +e
 SPECHLA_MODE=extract "$ROOT/scripts/run_spechla_container.sh" \
-  -s "$SAMPLE_ID" -b "$BAM" -r hg38 -o "$OUTDIR/reads" 2>&1 | tee "$OUTDIR/extract.log"
+  -s "$SAMPLE_ID" -b "$CONTAINER_BAM" -r hg38 -o "$OUTDIR/reads" 2>&1 | tee "$OUTDIR/extract.log"
 extract_rc=${PIPESTATUS[0]}
 set -e
 if [[ ! -s "$fq1" || ! -s "$fq2" ]]; then

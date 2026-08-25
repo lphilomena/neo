@@ -33,7 +33,8 @@ TOOL_ENV_PATHS = {
     "splicemutr": ("SPLICEMUTR_BIN",),
     "bam_matcher": ("BAM_MATCHER_BIN",),
     "netmhcpan": ("NEOAG_NETMHCPAN_BIN",),
-    "netmhcstabpan": ("NETMHCSTABPAN_BIN",),
+    "netmhcstabpan": ("NEOAG_NETMHCSTABPAN_BIN", "NETMHCSTABPAN_BIN"),
+    "netchop": ("NEOAG_NETCHOP_BIN", "NETCHOP_BIN"),
     "prime": ("PRIME_BIN",),
     "mixmhcpred": ("MIXMHCPRED_BIN",),
     "bigmhc_im": ("BIGMHC_BIN",),
@@ -80,6 +81,7 @@ TOOL_EXECUTABLE_CANDIDATES = {
     "bam_matcher": ("bam-matcher", "bam_matcher.py"),
     "netmhcpan": ("netMHCpan",),
     "netmhcstabpan": ("netMHCstabpan",),
+    "netchop": ("netChop",),
     "prime": ("PRIME",),
     "mixmhcpred": ("MixMHCpred",),
 }
@@ -100,6 +102,7 @@ REFERENCE_ENV_PATHS = {
     "lohhla_reference": ("LOHHLA_HOME",),
     "facets_snp_vcf": ("FACETS_SNP_VCF", "COMMON_SNP_VCF"),
     "sequenza_gc_wiggle": ("GC_WIGGLE",),
+    "sequenza_fasta": ("SEQUENZA_FASTA",),
     "purple_reference": ("PURPLE_REFERENCE",),
     "bam_matcher_loci": ("BAM_MATCHER_LOCI",),
     "snaf_workflow": ("SNAF_WORKFLOW",),
@@ -130,6 +133,7 @@ REFERENCE_CANDIDATES = {
     "facets_snp_vcf": ("data/facets/reference/common_snp.hg38.vcf.gz", "cnv/facets/common_snp.vcf.gz"),
     "facets_common_snp_vcf": ("data/facets/reference/common_snp.hg38.vcf.gz", "cnv/facets/common_snp.vcf.gz"),
     "sequenza_gc_wiggle": ("data/sequenza/reference/Homo_sapiens.GRCh38.dna.primary_assembly.chr.gc50.wig.gz",),
+    "sequenza_fasta": ("data/sequenza/reference/GRCh38.primary_assembly.chr.fa",),
     "purple_reference": ("data/hmf/purple_reference", "cnv/purple"),
     "bam_matcher_loci": ("data/sample_identity/bam_matcher.common_snps.hg38.vcf", "GRCh38/sample_identity/bam_matcher.common_snps.vcf"),
     "snaf_db": ("data/snaf/reference/data", "splice/snaf/reference/data"),
@@ -276,18 +280,32 @@ def _existing(value: Any) -> str:
         return ""
 
 
+def _executable_is_usable(name: str, executable: str) -> bool:
+    if name != "optitype":
+        return True
+    try:
+        proc = subprocess.run(
+            [executable, "--help"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            timeout=10, check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return proc.returncode == 0
+
+
 def _resolve_executable(name: str, spec: dict[str, Any], roots: list[Path]) -> str:
     declared = str(spec.get("executable") or spec.get("path") or "")
     if declared:
         declared_path = _existing(declared)
-        if declared_path and Path(declared_path).is_file():
+        if declared_path and Path(declared_path).is_file() and _executable_is_usable(name, declared_path):
             return declared_path
         found = shutil.which(declared)
-        if found:
+        if found and _executable_is_usable(name, found):
             return found
     for env_name in TOOL_ENV_PATHS.get(name, ()):
-        if _existing(os.environ.get(env_name)):
-            return _existing(os.environ[env_name])
+        env_path = _existing(os.environ.get(env_name))
+        if env_path and _executable_is_usable(name, env_path):
+            return env_path
     candidates = list(dict.fromkeys([
         declared,
         *TOOL_EXECUTABLE_CANDIDATES.get(name, ()),
@@ -305,14 +323,17 @@ def _resolve_executable(name: str, spec: dict[str, Any], roots: list[Path]) -> s
                 continue
             for path in (root / "bin" / candidate, root / "tools" / name / candidate):
                 resolved = _existing(path)
-                if resolved and Path(resolved).is_file() and os.access(resolved, os.X_OK):
+                if (resolved and Path(resolved).is_file() and os.access(resolved, os.X_OK)
+                        and _executable_is_usable(name, resolved)):
                     return resolved
         envs = root / "envs"
         if envs.is_dir():
             for candidate in candidates:
                 matches = sorted(envs.glob(f"*/bin/{candidate}")) if candidate else []
-                if matches:
-                    return str(matches[0].resolve())
+                for match in matches:
+                    resolved = str(match.resolve())
+                    if _executable_is_usable(name, resolved):
+                        return resolved
     return ""
 
 
@@ -411,6 +432,9 @@ def configure_machine(
     ref_data = load_limited_yaml(reference_manifest)
     tools = tool_data.setdefault("tools", {})
     references = ref_data.setdefault("references", {})
+    if "sequenza" in tools and "sequenza_fasta" not in references:
+        # Older manifests predate the dedicated chr-prefixed Sequenza FASTA.
+        references["sequenza_fasta"] = {"path": "", "required": False}
     genome_build = str(ref_data.get("genome_build") or "")
     reference_root_path = Path(reference_root).resolve()
     search_tool_roots = [project, Path(tools_root).resolve(), Path(licensed_root).resolve(), reference_root_path]
