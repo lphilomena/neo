@@ -862,7 +862,9 @@ def run_production(
             f"{lib_export}"
             f"{shlex.quote(sys.executable)} -m neoag.cli run-full "
             f"--config {shlex.quote(str(config_path))} --outdir {shlex.quote(str(final_outdir))} "
-            f"--reports {shlex.quote(str(expanded_run.get('reports') or 'patient,technical'))}"
+            f"--reports {shlex.quote(str(expanded_run.get('reports') or 'patient,technical'))} "
+            f"--event-top-n {int(expanded_run.get('event_top_n') or 20)} "
+            f"--candidate-top-n {int(expanded_run.get('candidate_top_n') or 100)}"
         )
         log_path = logs_dir / "unified_ranking.log"
         proc = subprocess.run(["bash", "-lc", command], cwd=root, text=True, capture_output=True)

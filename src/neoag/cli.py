@@ -946,6 +946,8 @@ def cmd_run_full(args):
         "entry_mode": entry_mode,
         "cancer_gene_list": cancer_gene_list,
         "report_types": args.reports,
+        "event_top_n": args.event_top_n,
+        "candidate_top_n": args.candidate_top_n,
     }
     if raw_events and raw_peptides:
         run_kwargs["raw_events"] = raw_events
@@ -1053,6 +1055,27 @@ def cmd_evidence_rank(args):
     outdir = Path(args.outdir)
     outdir.mkdir(parents=True, exist_ok=True)
     ranking_input = comprehensive
+    if args.raw_events or args.raw_peptides:
+        raw_events = Path(args.raw_events) if args.raw_events else None
+        raw_peptides = Path(args.raw_peptides) if args.raw_peptides else None
+        for label, source in (("raw events", raw_events), ("raw peptides", raw_peptides)):
+            if source is not None and not source.is_file():
+                raise SystemExit(f"Authoritative {label} file not found: {source}")
+        ranking_input = outdir / "comprehensive_peptide_evidence.authoritative.tsv"
+        merge_result = build_comprehensive_peptide_evidence(
+            output_tsv=ranking_input,
+            annotated_peptides=comprehensive,
+            ranked_peptides=weighted,
+            raw_events=raw_events,
+            raw_peptides=raw_peptides,
+            expression_evidence=args.expression_evidence,
+            rna_junction_evidence=args.rna_junction_evidence,
+            conflicts_tsv=outdir / "evidence_conflicts.authoritative_merge.tsv",
+        )
+        print(
+            "Merged authoritative raw event/peptide evidence before ranking: "
+            f"{merge_result['rows']} rows"
+        )
     if args.track != "all":
         expected_track = args.track.upper()
         source_rows = read_tsv(comprehensive)
@@ -1145,6 +1168,29 @@ def build_parser():
     er = sub.add_parser("evidence-rank", help="Run protected parallel evidence-consensus ranking")
     er.add_argument("--comprehensive-evidence", required=True, help="Authoritative comprehensive peptide evidence TSV")
     er.add_argument("--weighted-baseline", required=True, help="Existing weighted ranked_peptides.tsv; never modified")
+    er.add_argument(
+        "--raw-events",
+        help=(
+            "Optional authoritative raw_events.tsv. When supplied, event fields such as "
+            "SNV/InDel coordinates, DNA depth, ALT reads and VAF are merged by event_id "
+            "before evidence ranking."
+        ),
+    )
+    er.add_argument(
+        "--raw-peptides",
+        help="Optional authoritative raw_peptides.tsv merged before evidence ranking.",
+    )
+    er.add_argument(
+        "--expression-evidence",
+        help="Optional authoritative event-level gene/transcript expression evidence TSV.",
+    )
+    er.add_argument(
+        "--rna-junction-evidence",
+        help=(
+            "Optional event/peptide-linked RNA junction evidence TSV. Exact event IDs, "
+            "junction keys and caller verification fields are retained for report audit."
+        ),
+    )
     er.add_argument("--rules", help="Provisional evidence-consensus TOML rules")
     er.add_argument("--provenance", help="Optional existing provenance JSON to append evidence-consensus metadata")
     er.add_argument("--outdir", required=True, help="Evidence-consensus output directory")
@@ -1382,6 +1428,10 @@ def build_parser():
         default="patient,technical",
         help="Comma-separated report types: patient,technical; use none to skip reports",
     )
+    rf.add_argument("--event-top-n", type=int, default=20,
+                    help="Number of event-level candidates shown per applicable track")
+    rf.add_argument("--candidate-top-n", type=int, default=100,
+                    help="Number of cross-track peptide candidates shown in the patient report")
     rf.set_defaults(func=cmd_run_full)
 
     bi = sub.add_parser("build-intermediates", help="Build parsed/raw_events + raw_peptides (multi-entry A–F)")

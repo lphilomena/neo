@@ -113,6 +113,8 @@ def main() -> int:
     ap.add_argument("--project-root", default=Path(__file__).resolve().parents[1])
     ap.add_argument("--sample-id", required=True); ap.add_argument("--outdir", required=True); ap.add_argument("--output", required=True)
     ap.add_argument("--profile", default="profiles/sarcoma_rna_supported_v2_provisional.toml")
+    ap.add_argument("--event-top-n", type=int, default=20)
+    ap.add_argument("--candidate-top-n", type=int, default=100)
     ap.add_argument(
         "--evidence-consensus-rules",
         default="configs/ranking/sarcoma_evidence_consensus_v3_source_chain.toml",
@@ -164,6 +166,8 @@ def main() -> int:
         raise SystemExit("--rna-threads must be a positive integer")
     if args.star_sjdb_overhang < 1:
         raise SystemExit("--star-sjdb-overhang must be a positive integer")
+    if args.event_top_n < 1 or args.candidate_top_n < 1:
+        raise SystemExit("--event-top-n and --candidate-top-n must be positive integers")
     root = Path(args.project_root).resolve()
     profile_path = Path(args.profile)
     if not profile_path.is_absolute():
@@ -208,7 +212,7 @@ def main() -> int:
     else:
         production_limitations.append("NETMHCSTABPAN_LOCAL_UNAVAILABLE")
     predictor_toml = "[" + ", ".join(q(tool) for tool in presentation_predictors) + "]"
-    lines = ["# Generated from completed upstream tool results.", "[run]", f"sample_id = {q(args.sample_id)}", f"profile = {q(profile)}", f"outdir = {q(Path(args.outdir).resolve())}", f"hla_file = {q(hla)}", "tools_stub = false", "immunogenicity_stub = false", f"presentation_predictors = {predictor_toml}", f"required_presentation_predictors = {predictor_toml}", 'reports = "patient,technical"', f"netchop_executable = {q(args.netchop_executable)}"]
+    lines = ["# Generated from completed upstream tool results.", "[run]", f"sample_id = {q(args.sample_id)}", f"profile = {q(profile)}", f"outdir = {q(Path(args.outdir).resolve())}", f"hla_file = {q(hla)}", "tools_stub = false", "immunogenicity_stub = false", f"presentation_predictors = {predictor_toml}", f"required_presentation_predictors = {predictor_toml}", 'reports = "patient,technical"', f"event_top_n = {args.event_top_n}", f"candidate_top_n = {args.candidate_top_n}", f"netchop_executable = {q(args.netchop_executable)}"]
     if production_limitations:
         limitations_toml = "[" + ", ".join(q(item) for item in production_limitations) + "]"
         lines.append(f"production_limitations = {limitations_toml}")

@@ -103,6 +103,7 @@ For normal-background safety, prefer explicit inputs and otherwise pass through 
 9. Build `all_tool_results.tsv`, long-form tool evidence and explicit consensus/conflict outputs.
 10. Preserve the weighted baseline, generate independent Evidence consensus rankings, compare both rankings, and write run/audit manifests. Treat `ranked_peptides.evidence_consensus.tsv` and `ranked_events.evidence_consensus.tsv` as the final report/Excel ranking inputs; use `ranked_peptides.tsv` only as the legacy weighted baseline or compatibility source.
 11. Generate the technical Pipeline report by default. Do not generate a patient-facing report unless explicitly requested; the final patient report belongs to `open-neo-review`.
+    When a patient snapshot is explicitly requested, default to 20 event-level representatives per applicable track and 100 cross-track peptide candidates. Preserve `event_top_n` and `candidate_top_n` as overridable run parameters and record them in the production manifest.
 
 ## Required outputs
 

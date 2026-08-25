@@ -899,6 +899,49 @@ def _representative_fields(row: Mapping[str, Any], index: int) -> dict[str, str]
     }
 
 
+_EVENT_REPRESENTATIVE_EVIDENCE_FIELDS = (
+    "source_event_id",
+    "source_event_ids",
+    "source_record_id",
+    "source_record_ids",
+    "source_tool",
+    "source_tools",
+    "chrom",
+    "pos",
+    "ref",
+    "alt",
+    "protein_change",
+    "hgvsp",
+    "consequence",
+    "tumor_depth",
+    "tumor_alt_count",
+    "tumor_vaf",
+    "normal_depth",
+    "normal_alt_count",
+    "normal_vaf",
+    "gene_expression_tpm",
+    "transcript_expression_tpm",
+    "event_expression",
+    "expression_evidence_status",
+    "rna_depth",
+    "rna_ref_reads",
+    "rna_alt_reads",
+    "rna_vaf",
+    "rna_junction_reads",
+    "junction_reads",
+    "provided_rna_junction_reads",
+    "junction_key",
+    "canonical_junction_id",
+    "junction_match_status",
+    "junction_match_method",
+    "junction_resolution_status",
+    "junction_support_status",
+    "junction_source",
+    "strict_cross_validated",
+    "splicemutr_structure_exact",
+)
+
+
 def _event_output(peptides: list[dict[str, str]], deduplicate: bool) -> list[dict[str, str]]:
     if not deduplicate:
         return []
@@ -975,6 +1018,11 @@ def _event_output(peptides: list[dict[str, str]], deduplicate: bool) -> list[dic
             "recommended_next_steps": best["recommended_next_steps"],
             "event_consensus_trace": best["consensus_trace"],
         }
+        # Event-level reports must retain the authoritative evidence attached to
+        # the selected representative. Otherwise correctly merged DNA/RNA and
+        # junction evidence silently becomes "unassessed" after deduplication.
+        for field in _EVENT_REPRESENTATIVE_EVIDENCE_FIELDS:
+            event_row[field] = _row_text(best, field)
         for index, representative in enumerate(representatives, 1):
             event_row.update(_representative_fields(representative, index))
         if len(representatives) < 2:

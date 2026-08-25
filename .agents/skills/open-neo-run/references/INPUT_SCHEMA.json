@@ -74,6 +74,8 @@
     "samtools_executable": {"type": "string"},
     "profile": {"type": "string"},
     "evidence_consensus_rules": {"type": "string"}
+    ,"event_top_n": {"type": "integer", "minimum": 1, "default": 20}
+    ,"candidate_top_n": {"type": "integer", "minimum": 1, "default": 100}
   },
   "anyOf": [
     {"required": ["sample_manifest"]},

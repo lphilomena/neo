@@ -131,6 +131,8 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--stub", action="store_true")
     run.add_argument("--profile", default="default")
     run.add_argument("--evidence-consensus-rules")
+    run.add_argument("--event-top-n", type=int, default=20)
+    run.add_argument("--candidate-top-n", type=int, default=100)
     run.add_argument("--genome-build", default="GRCh38")
     run.add_argument("--sample-id")
     run.add_argument("--input-dir")
@@ -219,6 +221,10 @@ def build_parser() -> argparse.ArgumentParser:
     _add_common_output(review)
     review.add_argument("--result-dir", required=True)
     review.add_argument("--top-n", type=int, default=12)
+    review.add_argument("--event-top-n", type=int, default=20,
+                        help="Number of event-level rows shown per applicable track")
+    review.add_argument("--candidate-top-n", type=int, default=100,
+                        help="Number of cross-track peptide candidates shown in the patient report")
     review.add_argument("--clinical-context")
     review.add_argument("--disease-profile")
     review.add_argument("--therapy-context", default="research")

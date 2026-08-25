@@ -223,6 +223,8 @@ def _run_production_case_wrapper(args: dict[str, Any], routing: RoutingResult, l
     optional_flags = {
         "profile": "--profile",
         "evidence_consensus_rules": "--evidence-consensus-rules",
+        "event_top_n": "--event-top-n",
+        "candidate_top_n": "--candidate-top-n",
         "asset_root": "--asset-root",
         "reference_fasta": "--reference-fasta",
         "gencode_gtf": "--gencode-gtf",
@@ -674,6 +676,10 @@ def run_open_neo(args: dict[str, Any]) -> dict[str, Any]:
         outdir=ranking_target,
         comprehensive_evidence=routing.inputs.get("comprehensive_evidence"),
         weighted_baseline=routing.inputs.get("weighted_baseline"),
+        raw_events=routing.inputs.get("raw_events"),
+        raw_peptides=routing.inputs.get("raw_peptides"),
+        expression_evidence=routing.inputs.get("expression_tsv"),
+        rna_junction_evidence=routing.inputs.get("rna_evidence_tsv"),
         rules=args.get("rules"),
         provenance=args.get("provenance"),
     )

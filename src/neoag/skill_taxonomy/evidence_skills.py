@@ -274,6 +274,15 @@ def run_ranking_skill(args: dict[str, Any]) -> dict[str, Any]:
         cli_args.extend(["--rules", str(args["rules"])])
     if args.get("provenance"):
         cli_args.extend(["--provenance", str(args["provenance"])])
+    for key, option in (
+        ("raw_events", "--raw-events"),
+        ("raw_peptides", "--raw-peptides"),
+        ("expression_evidence", "--expression-evidence"),
+        ("rna_junction_evidence", "--rna-junction-evidence"),
+    ):
+        value = args.get(key)
+        if value and Path(value).is_file():
+            cli_args.extend([option, str(value)])
     try:
         invocation = invoke_production_cli("neoag evidence-rank", cli_args)
     except (OSError, RuntimeError, ValueError) as exc:

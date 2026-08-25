@@ -469,6 +469,20 @@ def test_patient_fusion_reports_source_record_backlink_separately_from_alignment
     assert "尚未独立回链核实" not in measurements
 
 
+def test_patient_splice_labels_exact_cross_tool_junction_link():
+    measurements = _patient_rna_measurements({
+        "event_type": "Splice",
+        "rna_junction_reads": "41",
+        "rna_junction_source": "SNAF+SpliceMutr",
+        "strict_cross_validated": "yes",
+        "splicemutr_structure_exact": "yes",
+        "junction_key": "chr19:8056237:8056366:+",
+    })
+    assert "已按event/junction精确回链的剪接工具支持reads 41" in measurements
+    assert "尚未独立回链核实" not in measurements
+    assert "126（尚未精确回链）" not in measurements
+
+
 def test_patient_safety_gap_distinguishes_gene_absent_from_reference():
     gap = _patient_safety_gap({
         "safety_status": "SAFETY_PARTIAL",

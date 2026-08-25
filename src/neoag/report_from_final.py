@@ -279,8 +279,8 @@ def enrich_report_provenance(
 def write_reports_from_final(
     final_dir: str | Path,
     *,
-    event_top_n: int = 10,
-    candidate_top_n: int = 50,
+    event_top_n: int = 20,
+    candidate_top_n: int = 100,
 ) -> dict[str, str]:
     root = Path(final_dir)
     production = root.parent

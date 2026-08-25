@@ -19,6 +19,8 @@ Usage:
     [--project-root <neo_repo_root>] \
     [--profile <profiles/*.toml>] \
     [--evidence-consensus-rules <configs/ranking/*.toml>] \
+    [--event-top-n <N; default 20>] \
+    [--candidate-top-n <N; default 100>] \
     [--asset-root <liup_neodata4git>] \
     [--reference-fasta <GRCh38.fasta>] \
     [--gencode-gtf <matching.gtf; also used for exact splice strand/origin reconstruction>] \
@@ -57,6 +59,8 @@ PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PY="${NEOAG_PYTHON:-$(command -v python3 || command -v python || true)}"
 PROFILE="profiles/sarcoma_rna_supported_v2_provisional.toml"
 EVIDENCE_CONSENSUS_RULES="configs/ranking/sarcoma_evidence_consensus_v3_source_chain.toml"
+EVENT_TOP_N=20
+CANDIDATE_TOP_N=100
 ASSET="${NEOAG_ASSET_ROOT:-${NEOAG_TOOLS_ROOT:-}}"
 PRED_DEPS="${NEOAG_PREDICTOR_DEPS:-${NEOAG_TOOL_QUARANTINE:-}}"
 NETMHCPAN_HOME_DEFAULT="${NETMHCPAN_HOME:-}"
@@ -103,6 +107,8 @@ while [[ $# -gt 0 ]]; do
     --project-root) PROJECT_ROOT="$2"; shift 2 ;;
     --profile) PROFILE="$2"; shift 2 ;;
     --evidence-consensus-rules) EVIDENCE_CONSENSUS_RULES="$2"; shift 2 ;;
+    --event-top-n) EVENT_TOP_N="$2"; shift 2 ;;
+    --candidate-top-n) CANDIDATE_TOP_N="$2"; shift 2 ;;
     --asset-root) ASSET="$2"; CLI_ASSET="$2"; shift 2 ;;
     --reference-fasta) REFERENCE_FASTA="$2"; shift 2 ;;
     --gencode-gtf) GENCODE_GTF="$2"; shift 2 ;;
@@ -299,6 +305,8 @@ GEN_ARGS=(
   --sample-id "$SAMPLE_ID"
   --profile "$PROFILE_PATH"
   --evidence-consensus-rules "$CONSENSUS_RULES_PATH"
+  --event-top-n "$EVENT_TOP_N"
+  --candidate-top-n "$CANDIDATE_TOP_N"
   --outdir "$OUTDIR"
   --output "$OUTDIR/manifest/production.results.toml"
   --somatic-vcf "$SOMATIC_VCF"

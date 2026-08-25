@@ -128,7 +128,10 @@ for fields, sources in (
     (IDENTITY_FIELDS, ("annotated_peptides", "raw_peptides", "ranked_peptides")),
     (EVENT_FIELDS, ("raw_events", "annotated_peptides", "ranked_peptides")),
     (PRESENTATION_FIELDS, ("presentation_evidence", "annotated_peptides", "raw_peptides", "ranked_peptides")),
-    (EXPRESSION_FIELDS, ("expression_evidence", "ranked_peptides", "raw_events")),
+    # Event-level expression can be enriched after a legacy ranking was emitted
+    # (notably for fusion partners and splice events). Prefer that current event
+    # evidence over stale zero/UNASSESSED values copied from the old ranking.
+    (EXPRESSION_FIELDS, ("expression_evidence", "raw_events", "ranked_peptides")),
     (RNA_FIELDS, ("rna_junction_evidence", "raw_events", "raw_peptides", "ranked_peptides")),
     (CROSS_SITE_RNA_FIELDS, ("cross_site_rna_evidence",)),
     (CCF_FIELDS, ("ccf_2", "ranked_peptides", "raw_events")),
@@ -196,11 +199,21 @@ def _index(rows: list[dict[str, str]], key: str) -> dict[str, dict[str, str]]:
 
 def _event_index(rows: list[dict[str, str]]) -> dict[str, dict[str, str]]:
     result = _index(rows, "event_id")
+    alias_candidates: dict[str, set[str]] = {}
     for row in rows:
         event_id = str(row.get("event_id") or "")
         if not event_id:
             continue
         current = result[event_id]
+        aliases = {
+            str(row.get("source_event_id") or "").strip(),
+            str(row.get("source_record_id") or "").strip(),
+        }
+        if "|" in event_id:
+            aliases.add(event_id.split("|", 1)[1].strip())
+        for alias in aliases:
+            if alias and alias != event_id:
+                alias_candidates.setdefault(alias, set()).add(event_id)
         for field in ("junction_reads", "rna_junction_reads", "rna_alt_reads", "rna_depth"):
             value = str(row.get(field) or "")
             if not value:
@@ -211,6 +224,30 @@ def _event_index(rows: list[dict[str, str]]) -> dict[str, dict[str, str]]:
             except ValueError:
                 if not current.get(field):
                     current[field] = value
+    # Source aliases are usable only when they identify one biological event.
+    # Ambiguous caller-local labels must not transfer evidence between events.
+    for alias, event_ids in alias_candidates.items():
+        if len(event_ids) == 1:
+            result[alias] = result[next(iter(event_ids))]
+    return result
+
+
+def _event_lookup_keys(*rows: dict[str, str]) -> list[str]:
+    """Return stable and explicit source event identifiers in lookup order."""
+    result: list[str] = []
+    seen: set[str] = set()
+    for field in ("event_id", "source_event_id", "source_event_ids", "source_record_id"):
+        for row in rows:
+            raw = str(row.get(field) or "").strip()
+            if not raw:
+                continue
+            values = [raw]
+            if field == "source_event_ids":
+                values = [part.strip() for part in raw.replace(";", ",").split(",")]
+            for value in values:
+                if value and value not in seen:
+                    seen.add(value)
+                    result.append(value)
     return result
 
 
@@ -309,12 +346,18 @@ def build_comprehensive_peptide_evidence(
         ranked = peptide_indexes["ranked_peptides"].get(peptide_id, {})
         if not event_id and ranked.get("event_id"):
             event_id = ranked["event_id"]
+        event_lookup_keys = _event_lookup_keys(base, ranked)
+        if event_id and event_id not in event_lookup_keys:
+            event_lookup_keys.insert(0, event_id)
         for name in PEPTIDE_SOURCES:
             evidence = peptide_indexes[name].get(peptide_id)
             if evidence and name != base_name:
                 matches.append((name, evidence))
         for name in EVENT_SOURCES:
-            evidence = event_indexes[name].get(event_id)
+            evidence = next(
+                (event_indexes[name][key] for key in event_lookup_keys if key in event_indexes[name]),
+                None,
+            )
             if evidence:
                 if name == "event_safety":
                     evidence = {

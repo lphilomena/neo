@@ -59,6 +59,8 @@ def run(
     cancer_gene_list=None,
     evidence_consensus_rules=None,
     report_types=None,
+    event_top_n=20,
+    candidate_top_n=100,
 ):
     outdir = Path(outdir)
     outdir.mkdir(parents=True, exist_ok=True)
@@ -356,7 +358,12 @@ def run(
     if "patient" in selected_reports:
         report_bundle.provenance["report_role"] = "pipeline_snapshot"
         patient_path = reports_dir / "evidence_report.patient.html"
-        make_patient_report(patient_path, report_bundle)
+        make_patient_report(
+            patient_path,
+            report_bundle,
+            event_top_n=int(event_top_n),
+            candidate_top_n=int(candidate_top_n),
+        )
         report_paths["evidence_report_patient"] = str(patient_path)
     if "technical" in selected_reports:
         technical_path = reports_dir / "evidence_report.technical.html"

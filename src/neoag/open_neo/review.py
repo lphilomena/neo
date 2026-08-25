@@ -521,7 +521,8 @@ def _formal_patient_report(
     events: list[dict[str, str]],
     peptides: list[dict[str, str]],
     all_tool: list[dict[str, str]],
-    top_n: int,
+    event_top_n: int,
+    candidate_top_n: int,
 ) -> dict[str, str]:
     all_tool_by_id = {_get(row, "peptide_id"): row for row in all_tool if _get(row, "peptide_id")}
     report_peptides: list[dict[str, str]] = []
@@ -566,7 +567,12 @@ def _formal_patient_report(
         entry_mode=str(provenance.get("entry_mode") or ""),
     )
     patient_html = layout.reports / "patient_report.html"
-    make_patient_report(patient_html, bundle, event_top_n=top_n, candidate_top_n=top_n)
+    make_patient_report(
+        patient_html,
+        bundle,
+        event_top_n=event_top_n,
+        candidate_top_n=candidate_top_n,
+    )
     fusion_html = _fusion_report_html(result_dir)
     if fusion_html:
         current = patient_html.read_text(encoding="utf-8")
@@ -618,6 +624,10 @@ def run_review(args: dict[str, Any]) -> dict[str, Any]:
     case_id = safe_identifier(str(args.get("case_id") or result_dir.name or "REVIEW"))
     layout = RunLayout.create(args.get("outdir") or f"work/open-neo-review/{case_id}")
     top_n = int(args.get("top_n") or 12)
+    event_top_n = int(args.get("event_top_n") or 20)
+    candidate_top_n = int(args.get("candidate_top_n") or 100)
+    if min(top_n, event_top_n, candidate_top_n) < 1:
+        raise ValueError("top_n, event_top_n and candidate_top_n must be positive integers")
     result = MacroResult("open-neo-review", case_id, new_run_id(case_id, "review"), "review")
     try:
         selected_reports = _normalize_reports(args.get("reports"))
@@ -626,7 +636,16 @@ def run_review(args: dict[str, Any]) -> dict[str, Any]:
         result.steps.append(MacroStep("00", "report-selection", "BLOCKED", str(exc), failure_code=FailureCode.INVALID_REPORT_SELECTION.value))
         result.finish("BLOCKED").write(layout.skill_result)
         return result.to_dict()
-    audit(layout, "open_neo_review.start", "START", result_dir=str(result_dir), top_n=top_n, reports=sorted(selected_reports))
+    audit(
+        layout,
+        "open_neo_review.start",
+        "START",
+        result_dir=str(result_dir),
+        top_n=top_n,
+        event_top_n=event_top_n,
+        candidate_top_n=candidate_top_n,
+        reports=sorted(selected_reports),
+    )
     if layout.root.resolve() == result_dir:
         result.blocking_issues.append(FailureCode.REPORT_BOUNDARY_VIOLATION.value)
         result.steps.append(MacroStep("00", "report-output-boundary", "BLOCKED", "Review outdir must differ from source result_dir", failure_code=FailureCode.REPORT_BOUNDARY_VIOLATION.value))
@@ -670,7 +689,17 @@ def run_review(args: dict[str, Any]) -> dict[str, Any]:
     report_outputs = _write_reports(layout, context, review_rows, first_batch, artifacts, integrity, support_outputs, selected_reports, result_dir)
     if "patient" in selected_reports:
         report_outputs.update(
-            _formal_patient_report(layout, result_dir, context, artifacts, events, peptides, all_tool, top_n)
+            _formal_patient_report(
+                layout,
+                result_dir,
+                context,
+                artifacts,
+                events,
+                peptides,
+                all_tool,
+                event_top_n,
+                candidate_top_n,
+            )
         )
     production_reports: dict[str, str] = {}
     if "technical" in selected_reports:
@@ -689,7 +718,7 @@ def run_review(args: dict[str, Any]) -> dict[str, Any]:
     final_status = "PASS_WITH_WARNINGS" if integrity["status"] == "PARTIAL" or completion else "PASS"
     if final_status == "PASS_WITH_WARNINGS": result.warnings.append("Some events or integrity layers require evidence completion; missing evidence was not interpreted as negative")
     result.warnings.append("first_batch_experiment_set is a deterministic research heuristic, not an optimized vaccine or treatment set")
-    write_json(layout.run_manifest, {"schema_version": "open-neo-review-manifest-v2", "run_id": result.run_id, "case_id": case_id, "source_result_dir": str(result_dir), "source_run_manifest": artifacts["run_manifest"], "source_artifacts": artifacts, "integrity": integrity, "review_outputs": result.outputs, "top_n": top_n, "reports": sorted(selected_reports), "status": final_status})
+    write_json(layout.run_manifest, {"schema_version": "open-neo-review-manifest-v2", "run_id": result.run_id, "case_id": case_id, "source_result_dir": str(result_dir), "source_run_manifest": artifacts["run_manifest"], "source_artifacts": artifacts, "integrity": integrity, "review_outputs": result.outputs, "top_n": top_n, "event_top_n": event_top_n, "candidate_top_n": candidate_top_n, "reports": sorted(selected_reports), "status": final_status})
     result.outputs["review_manifest"] = str(layout.run_manifest)
     update_case_state(layout, case_id=case_id, current_intent="review", status=final_status, source_result_dir=str(result_dir), outputs=result.outputs)
     audit(layout, "open_neo_review.finish", final_status, candidates=len(review_rows), first_batch=len(first_batch), reports=sorted(selected_reports))

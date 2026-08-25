@@ -472,6 +472,132 @@ def test_evidence_rank_cli_defaults_to_protected_parallel_mode(tmp_path: Path):
     assert "evidence_consensus" in json.loads(provenance.read_text())
 
 
+def test_evidence_rank_cli_merges_authoritative_dna_event_fields(tmp_path: Path):
+    comprehensive = tmp_path / "comprehensive.tsv"
+    weighted = tmp_path / "ranked_peptides.tsv"
+    raw_events = tmp_path / "raw_events.tsv"
+    rna_junction_evidence = tmp_path / "rna_junction_evidence.tsv"
+    outdir = tmp_path / "consensus"
+    snv = complete_row("P1")
+    snv.update({
+        "event_id": "E_SNV",
+        "event_type": "SNV",
+        "tumor_depth": "",
+        "tumor_alt_count": "",
+        "tumor_vaf": "",
+    })
+    fusion = complete_row("P2")
+    fusion.update({
+        "event_id": "FUS_CANONICAL",
+        "source_event_id": "E_FUSION",
+        "event_type": "Fusion",
+        "rna_junction_reads": "12",
+        "rna_frame_status": "IN_FRAME",
+        "gene_expression_tpm": "0",
+        "expression_evidence_status": "UNASSESSED",
+        "tumor_depth": "",
+        "tumor_alt_count": "",
+        "tumor_vaf": "",
+    })
+    splice = complete_row("P3")
+    splice.update({
+        "event_id": "SEV_CANONICAL",
+        "source_record_id": "ENSG000001:E3.1-E5.1",
+        "event_type": "Splice",
+        "gene_expression_tpm": "0",
+        "transcript_expression_tpm": "0",
+        "expression_evidence_status": "UNASSESSED",
+    })
+    write_tsv(comprehensive, [snv, fusion, splice])
+    write_tsv(weighted, [{"peptide_id": "P1"}, {"peptide_id": "P2"}, {"peptide_id": "P3"}])
+    write_tsv(raw_events, [
+        {
+            "event_id": "E_SNV",
+            "event_type": "SNV",
+            "chrom": "chr1",
+            "pos": "101",
+            "ref": "A",
+            "alt": "T",
+            "tumor_depth": "80",
+            "tumor_alt_count": "16",
+            "tumor_vaf": "0.2",
+        },
+        {
+            "event_id": "E_FUSION",
+            "event_type": "Fusion",
+            "gene_expression_tpm": "7.96",
+            "expression_evidence_status": "GENE_ONLY_PARTIAL",
+            "rna_junction_reads": "12",
+        },
+        {
+            "event_id": "SPLICE_XV|ENSG000001:E3.1-E5.1",
+            "event_type": "Splice",
+            "gene": "GENE1",
+            "gene_expression_tpm": "15.5",
+            "transcript_expression_tpm": "8.25",
+            "expression_evidence_status": "RNA_JUNCTION_SUPPORTED",
+            "rna_junction_reads": "41",
+        },
+    ])
+    write_tsv(rna_junction_evidence, [
+        {
+            "event_id": "E_FUSION",
+            "rna_junction_reads": "12",
+            "junction_key": "chr1:201:301:+",
+            "strict_cross_validated": "yes",
+            "splicemutr_structure_exact": "yes",
+        },
+        {
+            "event_id": "SPLICE_XV|ENSG000001:E3.1-E5.1",
+            "rna_junction_reads": "41",
+            "junction_key": "chr2:501:701:-",
+            "strict_cross_validated": "yes",
+            "splicemutr_structure_exact": "yes",
+        },
+    ])
+
+    cli_main([
+        "evidence-rank",
+        "--comprehensive-evidence", str(comprehensive),
+        "--weighted-baseline", str(weighted),
+        "--raw-events", str(raw_events),
+        "--rna-junction-evidence", str(rna_junction_evidence),
+        "--outdir", str(outdir),
+    ])
+
+    merged = {row["peptide_id"]: row for row in read_tsv(
+        outdir / "comprehensive_peptide_evidence.authoritative.tsv"
+    )}
+    assert merged["P1"]["chrom"] == "chr1"
+    assert merged["P1"]["tumor_depth"] == "80"
+    assert merged["P1"]["tumor_alt_count"] == "16"
+    assert merged["P1"]["tumor_vaf"] == "0.2"
+    assert merged["P2"].get("tumor_depth", "") == ""
+    assert merged["P2"]["gene_expression_tpm"] == "7.96"
+    assert merged["P2"]["expression_evidence_status"] == "GENE_ONLY_PARTIAL"
+    assert merged["P2"]["junction_key"] == "chr1:201:301:+"
+    assert merged["P2"]["strict_cross_validated"] == "yes"
+    assert merged["P3"]["gene"] == "GENE1"
+    assert merged["P3"]["gene_expression_tpm"] == "15.5"
+    assert merged["P3"]["transcript_expression_tpm"] == "8.25"
+    assert merged["P3"]["rna_junction_reads"] == "41"
+    assert merged["P3"]["junction_key"] == "chr2:501:701:-"
+    assert merged["P3"]["strict_cross_validated"] == "yes"
+    assert "raw_events" in merged["P1"]["comprehensive_evidence_sources"]
+    assert (outdir / "evidence_conflicts.authoritative_merge.tsv").is_file()
+
+    events = {row["event_id"]: row for row in read_tsv(
+        outdir / "ranked_events.evidence_consensus.tsv"
+    )}
+    assert events["E_SNV"]["tumor_depth"] == "80"
+    assert events["FUS_CANONICAL"]["gene_expression_tpm"] == "7.96"
+    assert events["SEV_CANONICAL"]["gene_expression_tpm"] == "15.5"
+    assert events["SEV_CANONICAL"]["transcript_expression_tpm"] == "8.25"
+    assert events["SEV_CANONICAL"]["rna_junction_reads"] == "41"
+    assert events["SEV_CANONICAL"]["junction_key"] == "chr2:501:701:-"
+    assert events["SEV_CANONICAL"]["strict_cross_validated"] == "yes"
+
+
 def test_evidence_rank_cli_forbids_primary_replacement():
     parser = build_parser()
     defaults = parser.parse_args([

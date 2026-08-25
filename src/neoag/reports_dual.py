@@ -2925,6 +2925,16 @@ def _patient_junction_reads_measurement(row: Mapping[str, Any], junction_reads: 
         token in match_method for token in verified_methods
     )
     source_record_linked = bool(source_record and source_location)
+    strict_cross_validated = (
+        (_patient_observed_source(row, "strict_cross_validated") or "").strip().lower()
+        in {"yes", "true", "1"}
+    )
+    structure_exact = (
+        (_patient_observed_source(row, "splicemutr_structure_exact") or "").strip().lower()
+        in {"yes", "true", "1"}
+    )
+    junction_key = (_patient_observed_source(row, "junction_key", "canonical_junction_id") or "").strip()
+    exact_cross_tool_link = strict_cross_validated and structure_exact and bool(junction_key)
     caller_tokens = (
         "raw_events", "caller", "targeted_rescue", "easyfuse", "arriba",
         "star-fusion", "star_fusion", "fusioncatcher", "snaf", "splicemutr",
@@ -2937,6 +2947,8 @@ def _patient_junction_reads_measurement(row: Mapping[str, Any], junction_reads: 
         return "junction reads未提供（核实状态未确认）"
     if independently_verified:
         return f"主比对表已按精确junction回链，unique junction reads {junction_reads}"
+    if track == "Splice" and exact_cross_tool_link:
+        return f"已按event/junction精确回链的剪接工具支持reads {junction_reads}"
     if source_record_linked:
         origin = "融合caller" if track == "Fusion" else "剪接caller" if track == "Splice" else "上游caller"
         return f"{origin}原始记录已回链，junction reads {junction_reads}（尚无独立主比对表核实）"

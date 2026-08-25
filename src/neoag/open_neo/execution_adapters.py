@@ -143,6 +143,10 @@ def ensure_parallel_ranking(
     outdir: str | Path | None = None,
     comprehensive_evidence: str | Path | None = None,
     weighted_baseline: str | Path | None = None,
+    raw_events: str | Path | None = None,
+    raw_peptides: str | Path | None = None,
+    expression_evidence: str | Path | None = None,
+    rna_junction_evidence: str | Path | None = None,
     rules: str | Path | None = None,
     provenance: str | Path | None = None,
 ) -> dict[str, Any]:
@@ -167,6 +171,15 @@ def ensure_parallel_ranking(
         "--weighted-baseline", str(weighted),
         "--outdir", str(target),
     ]
+    authoritative_inputs = (
+        ("--raw-events", raw_events or source_artifacts.get("raw_events")),
+        ("--raw-peptides", raw_peptides or source_artifacts.get("raw_peptides")),
+        ("--expression-evidence", expression_evidence or source_artifacts.get("expression_evidence")),
+        ("--rna-junction-evidence", rna_junction_evidence or source_artifacts.get("rna_evidence")),
+    )
+    for option, value in authoritative_inputs:
+        if value and Path(value).is_file():
+            argv += [option, str(value)]
     if rules:
         argv += ["--rules", str(rules)]
     prov = provenance or artifacts.get("provenance")
