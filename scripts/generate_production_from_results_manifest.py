@@ -146,6 +146,12 @@ def main() -> int:
     ap.add_argument("--disable-diagnostic-fusion-rescue", action="store_true")
     ap.add_argument("--star-fusion"); ap.add_argument("--arriba")
     ap.add_argument("--fusioncatcher"); ap.add_argument("--jaffal")
+    ap.add_argument(
+        "--star-chimeric",
+        action="append",
+        default=[],
+        help="STAR Chimeric.out.junction used for exact fusion breakpoint/read-name verification; repeatable",
+    )
     ap.add_argument("--fusion-caller-root", action="append", default=[], help="Directory containing completed fusion caller outputs; repeatable")
     ap.add_argument("--normal-readthrough", help="Normal/read-through fusion background table for review")
     ap.add_argument("--junctions"); ap.add_argument("--star-sj"); ap.add_argument("--snaf"); ap.add_argument("--splicemutr"); ap.add_argument("--normal-junctions")
@@ -424,10 +430,12 @@ def main() -> int:
             union_args += ["--disable-diagnostic-fusion-rescue"]
         if args.star_fusion: union_args += ["--star-fusion", q(require(args.star_fusion, "STAR-Fusion"))]
         if args.arriba: union_args += ["--arriba", q(require(args.arriba, "Arriba"))]
+        for chimeric_path in args.star_chimeric:
+            union_args += ["--star-chimeric", q(require(chimeric_path, "STAR Chimeric.out.junction"))]
         star_junction_source = args.star_sj or args.junctions
         if star_junction_source:
             chimeric = Path(star_junction_source).with_name("Chimeric.out.junction")
-            if chimeric.is_file() and chimeric.stat().st_size > 0:
+            if chimeric.is_file() and chimeric.stat().st_size > 0 and str(chimeric) not in args.star_chimeric:
                 union_args += ["--star-chimeric", q(str(chimeric))]
         if rna_bam:
             union_args += ["--rna-bam", q(rna_bam)]

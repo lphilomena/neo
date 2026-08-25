@@ -321,6 +321,27 @@ def test_generator_unions_existing_fusion_callers_including_jaffal(tmp_path):
     assert events[0]["rna_junction_reads"] == "15"
 
 
+def test_generator_passes_explicit_star_chimeric_for_fusion_read_backlink(tmp_path):
+    hla = write(tmp_path / "hla.txt", "HLA-A*02:01\n")
+    purity = write(tmp_path / "purity.tsv", "sample_id\tpurity\tploidy\nS1\t0.60\t2.0\n")
+    cnv = write(tmp_path / "cnv.tsv", "chrom\tstart\tend\ttotal_cn\nchr1\t1\t1000\t2\n")
+    lohhla = write(tmp_path / "lohhla.tsv", "hla_allele\tloh_status\nHLA-A*02:01\tretained\n")
+    spechla_loh = write(tmp_path / "spechla_loh.tsv", "hla_allele\tloh_status\nHLA-A*02:01\tretained\n")
+    easyfuse = write(tmp_path / "easyfuse/fusions.pass.csv", "gene5,gene3,Breakpoint1,Breakpoint2\nEWSR1,WT1,chr22:100,chr11:200\n")
+    chimeric = write(tmp_path / "star/Chimeric.out.junction", "chr22\t100\t+\tchr11\t200\t-\t1\t0\t0\tread1\n")
+    output = tmp_path / "production.toml"
+    subprocess.run([
+        sys.executable, str(ROOT / "scripts/generate_production_from_results_manifest.py"),
+        "--project-root", str(ROOT), "--sample-id", "S1", "--outdir", str(tmp_path / "run"),
+        "--output", str(output), "--hla-file", str(hla), "--purity", str(purity), "--cnv", str(cnv),
+        "--lohhla", str(lohhla), "--spechla-loh", str(spechla_loh),
+        "--easyfuse", str(easyfuse), "--star-chimeric", str(chimeric),
+    ], check=True)
+    command = tomllib.loads(output.read_text(encoding="utf-8"))["stages"]["fusion_candidates"]["command"]
+    assert "--star-chimeric" in command
+    assert str(chimeric) in command
+
+
 def test_existing_upstream_results_produce_hla_purity_and_loh_consensus(tmp_path):
     optitype = write(tmp_path / "optitype/result.tsv", "A1\tA2\tB1\tB2\tC1\tC2\nA*02:01\tA*11:01\tB*15:01\tB*40:01\tC*03:04\tC*08:01\n").parent
     spechla = write(tmp_path / "spechla/hla.result.txt", "A\tA*02:01\tA*11:01\nB\tB*15:01\tB*40:01\nC\tC*03:04\tC*08:01\n").parent

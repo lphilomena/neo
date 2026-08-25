@@ -73,7 +73,11 @@ def test_patient_report_is_plain_language(tmp_path):
     assert "<th>主要限制</th>" not in candidate_section
     assert "<th>建议实验</th>" not in candidate_section
     assert "<th>审阅状态</th>" not in candidate_section
-    assert "本表保留R3-GAP候选" in text
+    assert "本表按事件级证据等级展示候选" in text
+    assert "表内不再使用未细分的R3" in text
+    assert "R3-READY表示候选基本合理" in text
+    assert "R3-GAP表示关键资料缺失" in text
+    assert "R3-REVIEW表示证据冲突或伪影风险需人工复核" in text
     assert "补证据后再决定" not in text
     assert "此类候选存在关键证据缺口" not in text
     assert "附录A：R1–R4证据分层" in text
@@ -82,6 +86,45 @@ def test_patient_report_is_plain_language(tmp_path):
     assert "缺失证据统一视为未评估" in text
     assert "DQA1/DQB1" not in text
     assert "EWSR1::WT1" not in text
+
+
+def test_patient_top_candidates_include_non_r4_technical_review_rows(tmp_path):
+    bundle = _bundle()
+    bundle.events = [
+        {
+            "event_id": f"E{i}",
+            "gene": f"G{i}",
+            "event_type": "SNV",
+            "best_evidence_grade": "R3",
+            "manual_review_required": "yes",
+        }
+        for i in range(120)
+    ]
+    bundle.peptides = [
+        {
+            "peptide_id": f"P{i}",
+            "event_id": f"E{i}",
+            "gene": f"G{i}",
+            "event_type": "SNV",
+            "peptide": "AAAAAAAAA",
+            "hla_allele": "HLA-A*02:01",
+            "evidence_grade": "R3",
+            "netmhcpan_el_rank": "0.5",
+            # Missing source-chain tier intentionally routes this row to
+            # TECHNICAL_REVIEW without making it R4.
+            "source_chain_confidence_tier": "",
+        }
+        for i in range(120)
+    ]
+    bundle.validation_rows = []
+    out = tmp_path / "patient_top100.html"
+    make_patient_report(out, bundle, event_top_n=20, candidate_top_n=100)
+    text = out.read_text(encoding="utf-8")
+    section = text.split("<h3>重点候选 Top 100</h3>", 1)[1].split("</table>", 1)[0]
+    assert section.count("<tr>") - 1 == 100
+    assert section.count("<td>R3-REVIEW</td>") == 100
+    assert "G99" in section
+    assert "G100" not in section
 
 
 def test_splice_dna_evidence_does_not_render_placeholder_vcf_zero():

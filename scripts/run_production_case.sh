@@ -39,6 +39,7 @@ Usage:
     [--samtools-executable <samtools>] \
     [--rna-threads <N>] \
     [--fusion-caller-root <completed_caller_results_dir>] \
+    [--star-chimeric <STAR/Chimeric.out.junction; repeatable>] \
     [--normal-readthrough <normal_readthrough.tsv>] \
     [--prime-evidence <prime_evidence.tsv>] \
     [--bigmhc-evidence <bigmhc_im_evidence.tsv>] \
@@ -93,6 +94,7 @@ STAR_EXECUTABLE=""
 SAMTOOLS_EXECUTABLE="samtools"
 RNA_THREADS=16
 FUSION_CALLER_ROOTS=()
+STAR_CHIMERIC_FILES=()
 NORMAL_READTHROUGH=""
 PRIME_EVIDENCE=""
 BIGMHC_EVIDENCE=""
@@ -128,6 +130,7 @@ while [[ $# -gt 0 ]]; do
     --samtools-executable) SAMTOOLS_EXECUTABLE="$2"; shift 2 ;;
     --rna-threads) RNA_THREADS="$2"; shift 2 ;;
     --fusion-caller-root) FUSION_CALLER_ROOTS+=("$2"); shift 2 ;;
+    --star-chimeric) STAR_CHIMERIC_FILES+=("$2"); shift 2 ;;
     --normal-readthrough) NORMAL_READTHROUGH="$2"; shift 2 ;;
     --prime-evidence) PRIME_EVIDENCE="$2"; shift 2 ;;
     --bigmhc-evidence) BIGMHC_EVIDENCE="$2"; shift 2 ;;
@@ -379,6 +382,13 @@ for fusion_root in "${FUSION_CALLER_ROOTS[@]}"; do
 done
 for fusion_root in "$CASE_ROOT/short-rna/fusion" "$CASE_ROOT/long-rna/fusion"; do
   [[ -d "$fusion_root" ]] && GEN_ARGS+=(--fusion-caller-root "$fusion_root")
+done
+for chimeric in "${STAR_CHIMERIC_FILES[@]}" \
+  "$CASE_ROOT/short-rna/star/Chimeric.out.junction" \
+  "$CASE_ROOT/short-rna/fusion/Chimeric.out.junction" \
+  "$OUTDIR/pipeline/production/rna/star/Chimeric.out.junction" \
+  "$OUTDIR/rna/star/Chimeric.out.junction"; do
+  [[ -s "$chimeric" ]] && GEN_ARGS+=(--star-chimeric "$chimeric")
 done
 [[ -n "$NORMAL_READTHROUGH" ]] && GEN_ARGS+=(--normal-readthrough "$NORMAL_READTHROUGH")
 [[ -n "$PRIME_EVIDENCE" ]] && GEN_ARGS+=(--prime-evidence "$PRIME_EVIDENCE")

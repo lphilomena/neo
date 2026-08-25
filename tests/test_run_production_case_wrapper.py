@@ -42,6 +42,8 @@ def test_wrapper_uses_v2_baseline_and_v3_consensus_and_passes_production_inputs(
         path.write_text("fixture\n")
         paths[name] = path
     star_index = make_star_index(tmp_path / "star_index")
+    star_chimeric = tmp_path / "Chimeric.out.junction"
+    star_chimeric.write_text("chr22\t100\t+\tchr11\t200\t-\t1\t0\t0\tread1\n")
     star = tmp_path / "STAR"
     samtools = tmp_path / "samtools"
     for executable in (star, samtools):
@@ -73,6 +75,7 @@ def test_wrapper_uses_v2_baseline_and_v3_consensus_and_passes_production_inputs(
         "--rna-fastq1", str(paths["rna_R1.fq.gz"]),
         "--rna-fastq2", str(paths["rna_R2.fq.gz"]),
         "--star-index", str(star_index),
+        "--star-chimeric", str(star_chimeric),
         "--star-executable", str(star),
         "--samtools-executable", str(samtools),
         "--rna-threads", "7",
@@ -89,7 +92,7 @@ def test_wrapper_uses_v2_baseline_and_v3_consensus_and_passes_production_inputs(
     for flag in (
         "--reference-fasta", "--gencode-gtf", "--sequenza", "--purple",
         "--rna-fastq1", "--rna-fastq2", "--star-index", "--star-executable",
-        "--samtools-executable", "--rna-threads",
+        "--star-chimeric", "--samtools-executable", "--rna-threads",
     ):
         assert flag in generator_call
 

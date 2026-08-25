@@ -3424,13 +3424,13 @@ def _patient_candidate_disposition(
     val_map: Mapping[str, Mapping[str, str]],
     event_grades: Mapping[str, str],
 ) -> tuple[str, str]:
-    integrity_ok, integrity_missing = _patient_candidate_integrity(row)
-    if not integrity_ok:
-        return "TECHNICAL_REVIEW", "；".join(integrity_missing)
     recommendation = _patient_validation(row, val_map).strip()
     event_grade = str(event_grades.get(str(row.get("event_id") or "")) or _patient_grade(row)).upper()
     if "DO NOT ADVANCE" in recommendation.upper() or "暂缓/不推进" in recommendation or event_grade == "R4":
         return "PAUSED", "当前建议不推进或事件级为R4"
+    integrity_ok, integrity_missing = _patient_candidate_integrity(row)
+    if not integrity_ok:
+        return "TECHNICAL_REVIEW", "；".join(integrity_missing)
     if event_grade in {"R1", "R2", "R3-READY", "R3-REVIEW"}:
         return "PRIORITY_CONFIRM", "优先完成事件真实性、冲突和正交证据确认"
     return "EVIDENCE_GAP", "补齐关键证据后再决定是否进入功能实验"
@@ -3855,9 +3855,41 @@ def make_patient_report(
         key = str(row.get("peptide_id") or row.get("event_id") or "")
         return dispositions.get(key) or _patient_candidate_disposition(row, val_map, event_grade_map)
 
-    patient_representatives = [row for row in all_representatives if disposition_for(row)[0] in {"PRIORITY_CONFIRM", "EVIDENCE_GAP"}]
+    def patient_top_eligible(row: Mapping[str, Any]) -> bool:
+        event_grade = _patient_event_row_grade(row, event_grade_map)
+        consensus_eligible = event_grade in {
+            "R1", "R2", "R3-READY", "R3-GAP", "R3-REVIEW"
+        }
+        if not consensus_eligible:
+            status, _ = disposition_for(row)
+            if event_grade != "UNASSESSED" or status not in {
+                "PRIORITY_CONFIRM", "EVIDENCE_GAP", "TECHNICAL_REVIEW"
+            }:
+                return False
+        if not all(str(row.get(field) or "").strip() for field in ("event_id", "peptide", "hla_allele")):
+            return False
+        direct_recommendation = " ".join(
+            str(row.get(field) or "").strip()
+            for field in ("recommended_use", "recommendation", "validation_recommendation")
+        ).lower()
+        # Evidence-consensus R grades are authoritative.  A stale weighted or
+        # validation-plan recommendation must not suppress an R1-R3 candidate.
+        if not consensus_eligible and (
+            "do not advance" in direct_recommendation or "不推进" in direct_recommendation
+        ):
+            return False
+        hard_fail = " ".join(
+            str(row.get(field) or "").strip()
+            for field in ("hard_fail", "hard_failure_codes", "hard_fail_reasons")
+        ).strip().lower()
+        return hard_fail in {"", "0", "false", "no", "none", "na", "n/a", "unassessed"}
+
+    patient_representatives = [
+        row for row in all_representatives
+        if patient_top_eligible(row)
+    ]
     top = patient_representatives[:candidate_top_n]
-    paused_representatives = [row for row in all_representatives if disposition_for(row)[0] in {"PAUSED", "TECHNICAL_REVIEW"}]
+    paused_representatives = [row for row in all_representatives if not patient_top_eligible(row)]
     event_grade_counts = _patient_event_grade_counts(bundle.events)
     track_counts: dict[str, int] = {}
     event_seen: set[str] = set()
@@ -4004,13 +4036,20 @@ def make_patient_report(
                 "基因": row.get("gene", ""),
                 "类型": _patient_track(row),
                 "肽段-HLA": f"{row.get('peptide', '')} / {row.get('hla_allele', '')}",
-                "等级": _patient_grade(row),
+                "等级": _patient_event_row_grade(row, event_grade_map),
                 "关键证据与下一步": _patient_event_evidence_and_next_step(row, bundle, val_map),
             })
         return result
 
     candidate_headers = ["排名", "基因", "类型", "肽段-HLA", "等级", "关键证据与下一步"]
-    out.append(f"<h3>重点候选 Top {candidate_top_n}</h3><p class='small'>本表保留R3-GAP候选；证据缺口在“主要限制”中明确列出，不表示已经确认新抗原或可直接进入功能实验。</p>")
+    out.append(
+        f"<h3>重点候选 Top {candidate_top_n}</h3>"
+        "<p class='small'>本表按事件级证据等级展示候选：R1、R2及R3的三个细分等级"
+        "（R3-READY、R3-GAP、R3-REVIEW）。表内不再使用未细分的R3；其中R3-READY表示候选基本合理、"
+        "仍需完成指定确认步骤，R3-GAP表示关键资料缺失，R3-REVIEW表示证据冲突或伪影风险需人工复核。"
+        "仅纳入身份可追溯的非R4候选；R4、硬失败或明确不推进的候选保留在技术审阅池，不进入本表。"
+        "本表用于研究性候选审阅，不表示已经确认新抗原或可直接进入功能实验。</p>"
+    )
     out.append(_table(patient_candidate_rows(top), candidate_headers))
     out.append(f"<p class='small'>当前暂缓/不推进及完整性门槛未通过的{len(paused_representatives)}个事件代表候选不进入患者版重点表，仅保留在科研技术版审阅池。排序仍采用R1–R4、同赛道Pareto、确定性tie-break和事件去重。</p></div>")
 
