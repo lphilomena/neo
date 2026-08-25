@@ -1319,6 +1319,56 @@ def test_patient_report_lists_input_files_and_purity_consensus(tmp_path):
     assert "与其他工具冲突" in text
 
 
+def test_rerank_recovers_purity_tools_from_recorded_recommendation(tmp_path):
+    base = _bundle()
+    purity_dir = tmp_path / "upstream" / "evidence" / "purity_cnv"
+    purity_dir.mkdir(parents=True)
+    recommendation = purity_dir / "recommended_purity.tsv"
+    write_tsv(recommendation, [{
+        "purity": "0.6932", "ploidy": "1.96", "evidence_tool": "multi_tool_median",
+        "consensus_status": "CONCORDANT",
+    }])
+    write_tsv(purity_dir / "purity_cnv_tool_summary.tsv", [
+        {"tool": "FACETS", "status": "FOUND", "purity": "0.6864", "ploidy": "1.9648", "parse_method": "table columns"},
+        {"tool": "PURPLE", "status": "FOUND", "purity": "0.7000", "ploidy": "1.9600", "parse_method": "table columns"},
+        {"tool": "Sequenza", "status": "MISSING", "purity": "", "ploidy": "", "notes": "no parsed result found"},
+    ])
+    write_tsv(purity_dir / "purity_cnv_consensus.tsv", [{
+        "status": "CONCORDANT", "recommended_purity": "0.6932",
+        "interpretation": "FACETS and PURPLE are concordant.",
+    }])
+    peptides = [dict(base.peptides[0],
+        purity="0.6932",
+        purity_consensus_status="CONCORDANT",
+        purity_tool_values='{"FACETS":0.6864,"PURPLE":0.7}',
+        purity_recommendation_file=str(recommendation),
+    )]
+    final_dir = tmp_path / "rerank" / "final"
+    final_dir.mkdir(parents=True)
+    bundle = load_report_bundle(
+        profile=base.profile, events=base.events, peptides=peptides,
+        outdir=final_dir,
+        provenance={
+            "purity_cnv_tools": [{
+                "tool": "FACETS", "purity": "", "ploidy": "",
+                "status": "ASSESSED", "note": "stale run manifest",
+            }],
+            "purity_cnv_consensus": {
+                "recommended_purity": "", "recommended_ploidy": "",
+                "selected_tool": "FACETS", "status": "SINGLE_TOOL_NO_CROSSCHECK",
+            },
+        },
+    )
+    assert [(row["tool"], row["purity"], row["ploidy"]) for row in bundle.purity_tools] == [
+        ("FACETS", "0.6864", "1.9648"),
+        ("PURPLE", "0.7000", "1.9600"),
+        ("Sequenza", "", ""),
+    ]
+    assert bundle.purity_consensus["recommended_purity"] == "0.6932"
+    assert bundle.purity_consensus["recommended_ploidy"] == "1.96"
+    assert bundle.purity_consensus["status"] == "CONCORDANT"
+
+
 def test_explicit_patient_inputs_override_provenance_inputs():
     base = _bundle()
     bundle = load_report_bundle(

@@ -1268,6 +1268,100 @@ def _augment_purity_cnv_provenance(root: Path, prov: dict[str, Any]) -> None:
             "basis": str(consensus_row.get("interpretation") or ("已并列保留 " + "、".join(names) + " 结果；缺失工具显式标记为未形成估计。")),
         }
 
+
+def _augment_purity_from_ranked_rows(prov: dict[str, Any], rows: list[dict[str, str]]) -> None:
+    """Recover authoritative purity evidence retained by a downstream rerank.
+
+    A presentation-only rerank may copy the consensus columns while leaving the
+    original purity evidence directory outside its output root. Prefer the
+    recorded recommendation pointer, then fall back to the embedded tool-value
+    map. This keeps reports portable without guessing a patient-specific parent
+    directory.
+    """
+    declared_tools = [row for row in (prov.get("purity_cnv_tools") or []) if isinstance(row, Mapping)]
+    declared_consensus = prov.get("purity_cnv_consensus") if isinstance(prov.get("purity_cnv_consensus"), Mapping) else {}
+    has_numeric_tool = any(str(row.get("purity") or "").strip() for row in declared_tools)
+    has_numeric_consensus = bool(str(declared_consensus.get("recommended_purity") or "").strip())
+    if has_numeric_tool and has_numeric_consensus:
+        return
+
+    source_row = next((row for row in rows if str(row.get("purity_recommendation_file") or "").strip()), {})
+    recommendation = Path(str(source_row.get("purity_recommendation_file") or ""))
+    summary_path = recommendation.parent / "purity_cnv_tool_summary.tsv" if recommendation.is_file() else Path()
+    if recommendation.is_file() and summary_path.is_file() and summary_path.stat().st_size:
+        tools = []
+        for row in _read_optional(summary_path):
+            tools.append({
+                "tool": str(row.get("tool") or row.get("source_tool") or ""),
+                "purity": str(row.get("purity") or ""),
+                "ploidy": str(row.get("ploidy") or ""),
+                "status": str(row.get("status") or "UNASSESSED"),
+                "note": str(row.get("notes") or row.get("parse_method") or "recovered from recorded purity recommendation"),
+            })
+        if tools:
+            prov["purity_cnv_tools"] = tools
+            consensus_rows = _read_optional(summary_path.parent / "purity_cnv_consensus.tsv")
+            recommended_rows = _read_optional(recommendation)
+            consensus_row = consensus_rows[0] if consensus_rows else {}
+            recommended_row = recommended_rows[0] if recommended_rows else {}
+            found = [row for row in tools if str(row.get("status") or "").upper() not in {"", "MISSING"}]
+            prov["purity_cnv_consensus"] = {
+                "recommended_purity": str(
+                    consensus_row.get("recommended_purity")
+                    or recommended_row.get("purity")
+                    or source_row.get("purity")
+                    or ""
+                ),
+                "recommended_ploidy": str(
+                    recommended_row.get("ploidy")
+                    or source_row.get("ploidy")
+                    or next((row.get("ploidy") or "" for row in found if row.get("ploidy")), "")
+                ),
+                "selected_tool": str(
+                    recommended_row.get("evidence_tool")
+                    or ("多工具共识" if len(found) > 1 else (found[0].get("tool") if found else "未形成估计"))
+                ),
+                "status": str(
+                    consensus_row.get("status")
+                    or recommended_row.get("consensus_status")
+                    or source_row.get("purity_consensus_status")
+                    or ("MULTI_TOOL_REVIEW" if len(found) > 1 else "SINGLE_TOOL_NO_CROSSCHECK")
+                ),
+                "basis": str(
+                    consensus_row.get("interpretation")
+                    or "已通过排序表记录的权威纯度文件回链，并列保留全部工具结果。"
+                ),
+            }
+            return
+
+    source_row = next((row for row in rows if str(row.get("purity_tool_values") or "").strip()), {})
+    raw_values = str(source_row.get("purity_tool_values") or "").strip()
+    try:
+        values = json.loads(raw_values) if raw_values else {}
+    except (TypeError, ValueError):
+        values = {}
+    if not isinstance(values, Mapping) or not values:
+        return
+    tools = [{
+        "tool": str(tool),
+        "purity": str(value),
+        "ploidy": "",
+        "status": "FOUND",
+        "note": "来自最终排序表保留的多工具纯度值；工具级倍性未随表携带。",
+    } for tool, value in values.items()]
+    prov["purity_cnv_tools"] = tools
+    prov["purity_cnv_consensus"] = {
+        "recommended_purity": str(source_row.get("purity") or ""),
+        "recommended_ploidy": str(source_row.get("ploidy") or ""),
+        "selected_tool": "多工具共识" if len(tools) > 1 else tools[0]["tool"],
+        "status": str(source_row.get("purity_consensus_status") or "MULTI_TOOL_REVIEW"),
+        "basis": str(
+            source_row.get("purity_range")
+            and f"最终排序表保留多工具值；纯度范围 {source_row['purity_range']}。"
+            or "最终排序表保留多工具纯度值；未携带原始工具级倍性。"
+        ),
+    }
+
 def load_report_bundle(
     *,
     profile: Mapping[str, Any],
@@ -1315,6 +1409,7 @@ def load_report_bundle(
         source_peptides = []
         evidence_source_label = "ranked input (all_tool_results unavailable)"
         evidence_source_status = "RANKED_INPUT_ONLY"
+    _augment_purity_from_ranked_rows(prov, events + peptides + source_peptides)
     if not prov.get("purity_cnv_consensus") and (prov.get("purity_cnv_tools") or _purity_tools_from_provenance(prov)):
         tool_rows = [dict(row) for row in (prov.get("purity_cnv_tools") or _purity_tools_from_provenance(prov))]
         if len(tool_rows) == 1:
