@@ -1,6 +1,6 @@
 import json
 
-from neoag.controlled_execution.gateway import ROUTE_SPECS, _risk
+from neoag.controlled_execution.gateway import ROUTE_SPECS, _resolve_project_root, _risk
 
 
 def test_open_neo_gateway_routes_registered():
@@ -31,9 +31,26 @@ def test_open_neo_gateway_accepts_rna_fusion_splice_profile_fields():
     } <= optional
 
 
+def test_open_neo_gateway_accepts_all_open_run_local_input_and_tool_fields():
+    optional = set(ROUTE_SPECS["/open/run"].optional)
+    assert {
+        "rna_fastq1", "rna_fastq2", "rna_bam", "rna_vaf",
+        "evidence_consensus_rules", "predictor_deps", "netmhcpan_home",
+        "netmhcstabpan_home", "samtools_executable", "star_executable",
+        "star_index_build_dir", "easyfuse_star_index", "prime_evidence",
+        "bigmhc_evidence", "deepimmuno_evidence",
+    } <= optional
+
+
 def test_open_neo_gateway_accepts_review_ranking_limits():
     optional = set(ROUTE_SPECS["/open/review"].optional)
     assert {"event_top_n", "candidate_top_n"} <= optional
+
+
+def test_gateway_resolves_relative_project_root_against_configured_root(tmp_path):
+    gateway_root = tmp_path / "checkout"
+    assert _resolve_project_root(".", gateway_root) == gateway_root.resolve()
+    assert _resolve_project_root("nested", gateway_root) == (gateway_root / "nested").resolve()
 
 
 def test_open_neo_gateway_manifest_risk_uses_declared_inputs(tmp_path):

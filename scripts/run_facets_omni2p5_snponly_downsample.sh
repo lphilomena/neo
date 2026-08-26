@@ -37,10 +37,22 @@ FACETS_STEP="${FACETS_STEP:-all}"
 FACETS_SNPSET_NAME="${FACETS_SNPSET_NAME:-omni2p5}"
 FACETS_SNP_VCF="${FACETS_SNP_VCF:-${OMNI2P5_VCF:-${ROOT}/data/facets/reference/1000G_omni2.5.hg38.biallelic.vcf.gz}}"
 SNP_PILEUP_BIN="${SNP_PILEUP_BIN:-}"
-FACETS_R_ENV_PREFIX="${FACETS_R_ENV_PREFIX:-${NEOAG_CONDA_BASE}/envs/${NEOAG_FACETS_ENV:-neoag-fusion}}"
+FACETS_R_ENV_PREFIX="${FACETS_R_ENV_PREFIX:-}"
+if [[ -z "${FACETS_R_ENV_PREFIX}" ]]; then
+  for candidate in neoag-facets neoag-r neoag-fusion neoag-tools; do
+    candidate_prefix="${NEOAG_CONDA_BASE}/envs/${candidate}"
+    if [[ -x "${candidate_prefix}/bin/Rscript" ]] && \
+       "${candidate_prefix}/bin/Rscript" -e 'quit(status=ifelse(requireNamespace("facets", quietly=TRUE), 0, 1))' >/dev/null 2>&1; then
+      FACETS_R_ENV_PREFIX="${candidate_prefix}"
+      break
+    fi
+  done
+fi
 RSCRIPT="${RSCRIPT:-${FACETS_R_ENV_PREFIX}/bin/Rscript}"
 if [[ -z "${SNP_PILEUP_BIN:-}" ]]; then
-  if [[ -x "${NEOAG_CONDA_BASE}/envs/neoag-tools/bin/snp-pileup" ]]; then
+  if [[ -x "${NEOAG_CONDA_BASE}/envs/neoag-facets/bin/snp-pileup" ]]; then
+    SNP_PILEUP_BIN="${NEOAG_CONDA_BASE}/envs/neoag-facets/bin/snp-pileup"
+  elif [[ -x "${NEOAG_CONDA_BASE}/envs/neoag-tools/bin/snp-pileup" ]]; then
     SNP_PILEUP_BIN="${NEOAG_CONDA_BASE}/envs/neoag-tools/bin/snp-pileup"
   elif [[ -x "${ROOT}/bin/snp-pileup" ]]; then
     SNP_PILEUP_BIN="${ROOT}/bin/snp-pileup"
@@ -117,6 +129,7 @@ EOS
 }
 
 run_pileup() {
+  local pileup_tmp="${PILEUP}.tmp.$$"
   echo "==> ${FACETS_SNPSET_NAME} SNP-only snp-pileup $(date -Is)"
   echo "    sample=${PATIENT_ID}"
   echo "    tumor_bam=${TUMOR_BAM}"
@@ -124,8 +137,13 @@ run_pileup() {
   echo "    vcf=${FACETS_SNP_VCF}"
   echo "    output=${PILEUP}"
   echo "    params=-q15 -Q20 -r${SNP_PILEUP_MIN_READS} without -P pseudo-snps"
-  "${SNP_PILEUP_BIN}" -q15 -Q20 -r"${SNP_PILEUP_MIN_READS}" \
-    "${FACETS_SNP_VCF}" "${PILEUP}" "${NORMAL_BAM}" "${TUMOR_BAM}"
+  rm -f "${pileup_tmp}"
+  if ! "${SNP_PILEUP_BIN}" -q15 -Q20 -r"${SNP_PILEUP_MIN_READS}" \
+    "${FACETS_SNP_VCF}" "${pileup_tmp}" "${NORMAL_BAM}" "${TUMOR_BAM}"; then
+    rm -f "${pileup_tmp}"
+    return 1
+  fi
+  mv "${pileup_tmp}" "${PILEUP}"
   local rows
   rows="$(tail -n +2 "${PILEUP}" | wc -l | tr -d " ")"
   echo "    pileup_rows=${rows}"

@@ -66,7 +66,7 @@ def test_production_runner_merges_all_sources_and_ranks(tmp_path):
         execute=True,
     )
 
-    assert result.status == "PASS"
+    assert result.status == "FAILED"
     assert result.source_status == "COMPLETE"
     assert set(result.detected_sources) == {"pVACseq", "pVACfuse", "pVACsplice"}
     assert (tmp_path / "run/final/scoring/ranked_peptides.tsv").is_file()
@@ -74,6 +74,7 @@ def test_production_runner_merges_all_sources_and_ranks(tmp_path):
     assert (tmp_path / "run/final/reports/evidence_report.technical.html").is_file()
     coverage = read_tsv(tmp_path / "run/peptide_source_coverage.tsv")[0]
     assert coverage["status"] == "COMPLETE"
+    assert any(stage.name == "mtwt_assessment_gate" and stage.status == "FAILED" for stage in result.stages)
 
 
 def test_production_runner_missing_optional_sources_is_low_confidence(tmp_path):
@@ -84,10 +85,11 @@ def test_production_runner_missing_optional_sources_is_low_confidence(tmp_path):
         execute=True,
     )
 
-    assert result.status == "LOW_CONFIDENCE"
+    assert result.status == "FAILED"
     assert result.source_status == "LOW_CONFIDENCE"
     assert result.missing_sources == ["pVACfuse", "pVACsplice"]
     assert (tmp_path / "run/final/scoring/ranked_peptides.tsv").is_file()
+    assert any(stage.name == "mtwt_assessment_gate" and stage.status == "FAILED" for stage in result.stages)
 
 
 def test_production_runner_dry_run_plans_commands(tmp_path):

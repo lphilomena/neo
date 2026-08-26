@@ -166,6 +166,7 @@ separate interactive or enterprise-managed step.
   optional NeoAg Gateway health
 - `deployment_checkpoint.json` for mutating modes
 - `deployment_report.md`
+- `run_issue_log.json`, with one entry per observed installation/readiness problem: stable ID, affected Skill, symptom, root cause, attempted workaround, durable fix, validation evidence, and status. Append across resume runs; do not overwrite unresolved history.
 - `manifests/tools_manifest.local.yaml`
 - `manifests/reference_manifest.local.yaml`
 - `auto_configuration*/manifests/tools_manifest.configured.yaml`
@@ -188,6 +189,7 @@ Do not install or redistribute licensed tools, download large references, overwr
 - Emit the stable result contract described by `references/OUTPUT_SCHEMA.json`.
 - Use the canonical failure codes and remediation in `references/FAILURE_CODES.md`.
 - Every invocation writes `skill_result.json` and a sibling `run_state.json`; install and repair actions remain approval gated.
+- A file being present or executable is not sufficient readiness evidence. For binaries and wrappers, record a version/help or minimal functional smoke result in `run_issue_log.json`; malformed files and wrappers whose dependencies are missing remain unresolved.
 - The launcher must resolve Python 3.11+ with `tomllib` from `NEOAG_PYTHON`,
   configured Conda/deployment roots, the project virtual environment, or PATH;
   it must fail clearly instead of starting the macro with an older interpreter.

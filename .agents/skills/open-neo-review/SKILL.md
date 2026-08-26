@@ -51,6 +51,7 @@ experiment set only.
 ## Outputs
 
 - `review_integrity.json`, `review_integrity_checks.tsv`, `review_blocking_issues.tsv`
+- `run_issue_log.json`, copied forward from Skill2 and appended with report/evidence defects, their source layer, generic renderer or ranking fix, whether Skill2 must be resumed, and post-regeneration validation status
 - `candidate_review.tsv`
 - `first_batch_experiment_set.tsv`
 - `evidence_completion_queue.tsv`
@@ -74,3 +75,4 @@ Forbidden wording: confirmed neoantigen, guaranteed benefit, clinical resistance
 
 Skill3 is read-only with respect to Skill2 outputs. It uses `ranked_peptides.evidence_consensus.tsv`, `ranked_events.evidence_consensus.tsv`, `fusion_consensus.tsv`, `splice_consensus.tsv`, and `all_tool_results.tsv` as the authoritative source of report content.
 It must not create a second `production_patient/` report tree or maintain an independent simplified patient-report template.
+When a report defect originates in missing or invalid upstream evidence, record it and return it to Skill2 instead of fabricating a display value. When the defect is renderer-only, regenerate Skill3 without altering Skill2 outputs and record the before/after integrity check.

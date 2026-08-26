@@ -7,7 +7,18 @@ export NEOAG_TOOLS_ROOT="${NEOAG_TOOLS_ROOT:-${NEOAG_PROJECT_ROOT}}"
 unset _NEOAG_TOOLS_ENV_DIR
 
 export NEOAG_CONDA_ENV="neoag-tools"
-export NEOAG_CONDA_BASE="${NEOAG_CONDA_BASE:-$(conda info --base 2>/dev/null || echo ${HOME}/miniconda3)}"
+if [[ -z "${NEOAG_CONDA_BASE:-}" ]]; then
+  if command -v conda >/dev/null 2>&1; then
+    NEOAG_CONDA_BASE="$(conda info --base 2>/dev/null || true)"
+  fi
+  for _neoag_conda_candidate in "${HOME}/miniforge3" "${HOME}/mambaforge" "${HOME}/miniconda3"; do
+    if [[ -z "${NEOAG_CONDA_BASE:-}" && -d "${_neoag_conda_candidate}/envs" ]]; then
+      NEOAG_CONDA_BASE="${_neoag_conda_candidate}"
+    fi
+  done
+  unset _neoag_conda_candidate
+fi
+export NEOAG_CONDA_BASE="${NEOAG_CONDA_BASE:-${HOME}/miniconda3}"
 
 # pVACtools + MHCflurry live in neoag-tools (do not mix neoag-vep onto PATH — Python 3.7)
 export LD_LIBRARY_PATH="${NEOAG_CONDA_BASE}/envs/neoag-tools/lib:${LD_LIBRARY_PATH:-}"

@@ -36,6 +36,40 @@ FREEBAYES_BIN="${BAM_MATCHER_FREEBAYES:-$(command -v freebayes 2>/dev/null || tr
 [[ -x "$FREEBAYES_BIN" ]] || { echo "ERROR: freebayes unavailable" >&2; exit 127; }
 [[ -s "$REF.fai" ]] || { echo "ERROR: reference FASTA index missing: $REF.fai" >&2; exit 2; }
 mkdir -p "$OUTDIR/cache" "$OUTDIR/scratch"
+LOCI_EFFECTIVE="$LOCI"
+bam_contig="$($SAMTOOLS_BIN view -H "$BAM1" | awk '$1 == "@SQ" {for (i=1; i<=NF; i++) if ($i ~ /^SN:/) {sub(/^SN:/, "", $i); print $i; exit}}')"
+loci_contig="$(awk '!/^#/ {print $1; exit}' "$LOCI")"
+if [[ "$bam_contig" == chr* && "$loci_contig" != chr* ]]; then
+  LOCI_EFFECTIVE="$OUTDIR/$(basename "$LOCI").chr"
+  awk 'BEGIN {OFS="\t"}
+    /^##contig=<ID=/ {sub(/ID=/, "ID=chr"); print; next}
+    /^#/ {print; next}
+    {$1="chr" $1; print}
+  ' "$LOCI" > "$LOCI_EFFECTIVE"
+elif [[ "$bam_contig" != chr* && "$loci_contig" == chr* ]]; then
+  LOCI_EFFECTIVE="$OUTDIR/$(basename "$LOCI").nochr"
+  awk 'BEGIN {OFS="\t"}
+    /^##contig=<ID=chr/ {sub(/ID=chr/, "ID="); print; next}
+    /^#/ {print; next}
+    {sub(/^chr/, "", $1); print}
+  ' "$LOCI" > "$LOCI_EFFECTIVE"
+fi
+if ! "$FREEBAYES_BIN" --help 2>&1 | grep -q -- '--no-indels'; then
+  FREEBAYES_REAL="$FREEBAYES_BIN"
+  FREEBAYES_BIN="$OUTDIR/freebayes-bam-matcher-compat"
+  cat > "$FREEBAYES_BIN" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+real_freebayes=$(printf '%q' "$FREEBAYES_REAL")
+args=()
+for arg in "\$@"; do
+  [[ "\$arg" == "--no-indels" ]] && continue
+  args+=("\$arg")
+done
+exec "\$real_freebayes" "\${args[@]}"
+EOF
+  chmod +x "$FREEBAYES_BIN"
+fi
 CONFIG="$OUTDIR/bam-matcher.conf"
 RAW="$OUTDIR/bam_matcher.short.tsv"
 cat > "$CONFIG" <<EOF
@@ -50,7 +84,7 @@ java: $(command -v java || true)
 DP_threshold: $DEPTH
 number_of_SNPs:
 fast_freebayes: True
-VCF_file: $LOCI
+VCF_file: $LOCI_EFFECTIVE
 [VariantCallerParameters]
 GATK_MEM: 4
 GATK_nt: 1

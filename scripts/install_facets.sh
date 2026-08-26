@@ -37,13 +37,6 @@ env_has_facets() {
   conda_safe run -n "$1" Rscript -e 'quit(status=ifelse(requireNamespace("facets", quietly=TRUE),0,1))' >/dev/null 2>&1
 }
 
-if [[ -x "${BIN_DIR}/runFACETS.R" ]] && "${BIN_DIR}/runFACETS.R" --version >/dev/null 2>&1; then
-  echo "==> FACETS wrapper already present: ${BIN_DIR}/runFACETS.R"
-  "${BIN_DIR}/runFACETS.R" --version || true
-  echo "==> Done. Run: source conf/tools.env.sh && neoag check-tools | grep facets"
-  exit 0
-fi
-
 FACETS_ENV="${ENV_NAME}"
 for candidate in "${ENV_NAME}" neoag-fusion-r36 neoag-fusion; do
   if env_exists "${candidate}" && env_has_facets "${candidate}"; then
@@ -81,6 +74,15 @@ if ! env_has_facets "${FACETS_ENV}"; then
 fi
 ENV_NAME="${FACETS_ENV}"
 
+if [[ ! -x "${CONDA_BASE}/envs/${ENV_NAME}/bin/snp-pileup" ]]; then
+  conda_safe install -n "${ENV_NAME}" -c conda-forge -c bioconda -y snp-pileup=0.6.2
+fi
+"${CONDA_BASE}/envs/${ENV_NAME}/bin/snp-pileup" --help >/dev/null 2>&1 || rc=$?
+if [[ "${rc:-0}" -gt 2 ]]; then
+  echo "ERROR: snp-pileup functional check failed in ${ENV_NAME}" >&2
+  exit 1
+fi
+
 cat > "${BIN_DIR}/runFACETS.R" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
@@ -109,6 +111,8 @@ if ! grep -q 'FACETS — installed via scripts/install_facets.sh' "${TOOLS_ENV}"
 
 # FACETS — installed via scripts/install_facets.sh
 export NEOAG_FACETS_ENV="${ENV_NAME}"
+export FACETS_R_ENV_PREFIX="${CONDA_BASE}/envs/${ENV_NAME}"
+export SNP_PILEUP_BIN="${CONDA_BASE}/envs/${ENV_NAME}/bin/snp-pileup"
 export FACETS_HOME="${BIN_DIR}"
 export PATH="${BIN_DIR}:\${PATH}"
 EOF

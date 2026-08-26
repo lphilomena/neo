@@ -10,6 +10,7 @@ Usage: $0 --bam NORMAL.GRCh38.bam --sample-id ID --outdir DIR [options]
 
 Options:
   --threads N          samtools threads (default: 4)
+  --samtools-bin FILE  samtools executable (default: SAMTOOLS_BIN or PATH)
   --optitype-bin FILE  OptiType executable (default: OPTITYPE_BIN/optitype)
   --force              rerun even when .complete exists
 USAGE
@@ -17,12 +18,14 @@ USAGE
 
 BAM=""; SAMPLE_ID=""; OUTDIR=""; THREADS=4; FORCE=0
 OPTITYPE_BIN="${OPTITYPE_BIN:-$(command -v optitype 2>/dev/null || true)}"
+SAMTOOLS_BIN="${SAMTOOLS_BIN:-$(command -v samtools 2>/dev/null || true)}"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --bam) BAM="$2"; shift 2 ;;
     --sample-id) SAMPLE_ID="$2"; shift 2 ;;
     --outdir) OUTDIR="$2"; shift 2 ;;
     --threads) THREADS="$2"; shift 2 ;;
+    --samtools-bin) SAMTOOLS_BIN="$2"; shift 2 ;;
     --optitype-bin) OPTITYPE_BIN="$2"; shift 2 ;;
     --force) FORCE=1; shift ;;
     -h|--help) usage; exit 0 ;;
@@ -34,7 +37,7 @@ done
 [[ -s "$BAM.bai" || -s "${BAM%.bam}.bai" ]] || { echo "ERROR: BAM index missing" >&2; exit 3; }
 [[ -x "$OPTITYPE_BIN" ]] || { echo "ERROR: OptiType executable missing" >&2; exit 127; }
 export PATH="$(dirname "$OPTITYPE_BIN"):$PATH"
-command -v samtools >/dev/null 2>&1 || { echo "ERROR: samtools missing" >&2; exit 127; }
+[[ -x "$SAMTOOLS_BIN" ]] || { echo "ERROR: samtools missing" >&2; exit 127; }
 [[ "$THREADS" =~ ^[1-9][0-9]*$ ]] || { echo "ERROR: invalid threads" >&2; exit 2; }
 
 mkdir -p "$OUTDIR/fastq" "$OUTDIR/results"
@@ -45,7 +48,7 @@ fi
 rm -f "$OUTDIR/.complete"
 
 contig=chr6
-samtools view -H "$BAM" | grep -q $'@SQ\tSN:chr6\t' || contig=6
+"$SAMTOOLS_BIN" view -H "$BAM" | grep -q $'@SQ\tSN:chr6\t' || contig=6
 region="${contig}:28510120-33480577"
 region_bam="$OUTDIR/fastq/${SAMPLE_ID}.MHC.bam"
 r1="$OUTDIR/fastq/${SAMPLE_ID}.MHC.R1.fastq.gz"
@@ -53,9 +56,9 @@ r2="$OUTDIR/fastq/${SAMPLE_ID}.MHC.R2.fastq.gz"
 single="$OUTDIR/fastq/${SAMPLE_ID}.MHC.single.fastq.gz"
 
 if [[ ! -s "$r1" || ! -s "$r2" ]]; then
-  samtools view -@ "$THREADS" -bh "$BAM" "$region" -o "$region_bam"
-  samtools collate -@ "$THREADS" -u -O "$region_bam" | \
-    samtools fastq -@ "$THREADS" -1 "$r1" -2 "$r2" -s "$single" -0 /dev/null -n -
+  "$SAMTOOLS_BIN" view -@ "$THREADS" -bh "$BAM" "$region" -o "$region_bam"
+  "$SAMTOOLS_BIN" collate -@ "$THREADS" -u -O "$region_bam" | \
+    "$SAMTOOLS_BIN" fastq -@ "$THREADS" -1 "$r1" -2 "$r2" -s "$single" -0 /dev/null -n -
 else
   echo "Reusing existing MHC FASTQs under $OUTDIR/fastq"
 fi

@@ -114,12 +114,19 @@ EOF
 run_chrom() {
   local chrom="$1"
   local seqz="${OUTDIR}/chrom/${SAMPLE_ID}.${chrom}.seqz.gz"
-  if [[ -s "${seqz}" ]]; then
+  local seqz_tmp="${seqz}.tmp.$$"
+  if [[ -s "${seqz}" ]] && gzip -t "${seqz}" 2>/dev/null; then
     echo "[$(date -Is)] reuse ${chrom} ${seqz}"
     return 0
   fi
+  if [[ -e "${seqz}" ]]; then
+    mv "${seqz}" "${seqz}.partial.$(date +%Y%m%d_%H%M%S).$$"
+  fi
   echo "[$(date -Is)] bam2seqz ${SAMPLE_ID} ${chrom}"
-  "${NEOAG_CONDA_BASE}/bin/mamba" run -n "${ENV}" sequenza-utils bam2seqz \
+  rm -f "${seqz_tmp}" "${seqz_tmp}.tbi"
+  env PATH="${NEOAG_CONDA_BASE}/envs/${ENV}/bin:${PATH}" \
+    LD_LIBRARY_PATH="${NEOAG_CONDA_BASE}/envs/${ENV}/lib:${LD_LIBRARY_PATH:-}" \
+    sequenza-utils bam2seqz \
     -n "${NORMAL_BAM}" \
     -t "${TUMOR_BAM}" \
     -gc "${GC}" \
@@ -131,10 +138,15 @@ run_chrom() {
     --hom "${HOM}" \
     --het "${HET}" \
     -C "${chrom}" \
-    -o "${seqz}"
+    -o "${seqz_tmp}"
+  gzip -t "${seqz_tmp}"
+  mv "${seqz_tmp}" "${seqz}"
+  if [[ -s "${seqz_tmp}.tbi" ]]; then
+    mv "${seqz_tmp}.tbi" "${seqz}.tbi"
+  fi
 }
 export -f run_chrom
-export SAMPLE_ID TUMOR_BAM NORMAL_BAM REF GC OUTDIR ENV NEOAG_CONDA_BASE SAMTOOLS TABIX QLIMIT MIN_DEPTH_N HOM HET
+export SAMPLE_ID TUMOR_BAM NORMAL_BAM REF GC OUTDIR ENV NEOAG_CONDA_BASE SAMTOOLS TABIX QLIMIT MIN_DEPTH_N HOM HET PATH LD_LIBRARY_PATH
 
 if [[ -n "${BINNED_SEQZ}" ]]; then
   [[ -s "${BINNED_SEQZ}" ]] || { echo "ERROR missing BINNED_SEQZ ${BINNED_SEQZ}" >&2; exit 1; }

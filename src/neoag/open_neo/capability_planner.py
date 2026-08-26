@@ -253,6 +253,7 @@ def build_automatic_production_plan(
     tumor_id = str(inputs.get("tumor_sample_id") or inputs.get("tumor_id") or f"{sample_id}_T")
     normal_id = str(inputs.get("normal_sample_id") or inputs.get("normal_id") or f"{sample_id}_N")
     threads = int(inputs.get("threads") or inputs.get("rna_threads") or 16)
+    samtools_executable = str(inputs.get("samtools_executable") or "")
 
     minimal_tools = {"bwa", "samtools", "gatk", "bam_matcher", "optitype", "facets", "netmhcpan", "mhcflurry", "star", "salmon", "rsem", "easyfuse", "regtools"}
     balanced_exclusions = {"ascat", "deepimmuno", "netmhcstabpan"}
@@ -422,11 +423,12 @@ def build_automatic_production_plan(
                     "outdir": "{outdir}/hla/optitype", "threads": threads,
                 })
                 if optitype_available and not optitype_command:
+                    samtools_arg = f" --samtools-bin {samtools_executable}" if samtools_executable else ""
                     optitype_command = (
                         f"bash {root / 'scripts/run_optitype_sample.sh'} --bam {typing_input_bam} "
                         f"--sample-id {normal_id if normal_bam else tumor_id} --threads {threads} "
                         "--outdir {outdir}/hla/optitype "
-                        f"--optitype-bin {optitype_executable}"
+                        f"--optitype-bin {optitype_executable}{samtools_arg}"
                     )
                 if optitype_available and optitype_command:
                     add_stage("hla_optitype", command=optitype_command, outputs={
@@ -500,11 +502,16 @@ def build_automatic_production_plan(
         ))
         command = (
             f"PYTHONPATH={root / 'src'} python {root / 'scripts/run_candidate_upstream.py'} --mode snv --input {somatic_vcf} "
-            f"--hla-file {hla_file} --sample-id {sample_id} --outdir {{outdir}}/branches/snv/upstream "
-            f"--reference-fasta {refs.get('reference_fasta', '')} --vep-cache {refs.get('vep_cache', '')} "
-            f"--vep-plugins {refs.get('vep_plugins') or os.environ.get('NEOAG_VEP_PLUGINS', '')} "
-            f"--normal-proteome {refs.get('reference_proteome', '')}"
+            f"--hla-file {hla_file} --sample-id {sample_id} --outdir {{outdir}}/branches/snv/upstream"
         )
+        for flag, value in (
+            ("--reference-fasta", refs.get("reference_fasta")),
+            ("--vep-cache", refs.get("vep_cache")),
+            ("--vep-plugins", refs.get("vep_plugins") or os.environ.get("NEOAG_VEP_PLUGINS")),
+            ("--normal-proteome", refs.get("reference_proteome")),
+        ):
+            if value:
+                command += f" {flag} {value}"
         add_stage(
             "snv_indel_candidates", required=True, source="SNV_INDEL", command=command,
             outputs={"raw_events": "{outdir}/branches/snv/upstream/parsed/raw_events.tsv", "raw_peptides": "{outdir}/branches/snv/upstream/parsed/raw_peptides.tsv"}, depends=deps,
@@ -561,8 +568,13 @@ def build_automatic_production_plan(
                 "outdir": f"{{outdir}}/purity/{tool}", **refs,
             })
             if tool == "purple" and available and refs.get("purple_reference") and not command:
+                hmf_env = Path(executable).parent
+                hmf_env = hmf_env.parent if hmf_env.name == "bin" else hmf_env
+                bundled_env = hmf_env / "tools" / "HMFTOOLS" / ".conda"
+                if all((bundled_env / "bin" / name).exists() for name in ("amber", "cobalt", "purple")):
+                    hmf_env = bundled_env
                 command = (
-                    f"HMF_ENV={Path(executable).parent} "
+                    f"HMF_ENV={hmf_env} "
                     f"HMFTOOLS_REFERENCE_ROOT={refs['purple_reference']} "
                     f"HMFTOOLS_REFERENCE_FASTA={refs.get('reference_fasta', '')} "
                     f"bash {root / 'scripts/run_purple_sample.sh'} --sample-id {sample_id} "

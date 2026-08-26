@@ -148,6 +148,7 @@ For Fusion and Splice candidates, keep direct peptide/junction safety evidence s
 - `ranked_peptides.weighted_baseline.tsv` as the preserved legacy weighted baseline for audit/comparison only
 - `ranking_compare_weighted_vs_consensus.md`
 - `run_manifest.json`, `audit_log.jsonl`
+- `run_issue_log.json`, persisted beside the run state and appended on every execute/resume. Record the stage, symptom, root cause, failed command/log, temporary recovery, generic code/config fix, affected Skill1/2/3, validation result, and whether upstream outputs were safely reused.
 - `reports/evidence_report.technical.html` as the default Pipeline report; an explicitly requested patient report is a non-final Pipeline snapshot
 - `manifests/rna_fusion_splice.production.toml` and
   `manifests/rna_fusion_splice.requirements.tsv` for automatic RNA FASTQ runs
@@ -155,6 +156,8 @@ For Fusion and Splice candidates, keep direct peptide/junction safety evidence s
 ## Safety boundary
 
 `execute` and `resume` require approval. Raw heavy execution requires Gateway dispatch. The existing-results production-case path may use the repository-owned `scripts/run_production_case.sh` wrapper directly after approval because it consumes completed upstream outputs, validates required files, and calls the production runner with pinned profiles. The Skill must not silently convert missing evidence to a negative result or overwrite the weighted baseline. Generated commands are restricted to repository-owned runners or administrator-reviewed `command_template` entries in the tools manifest.
+
+Resume must reuse only outputs that pass declared existence and semantic checks. A prior `FAILED`, `BLOCKED`, or `LOW_CONFIDENCE` stage is not reusable merely because a partial file exists; retry it when the capability becomes available, write large outputs through temporary files plus atomic rename, and preserve the prior failure in `run_issue_log.json`.
 
 The automatic RNA FASTQ profile is itself the reviewed repository-owned
 production manifest generator. Execution still requires Gateway approval and
