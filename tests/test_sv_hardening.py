@@ -25,6 +25,20 @@ def test_multisample_vcf_never_guesses_tumor_normal():
         parse_vcf_records(FX / "mini_sv.vcf", "GRIDSS2")
 
 
+def test_explicit_sample_names_override_reversed_vcf_column_order():
+    records = parse_vcf_records(
+        FX / "mini_sv.vcf",
+        "GRIDSS2",
+        tumor_sample_name="TUMOR",
+        normal_sample_name="NORMAL",
+    )
+    assert len(records) == 1
+    assert records[0].tumor_sr == 4
+    assert records[0].tumor_pe == 6
+    assert records[0].normal_sr == 0
+    assert records[0].normal_pe == 0
+
+
 def test_nonpass_records_are_excluded_by_default(tmp_path):
     vcf = _write(
         tmp_path / "filtered.vcf",
@@ -53,6 +67,18 @@ def test_gene_pair_only_rna_input_is_rejected(tmp_path):
     path = _write(tmp_path / "gene_pair.tsv", "gene1\tgene2\tjunction_reads\nA\tB\t9\n")
     with pytest.raises(ValueError, match="chrom1"):
         load_exact_junction_evidence(path, default_build="GRCh38")
+
+
+def test_same_gene_pair_at_a_different_breakpoint_does_not_match(tmp_path):
+    path = _write(
+        tmp_path / "wrong_breakpoint.tsv",
+        "genome_build\tchrom1\tpos1\tstrand1\tchrom2\tpos2\tstrand2\tgene1\tgene2\t"
+        "split_reads\tunique_start_count\tmin_anchor_bp\tmin_mapq\n"
+        "GRCh38\tchr1\t10\t+\tchr2\t21\t-\tA\tB\t9\t3\t20\t60\n",
+    )
+    evidence = load_exact_junction_evidence(path, default_build="GRCh38")
+    expected = canonical_breakpoint_key("GRCh38", "chr1", 10, "+", "chr2", 20, "-")
+    assert expected not in evidence
 
 
 def test_dna_only_event_catalog_generates_no_peptides(tmp_path):
