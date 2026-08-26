@@ -1641,6 +1641,8 @@ def test_presentation_quantitative_row_exposes_raw_values_and_allele_uncertainty
         "mhcflurry_wt_presentation_score": "0.12", "netmhcstabpan_rank": "0.6",
         "netmhcstabpan_score": "1.9", "prime_score": "0.72",
         "bigmhc_im_score": "0.81", "deepimmuno_score": "0.66",
+        "mutation_position_role": "PUTATIVE_TCR_FACING",
+        "wt_self_reactivity_risk_status": "WT_LOW_PREDICTED_BINDING",
     }, 1)
     assert "EL rank MT=0.25%, WT=2.5%" in result["NetMHCpan原始值"]
     assert "IC50 MT=48 nM, WT=810 nM" in result["NetMHCpan原始值"]
@@ -1649,6 +1651,20 @@ def test_presentation_quantitative_row_exposes_raw_values_and_allele_uncertainty
     assert "PRIME MT=0.72" in result["免疫原性辅助模型"]
     assert "训练覆盖/外推状态未记录" in result["HLA模型覆盖"]
     assert result["肽长/变异位置"] == "9 aa；位置=4"
+    assert "推定TCR暴露位置" in result["突变位置结构解释"]
+    assert "不能据此排除耐受或交叉反应" in result["WT自身反应/耐受风险"]
+
+
+def test_presentation_quantitative_row_flags_strong_wt_binding_without_precomputed_status():
+    result = _patient_presentation_quantitative_row({
+        "peptide": "SLYNTVATL", "wildtype_peptide": "SLYATVATL",
+        "hla_allele": "HLA-A*02:01", "mutation_positions_in_peptide": "4",
+        "mutation_tcr_facing": "yes", "netmhcpan_mt_rank_el": "0.4",
+        "netmhcpan_wt_rank_el": "0.8", "netmhcpan_wt_ic50": "42",
+        "mutant_specificity_status": "MARGINAL_MT_ADVANTAGE",
+    }, 1)
+    assert "WT仍预测为强结合" in result["WT自身反应/耐受风险"]
+    assert "序列位置推断" in result["突变位置结构解释"]
 
 
 def test_fusion_safety_dimensions_separate_direct_evidence_from_partner_expression():

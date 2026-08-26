@@ -55,6 +55,14 @@ PRESENTATION_FIELDS = {
     "netmhcstabpan_allele_support_status", "predictor_allele_support_status",
     "allele_extrapolation_status",
     "presentation_gate_status", "presentation_gate_reason", "presentation_gate_multiplier",
+    "agretopicity_el", "mt_wt_el_rank_difference",
+    "mhcflurry_mt_wt_presentation_difference", "prime_mt_wt_score_difference",
+    "bigmhc_mt_wt_score_difference", "mutation_anchor_only", "mutation_tcr_facing",
+    "mutation_position_role", "mutation_position_interpretation",
+    "wt_self_reactivity_risk_status", "wt_self_reactivity_risk_reason",
+    "mt_wt_interpretation_caution", "mutant_specificity_status",
+    "mutant_specificity_gate_status", "mutant_specificity_reason",
+    "mutant_specificity_multiplier", "mutant_specificity_priority_cap",
 }
 EXPRESSION_FIELDS = {
     "gene_expression_tpm", "transcript_expression_tpm", "expression_tpm",

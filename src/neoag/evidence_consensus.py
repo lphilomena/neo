@@ -548,11 +548,13 @@ def _derived_grade_caps(
     if specificity == "MT_WT_SIMILAR":
         caps.append(("R3", "CAP_MT_WT_SIMILAR"))
     elif specificity == "MARGINAL_MT_ADVANTAGE":
-        caps.append(("R2", "CAP_MARGINAL_MT_ADVANTAGE"))
+        caps.append(("R3", "CAP_MARGINAL_MT_ADVANTAGE"))
     elif specificity == "WT_BETTER":
         caps.append(("R4", "CAP_WT_BETTER"))
     elif specificity == "UNASSESSED" and not _is_clear_novel_sequence(source):
         caps.append(("R2", "CAP_MUTANT_SPECIFICITY_UNASSESSED"))
+    if str(source.get("wt_self_reactivity_risk_status", "")).upper() == "WT_STRONG_BINDING_REVIEW":
+        caps.append(("R3", "CAP_WT_STRONG_BINDING_REVIEW"))
     hla_state = states["hla_appm"]["state"]
     if hla_state == "HLA_LOH_UNASSESSED":
         caps.append(("R2", "CAP_HLA_LOH_UNASSESSED"))

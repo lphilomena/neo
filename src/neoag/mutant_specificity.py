@@ -16,18 +16,77 @@ def _number(row: Mapping[str, Any], *keys: str) -> float | None:
     return None
 
 
-def _mutation_geometry(mt: str, wt: str) -> tuple[str, str, str]:
+def _mutation_geometry(mt: str, wt: str, mhc_class: str = "") -> tuple[str, str, str, str, str]:
     mt = str(mt or "").strip().upper()
     wt = str(wt or "").strip().upper()
     if not mt or not wt or len(mt) != len(wt):
-        return "", "unknown", "unknown"
+        return "", "unknown", "unknown", "UNASSESSED", "MT/WT peptide alignment unavailable"
     positions = [i + 1 for i, (m, w) in enumerate(zip(mt, wt)) if m != w]
     if not positions:
-        return "", "no", "no"
+        return "", "no", "no", "NO_SEQUENCE_CHANGE", "MT and WT peptide sequences are identical"
+    normalized_class = str(mhc_class or "").strip().upper().replace("-", "_")
+    if normalized_class in {"II", "CLASS_II", "MHC_II"}:
+        return (
+            ",".join(str(pos) for pos in positions),
+            "unknown",
+            "unknown",
+            "STRUCTURAL_ROLE_UNCERTAIN",
+            "MHC-II binding register is not resolved; residue role requires register-aware modelling",
+        )
     anchors = {2, len(mt)}
     anchor_only = all(pos in anchors for pos in positions)
-    tcr_facing = any(pos not in anchors for pos in positions)
-    return ",".join(str(pos) for pos in positions), "yes" if anchor_only else "no", "yes" if tcr_facing else "no"
+    putative_tcr = {pos for pos in range(3, len(mt)) if pos not in anchors}
+    tcr_facing = any(pos in putative_tcr for pos in positions)
+    has_anchor = any(pos in anchors for pos in positions)
+    has_other = any(pos not in anchors and pos not in putative_tcr for pos in positions)
+    if anchor_only:
+        role = "PRIMARY_HLA_ANCHOR"
+        interpretation = "change is confined to a conventional MHC-I primary anchor (P2/Pomega); binding may change without creating a novel TCR-facing surface"
+    elif tcr_facing and has_anchor:
+        role = "MIXED_ANCHOR_AND_PUTATIVE_TCR_FACING"
+        interpretation = "changes include a conventional MHC-I anchor and a putative TCR-exposed internal residue; structural and functional confirmation is required"
+    elif tcr_facing and not has_other:
+        role = "PUTATIVE_TCR_FACING"
+        interpretation = "change is at an internal non-primary-anchor position that may face the TCR; this is a sequence-position inference, not structural proof"
+    else:
+        role = "STRUCTURAL_ROLE_UNCERTAIN"
+        interpretation = "change is outside conventional primary anchors but cannot be assigned a TCR-contact role from sequence position alone"
+    return (
+        ",".join(str(pos) for pos in positions),
+        "yes" if anchor_only else "no",
+        "yes" if tcr_facing else "no",
+        role,
+        interpretation,
+    )
+
+
+def _wt_binding_risk(
+    wt_el: float | None,
+    wt_ba: float | None,
+    wt_ic50: float | None,
+    cfg: Mapping[str, Any],
+) -> tuple[str, str]:
+    strong_rank = float(cfg.get("wt_strong_rank_threshold", 1.0))
+    review_rank = float(cfg.get("wt_review_rank_threshold", 2.0))
+    strong_ic50 = float(cfg.get("wt_strong_ic50_threshold", 50.0))
+    review_ic50 = float(cfg.get("wt_review_ic50_threshold", 500.0))
+    ranks = [value for value in (wt_el, wt_ba) if value is not None]
+    if (ranks and min(ranks) <= strong_rank) or (wt_ic50 is not None and wt_ic50 <= strong_ic50):
+        return (
+            "WT_STRONG_BINDING_REVIEW",
+            "WT peptide remains strongly predicted to bind the same HLA; self-reactivity and immune-tolerance risk require direct MT/WT functional testing",
+        )
+    if (ranks and min(ranks) <= review_rank) or (wt_ic50 is not None and wt_ic50 <= review_ic50):
+        return (
+            "WT_BINDING_REVIEW",
+            "WT peptide retains predicted binding to the same HLA; MT/WT differential alone is insufficient and matched-WT safety testing is required",
+        )
+    if ranks or wt_ic50 is not None:
+        return (
+            "WT_LOW_PREDICTED_BINDING",
+            "available predictors suggest weaker WT binding, but this does not prove absence of tolerance or cross-reactivity",
+        )
+    return "UNASSESSED", "WT binding evidence is unavailable"
 
 
 def evaluate_mutant_specificity(
@@ -40,12 +99,24 @@ def evaluate_mutant_specificity(
     pres = presentation or {}
     mt_peptide = str(peptide.get("peptide", "")).strip().upper()
     wt_peptide = str(peptide.get("wildtype_peptide", "")).strip().upper()
-    positions, anchor_only, tcr_facing = _mutation_geometry(mt_peptide, wt_peptide)
+    mhc_class = str(peptide.get("mhc_class") or pres.get("mhc_class") or "")
+    if not mhc_class:
+        allele = str(peptide.get("hla_allele") or pres.get("hla_allele") or "").upper()
+        if allele.startswith(("HLA-D", "DPA", "DPB", "DQA", "DQB", "DRA", "DRB")):
+            mhc_class = "II"
+    positions, anchor_only, tcr_facing, position_role, position_interpretation = _mutation_geometry(
+        mt_peptide, wt_peptide, mhc_class
+    )
 
     result: dict[str, Any] = {
         "mutation_positions_in_peptide": positions,
         "mutation_anchor_only": anchor_only,
         "mutation_tcr_facing": tcr_facing,
+        "mutation_position_role": position_role,
+        "mutation_position_interpretation": position_interpretation,
+        "wt_self_reactivity_risk_status": "UNASSESSED",
+        "wt_self_reactivity_risk_reason": "WT binding evidence is unavailable",
+        "mt_wt_interpretation_caution": "MT/WT binding differential or DAI is not independent evidence of immunogenicity",
         "mutant_specificity_status": "UNASSESSED",
         "mutant_specificity_gate_status": "UNASSESSED",
         "mutant_specificity_reason": "wildtype_peptide_or_prediction_missing",
@@ -70,6 +141,12 @@ def evaluate_mutant_specificity(
     wt_el = _number(pres, "netmhcpan_wt_rank_el")
     if wt_el is None:
         wt_el = _number(peptide, "netmhcpan_wt_rank_el")
+    wt_ba = _number(pres, "netmhcpan_wt_rank_ba")
+    if wt_ba is None:
+        wt_ba = _number(peptide, "netmhcpan_wt_rank_ba")
+    wt_ic50 = _number(pres, "netmhcpan_wt_ic50")
+    if wt_ic50 is None:
+        wt_ic50 = _number(peptide, "netmhcpan_wt_ic50")
     mt_mhcflurry = _number(pres, "mhcflurry_presentation_score")
     if mt_mhcflurry is None:
         mt_mhcflurry = _number(peptide, "mhcflurry_presentation_score")
@@ -98,6 +175,10 @@ def evaluate_mutant_specificity(
         result["prime_mt_wt_score_difference"] = f"{(mt_prime - wt_prime):.6f}" if wt_prime is not None else ""
     if mt_bigmhc is not None:
         result["bigmhc_mt_wt_score_difference"] = f"{(mt_bigmhc - wt_bigmhc):.6f}" if wt_bigmhc is not None else ""
+
+    wt_risk, wt_risk_reason = _wt_binding_risk(wt_el, wt_ba, wt_ic50, cfg)
+    result["wt_self_reactivity_risk_status"] = wt_risk
+    result["wt_self_reactivity_risk_reason"] = wt_risk_reason
 
     if mt_el is None or wt_el is None:
         return result
@@ -140,4 +221,8 @@ def evaluate_mutant_specificity(
         "mutant_specificity_multiplier": f"{mult:.4f}",
         "mutant_specificity_priority_cap": cap,
     })
+    if wt_risk == "WT_STRONG_BINDING_REVIEW":
+        result["mutant_specificity_gate_status"] = "CAUTION"
+        result["mutant_specificity_priority_cap"] = str(cfg.get("wt_strong_binding_priority_cap", "C_CAUTION"))
+        result["mutant_specificity_reason"] = f"{result['mutant_specificity_reason']}; wildtype_peptide_remains_strong_binder"
     return result

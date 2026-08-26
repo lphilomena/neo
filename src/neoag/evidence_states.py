@@ -339,7 +339,9 @@ def derive_presentation_consensus(row: Mapping[str, Any], rules: Mapping[str, An
 
 def derive_mutant_specificity(row: Mapping[str, Any], rules: Mapping[str, Any]) -> dict[str, Any]:
     del rules
-    gate = _text(row, "mutant_specificity_gate_status", "mutant_specificity_status")
+    status = _text(row, "mutant_specificity_status")
+    gate = _text(row, "mutant_specificity_gate_status")
+    wt_risk = _text(row, "wt_self_reactivity_risk_status")
     mutant = str(row.get("peptide") or row.get("mutant_peptide") or "").strip().upper()
     wildtype = str(row.get("wildtype_peptide") or "").strip().upper()
     novel = str(row.get("contains_novel_aa", "")).strip().lower()
@@ -358,16 +360,18 @@ def derive_mutant_specificity(row: Mapping[str, Any], rules: Mapping[str, Any]) 
         return _result("NON_MUTANT_SEQUENCE", 0, "mutant peptide equals wild-type peptide", hard_fail=True, hard_code="HARD_NON_MUTANT_SEQUENCE")
     if novel in {"false", "no", "0"} and crosses in {"false", "no", "0"} and not str(row.get("mutation_positions_in_peptide", "")).strip():
         return _result("NON_MUTANT_SEQUENCE", 0, "peptide contains neither mutation nor novel junction", hard_fail=True, hard_code="HARD_NON_MUTANT_SEQUENCE")
-    if "NON_MUTANT_SEQUENCE" in gate:
-        return _result("NON_MUTANT_SEQUENCE", 0, gate, hard_fail=True, hard_code="HARD_NON_MUTANT_SEQUENCE")
-    if "WT_BETTER" in gate:
-        return _result("WT_BETTER", 0, gate)
-    if "MT_WT_SIMILAR" in gate:
-        return _result("MT_WT_SIMILAR", 1, gate)
-    if "MARGINAL_MT_ADVANTAGE" in gate:
-        return _result("MARGINAL_MT_ADVANTAGE", 2, gate)
-    if "MT_SPECIFIC" in gate or "PASS" in gate or "MT_BETTER" in gate:
-        return _result("MT_SPECIFIC", 3, gate)
+    if "NON_MUTANT_SEQUENCE" in status or "NON_MUTANT_SEQUENCE" in gate:
+        return _result("NON_MUTANT_SEQUENCE", 0, status or gate, hard_fail=True, hard_code="HARD_NON_MUTANT_SEQUENCE")
+    if "WT_STRONG_BINDING_REVIEW" in wt_risk:
+        return _result("MARGINAL_MT_ADVANTAGE", 1, f"{status or gate}; WT remains a strong predicted binder; direct self-reactivity/tolerance review required")
+    if "WT_BETTER" in status or "WT_BETTER" in gate:
+        return _result("WT_BETTER", 0, status or gate)
+    if "MT_WT_SIMILAR" in status or "MT_WT_SIMILAR" in gate:
+        return _result("MT_WT_SIMILAR", 1, status or gate)
+    if "MARGINAL_MT_ADVANTAGE" in status or "MARGINAL_MT_ADVANTAGE" in gate:
+        return _result("MARGINAL_MT_ADVANTAGE", 1, status or gate)
+    if "MT_SPECIFIC" in status or "MT_SPECIFIC" in gate or "PASS" in gate or "MT_BETTER" in gate:
+        return _result("MT_SPECIFIC", 3, status or gate)
     if "UNASSESSED" in gate or not gate:
         if mutant and not wildtype and explicit_novel:
             return _result(
@@ -377,12 +381,12 @@ def derive_mutant_specificity(row: Mapping[str, Any], rules: Mapping[str, Any]) 
             )
         return _result("UNASSESSED", 0, "mutant specificity unassessed", assessed=False)
     if any(token in gate for token in ("CAUTION", "REVIEW", "EQUIVALENT")):
-        return _result("MARGINAL_MT_ADVANTAGE", 2, gate)
+        return _result("MARGINAL_MT_ADVANTAGE", 1, gate)
     agretopicity = _float(row, "agretopicity_el")
     difference = _float(row, "mt_wt_el_rank_difference")
     if agretopicity is not None or difference is not None:
         if (agretopicity or 0) > 1 or (difference or 0) > 0:
-            return _result("MARGINAL_MT_ADVANTAGE", 2, f"agretopicity={agretopicity}; EL difference={difference}")
+            return _result("MARGINAL_MT_ADVANTAGE", 1, f"agretopicity={agretopicity}; EL difference={difference}; differential alone does not establish immunogenicity")
         return _result("MT_WT_SIMILAR", 1, f"no positive MT-vs-WT differential: agretopicity={agretopicity}; difference={difference}")
     return _result("UNASSESSED", 0, "MT-vs-WT evidence unavailable", assessed=False)
 

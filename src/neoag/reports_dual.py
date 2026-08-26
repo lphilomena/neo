@@ -53,7 +53,10 @@ PATIENT_STATUS_LABELS = {
     "PRESENTATION_SINGLE_TOOL": "仅一个核心工具提供呈递支持",
     "PRESENTATION_UNASSESSED": "核心呈递预测未评估",
     "MT_SPECIFIC": "突变肽具有较强特异性",
-    "MARGINAL_MT_ADVANTAGE": "突变肽相对正常肽仅有轻度优势",
+    "MARGINAL_MT_ADVANTAGE": "MT相对WT仅轻度改善，不能单独作为免疫原性正向证据",
+    "WT_STRONG_BINDING_REVIEW": "WT仍预测为强结合，需重点复核自身反应与免疫耐受风险",
+    "WT_BINDING_REVIEW": "WT仍保留预测结合，需进行配对安全性复核",
+    "WT_LOW_PREDICTED_BINDING": "WT预测结合较弱，但不能据此排除耐受或交叉反应",
     "HLA_LOH_UNASSESSED": "限制性HLA多工具确认未完成",
     "SAFETY_PARTIAL": "正常组织安全性仅部分评估（具体缺口见候选说明）",
     "SUPPORTED": "获得支持",
@@ -2599,6 +2602,38 @@ def _patient_presentation_quantitative_row(row: Mapping[str, Any], rank: int) ->
         comparisons.append(f"BA WT/MT={ba_ratio:.4g}")
     mt_wt = "；".join(comparisons) or "未形成可计算的MT/WT rank差值或比值"
 
+    role = _patient_value(row, "mutation_position_role", default="")
+    role_text = {
+        "PRIMARY_HLA_ANCHOR": "主锚定位点：可能主要改变HLA结合，不等同于形成新的TCR识别表面",
+        "PUTATIVE_TCR_FACING": "推定TCR暴露位置：可能改变TCR识别，但仅为序列位置推断，需结构/功能验证",
+        "MIXED_ANCHOR_AND_PUTATIVE_TCR_FACING": "同时涉及主锚点与推定TCR暴露位置，需分别解释结合与TCR识别效应",
+        "STRUCTURAL_ROLE_UNCERTAIN": "结构角色不确定，不能从DAI或位置单独推断免疫原性",
+        "NO_SEQUENCE_CHANGE": "MT与WT肽序列相同，不构成突变特异肽",
+    }.get(role.upper(), "")
+    if not role_text:
+        anchor_only = _patient_value(row, "mutation_anchor_only", default="").lower()
+        tcr_facing = _patient_value(row, "mutation_tcr_facing", default="").lower()
+        if anchor_only in {"yes", "true", "1"}:
+            role_text = "主锚定位点：可能主要改变HLA结合，不等同于形成新的TCR识别表面"
+        elif tcr_facing in {"yes", "true", "1"}:
+            role_text = "推定TCR暴露位置：可能改变TCR识别，但仅为序列位置推断，需结构/功能验证"
+        else:
+            role_text = "未形成可靠位置解释"
+
+    wt_risk = _patient_value(row, "wt_self_reactivity_risk_status", default="")
+    if not wt_risk:
+        wt_ic50 = number("netmhcpan_wt_ic50")
+        wt_ranks = [candidate for candidate in (wt_el, wt_ba) if candidate is not None]
+        if (wt_ranks and min(wt_ranks) <= 1.0) or (wt_ic50 is not None and wt_ic50 <= 50.0):
+            wt_risk = "WT_STRONG_BINDING_REVIEW"
+        elif (wt_ranks and min(wt_ranks) <= 2.0) or (wt_ic50 is not None and wt_ic50 <= 500.0):
+            wt_risk = "WT_BINDING_REVIEW"
+        elif wt_ranks or wt_ic50 is not None:
+            wt_risk = "WT_LOW_PREDICTED_BINDING"
+        else:
+            wt_risk = "UNASSESSED"
+    wt_risk_text = _patient_status_text(wt_risk)
+
     mhcflurry = (
         f"affinity percentile MT={value('mhcflurry_mt_affinity_percentile', 'mhcflurry_affinity_percentile')}%, "
         f"WT={value('mhcflurry_wt_affinity_percentile')}%; "
@@ -2622,11 +2657,24 @@ def _patient_presentation_quantitative_row(row: Mapping[str, Any], rank: int) ->
         "肽长/变异位置": f"{len(peptide) if peptide else '未提供'} aa；位置={mutation_position}",
         "NetMHCpan原始值": netmhcpan,
         "MT/WT定量比较": mt_wt,
+        "突变位置结构解释": role_text,
+        "WT自身反应/耐受风险": wt_risk_text,
         "MHCflurry原始值": mhcflurry,
         "稳定性": stability,
         "免疫原性辅助模型": auxiliary,
         "HLA模型覆盖": allele_support,
     }
+
+
+def _patient_mtwt_caution(row: Mapping[str, Any]) -> str:
+    if _patient_track(row) not in {"SNV", "InDel"}:
+        return ""
+    detail = _patient_presentation_quantitative_row(row, 0)
+    status = _patient_value(row, "mutant_specificity_status", "mutant_specificity_state", default="UNASSESSED")
+    return (
+        f"MT/WT谨慎解释：{_patient_status_text(status)}；{detail['突变位置结构解释']}；"
+        f"{detail['WT自身反应/耐受风险']}。MT/WT结合差异或DAI不能独立证明免疫原性"
+    )
 
 
 def _patient_numeric_value(row: Mapping[str, Any], *fields: str) -> tuple[str, float | None]:
@@ -3844,6 +3892,7 @@ def _patient_event_evidence_and_next_step(
         f"核心证据：{'；'.join(evidence)}。"
         f"{dna_evidence + '。' if dna_evidence else ''}"
         f"RNA数据：{_patient_rna_measurements(row)}。"
+        f"{_patient_mtwt_caution(row) + '。' if _patient_mtwt_caution(row) else ''}"
         f"安全性分层：{_patient_safety_dimensions(row)}。"
         f"{('融合肽断点证明：' + fusion_boundary + '。') if fusion_boundary else ''}"
         f"{_patient_dna_rna_interpretation(row) + '。' if _patient_dna_rna_interpretation(row) else ''}"
@@ -4975,7 +5024,8 @@ def make_patient_report(
     )
     out.append(_table(quantitative_rows, [
         "排名", "肽段-HLA", "肽长/变异位置", "NetMHCpan原始值", "MT/WT定量比较",
-        "MHCflurry原始值", "稳定性", "免疫原性辅助模型", "HLA模型覆盖",
+        "突变位置结构解释", "WT自身反应/耐受风险", "MHCflurry原始值", "稳定性",
+        "免疫原性辅助模型", "HLA模型覆盖",
     ]))
     out.append(f"<p class='small'>当前暂缓/不推进及完整性门槛未通过的{len(paused_representatives)}个事件代表候选不进入患者版重点表，仅保留在科研技术版审阅池。排序仍采用R1–R4、同赛道Pareto、确定性tie-break和事件去重。</p></div>")
 
@@ -5278,7 +5328,8 @@ def make_technical_report(path: str | Path, bundle: ReportBundle) -> None:
         for index, row in enumerate(bundle.peptides[:100], start=1)
     ], [
         "排名", "肽段-HLA", "肽长/变异位置", "NetMHCpan原始值", "MT/WT定量比较",
-        "MHCflurry原始值", "稳定性", "免疫原性辅助模型", "HLA模型覆盖",
+        "突变位置结构解释", "WT自身反应/耐受风险", "MHCflurry原始值", "稳定性",
+        "免疫原性辅助模型", "HLA模型覆盖",
     ], max_rows=100))
     pep_headers = [
         "peptide_id", "event_id", "gene", "cancer_gene_types", "cancer_driver_context", "cancer_gene_context",
@@ -5302,7 +5353,9 @@ def make_technical_report(path: str | Path, bundle: ReportBundle) -> None:
         "agretopicity_el", "mt_wt_el_rank_difference",
         "mhcflurry_mt_wt_presentation_difference", "prime_mt_wt_score_difference",
         "bigmhc_mt_wt_score_difference", "mutation_positions_in_peptide",
-        "mutation_anchor_only", "mutation_tcr_facing", "mutant_specificity_status",
+        "mutation_anchor_only", "mutation_tcr_facing", "mutation_position_role",
+        "mutation_position_interpretation", "wt_self_reactivity_risk_status",
+        "wt_self_reactivity_risk_reason", "mt_wt_interpretation_caution", "mutant_specificity_status",
         "mutant_specificity_gate_status", "mutant_specificity_reason", "mutant_specificity_multiplier",
         "phase_group_id", "haplotype_status", "phase_support_reads",
         "phase_total_informative_reads", "phase_confidence", "component_event_ids",
@@ -5411,6 +5464,10 @@ def make_technical_report(path: str | Path, bundle: ReportBundle) -> None:
             f"positions={esc(ppt.get('mutation_positions_in_peptide'))}; "
             f"anchor_only={esc(ppt.get('mutation_anchor_only'))}; "
             f"TCR_facing={esc(ppt.get('mutation_tcr_facing'))}; "
+            f"position_role={esc(ppt.get('mutation_position_role'))}; "
+            f"position_interpretation=<span class='mono'>{esc(ppt.get('mutation_position_interpretation'))}</span>; "
+            f"WT_self_reactivity={_badge(ppt.get('wt_self_reactivity_risk_status'))}; "
+            f"WT_risk_reason=<span class='mono'>{esc(ppt.get('wt_self_reactivity_risk_reason'))}</span>; "
             f"reason=<span class='mono'>{esc(ppt.get('mutant_specificity_reason'))}</span></p>"
         )
         out.append(
