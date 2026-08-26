@@ -106,7 +106,9 @@ def test_patient_top_candidates_include_non_r4_technical_review_rows(tmp_path):
             "event_id": f"E{i}",
             "gene": f"G{i}",
             "event_type": "SNV",
-            "peptide": "AAAAAAAAA",
+            # This test exercises Top-N capacity, so each candidate must have
+            # a distinct peptide-HLA identity under the report contract.
+            "peptide": f"AAAAAAA{i:03d}",
             "hla_allele": "HLA-A*02:01",
             "evidence_grade": "R3",
             "netmhcpan_el_rank": "0.5",

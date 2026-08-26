@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping
 
+from .candidate_identity import candidate_identity, identity_value
 from .utils import read_tsv
 
 REPORT_CSS = """
@@ -2368,16 +2369,22 @@ def _patient_track(row: Mapping[str, Any]) -> str:
 
 def _patient_representatives(rows: list[dict[str, str]], limit: int, track: str | None = None) -> list[dict[str, str]]:
     selected: list[dict[str, str]] = []
-    seen: set[str] = set()
+    seen_events: set[str] = set()
+    seen_peptide_hla: set[str] = set()
     for row in rows:
         if track and _patient_track(row) != track:
             continue
         event_id = str(row.get("event_id") or row.get("event_name") or row.get("peptide_id") or "")
-        key = event_id or f"{row.get('gene', '')}|{row.get('peptide', '')}"
-        if key in seen:
+        event_key = event_id or identity_value(row, "event_identity_id")
+        peptide_hla_key = identity_value(row, "peptide_hla_id")
+        if event_key in seen_events or peptide_hla_key in seen_peptide_hla:
             continue
-        seen.add(key)
-        selected.append(row)
+        seen_events.add(event_key)
+        seen_peptide_hla.add(peptide_hla_key)
+        annotated = dict(row)
+        for field, value in candidate_identity(row).items():
+            annotated.setdefault(field, value)
+        selected.append(annotated)
         if len(selected) >= limit:
             break
     return selected
@@ -4504,7 +4511,7 @@ def make_patient_report(
     out.append(_table(summary, ["项目", "结果", "说明"]))
     screening_rows = [
         {"口径": "独立事件", "数量": str(len(event_seen) or len(bundle.events)), "说明": "来自ranked_events.evidence_consensus.tsv，按事件去重"},
-        {"口径": "Peptide-HLA组合", "数量": str(len(ranked)), "说明": "同一事件可产生多个重叠肽段和多个HLA组合，不等同于独立新抗原数量"},
+        {"口径": "Peptide-HLA组合", "数量": str(len({identity_value(row, 'peptide_hla_id') for row in ranked})), "说明": "同一事件可产生多个重叠肽段和多个HLA组合；此处按唯一肽段序列+标准化HLA等位基因统计，重复证据行不重复计数"},
     ]
     out.append("<h3>筛选规模</h3>" + _table(screening_rows, ["口径", "数量", "说明"]))
     event_grade_metadata = {

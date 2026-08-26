@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+from neoag.candidate_identity import identity_value
 from .common import count_by, ensure_dir, markdown_table, read_tsv, strip_html_text
 from .appm_review import parse_evidence_html
 
@@ -14,11 +15,14 @@ def load_top_candidates(path: str | None, n: int = 20) -> tuple[list[dict[str, s
     event_counts = dict(count_by(rows, "event_type"))
     top = []
     seen_events: set[str] = set()
+    seen_peptide_hla: set[str] = set()
     for r in rows:
         event_id = r.get("event_id") or r.get("peptide_id") or ""
-        if event_id in seen_events:
+        peptide_hla_id = identity_value(r, "peptide_hla_id")
+        if event_id in seen_events or peptide_hla_id in seen_peptide_hla:
             continue
         seen_events.add(event_id)
+        seen_peptide_hla.add(peptide_hla_id)
         top.append({
             "grade": r.get("pipeline_r_grade") or r.get("evidence_grade") or r.get("final_priority", ""),
             "gene": r.get("gene", ""), "peptide": r.get("peptide", ""),

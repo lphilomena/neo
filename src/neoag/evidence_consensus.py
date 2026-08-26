@@ -11,6 +11,7 @@ import tomllib
 from typing import Any, Mapping
 
 from .evidence_states import DERIVERS, derive_all_states, event_track
+from .candidate_identity import IDENTITY_FIELDS, candidate_identity
 from .source_chain import derive_source_chain_confidence
 from .pareto import nondominated_fronts
 from .utils import read_tsv, write_tsv
@@ -150,6 +151,9 @@ CAP_FIELDS = (
     "mutant_specificity_priority_cap",
 )
 CONSENSUS_FIELDS = (
+    *IDENTITY_FIELDS,
+    "peptide_hla_rank", "peptide_hla_representative", "peptide_hla_duplicate_count",
+    "peptide_hla_member_event_ids", "peptide_hla_member_protein_change_ids",
     "legacy_weighted_rank", "biological_event_track", "evidence_track", "pareto_dimensions",
     "hard_failure", "hard_failure_codes", "hard_failure_reasons",
     "legacy_priority_cap", "consensus_priority_cap", "evidence_grade_cap", "evidence_grade_cap_reasons",
@@ -1279,6 +1283,8 @@ def _write_consensus_summary(
     source_chain_track_counts = Counter(row.get("source_chain_track", "OTHER") for row in rows)
     summary = [
         {"metric": "peptide_hla_rows", "category": "overall", "value": str(len(rows))},
+        {"metric": "unique_peptide_hla_candidates", "category": "overall", "value": str(len({row.get('peptide_hla_id', '') for row in rows}))},
+        {"metric": "duplicate_peptide_hla_evidence_rows", "category": "overall", "value": str(sum(row.get("peptide_hla_representative") == "no" for row in rows))},
         {"metric": "event_rows", "category": "overall", "value": str(len(event_rows))},
         {"metric": "conflict_rows", "category": "overall", "value": str(len(conflicts))},
         {"metric": "hard_failure_rows", "category": "overall", "value": str(sum(row["hard_failure"] == "yes" for row in rows))},
@@ -1385,6 +1391,8 @@ def _write_run_manifest(
         },
         "counts": {
             "peptide_hla_rows": result["rows"],
+            "unique_peptide_hla_candidates": result.get("unique_peptide_hla_candidates", result["rows"]),
+            "duplicate_peptide_hla_evidence_rows": result.get("duplicate_peptide_hla_evidence_rows", 0),
             "event_rows": result["events"],
             "conflict_rows": result["conflicts"],
             "evidence_grades": result["grade_counts"],
@@ -1422,6 +1430,7 @@ def rank_evidence_consensus(
     conflicts: list[dict[str, str]] = []
     for legacy_rank, source in enumerate(source_rows, 1):
         normalized, records = _normalized_row(source, rules, legacy_rank)
+        normalized.update(candidate_identity(normalized))
         rows.append(normalized)
         states.append(records[0])
         conflicts.extend(records[1:])
@@ -1429,9 +1438,32 @@ def rank_evidence_consensus(
     for row in rows:
         row["evidence_rank_key"] = _build_evidence_rank_key(row)
     rows.sort(key=lambda row: _rank_key(row, rules))
+    pair_members: dict[str, list[dict[str, str]]] = defaultdict(list)
+    for row in rows:
+        pair_members[row["peptide_hla_id"]].append(row)
+    pair_rank = 0
+    pair_rank_by_id: dict[str, int] = {}
     tracks: Counter[str] = Counter()
     for rank, row in enumerate(rows, 1):
         row["evidence_rank"] = str(rank)
+        pair_id = row["peptide_hla_id"]
+        if pair_id not in pair_rank_by_id:
+            pair_rank += 1
+            pair_rank_by_id[pair_id] = pair_rank
+            representative = "yes"
+        else:
+            representative = "no"
+        members = pair_members[pair_id]
+        row["peptide_hla_rank"] = str(pair_rank_by_id[pair_id])
+        row["peptide_hla_representative"] = representative
+        row["peptide_hla_duplicate_count"] = str(len(members))
+        row["peptide_hla_member_event_ids"] = ";".join(sorted({
+            str(member.get("event_id") or "").strip() for member in members
+            if str(member.get("event_id") or "").strip()
+        }))
+        row["peptide_hla_member_protein_change_ids"] = ";".join(sorted({
+            member["protein_change_identity_id"] for member in members
+        }))
         tracks[row["evidence_track"]] += 1
         row["track_rank"] = str(tracks[row["evidence_track"]])
 
@@ -1463,6 +1495,8 @@ def rank_evidence_consensus(
     )
     result = {
         "rows": len(rows),
+        "unique_peptide_hla_candidates": len(pair_members),
+        "duplicate_peptide_hla_evidence_rows": len(rows) - len(pair_members),
         "events": len(event_rows),
         "conflicts": len(conflicts),
         "output_peptides": str(output_peptides_tsv),
