@@ -4996,6 +4996,8 @@ def make_patient_report(
             event_seen.add(event_id)
         track = _patient_track(row)
         track_counts[track] = track_counts.get(track, 0) + 1
+    independent_event_count = len(event_seen) or len(bundle.events)
+    peptide_hla_count = len({identity_value(row, "peptide_hla_id") for row in ranked})
 
     out = [
         "<!doctype html><html><head><meta charset='utf-8'>",
@@ -5035,8 +5037,8 @@ def make_patient_report(
     ])
     out.append(_table(summary, ["项目", "结果", "说明"]))
     screening_rows = [
-        {"口径": "独立事件", "数量": str(len(event_seen) or len(bundle.events)), "说明": "来自ranked_events.evidence_consensus.tsv，按事件去重"},
-        {"口径": "Peptide-HLA组合", "数量": str(len({identity_value(row, 'peptide_hla_id') for row in ranked})), "说明": "同一事件可产生多个重叠肽段和多个HLA组合；此处按唯一肽段序列+标准化HLA等位基因统计，重复证据行不重复计数"},
+        {"口径": "独立事件", "数量": str(independent_event_count), "说明": "来自ranked_events.evidence_consensus.tsv，按事件去重"},
+        {"口径": "Peptide-HLA组合", "数量": str(peptide_hla_count), "说明": "同一事件可产生多个重叠肽段和多个HLA组合；此处按唯一肽段序列+标准化HLA等位基因统计，重复证据行不重复计数"},
     ]
     out.append("<h3>筛选规模</h3>" + _table(screening_rows, ["口径", "数量", "说明"]))
     event_grade_metadata = {
@@ -5059,7 +5061,40 @@ def make_patient_report(
     out.append("<p class='small'>以下数量直接读取ranked_events.evidence_consensus.tsv并按独立事件统计，不从Peptide-HLA表推算。</p>")
     out.append(_table(event_grade_rows, ["事件等级", "事件数", "含义", "下一步"]))
     focus_count = len(top)
-    out.append(f"<p><b>本次重点审阅：</b>{focus_count}个事件。它们是本报告综合证据表中优先展示的代表事件，不等同于已有{focus_count}个经实验确认的新抗原。</p>")
+    r1_r2_count = event_grade_counts.get("R1", 0) + event_grade_counts.get("R2", 0)
+    anchor_labels = list(dict.fromkeys(
+        str(row.get("gene") or row.get("event_name") or row.get("event_id") or "").strip()
+        for row in top if _disease_anchor(row, bundle)
+    ))
+    focus_track_counts: dict[str, int] = {}
+    for row in top:
+        track = _patient_track(row)
+        focus_track_counts[track] = focus_track_counts.get(track, 0) + 1
+    if r1_r2_count:
+        grade_conclusion = f"目前有{r1_r2_count}个独立事件达到R1或R2计算证据等级，但仍须完成对应实验验证后才能推进"
+    else:
+        grade_conclusion = "目前未获得可直接进入首批实验的R1或R2候选"
+    priority_parts: list[str] = []
+    if anchor_labels:
+        priority_parts.append("疾病相关锚定事件" + "、".join(anchor_labels[:3]) + "相关候选")
+    for track, label in (("SNV", "SNV"), ("InDel", "InDel"), ("Fusion", "融合"), ("Splice", "异常剪接")):
+        count = focus_track_counts.get(track, 0)
+        if not count or (track == "Fusion" and anchor_labels):
+            continue
+        priority_parts.append(f"{count}个{label}候选")
+    priority_text = "、".join(priority_parts)
+    review_conclusion = (
+        f"{focus_count}个候选进入重点人工复核"
+        + (f"，其中{priority_text}值得优先补证" if priority_text else "")
+        + "。"
+    )
+    out.append(
+        "<div class='info'><b>首页结论：</b>"
+        f"本次分析共评估{independent_event_count}个独立候选事件，产生{peptide_hla_count}个肽段–HLA预测组合。"
+        "经事件真实性、异常转录本/RNA表达、HLA呈递、突变特异性和安全性初筛，"
+        f"{grade_conclusion}。{review_conclusion}"
+        "所有结果均为研究性计算预测，尚未证明相关肽段在肿瘤细胞表面真实呈递或能够诱导T细胞反应。</div>"
+    )
     if bundle.disease_knowledge.get("anchors"):
         out.append(
             "<p class='small'>已加载疾病知识配置：命中的锚定事件优先展示，"

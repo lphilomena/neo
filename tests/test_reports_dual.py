@@ -327,6 +327,32 @@ def test_patient_summary_separates_event_and_peptide_hla_counts(tmp_path):
     assert "<td>R3-REVIEW</td><td>1</td>" in text
 
 
+def test_patient_home_conclusion_is_direct_and_derived_from_current_results(tmp_path):
+    bundle = _bundle()
+    bundle.events = [
+        {"event_id": "F1", "gene": "GENEA::GENEB", "event_type": "Fusion", "best_evidence_grade": "R3", "manual_review_required": "yes"},
+        {"event_id": "S1", "gene": "GENEC", "event_type": "SNV", "best_evidence_grade": "R3", "evidence_missing_layers": "rna"},
+        {"event_id": "S2", "gene": "GENED", "event_type": "SNV", "best_evidence_grade": "R3", "evidence_missing_layers": "safety"},
+    ]
+    bundle.peptides = [
+        {"peptide_id": "PF", "event_id": "F1", "gene": "GENEA::GENEB", "event_type": "Fusion", "peptide": "ABCDEFGHI", "hla_allele": "HLA-A*02:01"},
+        {"peptide_id": "PS1", "event_id": "S1", "gene": "GENEC", "event_type": "SNV", "peptide": "BCDEFGHIK", "hla_allele": "HLA-A*02:01"},
+        {"peptide_id": "PS2", "event_id": "S2", "gene": "GENED", "event_type": "SNV", "peptide": "CDEFGHIKL", "hla_allele": "HLA-B*07:02"},
+    ]
+    bundle.disease_knowledge = {"anchors": [{"event": "GENEA::GENEB", "label": "disease anchor"}]}
+    out = tmp_path / "patient_direct_conclusion.html"
+    make_patient_report(out, bundle, candidate_top_n=5)
+    text = out.read_text(encoding="utf-8")
+    assert "首页结论" in text
+    assert "本次分析共评估3个独立候选事件，产生3个肽段–HLA预测组合" in text
+    assert "目前未获得可直接进入首批实验的R1或R2候选" in text
+    assert "3个候选进入重点人工复核" in text
+    assert "疾病相关锚定事件GENEA::GENEB相关候选" in text
+    assert "2个SNV候选" in text
+    assert "尚未证明相关肽段在肿瘤细胞表面真实呈递或能够诱导T细胞反应" in text
+    assert "本次重点审阅：" not in text
+
+
 def test_patient_event_top_table_uses_event_level_r3_subgrade(tmp_path):
     bundle = _bundle()
     bundle.events[0].update({
