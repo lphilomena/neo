@@ -2591,17 +2591,38 @@ def _patient_candidate_hla_status(bundle: ReportBundle | None) -> str:
     if bundle is None:
         return "未评估"
     _, overall = _patient_hla_loh_consensus(bundle)
-    if "仅SpecHLA" in overall and "未见" in overall:
-        return "单工具提示保留；多工具LOH确认未完成"
-    if "仅LOHHLA" in overall and "未见" in overall:
-        return "单工具提示保留；多工具LOH确认未完成"
-    if "多工具一致未见" in overall:
-        return "多工具一致提示保留"
+    if "单工具提示限制性HLA-I LOH" in overall:
+        return "单工具提示可能丢失；需正交确认"
+    if "仅有单工具支持" in overall or "单工具" in overall:
+        return "单工具未提示LOH；不足以确认完整保留"
+    if "多工具一致未提示" in overall:
+        return "多工具一致未提示LOH；支持当前分层"
     if "检出限制性HLA-I LOH" in overall:
         return overall.replace("检出限制性HLA-I LOH", "检出限制性HLA丢失")
     if "冲突" in overall:
         return "工具结果冲突；限制性HLA状态待确认"
     return "未评估"
+
+
+def _patient_restricting_hla_reliability(
+    row: Mapping[str, Any], bundle: ReportBundle | None,
+) -> tuple[bool, str]:
+    """Classify whether the restricting-allele LOH call is reliable for stratification."""
+    if bundle is None:
+        return False, "限制性HLA未评估"
+    allele = str(row.get("hla_allele") or row.get("allele") or "").strip()
+    if not allele:
+        return False, "限制性HLA缺失"
+    loh_rows, _ = _patient_hla_loh_consensus(bundle)
+    match = next((item for item in loh_rows if item.get("HLA等位基因") == allele), None)
+    if not match:
+        return False, f"{allele}无逐等位基因LOH结论"
+    consensus = str(match.get("综合判断") or "未评估")
+    if consensus.startswith("多工具一致"):
+        return True, consensus
+    if consensus.startswith("仅"):
+        return False, f"{consensus}；单工具结果不作为完整保留或丢失的可靠确认"
+    return False, consensus
 
 
 def _patient_restricting_hla_gap(
@@ -2623,7 +2644,10 @@ def _patient_restricting_hla_gap(
     if "冲突" in consensus:
         return f"限制性HLA {allele} LOH冲突：LOHHLA={lohhla}；SpecHLA={spechla}"
     if consensus.startswith("仅"):
-        return f"限制性HLA {allele} LOH仅单工具评估：LOHHLA={lohhla}；SpecHLA={spechla}"
+        return (
+            f"限制性HLA {allele} 仅有单工具LOH判断：LOHHLA={lohhla}；SpecHLA={spechla}；"
+            "不足以确认该等位基因在肿瘤中完整保留或丢失"
+        )
     if "丢失" in consensus:
         return f"限制性HLA {allele} 可能丢失：LOHHLA={lohhla}；SpecHLA={spechla}"
     if consensus == "未评估":
@@ -2795,8 +2819,8 @@ def _patient_limitation(row: Mapping[str, Any], bundle: ReportBundle | None = No
     hla_status = _patient_candidate_hla_status(bundle)
     if hla_status == "未评估":
         limitations.append("限制性HLA状态未评估")
-    elif "多工具LOH确认未完成" in hla_status:
-        limitations.append("限制性HLA仅单工具提示保留；多工具LOH确认未完成")
+    elif "不足以确认" in hla_status:
+        limitations.append("限制性HLA仅单工具未提示LOH；不足以确认肿瘤中完整保留")
     elif "冲突" in hla_status or "丢失" in hla_status:
         limitations.append(hla_status)
     appm_status = _patient_candidate_appm_status(bundle)
@@ -2933,7 +2957,12 @@ def _patient_evidence_audit_rows(rows: list[dict[str, str]], bundle: ReportBundl
             "尚不能作为可靠证据": unavailable,
             "判定口径": criterion,
         })
-    hla_assessed = total if _patient_candidate_hla_status(bundle) != "未评估" else 0
+    hla_reliability = [_patient_restricting_hla_reliability(row, bundle) for row in rows]
+    hla_assessed = sum(reliable for reliable, _ in hla_reliability)
+    hla_single_or_incomplete = sum(
+        not reliable and ("单工具" in detail or "QC" in detail)
+        for reliable, detail in hla_reliability
+    )
     appm_assessed = total if _patient_candidate_appm_status(bundle) != "未评估" else 0
     ccf_reliable = 0
     ccf_low_confidence = 0
@@ -2959,9 +2988,12 @@ def _patient_evidence_audit_rows(rows: list[dict[str, str]], bundle: ReportBundl
     })
     result.insert(6, {
         "证据维度": "限制性HLA状态",
-        "可作为当前分层证据": str(hla_assessed),
-        "尚不能作为可靠证据": str(total - hla_assessed),
-        "判定口径": f"Top {total}；依据样本级LOH共识",
+        "可作为当前分层证据": f"{hla_assessed}（逐等位基因多工具一致）",
+        "尚不能作为可靠证据": f"{total - hla_assessed}（其中单工具或QC不足 {hla_single_or_incomplete}）",
+        "判定口径": (
+            f"Top {total}；按每个候选的限制性HLA逐项判断；"
+            "仅单工具阴性或另一工具QC不足不计为完整保留证据"
+        ),
     })
     result.insert(7, {
         "证据维度": "APPM状态",
@@ -4131,7 +4163,7 @@ def _patient_hla_loh_status(value: Any) -> str:
 def _patient_hla_loh_label(status: str, *, missing: str = "未提供") -> str:
     return {
         "LOST": "检出LOH（丢失）",
-        "RETAINED": "未见LOH（保留）",
+        "RETAINED": "未提示LOH",
         "CONFLICT": "结果冲突",
         "UNASSESSED": missing,
     }.get(status, missing)
@@ -4191,9 +4223,15 @@ def _patient_hla_loh_consensus(bundle: ReportBundle) -> tuple[list[dict[str, str
             other_tool = "SpecHLA" if tool == "LOHHLA" else "LOHHLA"
             consensus = f"仅{tool}报告{_patient_hla_loh_label(internal)}，证据有限"
             if evidence_present[other_tool]:
-                explanation = f"{other_tool}有原始证据，但未形成可用逐等位基因LOH判断/QC未通过"
+                explanation = (
+                    f"{other_tool}有原始证据，但未形成可用逐等位基因LOH判断/QC未通过；"
+                    "单工具结果不足以确认该等位基因在肿瘤中完整保留或丢失"
+                )
             else:
-                explanation = f"另一个HLA LOH工具未提供该等位基因结果"
+                explanation = (
+                    f"另一个HLA LOH工具未提供该等位基因结果；"
+                    "单工具结果不足以确认该等位基因在肿瘤中完整保留或丢失"
+                )
         aggregate.append((allele, internal))
         rows.append({
             "HLA等位基因": allele,
@@ -4203,24 +4241,27 @@ def _patient_hla_loh_consensus(bundle: ReportBundle) -> tuple[list[dict[str, str
             "说明": explanation,
         })
 
-    lost = [allele for allele, status in aggregate if status == "LOST"]
-    conflicts = [allele for allele, status in aggregate if status == "CONFLICT"]
-    assessed = [status for _, status in aggregate if status != "UNASSESSED"]
-    assessed_tools = {
-        tool for tool, calls in by_tool.items()
-        if any(status != "UNASSESSED" for statuses in calls.values() for status in statuses)
-    }
-    if lost:
-        overall = "检出限制性HLA-I LOH：" + "、".join(lost)
+    multi_lost = [row["HLA等位基因"] for row in rows if str(row["综合判断"]).startswith("多工具一致") and "检出LOH" in str(row["综合判断"])]
+    single_lost = [row["HLA等位基因"] for row in rows if str(row["综合判断"]).startswith("仅") and "检出LOH" in str(row["综合判断"])]
+    conflicts = [row["HLA等位基因"] for row in rows if "冲突" in str(row["综合判断"])]
+    multi_retained = [row for row in rows if str(row["综合判断"]).startswith("多工具一致") and "未提示LOH" in str(row["综合判断"])]
+    single_retained = [row for row in rows if str(row["综合判断"]).startswith("仅") and "未提示LOH" in str(row["综合判断"])]
+    if multi_lost:
+        overall = "多工具一致检出限制性HLA-I LOH：" + "、".join(multi_lost)
     elif conflicts:
         overall = "HLA-I LOH工具结果冲突：" + "、".join(conflicts)
-    elif assessed and all(status == "RETAINED" for status in assessed):
-        if assessed_tools == {"LOHHLA", "SpecHLA"}:
-            overall = "多工具一致未见限制性HLA-I LOH（保留）"
-        elif assessed_tools:
-            overall = f"未见限制性HLA-I LOH（仅{next(iter(assessed_tools))}，证据有限）"
-        else:
-            overall = "限制性HLA-I LOH未评估"
+    elif single_lost:
+        overall = "仅单工具提示限制性HLA-I LOH，需正交确认：" + "、".join(single_lost)
+    elif rows and len(multi_retained) == len(rows):
+        overall = "多工具一致未提示限制性HLA-I LOH（支持当前分层，但不替代实验验证）"
+    elif single_retained:
+        tools = sorted({"SpecHLA" if str(row["综合判断"]).startswith("仅SpecHLA") else "LOHHLA" for row in single_retained})
+        other_qc = any("QC不足" in str(row.get("LOHHLA") or "") or "QC不足" in str(row.get("SpecHLA") or "") for row in single_retained)
+        unavailable = "另一工具因QC不足未形成有效判断" if other_qc else "另一工具未形成有效判断"
+        overall = (
+            f"{'/'.join(tools)}未提示相应限制性HLA-I等位基因LOH；{unavailable}，"
+            "因此当前仅有单工具支持，不足以确认该等位基因在肿瘤中完整保留。"
+        )
     else:
         overall = "限制性HLA-I LOH未评估"
     return rows, overall
@@ -4369,14 +4410,14 @@ def _patient_release_audit(
     path_or_log = bool(re.search(r"(?:/mnt/|/root/|/home/|Traceback \(most recent call last\)|nohup:)", rendered_without_audit))
     hla_appm_consistent = all(
         "HLA/APPM" not in _patient_evidence_summary(row, bundle)
-        and _patient_candidate_hla_status(bundle) != "未评估"
+        and _patient_restricting_hla_reliability(row, bundle)[0]
         and _patient_candidate_appm_status(bundle) != "未评估"
         for row in displayed
     )
     checks = [
         ("1", "展示候选关键字段完整", not integrity_failures, f"失败 {len(integrity_failures)} 条"),
         ("2", "精确数值存在字段级来源", not numeric_without_source, f"缺少来源映射 {len(numeric_without_source)} 条"),
-        ("3", "样本级HLA/APPM与候选级表述一致", hla_appm_consistent, "HLA与APPM分别引用样本级共识"),
+        ("3", "样本级HLA/APPM与候选级表述一致", hla_appm_consistent, "限制性HLA须有逐等位基因多工具一致结论；APPM单独引用样本级共识"),
         ("4", "CCF未评估时不显示SUPPORTED/CLONAL", not ccf_conflicts, f"逻辑冲突 {len(ccf_conflicts)} 条"),
         ("5", "不推进候选未进入患者重点表", not do_not_advance, f"误入 {len(do_not_advance)} 条；技术池 {len(paused)} 条"),
         ("6", "事件数与Peptide-HLA数分开", True, f"事件 {len(bundle.events)}；Peptide-HLA {len(bundle.peptides)}"),
@@ -4566,6 +4607,16 @@ def make_patient_report(
         out.append(_table(hla_loh_rows, ["HLA等位基因", "LOHHLA", "SpecHLA", "综合判断", "说明"]))
     else:
         out.append("<div class='warn'><b>HLA-I LOH未评估：</b>未找到逐等位基因的LOHHLA或SpecHLA结果。</div>")
+    out.append(
+        "<div class='info'><b>拟进入高成本实验前建议补充：</b><ul class='compact'>"
+        "<li>确认HLA分型的多工具一致性。</li>"
+        "<li>核查正常DNA与肿瘤DNA的等位基因特异覆盖。</li>"
+        "<li>结合HLA区域拷贝数、B等位基因频率及肿瘤纯度进行校正。</li>"
+        "<li>必要时采用靶向HLA测序。</li>"
+        "<li>使用IHC或流式验证HLA-I蛋白表达。</li>"
+        "<li>联合评估B2M及抗原加工呈递通路状态。</li>"
+        "</ul></div>"
+    )
     out.append("<p>这些结果说明候选是否具备被加工和呈递的条件，但不能单独判断免疫治疗敏感、耐药或患者获益。</p></div>")
 
     out.append("<div class='section'><h2>4. 重点变异事件（按类型、按事件去重）</h2>")

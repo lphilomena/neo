@@ -756,9 +756,9 @@ def test_candidate_hla_and_appm_use_separate_sample_level_sources():
     }]
     summary = _patient_evidence_summary(bundle.peptides[0], bundle)
     limitation = _patient_limitation(bundle.peptides[0], bundle)
-    assert "限制性HLA=单工具提示保留；多工具LOH确认未完成" in summary
+    assert "限制性HLA=单工具未提示LOH；不足以确认完整保留" in summary
     assert "APPM=证据部分完整；未见整体失活，但加工环节仍有谨慎信号" in summary
-    assert "限制性HLA仅单工具提示保留；多工具LOH确认未完成" in limitation
+    assert "限制性HLA仅单工具未提示LOH；不足以确认肿瘤中完整保留" in limitation
     assert "APPM证据部分完整；加工环节仍需谨慎解释" in limitation
     assert "HLA_LOH_UNASSESSED" not in summary
 
@@ -1481,13 +1481,15 @@ def test_patient_report_shows_hla_loh_tools_and_uses_consensus_in_appm(tmp_path)
     text = out.read_text(encoding="utf-8")
     assert "HLA-I LOH多工具结果" in text
     assert "HLA-A*02:01" in text
-    assert "<td>未提供</td><td>未见LOH（保留）</td>" in text
-    assert "未见限制性HLA-I LOH（仅SpecHLA，证据有限）" in text
-    assert "仅SpecHLA报告未见LOH（保留），证据有限" in text
+    assert "<td>未提供</td><td>未提示LOH</td>" in text
+    assert "SpecHLA未提示相应限制性HLA-I等位基因LOH" in text
+    assert "当前仅有单工具支持，不足以确认该等位基因在肿瘤中完整保留" in text
+    assert "仅SpecHLA报告未提示LOH，证据有限" in text
     assert (
-        "限制性HLA HLA-A*02:01 LOH仅单工具评估："
-        "LOHHLA=未提供；SpecHLA=未见LOH（保留）"
+        "限制性HLA HLA-A*02:01 仅有单工具LOH判断："
+        "LOHHLA=未提供；SpecHLA=未提示LOH；不足以确认该等位基因在肿瘤中完整保留或丢失"
     ) in text
+    assert "拟进入高成本实验前建议补充" in text
     assert "HLA/APPM未评估" not in text
 
 
@@ -1632,9 +1634,19 @@ def test_hla_loh_qc_only_record_does_not_count_as_assessed_tool():
         },
     ]
     rows, overall = _patient_hla_loh_consensus(bundle)
-    assert "仅SpecHLA" in overall
+    assert overall == (
+        "SpecHLA未提示相应限制性HLA-I等位基因LOH；另一工具因QC不足未形成有效判断，"
+        "因此当前仅有单工具支持，不足以确认该等位基因在肿瘤中完整保留。"
+    )
     assert "多工具一致" not in overall
     assert rows[0]["LOHHLA"] == "未形成判断（QC不足）"
+    audit = {
+        row["证据维度"]: row
+        for row in _patient_evidence_audit_rows(bundle.peptides[:1], bundle)
+    }["限制性HLA状态"]
+    assert audit["可作为当前分层证据"] == "0（逐等位基因多工具一致）"
+    assert audit["尚不能作为可靠证据"] == "1（其中单工具或QC不足 1）"
+    assert "仅单工具阴性或另一工具QC不足不计为完整保留证据" in audit["判定口径"]
 
 
 def test_depth_and_rna_qc_are_summarized_by_unique_event():
