@@ -3,7 +3,7 @@ import gzip
 import json
 from pathlib import Path
 
-from neoag.reports_dual import ReportBundle, _apply_patient_gene_expression, _augment_runtime_tool_provenance, _find_bam_input, _patient_conflict_summary, _patient_disease_background, _patient_dna_evidence, _patient_event_grade_counts, _patient_evidence_audit_rows, _patient_evidence_summary, _patient_event_change, _patient_expression_tpm_map, _patient_fusion_artifact_review, _patient_fusion_boundary_evidence, _patient_hla_loh_consensus, _patient_key_gaps, _patient_limitation, _patient_manual_review_rows, _patient_metric, _patient_presentation_metric, _patient_rna_measurements, _patient_rna_metric, _patient_safety_dimensions, _patient_safety_gap, _patient_tool_rows, _patient_track, _patient_validation, _replace_gene_ids, load_report_bundle, make_dual_reports, make_patient_report, make_technical_report
+from neoag.reports_dual import ReportBundle, _apply_patient_gene_expression, _augment_runtime_tool_provenance, _find_bam_input, _patient_conflict_summary, _patient_disease_background, _patient_dna_evidence, _patient_event_grade_counts, _patient_evidence_audit_rows, _patient_evidence_summary, _patient_event_change, _patient_expression_tpm_map, _patient_fusion_artifact_review, _patient_fusion_boundary_evidence, _patient_hla_loh_consensus, _patient_key_gaps, _patient_limitation, _patient_manual_review_rows, _patient_metric, _patient_presentation_metric, _patient_presentation_quantitative_row, _patient_rna_measurements, _patient_rna_metric, _patient_safety_dimensions, _patient_safety_gap, _patient_tool_rows, _patient_track, _patient_validation, _replace_gene_ids, load_report_bundle, make_dual_reports, make_patient_report, make_technical_report
 from neoag.utils import write_tsv
 
 
@@ -1628,6 +1628,27 @@ def test_fusion_boundary_report_shows_both_gene_sides_and_flags_alternative_orfs
     assert "EWSR1来源 SSYG｜融合连接点（肽内位置 4）｜WT1来源 QQSEK" in text
     assert "SSYGQQSEK/SSYGQQSVK" in text
     assert "必须按患者精确融合转录本、阅读框和ORF逐一归因" in text
+
+
+def test_presentation_quantitative_row_exposes_raw_values_and_allele_uncertainty():
+    result = _patient_presentation_quantitative_row({
+        "peptide": "SLYNTVATL", "hla_allele": "HLA-A*02:01",
+        "mutation_positions_in_peptide": "4", "netmhcpan_mt_rank_el": "0.25",
+        "netmhcpan_wt_rank_el": "2.5", "netmhcpan_mt_rank_ba": "0.7",
+        "netmhcpan_wt_rank_ba": "3.5", "netmhcpan_mt_ic50": "48",
+        "netmhcpan_wt_ic50": "810", "mhcflurry_mt_affinity_percentile": "0.8",
+        "mhcflurry_wt_affinity_percentile": "4.2", "mhcflurry_mt_presentation_score": "0.91",
+        "mhcflurry_wt_presentation_score": "0.12", "netmhcstabpan_rank": "0.6",
+        "netmhcstabpan_score": "1.9", "prime_score": "0.72",
+        "bigmhc_im_score": "0.81", "deepimmuno_score": "0.66",
+    }, 1)
+    assert "EL rank MT=0.25%, WT=2.5%" in result["NetMHCpan原始值"]
+    assert "IC50 MT=48 nM, WT=810 nM" in result["NetMHCpan原始值"]
+    assert "EL WT/MT=10" in result["MT/WT定量比较"]
+    assert "presentation score MT=0.91, WT=0.12" in result["MHCflurry原始值"]
+    assert "PRIME MT=0.72" in result["免疫原性辅助模型"]
+    assert "训练覆盖/外推状态未记录" in result["HLA模型覆盖"]
+    assert result["肽长/变异位置"] == "9 aa；位置=4"
 
 
 def test_fusion_safety_dimensions_separate_direct_evidence_from_partner_expression():

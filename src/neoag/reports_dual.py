@@ -2524,6 +2524,111 @@ def _patient_presentation_metric(row: Mapping[str, Any]) -> str:
     return text + (f"（{'；'.join(values)}）" if values else "")
 
 
+def _patient_presentation_quantitative_row(row: Mapping[str, Any], rank: int) -> dict[str, str]:
+    """Expose raw model outputs without turning screening thresholds into proof."""
+    def observed(*fields: str) -> str | None:
+        for field in fields:
+            candidate = _patient_observed_value(row, field)
+            if candidate is not None:
+                return candidate
+        return None
+
+    def value(*fields: str) -> str:
+        raw = observed(*fields)
+        return raw if raw is not None else "未提供"
+
+    def number(*fields: str) -> float | None:
+        raw = observed(*fields)
+        try:
+            return float(raw) if raw is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    mt_el = number("netmhcpan_mt_rank_el", "netmhcpan_el_rank")
+    wt_el = number("netmhcpan_wt_rank_el")
+    mt_ba = number("netmhcpan_mt_rank_ba", "netmhcpan_ba_rank")
+    wt_ba = number("netmhcpan_wt_rank_ba")
+    el_delta = wt_el - mt_el if mt_el is not None and wt_el is not None else None
+    el_ratio = wt_el / mt_el if mt_el not in {None, 0.0} and wt_el is not None else None
+    ba_delta = wt_ba - mt_ba if mt_ba is not None and wt_ba is not None else None
+    ba_ratio = wt_ba / mt_ba if mt_ba not in {None, 0.0} and wt_ba is not None else None
+
+    peptide = _patient_value(row, "peptide", default="")
+    mutation_position = _patient_value(
+        row,
+        "mutation_positions_in_peptide",
+        "mutation_position_in_peptide",
+        "junction_position_in_peptide_1based",
+        default="未提供",
+    )
+    hla = _patient_value(row, "hla_allele", default="未提供")
+    explicit_support = _patient_value(
+        row,
+        "netmhcpan_allele_support_status",
+        "mhcflurry_allele_support_status",
+        "predictor_allele_support_status",
+        "allele_support_status",
+        default="",
+    )
+    has_prediction = any(number(field) is not None for field in (
+        "netmhcpan_mt_rank_el", "netmhcpan_el_rank", "netmhcpan_mt_rank_ba",
+        "netmhcpan_ba_rank", "mhcflurry_presentation_score", "netmhcstabpan_rank",
+    ))
+    if explicit_support:
+        allele_support = explicit_support
+    elif has_prediction:
+        allele_support = "工具已返回该HLA结果；训练覆盖/外推状态未记录，不能据分数反推"
+    else:
+        allele_support = "未形成该HLA的可用预测；训练覆盖/外推状态未记录"
+
+    netmhcpan = (
+        f"EL rank MT={value('netmhcpan_mt_rank_el', 'netmhcpan_el_rank')}%, "
+        f"WT={value('netmhcpan_wt_rank_el')}%; "
+        f"BA rank MT={value('netmhcpan_mt_rank_ba', 'netmhcpan_ba_rank')}%, "
+        f"WT={value('netmhcpan_wt_rank_ba')}%; "
+        f"IC50 MT={value('netmhcpan_mt_ic50')} nM, WT={value('netmhcpan_wt_ic50')} nM"
+    )
+    comparisons: list[str] = []
+    if el_delta is not None:
+        comparisons.append(f"EL Δ(WT-MT)={el_delta:.4g}")
+    if el_ratio is not None:
+        comparisons.append(f"EL WT/MT={el_ratio:.4g}")
+    if ba_delta is not None:
+        comparisons.append(f"BA Δ(WT-MT)={ba_delta:.4g}")
+    if ba_ratio is not None:
+        comparisons.append(f"BA WT/MT={ba_ratio:.4g}")
+    mt_wt = "；".join(comparisons) or "未形成可计算的MT/WT rank差值或比值"
+
+    mhcflurry = (
+        f"affinity percentile MT={value('mhcflurry_mt_affinity_percentile', 'mhcflurry_affinity_percentile')}%, "
+        f"WT={value('mhcflurry_wt_affinity_percentile')}%; "
+        f"presentation score MT={value('mhcflurry_mt_presentation_score', 'mhcflurry_presentation_score')}, "
+        f"WT={value('mhcflurry_wt_presentation_score')}"
+    )
+    stability = (
+        f"NetMHCstabpan rank={value('netmhcstabpan_rank')}%, "
+        f"score/稳定性={value('netmhcstabpan_score')}; "
+        f"WT rank={value('netmhcstabpan_wt_rank')}%, WT score={value('netmhcstabpan_wt_score')}"
+    )
+    auxiliary = (
+        f"PRIME MT={value('prime_score')} (rank={value('prime_rank')}), "
+        f"WT={value('prime_wt_score')} (rank={value('prime_wt_rank')}); "
+        f"BigMHC MT={value('bigmhc_im_score')}, WT={value('bigmhc_im_wt_score')}; "
+        f"DeepImmuno={value('deepimmuno_score')}"
+    )
+    return {
+        "排名": str(rank),
+        "肽段-HLA": f"{peptide or '未提供'} / {hla}",
+        "肽长/变异位置": f"{len(peptide) if peptide else '未提供'} aa；位置={mutation_position}",
+        "NetMHCpan原始值": netmhcpan,
+        "MT/WT定量比较": mt_wt,
+        "MHCflurry原始值": mhcflurry,
+        "稳定性": stability,
+        "免疫原性辅助模型": auxiliary,
+        "HLA模型覆盖": allele_support,
+    }
+
+
 def _patient_numeric_value(row: Mapping[str, Any], *fields: str) -> tuple[str, float | None]:
     text = _patient_value(row, *fields, default="").strip()
     try:
@@ -4858,6 +4963,20 @@ def make_patient_report(
         "本表用于研究性候选审阅，不表示已经确认新抗原或可直接进入功能实验。</p>"
     )
     out.append(_table(patient_candidate_rows(top), candidate_headers))
+    quantitative_rows = [
+        _patient_presentation_quantitative_row(row, index)
+        for index, row in enumerate(top, start=1)
+    ]
+    out.append("<h3>呈递与免疫原性定量明细</h3>")
+    out.append(
+        "<p class='small'>Percentile rank越低表示模型预测越强，便于跨等位基因比较；"
+        "≤1%仅作为研究性优选参考，不是免疫原性或体内呈递证明。模型score方向依各工具定义。"
+        "若训练覆盖/外推状态未记录，报告保持未评估，不因工具返回数值而推定该HLA属于训练支持等位基因。</p>"
+    )
+    out.append(_table(quantitative_rows, [
+        "排名", "肽段-HLA", "肽长/变异位置", "NetMHCpan原始值", "MT/WT定量比较",
+        "MHCflurry原始值", "稳定性", "免疫原性辅助模型", "HLA模型覆盖",
+    ]))
     out.append(f"<p class='small'>当前暂缓/不推进及完整性门槛未通过的{len(paused_representatives)}个事件代表候选不进入患者版重点表，仅保留在科研技术版审阅池。排序仍采用R1–R4、同赛道Pareto、确定性tie-break和事件去重。</p></div>")
 
     interpretation_top_n = min(20, candidate_top_n)
@@ -5150,6 +5269,17 @@ def make_technical_report(path: str | Path, bundle: ReportBundle) -> None:
     out.append("</div>")
 
     out.append("<div class='section'><h2>Ranked Peptides (full)</h2>")
+    out.append("<h3>Quantitative presentation and immunogenicity review</h3>")
+    out.append(
+        "<p>Lower percentile rank indicates a stronger model prediction. A rank at or below 1% is shown only as a prioritization reference; it does not establish immunogenicity or in-vivo presentation. Missing allele training/extrapolation metadata remains unassessed.</p>"
+    )
+    out.append(_table([
+        _patient_presentation_quantitative_row(row, index)
+        for index, row in enumerate(bundle.peptides[:100], start=1)
+    ], [
+        "排名", "肽段-HLA", "肽长/变异位置", "NetMHCpan原始值", "MT/WT定量比较",
+        "MHCflurry原始值", "稳定性", "免疫原性辅助模型", "HLA模型覆盖",
+    ], max_rows=100))
     pep_headers = [
         "peptide_id", "event_id", "gene", "cancer_gene_types", "cancer_driver_context", "cancer_gene_context",
         "source_chain_track", "source_chain_confidence_tier", "source_chain_confidence_label",
@@ -5158,9 +5288,18 @@ def make_technical_report(path: str | Path, bundle: ReportBundle) -> None:
         "source_chain_hard_failure", "source_chain_hard_failure_codes",
         "peptide", "wildtype_peptide", "peptide_consequence",
         "hla_allele", "mhc_class", "presentation_evidence_grade", "binding_evidence_score",
-        "presentation_evidence_score", "netmhcpan_ba_rank", "netmhcpan_el_rank",
+        "presentation_evidence_score", "netmhcpan_mt_ic50", "netmhcpan_mt_rank_ba",
+        "netmhcpan_mt_rank_el", "netmhcpan_wt_ic50", "netmhcpan_wt_rank_ba",
+        "netmhcpan_wt_rank_el", "netmhcpan_ba_rank", "netmhcpan_el_rank",
+        "mhcflurry_mt_affinity_percentile", "mhcflurry_mt_presentation_score",
+        "mhcflurry_wt_affinity_percentile", "mhcflurry_wt_presentation_score",
+        "mhcflurry_affinity_percentile", "mhcflurry_presentation_score",
+        "netmhcstabpan_score", "netmhcstabpan_rank", "netmhcstabpan_wt_score",
+        "netmhcstabpan_wt_rank", "prime_score", "prime_rank", "prime_wt_score",
+        "prime_wt_rank", "bigmhc_im_score", "bigmhc_im_wt_score", "deepimmuno_score",
+        "predictor_allele_support_status", "allele_extrapolation_status",
         "netchop_31d_cterm_score", "netchop_31d_max_score", "netchop_processing_status",
-        "netmhcpan_wt_rank_el", "agretopicity_el", "mt_wt_el_rank_difference",
+        "agretopicity_el", "mt_wt_el_rank_difference",
         "mhcflurry_mt_wt_presentation_difference", "prime_mt_wt_score_difference",
         "bigmhc_mt_wt_score_difference", "mutation_positions_in_peptide",
         "mutation_anchor_only", "mutation_tcr_facing", "mutant_specificity_status",
