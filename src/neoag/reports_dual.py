@@ -1194,7 +1194,7 @@ FIELD_GLOSSARY = {
     "presentation_evidence_grade": "HLA 结合与加工呈递证据等级（A 最优）。",
     "appm_multiplier": "抗原加工呈递通路（APPM）完整性对候选的折减系数。",
     "ccf_multiplier": "肿瘤克隆性（CCF）对候选的折减系数。",
-    "safety_status": "正常组织表达、自身肽相似性等安全性初筛结果。",
+    "safety_status": "整合完整肽、正常连接/转录本、正常免疫肽组及相似自身肽的安全性初筛结果；来源基因表达仅作辅助背景。",
     "escape_status": "免疫逃逸机制（如 HLA 丢失）对候选的影响评估。",
     "validation_mode": "建议的实验验证设计类型（短肽对、长肽、minigene 等）。",
     "recommended_assay": "推荐的体外验证实验类型。",
@@ -3554,6 +3554,99 @@ def _patient_cross_site_rna(row: Mapping[str, Any]) -> str:
     return f"跨部位RNA {sample}：{detail}{suffix}"
 
 
+def _patient_safety_dimensions(row: Mapping[str, Any]) -> str:
+    """Render direct peptide safety evidence separately from expression context."""
+    junction_track = _patient_track(row) in {"Fusion", "Splice"}
+
+    def status(field: str, *, detected: str = "检出", not_detected: str = "未检出") -> str:
+        value = str(row.get(field) or "").strip().upper()
+        if value in {"DETECTED", "YES", "TRUE", "1", "EXACT_MATCH", "SUPPORTED_IN_NORMAL"}:
+            return detected
+        if value in {"NOT_DETECTED", "NO", "FALSE", "0", "NEGATIVE"}:
+            return not_detected
+        if value == "NOT_APPLICABLE":
+            return "不适用"
+        return "未评估"
+
+    proteome = status("normal_proteome_exact_match_status")
+    if proteome == "未评估":
+        proteome = status("reference_proteome_exact_match")
+    junction = status("normal_transcript_junction_match_status")
+    if junction == "未评估":
+        junction = status("normal_junction_seen")
+    ligandome = status("normal_immunopeptidome_match_status")
+    if ligandome == "未评估":
+        ligandome = status("normal_hla_ligand_exact_match")
+
+    similarity_raw = str(
+        row.get("similar_peptide_cross_reactivity_status")
+        or row.get("closest_self_similarity")
+        or row.get("self_similarity_score")
+        or ""
+    ).strip()
+    similarity_upper = similarity_raw.upper()
+    if similarity_upper in {"", "UNASSESSED", "NOT_ASSESSED", "MISSING", "NA", "N/A"}:
+        similarity = "未评估"
+    elif "HIGH" in similarity_upper:
+        similarity = "高相似性，需脱靶复核"
+    elif "LOW" in similarity_upper:
+        similarity = "已评估，未见高相似性"
+    elif _patient_numeric_display(similarity_raw, 4) is not None:
+        similarity = f"相似度 {similarity_raw}，需结合阈值复核"
+    else:
+        similarity = "状态需复核"
+
+    normal_tpm = _patient_numeric_display(_patient_observed_value(row, "normal_tissue_max_tpm"), 4)
+    normal_tissue = _patient_value(row, "normal_tissue_max_tissue", default="正常组织")
+    source_expression = "未评估"
+    if normal_tpm is not None:
+        source_expression = f"{normal_tissue}最高 {normal_tpm} TPM"
+    critical_tpm = _patient_numeric_display(_patient_observed_value(row, "critical_tissue_max_tpm"), 4)
+    critical_tissue = _patient_value(row, "critical_tissue_name", default="关键器官")
+    critical_expression = f"{critical_tissue}最高 {critical_tpm} TPM" if critical_tpm is not None else "未评估"
+    hspc_tpm = _patient_numeric_display(_patient_observed_value(row, "normal_hspc_tpm"), 4)
+    hspc_unit = _patient_value(row, "normal_hspc_unit", default="")
+    hematopoietic = (
+        f"最高 {hspc_tpm}" + (f" {hspc_unit}" if hspc_unit else "")
+        if hspc_tpm is not None else "未评估"
+    )
+    if junction_track:
+        source_expression += "（伙伴基因辅助背景，不代表跨连接肽存在）" if source_expression != "未评估" else "（辅助背景）"
+        critical_expression += "（伙伴基因辅助背景）" if critical_expression != "未评估" else "（辅助背景）"
+        hematopoietic += "（伙伴基因辅助背景）" if hematopoietic != "未评估" else "（辅助背景）"
+
+    conclusion_codes = {
+        "REJECT_DIRECT_SAFETY_EVIDENCE": "直接安全证据提示排除",
+        "REVIEW_DIRECT_SAFETY_EVIDENCE": "存在直接安全信号，需专项复核",
+        "PARTIAL_DIRECT_SAFETY_EVIDENCE": "直接安全证据不完整，暂不能定论",
+        "NO_DIRECT_SAFETY_SIGNAL_DETECTED": "已评估层未见直接安全信号；不等于已证明安全",
+    }
+    conclusion_code = str(row.get("final_safety_conclusion") or "").strip().upper()
+    conclusion = conclusion_codes.get(conclusion_code)
+    if not conclusion:
+        safety = _patient_value(row, "safety_state", "safety_tier", "safety_status", default="").upper()
+        if safety in {"SAFETY_REJECT", "REJECT", "FAIL"}:
+            conclusion = "直接安全证据提示排除"
+        elif safety in {"SAFETY_REVIEW", "SAFETY_HIGH_RISK", "REVIEW", "CAUTION"}:
+            conclusion = "需按直接肽段/连接证据专项复核"
+        else:
+            conclusion = "证据不完整，暂不能定论"
+    completeness = _patient_numeric_display(_patient_observed_value(row, "safety_evidence_completeness"), 2)
+    if completeness is not None:
+        conclusion += f"（直接证据完整度 {float(completeness) * 100:.0f}%）"
+
+    return "；".join([
+        f"完整肽正常蛋白组精确匹配={proteome}",
+        f"正常转录组/正常junction匹配={junction}",
+        f"正常免疫肽组匹配={ligandome}",
+        f"相似肽交叉反应风险={similarity}",
+        f"来源基因正常组织表达={source_expression}",
+        f"关键器官表达={critical_expression}",
+        f"正常造血系统表达={hematopoietic}",
+        f"最终安全结论={conclusion}",
+    ])
+
+
 def _patient_event_evidence_and_next_step(
     row: Mapping[str, Any], bundle: ReportBundle, val_map: Mapping[str, Mapping[str, str]],
     *, compact_common: bool = False,
@@ -3580,6 +3673,7 @@ def _patient_event_evidence_and_next_step(
         f"核心证据：{'；'.join(evidence)}。"
         f"{dna_evidence + '。' if dna_evidence else ''}"
         f"RNA数据：{_patient_rna_measurements(row)}。"
+        f"安全性分层：{_patient_safety_dimensions(row)}。"
         f"{_patient_dna_rna_interpretation(row) + '。' if _patient_dna_rna_interpretation(row) else ''}"
         f"{_patient_cross_site_rna(row) + '。' if _patient_cross_site_rna(row) else ''}"
         f"主要缺口：{gap_text}。"

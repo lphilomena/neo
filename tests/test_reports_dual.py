@@ -3,7 +3,7 @@ import gzip
 import json
 from pathlib import Path
 
-from neoag.reports_dual import ReportBundle, _apply_patient_gene_expression, _augment_runtime_tool_provenance, _find_bam_input, _patient_conflict_summary, _patient_disease_background, _patient_dna_evidence, _patient_event_grade_counts, _patient_evidence_audit_rows, _patient_evidence_summary, _patient_event_change, _patient_expression_tpm_map, _patient_fusion_artifact_review, _patient_hla_loh_consensus, _patient_key_gaps, _patient_limitation, _patient_manual_review_rows, _patient_metric, _patient_presentation_metric, _patient_rna_measurements, _patient_rna_metric, _patient_safety_gap, _patient_tool_rows, _patient_track, _patient_validation, _replace_gene_ids, load_report_bundle, make_dual_reports, make_patient_report, make_technical_report
+from neoag.reports_dual import ReportBundle, _apply_patient_gene_expression, _augment_runtime_tool_provenance, _find_bam_input, _patient_conflict_summary, _patient_disease_background, _patient_dna_evidence, _patient_event_grade_counts, _patient_evidence_audit_rows, _patient_evidence_summary, _patient_event_change, _patient_expression_tpm_map, _patient_fusion_artifact_review, _patient_hla_loh_consensus, _patient_key_gaps, _patient_limitation, _patient_manual_review_rows, _patient_metric, _patient_presentation_metric, _patient_rna_measurements, _patient_rna_metric, _patient_safety_dimensions, _patient_safety_gap, _patient_tool_rows, _patient_track, _patient_validation, _replace_gene_ids, load_report_bundle, make_dual_reports, make_patient_report, make_technical_report
 from neoag.utils import write_tsv
 
 
@@ -1608,6 +1608,29 @@ def test_junction_safety_uses_exact_sequence_not_partner_expression():
     assert "精确新生序列" in partial_gap
     assert "213.994" not in partial_gap
     assert "18.0" not in partial_gap
+
+
+def test_fusion_safety_dimensions_separate_direct_evidence_from_partner_expression():
+    text = _patient_safety_dimensions({
+        "event_type": "Fusion",
+        "normal_proteome_exact_match_status": "NOT_DETECTED",
+        "normal_transcript_junction_match_status": "NOT_DETECTED",
+        "normal_immunopeptidome_match_status": "NOT_DETECTED",
+        "similar_peptide_cross_reactivity_status": "UNASSESSED",
+        "normal_tissue_max_tpm": "201.559",
+        "normal_tissue_max_tissue": "Brain Cerebellar Hemisphere",
+        "critical_tissue_max_tpm": "201.559",
+        "critical_tissue_name": "Brain Cerebellar Hemisphere",
+        "normal_hspc_tpm": "160.700",
+        "normal_hspc_unit": "nCPM",
+        "final_safety_conclusion": "PARTIAL_DIRECT_SAFETY_EVIDENCE",
+        "safety_evidence_completeness": "0.75",
+    })
+    assert "完整肽正常蛋白组精确匹配=未检出" in text
+    assert "相似肽交叉反应风险=未评估" in text
+    assert "Brain Cerebellar Hemisphere最高 201.5590 TPM（伙伴基因辅助背景，不代表跨连接肽存在）" in text
+    assert "160.7000 nCPM（伙伴基因辅助背景）" in text
+    assert "直接安全证据不完整，暂不能定论（直接证据完整度 75%）" in text
 
 
 def test_generic_fusion_artifact_review_flags_same_gene_and_complex_labels():

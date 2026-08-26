@@ -292,6 +292,12 @@ def test_splice_safety_recovers_exact_ensembl_id_from_source_provenance(tmp_path
     assert "normal_hspc" not in rows[0]["safety_missing_layers"]
     assert event_rows[0]["normal_expression_status"] == "ASSESSED"
     assert event_rows[0]["normal_hspc_status"] == "ASSESSED"
+    assert rows[0]["source_gene_expression_context_status"] == "ASSESSED"
+    assert rows[0]["normal_transcript_junction_match_status"] == "UNASSESSED"
+    assert rows[0]["similar_peptide_cross_reactivity_status"] == "UNASSESSED"
+    assert rows[0]["final_safety_conclusion"] == "PARTIAL_DIRECT_SAFETY_EVIDENCE"
+    assert "normal_expression" not in rows[0]["safety_missing_layers"]
+    assert "normal_hspc" not in rows[0]["safety_missing_layers"]
 
 
 def test_missing_gene_in_available_normal_reference_has_specific_reason(tmp_path):

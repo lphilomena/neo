@@ -32,7 +32,11 @@ PEPTIDE_SAFETY_FIELDS = [
     'closest_self_normal_expression_tpm','safety_tier','safety_status','safety_reason','safety_multiplier','review_required',
     'normal_expression_status','normal_hspc_status','reference_proteome_status','normal_ligandome_status',
     'anchor_assessment_status','normal_junction_assessment_status','safety_evidence_completeness',
-    'safety_missing_layers','safety_priority_cap',
+    'normal_proteome_exact_match_status','normal_transcript_junction_match_status',
+    'normal_immunopeptidome_match_status','similar_peptide_cross_reactivity_status',
+    'source_gene_expression_context_status','critical_organ_expression_context_status',
+    'hematopoietic_expression_context_status','tcr_contact_anchor_context_status',
+    'final_safety_conclusion','safety_missing_layers','safety_priority_cap',
 ]
 
 EVENT_SAFETY_FIELDS = [
@@ -514,8 +518,10 @@ def build_peptide_safety_gate(
         if anchor_only == 'yes' and wt_rank <= float(safety_cfg.get('wildtype_strong_binding_rank', 0.5)):
             if status == 'SAFETY_PASS': status='SAFETY_REVIEW'
             reasons.append('anchor_only_mutation_with_wt_binding')
-        sim = to_float(p.get('self_similarity_score'), 0.0)
-        if sim >= float(safety_cfg.get('self_similarity_high_risk', safety_cfg.get('self_similarity_caution', 0.85))) and expr.get('critical_tissue_hit'):
+        sim_raw = str(p.get('self_similarity_score') or '').strip()
+        sim = to_float(sim_raw, 0.0)
+        similarity_cutoff = float(safety_cfg.get('self_similarity_high_risk', safety_cfg.get('self_similarity_caution', 0.85)))
+        if sim_raw and sim >= similarity_cutoff and expr.get('critical_tissue_hit'):
             if status not in {'SAFETY_REJECT'}: status='SAFETY_HIGH_RISK'
             reasons.append('high_self_similarity_critical_tissue')
         expression_status = expr.get('normal_expression_status', 'UNASSESSED')
@@ -542,14 +548,19 @@ def build_peptide_safety_gate(
             anchor_assessment = 'NOT_APPLICABLE'
         else:
             anchor_assessment = 'UNASSESSED'
-        required_layers = {
-            'normal_expression': expression_status,
-            'normal_hspc': hspc_status,
+        direct_safety_layers = {
             'reference_proteome': reference_status,
             'normal_ligandome': ligandome_status,
-            'anchor_only': anchor_assessment,
             'normal_junction': junction_status,
+            'similar_self_peptide': 'ASSESSED' if sim_raw else 'UNASSESSED',
         }
+        required_layers = dict(direct_safety_layers)
+        if not junction_type:
+            required_layers.update({
+                'normal_expression': expression_status,
+                'normal_hspc': hspc_status,
+                'anchor_only': anchor_assessment,
+            })
         assessed = [name for name, layer_status in required_layers.items() if layer_status != 'NOT_APPLICABLE']
         missing = [name for name in assessed if required_layers[name] != 'ASSESSED']
         completeness = (len(assessed) - len(missing)) / max(len(assessed), 1)
@@ -560,6 +571,20 @@ def build_peptide_safety_gate(
             review='yes'
         if not reasons:
             reasons.append('no_major_signal')
+        direct_reason_tokens = {
+            'reference_proteome_exact_match', 'normal_hla_ligand_exact_match',
+            'normal_hla_ligand_overlap', 'normal_junction_seen',
+            'low_level_normal_junction_seen', 'high_self_similarity_critical_tissue',
+            'matched_normal_support',
+        }
+        if status == 'SAFETY_REJECT':
+            final_safety_conclusion = 'REJECT_DIRECT_SAFETY_EVIDENCE'
+        elif any(reason in direct_reason_tokens for reason in reasons):
+            final_safety_conclusion = 'REVIEW_DIRECT_SAFETY_EVIDENCE'
+        elif missing:
+            final_safety_conclusion = 'PARTIAL_DIRECT_SAFETY_EVIDENCE'
+        else:
+            final_safety_conclusion = 'NO_DIRECT_SAFETY_SIGNAL_DETECTED'
         row={
             'peptide_id': p.get('peptide_id',''), 'event_id': p.get('event_id',''), 'sample_id': p.get('sample_id',''),
             'event_type': p.get('event_type',''), 'mutation_source': p.get('mutation_source',''),
@@ -601,6 +626,28 @@ def build_peptide_safety_gate(
             'anchor_assessment_status': anchor_assessment, 'normal_junction_assessment_status': junction_status,
             'safety_evidence_completeness': f'{completeness:.4f}', 'safety_missing_layers': ';'.join(missing),
             'safety_priority_cap': str(safety_cfg.get('partial_priority_cap','C_CAUTION')) if missing else '',
+            'normal_proteome_exact_match_status': 'DETECTED' if ref_hits else 'NOT_DETECTED' if ref_assessed else 'UNASSESSED',
+            'normal_transcript_junction_match_status': (
+                'DETECTED' if jrow and is_junction_type else
+                'NOT_DETECTED' if junction_assessed else
+                'NOT_APPLICABLE' if not is_junction_type else 'UNASSESSED'
+            ),
+            'normal_immunopeptidome_match_status': 'DETECTED' if lig else 'NOT_DETECTED' if ligand_assessed else 'UNASSESSED',
+            'similar_peptide_cross_reactivity_status': (
+                'HIGH_SIMILARITY_REVIEW' if sim_raw and sim >= similarity_cutoff else
+                'LOW_SIMILARITY' if sim_raw else 'UNASSESSED'
+            ),
+            'source_gene_expression_context_status': expression_status,
+            'critical_organ_expression_context_status': (
+                'DETECTED_AUXILIARY' if expr.get('found') and expr.get('critical_tissue_hit') else
+                'NOT_DETECTED_AUXILIARY' if expr.get('found') else 'UNASSESSED'
+            ),
+            'hematopoietic_expression_context_status': (
+                'DETECTED_AUXILIARY' if expr.get('found') and to_float(expr.get('normal_hspc_tpm'), 0.0) > 0 else
+                'NOT_DETECTED_AUXILIARY' if expr.get('found') else 'UNASSESSED'
+            ),
+            'tcr_contact_anchor_context_status': anchor_status.upper(),
+            'final_safety_conclusion': final_safety_conclusion,
         }
         rows.append(row)
     # event-level rollup
