@@ -3197,7 +3197,18 @@ def _patient_evidence_audit_rows(rows: list[dict[str, str]], bundle: ReportBundl
         ("加工/稳定性", ("mhcflurry_processing_score", "netmhcstabpan_rank", "netmhcstabpan_score", "netchop_31d_cterm_score", "netchop_31d_max_score", "netchop_processing_status", "tap_processing_status")),
         ("MT/WT特异性", ("mutant_specificity_status", "mutant_specificity_state")),
         ("安全性", ("safety_state", "safety_status")),
-        ("免疫原性", ("immunogenicity_composite_score", "immunogenicity_score", "bigmhc_im_score")),
+        (
+            "免疫原性",
+            (
+                "immunogenicity_composite_score",
+                "immunogenicity_score",
+                "iedb_immunogenicity_score",
+                "prime_score",
+                "prime_rank",
+                "bigmhc_im_score",
+                "deepimmuno_score",
+            ),
+        ),
         ("来源链", ("source_chain_confidence_tier",)),
     ]
     total = len(rows)
@@ -3234,6 +3245,35 @@ def _patient_evidence_audit_rows(rows: list[dict[str, str]], bundle: ReportBundl
             criterion = (
                 f"Top {total}；" + "、".join(f"{name} {count}" for name, count in tool_counts.items())
                 + "；样本级APPM另行展示，不能替代候选级加工/稳定性结果"
+            )
+        elif label == "免疫原性":
+            tool_counts = {
+                "PRIME": sum(
+                    1 for row in rows
+                    if any(_patient_assessed(row, field) for field in ("prime_score", "prime_rank"))
+                ),
+                "BigMHC": sum(
+                    1 for row in rows if _patient_assessed(row, "bigmhc_im_score")
+                ),
+                "DeepImmuno": sum(
+                    1 for row in rows if _patient_assessed(row, "deepimmuno_score")
+                ),
+                "IEDB": sum(
+                    1 for row in rows if _patient_assessed(row, "iedb_immunogenicity_score")
+                ),
+                "综合分值": sum(
+                    1 for row in rows
+                    if any(
+                        _patient_assessed(row, field)
+                        for field in ("immunogenicity_composite_score", "immunogenicity_score")
+                    )
+                ),
+            }
+            available = f"{assessed}（至少一项候选级结果）"
+            unavailable = f"{total - assessed}（尚无候选级免疫原性值）"
+            criterion = (
+                f"Top {total}；" + "、".join(f"{name} {count}" for name, count in tool_counts.items())
+                + "；不同模型适用范围不同，缺失不按阴性处理"
             )
         elif label == "MT/WT特异性":
             novel_sequence = sum(

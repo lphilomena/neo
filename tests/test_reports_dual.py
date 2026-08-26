@@ -1364,8 +1364,26 @@ def test_patient_evidence_audit_counts_later_tool_field_after_unassessed_placeho
     audit = {row["证据维度"]: row for row in _patient_evidence_audit_rows(rows)}
     assert audit["加工/稳定性"]["可作为当前分层证据"].startswith("1（")
     assert "NetChop 1" in audit["加工/稳定性"]["判定口径"]
+    assert audit["免疫原性"]["可作为当前分层证据"].startswith("0（")
     assert audit["MT/WT特异性"]["可作为当前分层证据"] == "1（传统MT/WT 0；异常连接新序列 1）"
     assert "正常连接或正常异构体肽对照" in audit["MT/WT特异性"]["判定口径"]
+
+
+def test_patient_evidence_audit_counts_raw_immunogenicity_tools():
+    rows = [
+        {"prime_score": "0.82"},
+        {"bigmhc_im_score": "0.71", "deepimmuno_score": "0.63"},
+        {"immunogenicity_score": "UNASSESSED", "iedb_immunogenicity_score": "0.12"},
+        {},
+    ]
+    audit = {row["证据维度"]: row for row in _patient_evidence_audit_rows(rows)}
+    immunogenicity = audit["免疫原性"]
+    assert immunogenicity["可作为当前分层证据"] == "3（至少一项候选级结果）"
+    assert immunogenicity["尚不能作为可靠证据"] == "1（尚无候选级免疫原性值）"
+    assert "PRIME 1" in immunogenicity["判定口径"]
+    assert "BigMHC 1" in immunogenicity["判定口径"]
+    assert "DeepImmuno 1" in immunogenicity["判定口径"]
+    assert "IEDB 1" in immunogenicity["判定口径"]
 
 
 def test_patient_report_lists_input_files_and_purity_consensus(tmp_path):
