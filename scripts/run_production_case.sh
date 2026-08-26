@@ -199,8 +199,60 @@ assert _event_kind("Splice", "splice_junction") == "SPLICE"'
   fi
 }
 
+verify_mtwt_interpretation_rules() {
+  # Confirm that this checkout applies the same cautious, structure-aware
+  # MT/WT policy used by Skill2 and Skill3 before starting expensive work.
+  local check='from neoag.mutant_specificity import evaluate_mutant_specificity
+profile = {"mutant_specificity": {"near_equal_el_rank_difference": 0.01, "positive_agretopicity_ratio": 2.0, "positive_el_rank_difference": 0.10}}
+row = evaluate_mutant_specificity(
+    {"peptide": "ABCXEFGHI", "wildtype_peptide": "ABCDEFGHI", "mhc_class": "I"},
+    {"netmhcpan_mt_rank_el": "0.4", "netmhcpan_wt_rank_el": "0.7", "netmhcpan_wt_rank_ba": "0.9", "netmhcpan_wt_ic50": "42"},
+    profile,
+)
+assert row["mutation_position_role"] == "PUTATIVE_TCR_FACING"
+assert row["wt_self_reactivity_risk_status"] == "WT_STRONG_BINDING_REVIEW"
+assert row["mutant_specificity_gate_status"] == "CAUTION"
+assert row["mutant_specificity_priority_cap"]
+mhc2 = evaluate_mutant_specificity(
+    {"peptide": "ABCDEFGHIJKLMNO", "wildtype_peptide": "ABCXEFGHIJKLMNO", "hla_allele": "HLA-DRB1*04:01"},
+    {"netmhcpan_mt_rank_el": "0.2", "netmhcpan_wt_rank_el": "3.0"},
+    profile,
+)
+assert mhc2["mutation_position_role"] == "STRUCTURAL_ROLE_UNCERTAIN"'
+  if ! PYTHONPATH="$PROJECT_ROOT/src" "$PY" -c "$check"; then
+    echo "MT/WT structure/risk preflight failed; update NeoAg before production execution" >&2
+    return 1
+  fi
+}
+
+verify_mtwt_output_fields() {
+  local ranked="$1"
+  [[ -s "$ranked" ]] || return 0
+  local check='import csv, sys
+path = sys.argv[1]
+missing = []
+with open(path, encoding="utf-8", newline="") as handle:
+    for line_no, row in enumerate(csv.DictReader(handle, delimiter="\t"), start=2):
+        event_type = str(row.get("event_type", "")).strip().lower()
+        if event_type not in {"snv", "missense", "substitution", "indel", "insertion", "deletion", "frameshift"}:
+            continue
+        if not str(row.get("wildtype_peptide", "")).strip():
+            continue
+        required = ("mutation_position_role", "mutation_position_interpretation", "wt_self_reactivity_risk_status", "wt_self_reactivity_risk_reason", "mt_wt_interpretation_caution")
+        absent = [field for field in required if not str(row.get(field, "")).strip()]
+        wt_prediction = any(str(row.get(field, "")).strip() for field in ("netmhcpan_wt_rank_el", "netmhcpan_wt_rank_ba", "netmhcpan_wt_ic50"))
+        if wt_prediction and str(row.get("wt_self_reactivity_risk_status", "")).upper() in {"", "UNASSESSED"}:
+            absent.append("assessed_wt_self_reactivity_risk_status")
+        if absent:
+            missing.append("line {}: {}".format(line_no, ",".join(dict.fromkeys(absent))))
+if missing:
+    raise SystemExit("MT/WT structure/risk fields missing from final evidence ranking: " + "; ".join(missing[:20]))'
+  PYTHONPATH="$PROJECT_ROOT/src" "$PY" -c "$check" "$ranked"
+}
+
 cd "$PROJECT_ROOT"
 verify_event_track_precedence
+verify_mtwt_interpretation_rules
 mkdir -p "$OUTDIR/manifest" "$OUTDIR/logs" "$OUTDIR/tools"
 
 if [[ -f "$PROJECT_ROOT/conf/tools.env.sh" ]]; then
@@ -524,5 +576,7 @@ PYTHONPATH="$PROJECT_ROOT/src" "$PY" -m neoag.production_runner \
   --project-root "$PROJECT_ROOT" \
   --outdir "$OUTDIR" \
   --execute
+
+verify_mtwt_output_fields "$OUTDIR/final/scoring/ranked_peptides.evidence_consensus.tsv"
 
 echo "[OK] done: $OUTDIR/final/reports/"

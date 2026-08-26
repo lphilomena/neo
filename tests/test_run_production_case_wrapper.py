@@ -84,6 +84,9 @@ def test_wrapper_uses_v2_baseline_and_v3_consensus_and_passes_production_inputs(
     invocation_text = invocation_log.read_text()
     invocations = invocation_text.splitlines()
     assert "event_track" in invocation_text and "splice_junction" in invocation_text
+    assert "WT_STRONG_BINDING_REVIEW" in invocation_text
+    assert "PUTATIVE_TCR_FACING" in invocation_text
+    assert "STRUCTURAL_ROLE_UNCERTAIN" in invocation_text
     generator_call = next(line for line in invocations if "generate_production_from_results_manifest.py" in line)
     assert "--profile" in generator_call
     assert "sarcoma_rna_supported_v2_provisional.toml" in generator_call
@@ -95,6 +98,11 @@ def test_wrapper_uses_v2_baseline_and_v3_consensus_and_passes_production_inputs(
         "--star-chimeric", "--samtools-executable", "--rna-threads",
     ):
         assert flag in generator_call
+
+    wrapper_text = WRAPPER.read_text()
+    assert "verify_mtwt_output_fields" in wrapper_text
+    assert "ranked_peptides.evidence_consensus.tsv" in wrapper_text
+    assert "mt_wt_interpretation_caution" in wrapper_text
 
 
 def test_wrapper_rejects_multiple_rna_input_modes(tmp_path):
