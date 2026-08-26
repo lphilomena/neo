@@ -1,15 +1,19 @@
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import csv
 import json
 import os
+import signal
 import shlex
 import shutil
 import subprocess
 import sys
+import threading
 import tomllib
 from dataclasses import asdict, dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +37,93 @@ class StageResult:
     log: str = ""
     outputs: dict[str, Any] = field(default_factory=dict)
     message: str = ""
+    cpus: int = 0
+    memory_gb: float = 0.0
+    started_at: str = ""
+    finished_at: str = ""
+
+
+@dataclass(frozen=True)
+class StageResources:
+    cpus: int
+    memory_gb: float
+
+
+class _ProcessRegistry:
+    """Track process groups so an interrupted run also stops every child."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._processes: dict[str, subprocess.Popen[str]] = {}
+
+    def add(self, name: str, proc: subprocess.Popen[str]) -> None:
+        with self._lock:
+            self._processes[name] = proc
+
+    def discard(self, name: str) -> None:
+        with self._lock:
+            self._processes.pop(name, None)
+
+    def terminate_all(self) -> None:
+        with self._lock:
+            processes = list(self._processes.values())
+        for proc in processes:
+            if proc.poll() is None:
+                try:
+                    os.killpg(proc.pid, signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
+        for proc in processes:
+            if proc.poll() is None:
+                try:
+                    proc.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    try:
+                        os.killpg(proc.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+
+
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _available_memory_gb() -> float:
+    candidates: list[float] = []
+    meminfo = Path("/proc/meminfo")
+    if meminfo.is_file():
+        for line in meminfo.read_text(encoding="utf-8", errors="replace").splitlines():
+            if line.startswith("MemAvailable:"):
+                candidates.append(float(line.split()[1]) / 1024 / 1024)
+                break
+    for max_path, current_path in (
+        (Path("/sys/fs/cgroup/memory.max"), Path("/sys/fs/cgroup/memory.current")),
+        (
+            Path("/sys/fs/cgroup/memory/memory.limit_in_bytes"),
+            Path("/sys/fs/cgroup/memory/memory.usage_in_bytes"),
+        ),
+    ):
+        if not max_path.is_file() or not current_path.is_file():
+            continue
+        maximum = max_path.read_text(encoding="utf-8", errors="replace").strip()
+        current = current_path.read_text(encoding="utf-8", errors="replace").strip()
+        if maximum.isdigit() and current.isdigit():
+            available = (int(maximum) - int(current)) / 1024**3
+            if available > 0:
+                candidates.append(available)
+    if candidates:
+        return max(1.0, min(candidates))
+    try:
+        return max(1.0, os.sysconf("SC_AVPHYS_PAGES") * os.sysconf("SC_PAGE_SIZE") / 1024**3)
+    except (ValueError, OSError, AttributeError):
+        return 8.0
+
+
+def _stage_resources(spec: dict[str, Any], *, default_cpus: int, default_memory_gb: float) -> StageResources:
+    nested = spec.get("resources") if isinstance(spec.get("resources"), dict) else {}
+    cpus = int(spec.get("cpus") or nested.get("cpus") or default_cpus)
+    memory_gb = float(spec.get("memory_gb") or nested.get("memory_gb") or default_memory_gb)
+    return StageResources(max(1, cpus), max(0.1, memory_gb))
 
 
 @dataclass
@@ -238,68 +329,228 @@ def _run_stage(
     logs_dir: Path,
     execute: bool,
     force: bool,
+    resources: StageResources,
+    registry: _ProcessRegistry,
 ) -> StageResult:
     required = bool(spec.get("required", False))
     source = str(spec.get("source") or "")
     outputs = _expand_value(spec.get("outputs") or {}, context)
     command = _expand(str(spec.get("command") or ""), context).strip()
     log_path = logs_dir / f"{name}.log"
+    started_at = _utc_now()
+
+    def result(status: str, message: str = "") -> StageResult:
+        return StageResult(
+            name, status, required, source, command, str(log_path), outputs, message,
+            resources.cpus, resources.memory_gb, started_at, _utc_now(),
+        )
 
     if _outputs_ready(outputs) and not force:
-        return StageResult(name, "REUSED", required, source, command, str(log_path), outputs)
+        return result("REUSED")
     if not execute:
         status = "PLANNED" if command else ("BLOCKED" if required else "LOW_CONFIDENCE")
         message = "command planned" if command else "outputs missing and no command configured"
-        return StageResult(name, status, required, source, command, str(log_path), outputs, message)
+        return result(status, message)
     if not command:
         status = "FAILED" if required else "LOW_CONFIDENCE"
-        return StageResult(
-            name,
-            status,
-            required,
-            source,
-            command,
-            str(log_path),
-            outputs,
-            "outputs missing and no command configured",
-        )
+        return result(status, "outputs missing and no command configured")
 
     logs_dir.mkdir(parents=True, exist_ok=True)
-    proc = subprocess.run(
+    env = os.environ.copy()
+    for key in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS"):
+        env[key] = str(resources.cpus)
+    env["NEOAG_STAGE_CPUS"] = str(resources.cpus)
+    env["NEOAG_STAGE_MEMORY_GB"] = str(resources.memory_gb)
+    proc = subprocess.Popen(
         ["bash", "-lc", command],
         cwd=context["project_root"],
         text=True,
-        capture_output=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=env,
+        start_new_session=True,
     )
+    registry.add(name, proc)
+    try:
+        stdout, stderr = proc.communicate()
+    finally:
+        registry.discard(name)
     log_path.write_text(
-        proc.stdout + ("\n--- STDERR ---\n" if proc.stderr else "") + proc.stderr,
+        stdout + ("\n--- STDERR ---\n" if stderr else "") + stderr,
         encoding="utf-8",
     )
     if proc.returncode != 0:
         status = "FAILED" if required else "LOW_CONFIDENCE"
-        return StageResult(
-            name,
-            status,
-            required,
-            source,
-            command,
-            str(log_path),
-            outputs,
-            f"command returned {proc.returncode}",
-        )
+        return result(status, f"command returned {proc.returncode}")
     if not _outputs_ready(outputs):
         status = "FAILED" if required else "LOW_CONFIDENCE"
-        return StageResult(
-            name,
-            status,
-            required,
-            source,
-            command,
-            str(log_path),
-            outputs,
-            "command completed but declared outputs are missing",
+        return result(status, "command completed but declared outputs are missing")
+    return result("PASS")
+
+
+def _run_stage_dag(
+    stages: dict[str, dict[str, Any]],
+    *,
+    context: dict[str, str],
+    logs_dir: Path,
+    execute: bool,
+    force: bool,
+    run_cfg: dict[str, Any],
+) -> tuple[list[StageResult], dict[str, Any]]:
+    ordered = _ordered_stages(stages)
+    host_cpus = max(1, os.cpu_count() or 1)
+    configured_cpus = int(run_cfg.get("total_cpus") or 1)
+    total_cpus = min(host_cpus, max(1, configured_cpus))
+    configured_memory = float(run_cfg.get("total_memory_gb") or 0)
+    total_memory_gb = configured_memory if configured_memory > 0 else max(1.0, _available_memory_gb() * 0.8)
+    max_parallel = max(1, int(run_cfg.get("max_parallel_stages") or 1))
+    max_parallel = min(max_parallel, len(ordered) or 1)
+    default_cpus = max(1, int(run_cfg.get("default_stage_cpus") or 1))
+    default_memory_gb = max(0.1, float(run_cfg.get("default_stage_memory_gb") or 1.0))
+    requests = {
+        name: _stage_resources(stages[name], default_cpus=default_cpus, default_memory_gb=default_memory_gb)
+        for name in ordered
+    }
+    summary = {
+        "total_cpus": total_cpus,
+        "total_memory_gb": round(total_memory_gb, 3),
+        "max_parallel_stages": max_parallel,
+        "default_stage_cpus": default_cpus,
+        "default_stage_memory_gb": default_memory_gb,
+        "mode": "resource_aware_parallel" if execute and max_parallel > 1 else "serial",
+    }
+    registry = _ProcessRegistry()
+    by_name: dict[str, StageResult] = {}
+
+    def exceeds_budget(req: StageResources) -> bool:
+        return req.cpus > total_cpus or req.memory_gb > total_memory_gb + 1e-9
+
+    def budget_message(req: StageResources) -> str:
+        return (
+            f"stage resource request exceeds global budget: cpus={req.cpus}/{total_cpus}, "
+            f"memory_gb={req.memory_gb}/{round(total_memory_gb, 3)}"
         )
-    return StageResult(name, "PASS", required, source, command, str(log_path), outputs)
+
+    if not execute:
+        for name in ordered:
+            spec = stages[name]
+            req = requests[name]
+            if exceeds_budget(req):
+                required = bool(spec.get("required", False))
+                now = _utc_now()
+                by_name[name] = StageResult(
+                    name, "BLOCKED" if required else "LOW_CONFIDENCE", required,
+                    str(spec.get("source") or ""), outputs=_expand_value(spec.get("outputs") or {}, context),
+                    message=budget_message(req), cpus=req.cpus, memory_gb=req.memory_gb,
+                    started_at=now, finished_at=now,
+                )
+                continue
+            blocked = [
+                str(dep) for dep in (spec.get("depends_on") or [])
+                if by_name[str(dep)].status in {"FAILED", "BLOCKED"}
+            ]
+            if blocked:
+                required = bool(spec.get("required", False))
+                by_name[name] = StageResult(
+                    name, "BLOCKED" if required else "LOW_CONFIDENCE", required,
+                    str(spec.get("source") or ""), outputs=_expand_value(spec.get("outputs") or {}, context),
+                    message="blocked dependencies: " + ", ".join(blocked), cpus=req.cpus,
+                    memory_gb=req.memory_gb, started_at=_utc_now(), finished_at=_utc_now(),
+                )
+            else:
+                by_name[name] = _run_stage(
+                    name, spec, context=context, logs_dir=logs_dir, execute=False,
+                    force=force, resources=requests[name], registry=registry,
+                )
+        return [by_name[name] for name in ordered], summary
+
+    pending = set(ordered)
+    running: dict[concurrent.futures.Future[StageResult], tuple[str, StageResources]] = {}
+    used_cpus = 0
+    used_memory_gb = 0.0
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=max_parallel, thread_name_prefix="neoag-stage")
+    previous_sigterm = None
+
+    def interrupt_run(_signum: int, _frame: Any) -> None:
+        raise KeyboardInterrupt
+
+    if threading.current_thread() is threading.main_thread():
+        previous_sigterm = signal.getsignal(signal.SIGTERM)
+        signal.signal(signal.SIGTERM, interrupt_run)
+    try:
+        while pending or running:
+            progressed = False
+            for name in ordered:
+                if name not in pending:
+                    continue
+                spec = stages[name]
+                dependencies = [str(dep) for dep in (spec.get("depends_on") or [])]
+                if not all(dep in by_name for dep in dependencies):
+                    continue
+                req = requests[name]
+                if exceeds_budget(req):
+                    required = bool(spec.get("required", False))
+                    now = _utc_now()
+                    by_name[name] = StageResult(
+                        name, "BLOCKED" if required else "LOW_CONFIDENCE", required,
+                        str(spec.get("source") or ""), outputs=_expand_value(spec.get("outputs") or {}, context),
+                        message=budget_message(req), cpus=req.cpus, memory_gb=req.memory_gb,
+                        started_at=now, finished_at=now,
+                    )
+                    pending.remove(name)
+                    progressed = True
+                    continue
+                blocked = [dep for dep in dependencies if by_name[dep].status in {"FAILED", "BLOCKED"}]
+                if blocked:
+                    required = bool(spec.get("required", False))
+                    now = _utc_now()
+                    by_name[name] = StageResult(
+                        name, "BLOCKED" if required else "LOW_CONFIDENCE", required,
+                        str(spec.get("source") or ""), outputs=_expand_value(spec.get("outputs") or {}, context),
+                        message="blocked dependencies: " + ", ".join(blocked), cpus=req.cpus,
+                        memory_gb=req.memory_gb, started_at=now, finished_at=now,
+                    )
+                    pending.remove(name)
+                    progressed = True
+                    continue
+                fits = (
+                    len(running) < max_parallel
+                    and used_cpus + req.cpus <= total_cpus
+                    and used_memory_gb + req.memory_gb <= total_memory_gb + 1e-9
+                )
+                if not fits:
+                    continue
+                future = executor.submit(
+                    _run_stage, name, spec, context=context, logs_dir=logs_dir,
+                    execute=True, force=force, resources=req, registry=registry,
+                )
+                running[future] = (name, req)
+                pending.remove(name)
+                used_cpus += req.cpus
+                used_memory_gb += req.memory_gb
+                progressed = True
+            if running:
+                done, _ = concurrent.futures.wait(
+                    running, return_when=concurrent.futures.FIRST_COMPLETED,
+                )
+                for future in done:
+                    name, req = running.pop(future)
+                    used_cpus -= req.cpus
+                    used_memory_gb -= req.memory_gb
+                    by_name[name] = future.result()
+                    progressed = True
+            if not progressed and pending:
+                raise RuntimeError("Resource scheduler could not make progress; check stage dependencies and budgets")
+    except BaseException:
+        registry.terminate_all()
+        for future in running:
+            future.cancel()
+        raise
+    finally:
+        executor.shutdown(wait=True, cancel_futures=True)
+        if previous_sigterm is not None:
+            signal.signal(signal.SIGTERM, previous_sigterm)
+    return [by_name[name] for name in ordered], summary
 
 
 def _deduplicate(
@@ -537,7 +788,10 @@ def _write_result(result: ProductionResult, outdir: Path) -> None:
     write_tsv(
         outdir / "production_stage_status.tsv",
         [asdict(stage) for stage in result.stages],
-        ["name", "status", "required", "source", "command", "log", "outputs", "message"],
+        [
+            "name", "status", "required", "source", "command", "log", "outputs", "message",
+            "cpus", "memory_gb", "started_at", "finished_at",
+        ],
     )
 
 
@@ -550,9 +804,18 @@ def run_production(
     force: bool = False,
     skip_ranking: bool = False,
     reports_only: bool = False,
+    total_cpus: int | None = None,
+    total_memory_gb: float | None = None,
+    max_parallel_stages: int | None = None,
 ) -> ProductionResult:
     manifest = load_production_manifest(manifest_path)
-    run_cfg = manifest.get("run") or {}
+    run_cfg = dict(manifest.get("run") or {})
+    if total_cpus is not None:
+        run_cfg["total_cpus"] = total_cpus
+    if total_memory_gb is not None:
+        run_cfg["total_memory_gb"] = total_memory_gb
+    if max_parallel_stages is not None:
+        run_cfg["max_parallel_stages"] = max_parallel_stages
     root = Path(project_root).resolve()
     sample_id = str(run_cfg.get("sample_id") or "SAMPLE001")
     profile = str(run_cfg.get("profile") or "default")
@@ -593,37 +856,23 @@ def run_production(
         return result
     stage_specs = manifest.get("stages") or {}
     logs_dir = run_outdir / "logs"
-    stage_results: list[StageResult] = []
-    by_name: dict[str, StageResult] = {}
-
-    for name in _ordered_stages(stage_specs):
-        spec = stage_specs[name]
-        blocked_dependencies = [
-            dep for dep in (spec.get("depends_on") or [])
-            if by_name[str(dep)].status in {"FAILED", "BLOCKED"}
-        ]
-        if blocked_dependencies:
-            required = bool(spec.get("required", False))
-            status = "BLOCKED" if required else "LOW_CONFIDENCE"
-            result = StageResult(
-                name,
-                status,
-                required,
-                str(spec.get("source") or ""),
-                outputs=_expand_value(spec.get("outputs") or {}, context),
-                message="blocked dependencies: " + ", ".join(str(dep) for dep in blocked_dependencies),
-            )
-        else:
-            result = _run_stage(
-                name,
-                spec,
-                context=context,
-                logs_dir=logs_dir,
-                execute=execute,
-                force=force,
-            )
-        stage_results.append(result)
-        by_name[name] = result
+    stage_results, resource_summary = _run_stage_dag(
+        stage_specs,
+        context=context,
+        logs_dir=logs_dir,
+        execute=execute,
+        force=force,
+        run_cfg=expanded_run,
+    )
+    (run_outdir / "production_resource_summary.json").write_text(
+        json.dumps(resource_summary, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    write_tsv(
+        run_outdir / "production_resource_schedule.tsv",
+        [asdict(stage) for stage in stage_results],
+        ["name", "status", "cpus", "memory_gb", "started_at", "finished_at", "log", "message"],
+    )
 
     required_failures = [stage for stage in stage_results if stage.required and stage.status in {"FAILED", "BLOCKED"}]
     if required_failures or not execute:
@@ -942,6 +1191,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--force", action="store_true", help="Rerun stages even when declared outputs exist")
     parser.add_argument("--skip-ranking", action="store_true")
     parser.add_argument("--reports-only", action="store_true", help="Rebuild patient/technical reports from existing final/ outputs")
+    parser.add_argument("--total-cpus", type=int, help="Override the manifest-wide CPU scheduling budget")
+    parser.add_argument("--total-memory-gb", type=float, help="Override the manifest-wide memory scheduling budget")
+    parser.add_argument("--max-parallel-stages", type=int, help="Override the maximum number of concurrently running stages")
     args = parser.parse_args(argv)
     result = run_production(
         args.manifest,
@@ -951,6 +1203,9 @@ def main(argv: list[str] | None = None) -> int:
         force=args.force,
         skip_ranking=args.skip_ranking,
         reports_only=args.reports_only,
+        total_cpus=args.total_cpus,
+        total_memory_gb=args.total_memory_gb,
+        max_parallel_stages=args.max_parallel_stages,
     )
     print(json.dumps(asdict(result), indent=2, ensure_ascii=False))
     return 0 if result.status in {"PASS", "LOW_CONFIDENCE", "PARTIAL", "DRY_RUN"} else 1

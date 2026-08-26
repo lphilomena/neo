@@ -66,7 +66,8 @@ with `scripts/generate_production_from_results_manifest.py`, then runs
 profile and v3 Evidence-consensus rules. It accepts explicit overrides for
 Sequenza/PURPLE, gene TPM, transcript TPM/`quant.sf`, RNA FASTQ/BAM/VAF,
 STAR/GTF/reference assets, fusion caller roots, normal read-through, normal expression/junction/ligandome/proteome assets through `--asset-root`, predictor dependency roots, NetMHCpan,
-NetMHCstabpan, PRIME, BigMHC, DeepImmuno, and RNA threads. When overrides are absent it must reuse the
+NetMHCstabpan, PRIME, BigMHC, DeepImmuno, RNA threads, and the global CPU,
+memory and concurrent-stage budgets. When overrides are absent it must reuse the
 latest non-empty `gene_tpm.tsv`, `transcript_tpm.tsv`, Salmon `quant.sf`, RSEM
 `*.genes.results`/`*.isoforms.results`, existing `rna_alt_vaf.tsv`, or a
 non-empty STAR RNA BAM so patient reports can show transcript expression, RNA
@@ -81,6 +82,23 @@ DAG for new heavy DNA/RNA tool execution.
 - `execute`: run the selected backend; explicit approval is required.
 - `resume`: reuse completed stages and rerun missing/failed stages; explicit approval is required.
 - `ranking-only`: reuse comprehensive evidence and the weighted baseline.
+
+## Controlled parallel scheduling
+
+Raw production DAGs use dependency-aware, resource-budgeted parallel execution.
+Set `total_cpus`, `total_memory_gb`, and `max_parallel_stages` in the request or
+sample manifest. Skill2 writes those limits under `[run]` and writes `cpus` plus
+`memory_gb` for every generated stage. Defaults are the requested RNA/thread
+budget, 80% of currently available memory, and three concurrent stages.
+
+Only dependency-ready stages whose combined reservations fit both global
+budgets may start. Generated commands reduce explicit `--threads`/`--cores`
+values to the stage CPU reservation, and common numerical-library thread
+variables receive the same limit. Independent RNA expression, alignment and
+fusion stages may therefore overlap without oversubscribing the machine.
+Legacy manifests without scheduling fields remain serial. On SIGINT/SIGTERM,
+the runner terminates every active stage process group; resume then reuses only
+declared complete outputs.
 
 ## Fixed assets
 
@@ -149,6 +167,7 @@ For Fusion and Splice candidates, keep direct peptide/junction safety evidence s
 - `ranking_compare_weighted_vs_consensus.md`
 - `run_manifest.json`, `audit_log.jsonl`
 - `run_issue_log.json`, persisted beside the run state and appended on every execute/resume. Record the stage, symptom, root cause, failed command/log, temporary recovery, generic code/config fix, affected Skill1/2/3, validation result, and whether upstream outputs were safely reused.
+- `production_resource_summary.json` and `production_resource_schedule.tsv`, recording global budgets, per-stage reservations and actual start/finish times.
 - `reports/evidence_report.technical.html` as the default Pipeline report; an explicitly requested patient report is a non-final Pipeline snapshot
 - `manifests/rna_fusion_splice.production.toml` and
   `manifests/rna_fusion_splice.requirements.tsv` for automatic RNA FASTQ runs

@@ -38,6 +38,9 @@ Usage:
     [--star-executable <STAR>] \
     [--samtools-executable <samtools>] \
     [--rna-threads <N>] \
+    [--total-cpus <N>] \
+    [--total-memory-gb <GB; 0 = auto>] \
+    [--max-parallel-stages <N>] \
     [--fusion-caller-root <completed_caller_results_dir>] \
     [--star-chimeric <STAR/Chimeric.out.junction; repeatable>] \
     [--normal-readthrough <normal_readthrough.tsv>] \
@@ -93,6 +96,9 @@ STAR_SJDB_OVERHANG=149
 STAR_EXECUTABLE=""
 SAMTOOLS_EXECUTABLE="samtools"
 RNA_THREADS=16
+TOTAL_CPUS="${NEOAG_TOTAL_CPUS:-}"
+TOTAL_MEMORY_GB="${NEOAG_TOTAL_MEMORY_GB:-0}"
+MAX_PARALLEL_STAGES="${NEOAG_MAX_PARALLEL_STAGES:-3}"
 FUSION_CALLER_ROOTS=()
 STAR_CHIMERIC_FILES=()
 NORMAL_READTHROUGH=""
@@ -129,6 +135,9 @@ while [[ $# -gt 0 ]]; do
     --star-executable) STAR_EXECUTABLE="$2"; shift 2 ;;
     --samtools-executable) SAMTOOLS_EXECUTABLE="$2"; shift 2 ;;
     --rna-threads) RNA_THREADS="$2"; shift 2 ;;
+    --total-cpus) TOTAL_CPUS="$2"; shift 2 ;;
+    --total-memory-gb) TOTAL_MEMORY_GB="$2"; shift 2 ;;
+    --max-parallel-stages) MAX_PARALLEL_STAGES="$2"; shift 2 ;;
     --fusion-caller-root) FUSION_CALLER_ROOTS+=("$2"); shift 2 ;;
     --star-chimeric) STAR_CHIMERIC_FILES+=("$2"); shift 2 ;;
     --normal-readthrough) NORMAL_READTHROUGH="$2"; shift 2 ;;
@@ -151,6 +160,10 @@ done
 [[ -x "$PY" ]] || { echo "python not executable: $PY" >&2; exit 2; }
 [[ -d "$PROJECT_ROOT" ]] || { echo "project root missing: $PROJECT_ROOT" >&2; exit 2; }
 [[ "$RNA_THREADS" =~ ^[1-9][0-9]*$ ]] || { echo "--rna-threads must be a positive integer" >&2; exit 2; }
+TOTAL_CPUS="${TOTAL_CPUS:-$RNA_THREADS}"
+[[ "$TOTAL_CPUS" =~ ^[1-9][0-9]*$ ]] || { echo "--total-cpus must be a positive integer" >&2; exit 2; }
+[[ "$TOTAL_MEMORY_GB" =~ ^[0-9]+([.][0-9]+)?$ ]] || { echo "--total-memory-gb must be a non-negative number" >&2; exit 2; }
+[[ "$MAX_PARALLEL_STAGES" =~ ^[1-9][0-9]*$ ]] || { echo "--max-parallel-stages must be a positive integer" >&2; exit 2; }
 [[ "$STAR_SJDB_OVERHANG" =~ ^[1-9][0-9]*$ ]] || { echo "--star-sjdb-overhang must be a positive integer" >&2; exit 2; }
 [[ -z "$RNA_FASTQ1" && -z "$RNA_FASTQ2" ]] || {
   [[ -n "$RNA_FASTQ1" && -n "$RNA_FASTQ2" ]] || {
@@ -651,6 +664,9 @@ PYTHONPATH="$PROJECT_ROOT/src" "$PY" -m neoag.production_runner \
   --manifest "$OUTDIR/manifest/production.results.toml" \
   --project-root "$PROJECT_ROOT" \
   --outdir "$OUTDIR" \
+  --total-cpus "$TOTAL_CPUS" \
+  --total-memory-gb "$TOTAL_MEMORY_GB" \
+  --max-parallel-stages "$MAX_PARALLEL_STAGES" \
   --execute
 
 verify_mtwt_output_fields "$OUTDIR/final/scoring/ranked_peptides.evidence_consensus.tsv"

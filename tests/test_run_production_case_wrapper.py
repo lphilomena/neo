@@ -79,6 +79,9 @@ def test_wrapper_uses_v2_baseline_and_v3_consensus_and_passes_production_inputs(
         "--star-executable", str(star),
         "--samtools-executable", str(samtools),
         "--rna-threads", "7",
+        "--total-cpus", "6",
+        "--total-memory-gb", "24",
+        "--max-parallel-stages", "2",
     ], check=True)
 
     invocation_text = invocation_log.read_text()
@@ -98,6 +101,14 @@ def test_wrapper_uses_v2_baseline_and_v3_consensus_and_passes_production_inputs(
         "--star-chimeric", "--samtools-executable", "--rna-threads",
     ):
         assert flag in generator_call
+
+    runner_call = next(line for line in invocations if "neoag.production_runner" in line)
+    for flag, value in (
+        ("--total-cpus", "6"),
+        ("--total-memory-gb", "24"),
+        ("--max-parallel-stages", "2"),
+    ):
+        assert flag in runner_call and value in runner_call
 
     wrapper_text = WRAPPER.read_text()
     assert "verify_mtwt_output_fields" in wrapper_text

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shlex
 import sys
 from dataclasses import dataclass
@@ -137,11 +138,35 @@ def _toml(value: Any) -> str:
 def _stage(lines: list[str], name: str, *, required: bool, command: str,
            outputs: dict[str, str], depends_on: list[str] | None = None,
            source: str = "") -> None:
+    thread_match = re.search(r"--(?:threads|cores)(?:=|\s+)(\d+)", command)
+    ceiling = int(thread_match.group(1)) if thread_match else 16
+    key = name.lower()
+    if "easyfuse" in key:
+        cpus, memory_gb = 8, 64.0
+    elif any(token in key for token in ("rna_alignment", "star_fusion", "fusioncatcher", "arriba")):
+        cpus, memory_gb = 8, 48.0
+    elif "rsem" in key:
+        cpus, memory_gb = 4, 32.0
+    elif any(token in key for token in ("rna_expression", "salmon")):
+        cpus, memory_gb = 4, 16.0
+    elif any(token in key for token in ("snaf", "splicemutr")):
+        cpus, memory_gb = 6, 48.0
+    elif "fastq_qc" in key:
+        cpus, memory_gb = 4, 8.0
+    elif "fastq_merge" in key:
+        cpus, memory_gb = 2, 8.0
+    else:
+        cpus, memory_gb = 2, 8.0
+    cpus = max(1, min(cpus, ceiling))
+    command = re.sub(r"(--threads(?:=|\s+))\d+", lambda match: match.group(1) + str(cpus), command)
+    command = re.sub(r"(--cores(?:=|\s+))\d+", lambda match: match.group(1) + str(cpus), command)
     lines += ["", f"[stages.{name}]", f"required = {_toml(required)}"]
     if source:
         lines.append(f"source = {_toml(source)}")
     if depends_on:
         lines.append(f"depends_on = {_toml(depends_on)}")
+    lines.append(f"cpus = {cpus}")
+    lines.append(f"memory_gb = {memory_gb}")
     lines.append(f"command = {_toml(command)}")
     lines.append(f"[stages.{name}.outputs]")
     lines.extend(f"{key} = {_toml(value)}" for key, value in outputs.items())
@@ -196,6 +221,11 @@ def generate_rna_fusion_splice_manifest(
         'presentation_predictors = ["netmhcpan", "mhcflurry", "netmhcstabpan", "netchop"]',
         'required_presentation_predictors = ["netmhcpan", "mhcflurry", "netmhcstabpan", "netchop"]',
         'reports = "patient,technical"',
+        f"total_cpus = {int(inputs.get('total_cpus') or threads)}",
+        f"total_memory_gb = {float(inputs.get('total_memory_gb') or 0)}",
+        f"max_parallel_stages = {int(inputs.get('max_parallel_stages') or 3)}",
+        "default_stage_cpus = 1",
+        "default_stage_memory_gb = 4.0",
     ]
 
     if merge_fastq:

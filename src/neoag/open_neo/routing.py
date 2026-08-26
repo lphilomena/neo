@@ -190,6 +190,9 @@ def normalize_manifest(data: dict[str, Any], *, base_dir: str | Path = ".") -> d
     out["normal_sample_id"] = str(data.get("normal_sample_id") or (data.get("normal") or {}).get("sample_id") or "")
     out["assay_type"] = str(data.get("assay_type") or source.get("assay_type") or "").upper()
     out["rna_threads"] = int(source.get("rna_threads") or execution.get("threads") or 16)
+    out["total_cpus"] = int(source.get("total_cpus") or execution.get("total_cpus") or out["rna_threads"])
+    out["total_memory_gb"] = float(source.get("total_memory_gb") or execution.get("total_memory_gb") or 0)
+    out["max_parallel_stages"] = int(source.get("max_parallel_stages") or execution.get("max_parallel_stages") or 3)
     raw_tool_results = data.get("tool_results") if isinstance(data.get("tool_results"), dict) else {}
     out["tool_results"] = {
         str(domain): {

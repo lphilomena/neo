@@ -20,6 +20,15 @@ existing modules and fine-grained Skills.
 10. Immutable weighted baseline plus independent Evidence-consensus ranking.
 11. Output manifest, run manifest, `run_state.json` and audit log.
 
+## Resource scheduler
+
+Generated production manifests reserve `cpus` and `memory_gb` per stage and
+define global `total_cpus`, `total_memory_gb`, and `max_parallel_stages`
+budgets. A dependency-ready stage starts only when all three limits permit it.
+The schedule is recorded in `production_resource_schedule.tsv`; active process
+groups are terminated together when the parent run is interrupted, so resume
+can safely reuse completed outputs and restart incomplete stages.
+
 ## Production Case Wrapper
 
 For a completed case root plus somatic VCF, Skill2 should use

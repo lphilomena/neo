@@ -1,4 +1,5 @@
 from pathlib import Path
+from datetime import datetime
 
 from neoag.production_runner import run_production
 from neoag.tools.registry import ROOT
@@ -168,3 +169,103 @@ sequenza_result = "{result_file}"
     gate = read_tsv(tmp_path / "run/production_release_gate.tsv")[0]
     assert gate["status"] == "FAIL"
     assert "purple" in gate["reason"]
+
+
+def test_production_runner_runs_independent_stages_within_resource_budget(tmp_path):
+    manifest = tmp_path / "parallel.toml"
+    manifest.write_text('''[run]
+sample_id = "PARALLEL"
+total_cpus = 2
+total_memory_gb = 4
+max_parallel_stages = 2
+
+[stages.a]
+required = true
+cpus = 1
+memory_gb = 2
+command = "mkdir -p {outdir}; sleep 0.4; touch {outdir}/a.done"
+[stages.a.outputs]
+done = "{outdir}/a.done"
+
+[stages.b]
+required = true
+cpus = 1
+memory_gb = 2
+command = "mkdir -p {outdir}; sleep 0.4; touch {outdir}/b.done"
+[stages.b.outputs]
+done = "{outdir}/b.done"
+''', encoding="utf-8")
+
+    result = run_production(
+        manifest, outdir=tmp_path / "run", project_root=ROOT,
+        execute=True, skip_ranking=True,
+    )
+
+    stages = {stage.name: stage for stage in result.stages}
+    assert stages["a"].status == "PASS"
+    assert stages["b"].status == "PASS"
+    starts = [datetime.fromisoformat(stages[name].started_at) for name in ("a", "b")]
+    assert abs((starts[0] - starts[1]).total_seconds()) < 0.3
+    schedule = read_tsv(tmp_path / "run/production_resource_schedule.tsv")
+    assert {row["cpus"] for row in schedule} == {"1"}
+
+
+def test_production_runner_queues_stages_when_memory_budget_is_full(tmp_path):
+    manifest = tmp_path / "memory_queue.toml"
+    manifest.write_text('''[run]
+sample_id = "MEMORY_QUEUE"
+total_cpus = 2
+total_memory_gb = 4
+max_parallel_stages = 2
+
+[stages.a]
+required = true
+cpus = 1
+memory_gb = 3
+command = "mkdir -p {outdir}; sleep 0.35; touch {outdir}/a.done"
+[stages.a.outputs]
+done = "{outdir}/a.done"
+
+[stages.b]
+required = true
+cpus = 1
+memory_gb = 3
+command = "mkdir -p {outdir}; sleep 0.35; touch {outdir}/b.done"
+[stages.b.outputs]
+done = "{outdir}/b.done"
+''', encoding="utf-8")
+
+    result = run_production(
+        manifest, outdir=tmp_path / "run", project_root=ROOT,
+        execute=True, skip_ranking=True,
+    )
+
+    stages = {stage.name: stage for stage in result.stages}
+    first_finished = datetime.fromisoformat(stages["a"].finished_at)
+    second_started = datetime.fromisoformat(stages["b"].started_at)
+    assert second_started >= first_finished
+
+
+def test_production_runner_blocks_stage_larger_than_global_budget(tmp_path):
+    manifest = tmp_path / "oversized.toml"
+    manifest.write_text('''[run]
+sample_id = "OVERSIZED"
+total_cpus = 2
+total_memory_gb = 4
+max_parallel_stages = 2
+
+[stages.heavy]
+required = true
+cpus = 3
+memory_gb = 2
+command = "touch {outdir}/should-not-run"
+[stages.heavy.outputs]
+done = "{outdir}/should-not-run"
+''', encoding="utf-8")
+
+    result = run_production(manifest, outdir=tmp_path / "run", project_root=ROOT, execute=True)
+
+    assert result.status == "BLOCKED"
+    assert result.stages[0].status == "BLOCKED"
+    assert "exceeds global budget" in result.stages[0].message
+    assert not (tmp_path / "run/should-not-run").exists()

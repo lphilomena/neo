@@ -76,7 +76,7 @@ def _result_from_args(args: dict[str, Any], layout: RunLayout) -> RoutingResult:
         "case_root", "asset_root", "predictor_deps", "netmhcpan_home", "netmhcstabpan_home", "sequenza", "purple",
         "rna_fastq1", "rna_fastq2", "rna_bam", "rna_vaf", "easyfuse_star_index", "star_index_build_dir",
         "star_executable", "samtools_executable", "fusion_caller_root", "prime_evidence", "bigmhc_evidence", "deepimmuno_evidence", "python",
-        "rna_threads", "star_sjdb_overhang",
+        "rna_threads", "star_sjdb_overhang", "total_cpus", "total_memory_gb", "max_parallel_stages",
         "comprehensive_evidence", "weighted_baseline",
         "input_dir",
     ]
@@ -242,6 +242,9 @@ def _run_production_case_wrapper(args: dict[str, Any], routing: RoutingResult, l
         "star_sjdb_overhang": "--star-sjdb-overhang",
         "star_executable": "--star-executable",
         "samtools_executable": "--samtools-executable",
+        "total_cpus": "--total-cpus",
+        "total_memory_gb": "--total-memory-gb",
+        "max_parallel_stages": "--max-parallel-stages",
         "normal_readthrough": "--normal-readthrough",
         "prime_evidence": "--prime-evidence",
         "bigmhc_evidence": "--bigmhc-evidence",
@@ -662,6 +665,9 @@ def run_open_neo(args: dict[str, Any]) -> dict[str, Any]:
                 execute=True,
                 force=bool(args.get("force", False)),
                 skip_ranking=False,
+                total_cpus=int(args["total_cpus"]) if args.get("total_cpus") else None,
+                total_memory_gb=float(args["total_memory_gb"]) if args.get("total_memory_gb") else None,
+                max_parallel_stages=int(args["max_parallel_stages"]) if args.get("max_parallel_stages") else None,
             )
             success = production_result.status in {"PASS", "LOW_CONFIDENCE", "PARTIAL"}
             result.steps[-1].status = production_result.status
