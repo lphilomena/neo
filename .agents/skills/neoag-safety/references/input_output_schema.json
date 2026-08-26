@@ -3,7 +3,7 @@
   "category": "B",
   "category_label": "公共证据分析型 Skills：对所有入口共用的 HLA、表达、CCF、APPM、安全和排序证据层进行标准化分析",
   "purpose": "peptide safety gate",
-  "description": "Check normal proteome exact matches, WT peptide flags, anchor-only risks and normal junction/ligandome overlap.",
+  "description": "Resolve direct peptide/junction safety evidence separately from auxiliary source-gene expression context.",
   "use_when": [
     "需要筛查正常蛋白组匹配、WT peptide、anchor-only、normal junction 风险"
   ],
@@ -16,12 +16,26 @@
   "optional_inputs": [
     "normal_proteome",
     "normal_junctions",
+    "normal_hla_ligands",
+    "normal_expression",
     "wt_binding"
   ],
   "outputs": [
     "peptide_safety.tsv",
     "event_safety.tsv",
     "safety_review.tsv"
+  ],
+  "peptide_safety_fields": [
+    "normal_proteome_exact_match_status",
+    "normal_transcript_junction_match_status",
+    "normal_immunopeptidome_match_status",
+    "similar_peptide_cross_reactivity_status",
+    "source_gene_expression_context_status",
+    "critical_organ_expression_context_status",
+    "hematopoietic_expression_context_status",
+    "tcr_contact_anchor_context_status",
+    "final_safety_conclusion",
+    "safety_evidence_completeness"
   ],
   "risk_level": "LOW",
   "approval_required": false,
