@@ -6,6 +6,7 @@ from typing import Any
 
 from neoag.splice.coordinates import iter_junction_records
 from neoag.splice.gtf_annotation import resolve_gtf_junction_strands
+from neoag.splice.junction_qc import JunctionReadQCThresholds, build_junction_read_qc_row
 
 from .base import row_hash
 
@@ -20,11 +21,14 @@ def parse_junction_source(
     coordinate_system: str = "auto",
     source_assay_id: str = "",
     annotation_gtf: str | Path | None = None,
+    junction_qc_thresholds: JunctionReadQCThresholds | None = None,
     strict: bool = False,
 ) -> dict[str, list[dict[str, str]]]:
     junctions: list[dict[str, str]] = []
     evidence: list[dict[str, str]] = []
     conflicts: list[dict[str, str]] = []
+    junction_read_qc: list[dict[str, str]] = []
+    thresholds = junction_qc_thresholds or JunctionReadQCThresholds()
     records = list(iter_junction_records(
             path,
             sample_id=sample_id,
@@ -91,7 +95,7 @@ def parse_junction_source(
             "unique_split_reads": str(record.unique_split_reads),
             "multi_split_reads": str(record.multi_split_reads),
             "total_split_reads": str(record.total_split_reads),
-            "max_overhang": "",
+            "max_overhang": str(record.row.get("max_overhang", "") or record.row.get("overhang", "")),
             "source_coordinate_systems": record.source_coordinate_system,
             "source_tools": source_tool,
             "source_tool_versions": source_tool_version,
@@ -114,4 +118,24 @@ def parse_junction_source(
             "resolution_reason": record.resolution_method if exact_resolution else "strand unavailable; exact support withheld",
             "raw_payload_sha256": raw_hash,
         })
-    return {"junctions": junctions, "tool_evidence": evidence, "conflicts": conflicts}
+        junction_read_qc.append(build_junction_read_qc_row(
+            row=record.row,
+            junction_id=j.junction_id,
+            sample_id=sample_id,
+            source_tool=source_tool,
+            source_tool_version=source_tool_version,
+            source_assay_id=source_assay_id,
+            source_file=str(Path(path)),
+            source_record_id=record.source_record_id,
+            resolution_status=resolution_status,
+            unique_split_reads=record.unique_split_reads,
+            multi_split_reads=record.multi_split_reads,
+            total_split_reads=record.total_split_reads,
+            thresholds=thresholds,
+        ))
+    return {
+        "junctions": junctions,
+        "junction_read_qc": junction_read_qc,
+        "tool_evidence": evidence,
+        "conflicts": conflicts,
+    }

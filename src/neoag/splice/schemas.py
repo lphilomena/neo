@@ -8,7 +8,7 @@ v0.5.1 adds three independently auditable evidence chains:
 """
 from __future__ import annotations
 
-SPLICE_PROVENANCE_SCHEMA_VERSION = "0.5.1"
+SPLICE_PROVENANCE_SCHEMA_VERSION = "0.5.2-p0"
 
 JUNCTION_FIELDS = [
     "junction_id", "sample_id", "genome_build", "chrom",
@@ -18,6 +18,17 @@ JUNCTION_FIELDS = [
     "source_coordinate_systems", "source_tools", "source_tool_versions",
     "source_files", "source_record_ids", "provenance_record_count",
     "junction_resolution_status", "evidence_conflict_status",
+]
+
+JUNCTION_READ_QC_FIELDS = [
+    "junction_read_qc_id", "junction_id", "sample_id", "source_tool",
+    "source_tool_version", "source_assay_id", "source_file", "source_record_id",
+    "resolution_status", "unique_split_reads", "total_split_reads",
+    "unique_fragment_starts", "max_overhang", "mapping_quality",
+    "multimapping_fraction", "tumor_psi", "caller_filter_status", "qc_policy",
+    "min_unique_split_reads", "min_unique_fragment_starts", "min_overhang",
+    "min_mapping_quality", "max_multimapping_fraction", "min_tumor_psi",
+    "qc_status", "failed_checks", "missing_checks", "qc_reason",
 ]
 
 EVENT_FIELDS = [
@@ -57,7 +68,8 @@ ORF_FIELDS = [
 PEPTIDE_ORIGIN_FIELDS = [
     "origin_peptide_id", "peptide_id", "orf_id", "transcript_hypothesis_id", "splice_event_id",
     "sample_id", "gene", "peptide_sequence", "peptide_length", "protein_start", "protein_end",
-    "crosses_junction", "junction_ids", "junction_offset_in_peptide", "contains_novel_aa",
+    "crosses_junction", "junction_ids", "required_junction_ids",
+    "junction_offset_in_peptide", "contains_novel_aa",
     "novel_aa_positions", "wildtype_counterpart_status", "wildtype_peptide",
     "reference_proteome_match", "generator_group", "source_generator", "source_generator_version",
     "source_file", "source_record_id", "origin_status", "evidence_conflict_status",
@@ -155,6 +167,7 @@ CONSENSUS_FIELDS = [
     "independent_evidence_groups", "independent_rna_sources", "independent_translation_generators",
     "rna_driven_chain_status", "dna_causal_chain_status", "normal_background_chain_status",
     "translation_consensus_level", "independent_peptide_generators",
+    "required_junction_ids", "required_junction_qc_status",
     "event_consensus_status", "orf_consensus_status", "normal_background_status",
     "final_evidence_tier", "priority_cap", "consensus_reason", "hard_fail_codes", "cap_codes",
 ]
@@ -174,6 +187,7 @@ PVACBIND_FASTA_MAP_FIELDS = [
 
 OUTPUT_FILENAMES = {
     "junctions": "splice_junctions.tsv",
+    "junction_read_qc": "splice_junction_read_qc.tsv",
     "events": "splice_events.tsv",
     "event_junction_links": "splice_event_junction_links.tsv",
     "transcripts": "splice_transcript_hypotheses.tsv",
@@ -206,6 +220,7 @@ OUTPUT_FILENAMES = {
 
 TABLE_FIELDS = {
     "junctions": JUNCTION_FIELDS,
+    "junction_read_qc": JUNCTION_READ_QC_FIELDS,
     "events": EVENT_FIELDS,
     "event_junction_links": EVENT_JUNCTION_LINK_FIELDS,
     "transcripts": TRANSCRIPT_HYPOTHESIS_FIELDS,

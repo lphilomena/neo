@@ -15,6 +15,22 @@ _NEGATIVE = {"NOT_DETECTED", "ABSENT", "NEGATIVE"}
 _DETECTED = {"DETECTED", "PRESENT", "POSITIVE"}
 _LOW_LEVEL = {"LOW_LEVEL", "LOW_LEVEL_DETECTED", "TRACE", "WEAK_POSITIVE"}
 
+NORMAL_DETECTED_ASSESSMENTS = {
+    "NORMAL_DETECTED", "DETECTED_MATCHED_NORMAL", "DETECTED_CRITICAL_TISSUE",
+    "DETECTED_BROAD_NORMAL", "LOW_LEVEL_NONCRITICAL_NORMAL",
+}
+
+
+def assessment_is_detected(row: dict[str, str]) -> bool:
+    return row.get("assessment_status", "") in NORMAL_DETECTED_ASSESSMENTS
+
+
+def assessment_is_critical(row: dict[str, str]) -> bool:
+    return row.get("assessment_status") == "DETECTED_CRITICAL_TISSUE" or (
+        row.get("assessment_status") == "NORMAL_DETECTED"
+        and _is_true(row.get("critical_tissue", ""))
+    )
+
 
 def _is_true(value: str | bool) -> bool:
     return str(value).strip().casefold() in {"1", "true", "yes", "y"}

@@ -6,6 +6,7 @@ in the report or supplied through an exact Junction→canonical junction map.
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Mapping
 
@@ -24,6 +25,40 @@ _AA = set("ACDEFGHIKLMNPQRSTVWY")
 def _peptide(value: str) -> str:
     seq = "".join(clean(value).split()).upper().replace("*", "")
     return seq if seq and set(seq) <= _AA else ""
+
+
+def _residue_positions(row: Mapping[str, str], peptide_length: int) -> list[int]:
+    """Parse only explicit mutation/novel-residue positions local to epitope.
+
+    pVACsplice versions differ in naming the mutation-position column.  Values
+    outside the reported epitope cannot be interpreted as epitope-local and are
+    deliberately discarded rather than guessed from the transcript position.
+    """
+    raw = get(
+        row,
+        "Novel AA Positions", "novel_aa_positions", "Mutation Position(s)",
+        "Mutation Position", "mutation_position", "Pos",
+    )
+    positions = sorted({int(x) for x in re.findall(r"\d+", raw) if 1 <= int(x) <= peptide_length})
+    return positions
+
+
+def _junction_boundary(row: Mapping[str, str], peptide_length: int) -> str:
+    raw = get(
+        row,
+        "Junction Offset in Peptide", "junction_offset_in_peptide",
+        "Junction AA Position", "junction_aa_position", "Junction Position",
+    )
+    values = [int(x) for x in re.findall(r"\d+", raw)]
+    if len(values) >= 2:
+        left, right = values[0], values[1]
+    elif len(values) == 1:
+        left, right = values[0], values[0] + 1
+    else:
+        return ""
+    if 1 <= left < right <= peptide_length:
+        return f"{left}-{right}"
+    return ""
 
 
 def _load_junction_map(path: str | Path | None) -> dict[str, str]:
@@ -130,6 +165,10 @@ def parse_pvacsplice(
         gene = get(row, "Gene Name", "gene", "gene_name")
         gene_id = get(row, "Ensembl Gene ID", "gene_id")
         transcript = get(row, "Transcript", "transcript_id")
+        novel_positions = _residue_positions(row, len(epitope))
+        junction_boundary = _junction_boundary(row, len(epitope))
+        novelty_status = "true" if novel_positions else "UNASSESSED"
+        crossing_status = "true" if junction_boundary else "UNASSESSED"
         result["variants"].append({
             "variant_id": variant_id, "sample_id": sample_id, "genome_build": vb, "chrom": vc,
             "pos_1based": str(vp), "ref": vr, "alt": va,
@@ -185,7 +224,9 @@ def parse_pvacsplice(
             "sample_id": sample_id, "gene": gene, "protein_sequence": epitope,
             "protein_sequence_sha256": sequence_sha256(epitope), "protein_length": str(len(epitope)),
             "orf_start": "", "orf_stop": "", "frame_status": frame, "frameshift_status": get(row, "Frameshift Event"),
-            "novel_aa_start": "1", "novel_aa_end": str(len(epitope)), "premature_stop_status": "UNASSESSED",
+            "novel_aa_start": str(min(novel_positions)) if novel_positions else "",
+            "novel_aa_end": str(max(novel_positions)) if novel_positions else "",
+            "premature_stop_status": "UNASSESSED",
             "nmd_risk": "UNASSESSED", "nmd_reason": "", "orf_validity_status": "VALID_EPITOPE_PRODUCT_ONLY",
             "source_generator": "pVACsplice", "source_generator_version": source_tool_version,
             "source_file": str(p), "source_record_id": rid, "evidence_conflict_status": "NONE",
@@ -199,13 +240,21 @@ def parse_pvacsplice(
             "origin_peptide_id": por, "peptide_id": pid, "orf_id": oid,
             "transcript_hypothesis_id": sth, "splice_event_id": event_id, "sample_id": sample_id,
             "gene": gene, "peptide_sequence": epitope, "peptide_length": str(len(epitope)),
-            "protein_start": "1", "protein_end": str(len(epitope)), "crosses_junction": "true",
-            "junction_ids": jid, "junction_offset_in_peptide": "UNASSESSED", "contains_novel_aa": "true",
-            "novel_aa_positions": "", "wildtype_counterpart_status": "UNRESOLVED",
+            "protein_start": "1", "protein_end": str(len(epitope)), "crosses_junction": crossing_status,
+            "junction_ids": jid, "required_junction_ids": jid,
+            "junction_offset_in_peptide": junction_boundary or "UNASSESSED",
+            "contains_novel_aa": novelty_status,
+            "novel_aa_positions": ";".join(str(x) for x in novel_positions),
+            "wildtype_counterpart_status": "UNRESOLVED",
             "wildtype_peptide": "", "reference_proteome_match": get(row, "Reference Match", default="UNASSESSED"),
             "generator_group": "DNA_CAUSAL", "source_generator": "pVACsplice",
             "source_generator_version": source_tool_version, "source_file": str(p), "source_record_id": rid,
-            "origin_status": "RESOLVED_EXACT_VARIANT_JUNCTION_EPITOPE", "evidence_conflict_status": "NONE",
+            "origin_status": (
+                "RESOLVED_EXACT_VARIANT_JUNCTION_EPITOPE_AND_RESIDUES"
+                if novel_positions and junction_boundary
+                else "RESOLVED_EXACT_VARIANT_JUNCTION_EPITOPE_NOVELTY_UNASSESSED"
+            ),
+            "evidence_conflict_status": "NONE",
         })
         result["peptide_origin_links"].append({
             "peptide_origin_link_id": link_id("POL", pid, por), "peptide_id": pid,

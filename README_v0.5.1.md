@@ -1,5 +1,8 @@
 # NeoAg Event Pipeline v0.5.1
 
+> This source package includes the `v0.5.2-p0` splice hardening patch. Read
+> `docs/SPLICE_P0_FIXES.md` before running the formal splice layer.
+
 This release adds a dual-generator RNA branch, an exact mutation-caused-splicing branch, and a separately audited normal-background branch to the formal v0.5.0 Splice Provenance Layer.
 
 Start here:

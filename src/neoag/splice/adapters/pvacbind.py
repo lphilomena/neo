@@ -10,6 +10,10 @@ from neoag.splice.identifiers import link_id, peptide_id, peptide_origin_id, seq
 from .base import as_float_text, as_int, clean, get, infer_mhc_class, read_delimited, row_hash, source_record_id
 
 
+def _tokens(value: str) -> set[str]:
+    return {token.strip() for token in str(value or "").replace(",", ";").split(";") if token.strip()}
+
+
 def _boundary_crossing(offsets: str, start: int, end: int) -> str:
     """Assess whether a protein interval crosses an event-local AA boundary.
 
@@ -255,6 +259,10 @@ def parse_pvacbind(
                 "protein_start": str(position or ""),
                 "protein_end": str(position + len(epitope) - 1) if position else "",
                 "crosses_junction": crosses, "junction_ids": transcript.get("junction_chain", ""),
+                "required_junction_ids": ";".join(sorted({
+                    j for parent in parent_origins
+                    for j in _tokens(parent.get("required_junction_ids", "") or parent.get("junction_ids", ""))
+                })) or transcript.get("junction_chain", ""),
                 "junction_offset_in_peptide": ";".join(sorted({p.get("junction_offset_in_peptide", "") for p in parent_origins if p.get("junction_offset_in_peptide")})),
                 "contains_novel_aa": _inherit_parent_state(parent_origins, "contains_novel_aa"),
                 "novel_aa_positions": "", "wildtype_counterpart_status": _inherit_parent_state(parent_origins, "wildtype_counterpart_status") or "WT_UNRESOLVED",

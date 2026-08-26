@@ -270,6 +270,7 @@ def parse_mopepgen(
                 "gene": gene, "peptide_sequence": peptide, "peptide_length": str(len(peptide)),
                 "protein_start": str(start), "protein_end": str(start + len(peptide) - 1),
                 "crosses_junction": map_crosses, "junction_ids": join_tokens(candidate_jids),
+                "required_junction_ids": join_tokens(candidate_jids),
                 "junction_offset_in_peptide": map_offset, "contains_novel_aa": map_novel,
                 "novel_aa_positions": "", "wildtype_counterpart_status": "UNRESOLVED",
                 "wildtype_peptide": "", "reference_proteome_match": "UNASSESSED",

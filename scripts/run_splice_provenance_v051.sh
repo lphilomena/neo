@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# NeoAg v0.5.1 production driver: RNA-driven, DNA-causal and normal-background chains.
+# NeoAg v0.5.2-p0 production driver: RNA-driven, DNA-causal and normal-background chains.
 set -euo pipefail
 
 usage() {
@@ -53,6 +53,13 @@ Run pVACbind on all resolved ORFs:
 
 General:
   --genome-build GRCh38       --disease-profile default
+  --junction-qc-policy complete|reads_only (default: complete)
+  --min-junction-unique-reads 3
+  --min-junction-unique-fragment-starts 2
+  --min-junction-overhang 10
+  --min-junction-mapping-quality 20
+  --max-junction-multimapping-fraction 0.20
+  --min-junction-tumor-psi 0.05
   --tool-version TOOL=VERSION (repeatable)
   --critical-tissue NAME      (repeatable)
   --strict                    --overwrite
@@ -70,11 +77,20 @@ RUN_K4=0; K4_DB=""; K4_INDEX=""; K4_ACCEPT=0; K4_PREFIX="neoag"
 RUN_PVS=0; PVS_JUNCTIONS=""; ANNOTATED_VCF=""; REF_FASTA=""; GTF=""; PVS_ALG="MHCflurry"; PVS_THREADS="4"
 HLA=""; HLA_FILE=""; PVB_ALG="MHCflurry"; PVB_THREADS="4"; REF_PROTEOME=""; SKIP_PVB=0
 QUERY_REF=""; QUERY_FLANK="31"
+JQC_POLICY="complete"; JQC_READS="3"; JQC_STARTS="2"; JQC_OVERHANG="10"
+JQC_MAPQ="20"; JQC_MULTIMAP="0.20"; JQC_PSI="0.05"
 while [[ $# -gt 0 ]]; do
  case "$1" in
   --sample-id) SAMPLE="$2"; shift 2;; --outdir) OUTDIR="$2"; shift 2;;
   --genome-build) BUILD="$2"; shift 2;; --disease-profile) PROFILE="$2"; shift 2;;
   --junctions) JUNCTIONS="$2"; shift 2;; --junction-coordinate-system) JUNCTION_COORD="$2"; shift 2;;
+  --junction-qc-policy) JQC_POLICY="$2"; shift 2;;
+  --min-junction-unique-reads) JQC_READS="$2"; shift 2;;
+  --min-junction-unique-fragment-starts) JQC_STARTS="$2"; shift 2;;
+  --min-junction-overhang) JQC_OVERHANG="$2"; shift 2;;
+  --min-junction-mapping-quality) JQC_MAPQ="$2"; shift 2;;
+  --max-junction-multimapping-fraction) JQC_MULTIMAP="$2"; shift 2;;
+  --min-junction-tumor-psi) JQC_PSI="$2"; shift 2;;
   --star-junctions) STAR_JUNCTIONS="$2"; shift 2;;
   --spladder-gff3) SPL_GFF3+=("$2"); shift 2;; --spladder-txt) SPL_TXT+=("$2"); shift 2;;
   --irfinder) IR+=("$2"); shift 2;; --irfinder-coordinate-system) IR_COORD="$2"; shift 2;;
@@ -117,7 +133,7 @@ if [[ "$OVERWRITE" == 1 ]]; then rm -rf "$PHASE1" "$PRE" "$FINAL"; fi
 mkdir -p "$OUTDIR" "$EXT"
 
 make_build_args() {
- local target="$1" base_layer="${2:-}"; BUILD_ARGS=(-m neoag.splice.cli build --sample-id "$SAMPLE" --outdir "$target" --genome-build "$BUILD" --disease-profile "$PROFILE" --junction-coordinate-system "$JUNCTION_COORD" --irfinder-coordinate-system "$IR_COORD" --normal-coordinate-system "$NORMAL_COORD")
+ local target="$1" base_layer="${2:-}"; BUILD_ARGS=(-m neoag.splice.cli build --sample-id "$SAMPLE" --outdir "$target" --genome-build "$BUILD" --disease-profile "$PROFILE" --junction-coordinate-system "$JUNCTION_COORD" --irfinder-coordinate-system "$IR_COORD" --normal-coordinate-system "$NORMAL_COORD" --junction-qc-policy "$JQC_POLICY" --min-junction-unique-reads "$JQC_READS" --min-junction-unique-fragment-starts "$JQC_STARTS" --min-junction-overhang "$JQC_OVERHANG" --min-junction-mapping-quality "$JQC_MAPQ" --max-junction-multimapping-fraction "$JQC_MULTIMAP" --min-junction-tumor-psi "$JQC_PSI")
  [[ -n "$QUERY_REF" ]] && BUILD_ARGS+=(--junction-query-reference-fasta "$QUERY_REF" --junction-query-flank "$QUERY_FLANK")
  if [[ -n "$base_layer" ]]; then
   BUILD_ARGS+=(--base-layer "$base_layer")

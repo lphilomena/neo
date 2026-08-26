@@ -5,6 +5,8 @@ from collections import defaultdict
 from typing import Iterable
 
 from neoag.splice.identifiers import stable_id
+from neoag.splice.junction_qc import passing_junctions
+from neoag.splice.normal_background import assessment_is_critical, assessment_is_detected
 
 _RNA_GENERATORS = {"ImmunoPepper", "moPepGen"}
 _CAUSAL_PRIORITY = {
@@ -54,6 +56,8 @@ def _chain_row(
 
 def build_evidence_chains(tables: dict[str, list[dict[str, str]]], *, sample_id: str) -> list[dict[str, str]]:
     origins = tables.get("peptide_origins", [])
+    events = {row.get("splice_event_id", ""): row for row in tables.get("events", [])}
+    qc_passing_junctions = passing_junctions(tables)
     event_links: dict[str, set[str]] = defaultdict(set)
     for row in tables.get("event_junction_links", []):
         event_links[row.get("splice_event_id", "")].add(row.get("junction_id", ""))
@@ -69,6 +73,10 @@ def build_evidence_chains(tables: dict[str, list[dict[str, str]]], *, sample_id:
     orfs = {row.get("orf_id", ""): row for row in tables.get("orfs", [])}
     orf_generators: dict[tuple[str, str, str], set[str]] = defaultdict(set)
     for orf in tables.get("orfs", []):
+        if orf.get("orf_validity_status", "").upper() in {
+            "VALID_EPITOPE_PRODUCT_ONLY", "VALID_PEPTIDE_PRODUCT_ONLY", "PARTIAL_TRANSLATED_SEGMENT",
+        }:
+            continue
         key = (orf.get("splice_event_id", ""), orf.get("protein_sequence_sha256", ""), orf.get("frame_status", ""))
         if key[1]:
             orf_generators[key].add(orf.get("source_generator", ""))
@@ -98,7 +106,13 @@ def build_evidence_chains(tables: dict[str, list[dict[str, str]]], *, sample_id:
     for origin in origins:
         event_id = origin.get("splice_event_id", "")
         por = origin.get("origin_peptide_id", "")
-        jids = event_links.get(event_id, set()) | _tokens(origin.get("junction_ids", ""))
+        event_jids = event_links.get(event_id, set())
+        origin_jids = _tokens(origin.get("junction_ids", ""))
+        required_jids = (
+            _tokens(origin.get("required_junction_ids", ""))
+            or origin_jids
+            or _tokens(events.get(event_id, {}).get("alternative_junction_ids", ""))
+        )
 
         # RNA-driven chain -------------------------------------------------
         same_peptide = origin_by_event_peptide.get((event_id, origin.get("peptide_sequence", "")), [])
@@ -127,33 +141,35 @@ def build_evidence_chains(tables: dict[str, list[dict[str, str]]], *, sample_id:
             if x in _RNA_GENERATORS
         }
         exact_rna_evidence = []
-        for jid in jids:
+        for jid in required_jids:
             exact_rna_evidence.extend([
                 ev for ev in evidence_by_entity.get(jid, [])
                 if ev.get("evidence_group") == "RNA_JUNCTION"
+                and jid in qc_passing_junctions
                 and ev.get("resolution_status", "").startswith("RESOLVED")
                 and str(ev.get("verified_value", "")) not in {"", "0", "0.0"}
             ])
-        if len(exact_orf_generators) >= 2 and exact_rna_evidence:
+        all_required_rna_pass = bool(required_jids) and required_jids <= qc_passing_junctions
+        if len(exact_orf_generators) >= 2 and exact_rna_evidence and all_required_rna_pass:
             rna_status, rna_strength = "DUAL_GENERATOR_EXACT_ORF", "STRONG"
             limits: list[str] = []
-        elif len(peptide_generators) >= 2 and exact_rna_evidence:
+        elif len(peptide_generators) >= 2 and exact_rna_evidence and all_required_rna_pass:
             rna_status, rna_strength = "DUAL_GENERATOR_EXACT_PEPTIDE", "MODERATE_STRONG"
             limits = ["ORF_LEVEL_CONSENSUS_NOT_ESTABLISHED"]
-        elif origin.get("source_generator") in _RNA_GENERATORS and exact_rna_evidence:
+        elif origin.get("source_generator") in _RNA_GENERATORS and exact_rna_evidence and all_required_rna_pass:
             rna_status, rna_strength = "SINGLE_GENERATOR_RNA_SUPPORTED", "MODERATE"
             limits = ["SECOND_RNA_DRIVEN_GENERATOR_MISSING"]
-        elif exact_rna_evidence:
+        elif exact_rna_evidence and all_required_rna_pass:
             rna_status, rna_strength = "RNA_EVENT_ONLY", "WEAK"
             limits = ["RNA_DRIVEN_TRANSLATION_MISSING"]
         else:
             rna_status, rna_strength = "RNA_DRIVEN_UNCONFIRMED", "UNASSESSED"
-            limits = ["EXACT_RNA_JUNCTION_SUPPORT_MISSING"]
+            limits = ["ORIGIN_REQUIRED_JUNCTION_QC_NOT_PASS"]
         rows.append(_chain_row(
             event_id=event_id, origin=origin, sample_id=sample_id, chain_type="RNA_DRIVEN",
             status=rna_status, strength=rna_strength, groups=["RNA_JUNCTION", "RNA_DRIVEN_TRANSLATION"],
             tools=peptide_generators | exact_orf_generators | {ev.get("source_tool", "") for ev in exact_rna_evidence},
-            entities=[event_id, por, origin.get("orf_id", ""), *jids],
+            entities=[event_id, por, origin.get("orf_id", ""), *required_jids],
             evidence_ids=[ev.get("evidence_id", "") for ev in exact_rna_evidence], limits=limits,
             reason=(
                 f"exact_rna_junctions={len(exact_rna_evidence)}; peptide_generators={','.join(sorted(peptide_generators)) or 'NONE'}; "
@@ -163,7 +179,7 @@ def build_evidence_chains(tables: dict[str, list[dict[str, str]]], *, sample_id:
 
         # DNA-causal chain -------------------------------------------------
         causal_rows = list(causal_by_event.get(event_id, []))
-        for jid in jids:
+        for jid in required_jids:
             causal_rows.extend(causal_by_junction.get(jid, []))
         seen_causal: set[str] = set()
         causal_rows = [r for r in causal_rows if not (r.get("causal_link_id", "") in seen_causal or seen_causal.add(r.get("causal_link_id", "")))]
@@ -190,13 +206,13 @@ def build_evidence_chains(tables: dict[str, list[dict[str, str]]], *, sample_id:
 
         # Normal-background chain -----------------------------------------
         normal_rows: list[dict[str, str]] = []
-        for key in [por, event_id, *jids]:
+        for key in [por, event_id, *required_jids]:
             normal_rows.extend(normal_by_entity.get(key, []))
         # Remove repeated row objects reached through multiple entities.
         seen = set()
         normal_rows = [r for r in normal_rows if not (r.get("normal_background_id", "") in seen or seen.add(r.get("normal_background_id", "")))]
-        detected_critical = [r for r in normal_rows if r.get("assessment_status") == "NORMAL_DETECTED" and r.get("critical_tissue", "").lower() == "true"]
-        detected = [r for r in normal_rows if r.get("assessment_status") == "NORMAL_DETECTED"]
+        detected_critical = [r for r in normal_rows if assessment_is_critical(r)]
+        detected = [r for r in normal_rows if assessment_is_detected(r)]
         coverage_negative = {
             (r.get("normal_source_type", ""), r.get("normal_source", ""))
             for r in normal_rows if r.get("assessment_status") == "NOT_DETECTED_ADEQUATE_COVERAGE"

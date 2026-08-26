@@ -41,8 +41,8 @@ def _splice2neo(tmp_path: Path) -> Path:
 def _regtools(tmp_path: Path) -> Path:
     return _write(
         tmp_path / "regtools.tsv",
-        "chrom\tstart\tend\tname\tscore\tstrand\tgene_names\n"
-        "chr1\t150\t200\tJ1\t17\t+\tGENE1\n",
+        "chrom\tstart\tend\tname\tscore\tstrand\tgene_names\tunique_fragment_starts\tmax_overhang\tmedian_mapq\tmultimapping_fraction\ttumor_psi\tcaller_filter\n"
+        "chr1\t150\t200\tJ1\t17\t+\tGENE1\t8\t24\t60\t0.05\t0.20\tPASS\n",
     )
 
 
@@ -204,9 +204,11 @@ def test_end_to_end_build_forms_three_independent_chains(tmp_path: Path):
     rna_chain = next(r for r in chains if r["chain_type"] == "RNA_DRIVEN" and r["chain_status"] == "DUAL_GENERATOR_EXACT_PEPTIDE")
     assert {"ImmunoPepper", "moPepGen"}.issubset(set(rna_chain["source_tools"].split(";")))
     consensus = read_tsv(outputs["consensus"])
-    exact = next(r for r in consensus if r["translation_consensus_level"] == "EXACT_PEPTIDE")
+    exact = next(r for r in consensus if r["translation_consensus_level"] == "EPITOPE_OR_PEPTIDE_PRODUCT_ONLY")
     assert set(exact["independent_peptide_generators"].split(";")) == {"ImmunoPepper", "moPepGen"}
     assert exact["orf_consensus_status"] == "MULTI_GENERATOR_EXACT_PEPTIDE"
+    assert exact["final_evidence_tier"] == "R3"
+    assert "CAP_PARTIAL_OR_EPITOPE_ONLY_R3" in exact["cap_codes"]
     qc = read_tsv(outputs["qc"])
     assert not [row for row in qc if row["status"] == "FAIL"]
 

@@ -27,12 +27,14 @@ from .consensus import build_consensus, consensus_reason_conflicts
 from .evidence_chains import build_evidence_chains
 from .normal_background import parse_normal_coverage, parse_normal_junctions
 from .junction_queries import build_canonical_junction_queries
+from .junction_qc import JunctionReadQCThresholds
 from .projection import project_legacy
 from .schemas import OUTPUT_FILENAMES, PVACBIND_FASTA_MAP_FIELDS, SPLICE_PROVENANCE_SCHEMA_VERSION, TABLE_FIELDS
 from .sequence_queries import write_external_query_files
 
 _ID_FIELDS = {
     "junctions": "junction_id", "events": "splice_event_id",
+    "junction_read_qc": "junction_read_qc_id",
     "event_junction_links": "event_junction_link_id", "transcripts": "transcript_hypothesis_id",
     "orfs": "orf_id", "peptide_origins": "origin_peptide_id",
     "peptide_origin_links": "peptide_origin_link_id", "variants": "variant_id",
@@ -44,7 +46,7 @@ _ID_FIELDS = {
 }
 _SET_FIELDS = {
     "source_tools", "source_tool_versions", "source_files", "source_record_ids",
-    "junction_ids", "reference_junction_ids", "alternative_junction_ids", "affected_exons",
+    "junction_ids", "required_junction_ids", "reference_junction_ids", "alternative_junction_ids", "affected_exons",
     "transcript_ids", "independent_source_groups", "supporting_entity_ids", "supporting_evidence_ids",
     "limiting_reasons", "independent_evidence_groups", "independent_translation_generators",
     "independent_peptide_generators",
@@ -112,6 +114,7 @@ class SpliceLayer:
     disease_profile: str = "default"
     tables: dict[str, list[dict[str, str]]] = field(default_factory=lambda: defaultdict(list))
     input_files: list[dict[str, str]] = field(default_factory=list)
+    junction_qc_config: dict[str, str] = field(default_factory=dict)
 
     def extend(self, bundle: dict[str, list[dict[str, str]]] | None) -> None:
         if not bundle:
@@ -200,33 +203,34 @@ class SpliceLayer:
             if not jid or jid in linked:
                 continue
             event_id = splice_event_id(
-                genome_build=junction.get("genome_build", self.genome_build), event_type="NOVEL_JUNCTION",
+                genome_build=junction.get("genome_build", self.genome_build), event_type="JUNCTION_ONLY_UNCLASSIFIED",
                 strand=junction.get("strand", "."), junction_ids=[jid], gene="",
             )
             if event_id not in existing_events:
                 self.tables["events"].append({
                     "splice_event_id": event_id, "sample_id": self.sample_id,
                     "genome_build": junction.get("genome_build", self.genome_build),
-                    "event_type": "NOVEL_JUNCTION", "gene": "", "gene_id": "",
+                    "event_type": "JUNCTION_ONLY_UNCLASSIFIED", "gene": "", "gene_id": "",
                     "strand": junction.get("strand", "."), "junction_ids": jid,
-                    "reference_junction_ids": "", "alternative_junction_ids": jid, "affected_exons": "",
-                    "annotation_status": "JUNCTION_ONLY", "cryptic_exon_status": "UNASSESSED",
+                    "reference_junction_ids": "", "alternative_junction_ids": "", "affected_exons": "",
+                    "annotation_status": junction.get("annotation_status", "UNASSESSED") or "UNASSESSED",
+                    "cryptic_exon_status": "UNASSESSED",
                     "psi": "", "delta_psi": "", "qvalue": "", "outlier_score": "",
-                    "event_expression": "", "event_confidence": "JUNCTION_ONLY",
+                    "event_expression": "", "event_confidence": "JUNCTION_ONLY_UNCLASSIFIED",
                     "reference_path_status": "UNRESOLVED", "cohort_analysis_status": "NOT_APPLICABLE",
                     "source_tools": junction.get("source_tools", ""),
                     "source_tool_versions": junction.get("source_tool_versions", ""),
                     "source_files": junction.get("source_files", ""),
                     "source_record_ids": junction.get("source_record_ids", ""),
                     "provenance_record_count": junction.get("provenance_record_count", "1"),
-                    "event_resolution_status": "RESOLVED_JUNCTION_ONLY", "evidence_conflict_status": "NONE",
+                    "event_resolution_status": "RESOLVED_JUNCTION_ONLY_UNCLASSIFIED", "evidence_conflict_status": "NONE",
                 })
                 existing_events.add(event_id)
             self.tables["event_junction_links"].append({
                 "event_junction_link_id": link_id("EJL", event_id, jid, "junction_only"),
                 "splice_event_id": event_id, "junction_id": jid, "sample_id": self.sample_id,
                 "path_id": "junction_only", "path_role": "OBSERVED_JUNCTION", "edge_index": "1",
-                "junction_role": "ALTERNATIVE_EDGE", "source_tool": junction.get("source_tools", ""),
+                "junction_role": "UNCLASSIFIED_EDGE", "source_tool": junction.get("source_tools", ""),
                 "source_record_id": junction.get("source_record_ids", ""), "link_status": "RESOLVED",
             })
             linked.add(jid)
@@ -275,6 +279,9 @@ class SpliceLayer:
         causal = {x.get("causal_link_id", "") for x in self.tables.get("causal_links", [])}
         queries = {x.get("query_id", "") for x in self.tables.get("sequence_queries", [])}
         checks = {
+            "junction_read_qc_missing_junction": sum(
+                1 for r in self.tables.get("junction_read_qc", []) if r.get("junction_id") not in junctions
+            ),
             "event_junction_links_missing_event": sum(1 for r in self.tables.get("event_junction_links", []) if r.get("splice_event_id") not in events),
             "event_junction_links_missing_junction": sum(1 for r in self.tables.get("event_junction_links", []) if r.get("junction_id") not in junctions),
             "transcripts_missing_event": sum(1 for r in self.tables.get("transcripts", []) if r.get("splice_event_id") not in events),
@@ -298,6 +305,9 @@ class SpliceLayer:
                 "detail": "Canonical junctions require an explicit + or - strand for production use.",
             },
             {"metric": "junction_count", "value": str(len(junctions)), "status": "INFO", "detail": "Canonical junction entities."},
+            {"metric": "junction_read_qc_pass", "value": str(sum(1 for r in self.tables.get("junction_read_qc", []) if r.get("qc_status") == "PASS")), "status": "INFO", "detail": "Source-level junction records eligible to donate RNA support."},
+            {"metric": "junction_read_qc_incomplete", "value": str(sum(1 for r in self.tables.get("junction_read_qc", []) if r.get("qc_status") == "INCOMPLETE")), "status": "INFO", "detail": "Source-level junction records missing required QC measurements; they cannot donate RNA support."},
+            {"metric": "junction_read_qc_fail", "value": str(sum(1 for r in self.tables.get("junction_read_qc", []) if r.get("qc_status") == "FAIL")), "status": "INFO", "detail": "Source-level junction records that failed at least one QC gate."},
             {"metric": "splice_event_count", "value": str(len(events)), "status": "INFO", "detail": "Biological splice event entities."},
             {"metric": "transcript_hypothesis_count", "value": str(len(transcripts)), "status": "INFO", "detail": "Transcript hypotheses."},
             {"metric": "orf_count", "value": str(len(orfs)), "status": "INFO", "detail": "ORF/translated segment entities."},
@@ -348,7 +358,7 @@ class SpliceLayer:
         outputs.update(self.write_external_queries(out))
         manifest = {
             "schema_version": SPLICE_PROVENANCE_SCHEMA_VERSION,
-            "software_version": "0.5.1", "sample_id": self.sample_id,
+            "software_version": "0.5.2-p0", "sample_id": self.sample_id,
             "genome_build": self.genome_build, "disease_profile": self.disease_profile,
             "evidence_chains": {
                 "RNA_DRIVEN": "exact RNA junction + exact event/peptide provenance; ImmunoPepper and moPepGen are independent generator groups",
@@ -366,7 +376,10 @@ class SpliceLayer:
                 "pvacbind_mapping": "exact_fasta_index_only",
                 "negative_normal_evidence_requires_coverage": True,
                 "k4neo_negative_is_not_locus_coverage_negative": True,
+                "rna_junction_support_requires_explicit_qc_pass": True,
+                "peptide_support_requires_origin_specific_junctions": True,
             },
+            "junction_read_qc": dict(self.junction_qc_config),
             "inputs": self.input_files,
             "outputs": {key: {"path": path.name, "sha256": file_sha256(path)} for key, path in outputs.items() if path.is_file()},
             "counts": {key: len(value) for key, value in self.tables.items() if isinstance(value, list)},
@@ -435,9 +448,25 @@ def build_splice_provenance_layer(
     k4neo_license_accepted: bool = False,
     critical_tissues: Iterable[str] | None = None,
     tool_versions: dict[str, str] | None = None,
+    junction_qc_policy: str = "complete",
+    min_junction_unique_reads: int = 3,
+    min_junction_unique_fragment_starts: int = 2,
+    min_junction_overhang: int = 10,
+    min_junction_mapping_quality: float = 20.0,
+    max_junction_multimapping_fraction: float = 0.20,
+    min_junction_tumor_psi: float = 0.05,
     strict: bool = False,
 ) -> dict[str, Path]:
     versions = tool_versions or {}
+    junction_qc_thresholds = JunctionReadQCThresholds(
+        min_unique_split_reads=min_junction_unique_reads,
+        min_unique_fragment_starts=min_junction_unique_fragment_starts,
+        min_overhang=min_junction_overhang,
+        min_mapping_quality=min_junction_mapping_quality,
+        max_multimapping_fraction=max_junction_multimapping_fraction,
+        min_tumor_psi=min_junction_tumor_psi,
+        policy=junction_qc_policy,
+    )
     if irfinder and str(irfinder_coordinate_system).strip().upper() in {"", "UNSPECIFIED", "AUTO"}:
         raise ValueError("IRFinder-S inputs require an explicit --irfinder-coordinate-system declaration")
     required_tools: list[str] = []
@@ -463,6 +492,15 @@ def build_splice_provenance_layer(
     out = Path(outdir)
     out.mkdir(parents=True, exist_ok=True)
     layer = SpliceLayer(sample_id=sample_id, genome_build=genome_build, disease_profile=disease_profile)
+    layer.junction_qc_config = {
+        "policy": junction_qc_thresholds.policy,
+        "min_unique_split_reads": str(junction_qc_thresholds.min_unique_split_reads),
+        "min_unique_fragment_starts": str(junction_qc_thresholds.min_unique_fragment_starts),
+        "min_overhang": str(junction_qc_thresholds.min_overhang),
+        "min_mapping_quality": f"{junction_qc_thresholds.min_mapping_quality:g}",
+        "max_multimapping_fraction": f"{junction_qc_thresholds.max_multimapping_fraction:g}",
+        "min_tumor_psi": f"{junction_qc_thresholds.min_tumor_psi:g}",
+    }
     if base_layer_dir:
         base = Path(base_layer_dir)
         manifest_path = base / OUTPUT_FILENAMES["manifest"]
@@ -487,7 +525,8 @@ def build_splice_provenance_layer(
             junctions, sample_id=sample_id, source_tool="RegTools", source_tool_version=versions.get("RegTools", "UNASSESSED"),
             source_assay_id=junction_source_assay_id,
             genome_build=genome_build, coordinate_system=junction_coordinate_system,
-            annotation_gtf=annotation_gtf, strict=strict,
+            annotation_gtf=annotation_gtf, junction_qc_thresholds=junction_qc_thresholds,
+            strict=strict,
         )
         if annotation_gtf:
             layer.register_input(annotation_gtf, role="matched_transcript_annotation", tool="GTF")
@@ -497,7 +536,8 @@ def build_splice_provenance_layer(
         layer.extend(parse_junction_source(
             star_junctions, sample_id=sample_id, source_tool="STAR-SJ", source_tool_version=versions.get("STAR", "UNASSESSED"),
             source_assay_id=star_junction_source_assay_id,
-            genome_build=genome_build, coordinate_system="star_sj", strict=strict,
+            genome_build=genome_build, coordinate_system="star_sj",
+            junction_qc_thresholds=junction_qc_thresholds, strict=strict,
         ))
     for path in _as_paths(spladder_gff3):
         layer.register_input(path, role="splice_event_graph", tool="SplAdder", version=versions.get("SplAdder", "UNASSESSED"))

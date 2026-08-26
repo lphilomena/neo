@@ -4,6 +4,8 @@ from __future__ import annotations
 from collections import defaultdict
 
 from neoag.splice.identifiers import stable_id
+from neoag.splice.junction_qc import passing_junctions
+from neoag.splice.normal_background import assessment_is_critical, assessment_is_detected
 
 _RNA_GENERATORS = {"ImmunoPepper", "moPepGen"}
 _CAUSAL_PRIORITY = {
@@ -39,12 +41,18 @@ def build_consensus(tables: dict[str, list[dict[str, str]]], *, sample_id: str) 
     links_by_event: dict[str, set[str]] = defaultdict(set)
     for row in tables.get("event_junction_links", []):
         links_by_event[row.get("splice_event_id", "")].add(row.get("junction_id", ""))
-    exact_rna_junctions = {
+    exact_rna_evidence_junctions = {
         row.get("entity_id", "") for row in tables.get("tool_evidence", [])
         if row.get("evidence_group") == "RNA_JUNCTION"
         and row.get("resolution_status", "") == "RESOLVED_EXACT"
         and _resolved_evidence(row)
     }
+    qc_passing_junctions = passing_junctions(tables)
+    exact_rna_junctions = exact_rna_evidence_junctions & qc_passing_junctions
+    qc_status_by_junction: dict[str, set[str]] = defaultdict(set)
+    for row in tables.get("junction_read_qc", []):
+        if row.get("junction_id"):
+            qc_status_by_junction[row["junction_id"]].add(row.get("qc_status", "MISSING"))
     rna_sources_by_junction: dict[str, set[str]] = defaultdict(set)
     for row in tables.get("tool_evidence", []):
         if row.get("entity_id", "") in exact_rna_junctions and row.get("evidence_group") == "RNA_JUNCTION" and _resolved_evidence(row):
@@ -61,6 +69,7 @@ def build_consensus(tables: dict[str, list[dict[str, str]]], *, sample_id: str) 
             evidence_by_entity.get(transcript.get("transcript_hypothesis_id", ""), set())
         )
     orfs = {row.get("orf_id", ""): row for row in tables.get("orfs", [])}
+    events = {row.get("splice_event_id", ""): row for row in tables.get("events", [])}
     origins = tables.get("peptide_origins", [])
     presentations_by_origin: dict[str, list[dict[str, str]]] = defaultdict(list)
     for row in tables.get("presentation", []):
@@ -123,13 +132,33 @@ def build_consensus(tables: dict[str, list[dict[str, str]]], *, sample_id: str) 
         groups = set(event_groups.get(event_id, set()))
         groups.update(evidence_by_entity.get(oid, set()))
         groups.update(evidence_by_entity.get(por, set()))
-        event_jids = links_by_event.get(event_id, set()) | _split(origin.get("junction_ids", ""))
-        has_exact_rna = bool(event_jids & exact_rna_junctions)
+        event_jids = links_by_event.get(event_id, set())
+        origin_jids = _split(origin.get("junction_ids", ""))
+        explicit_required_jids = _split(origin.get("required_junction_ids", ""))
+        event_alternative_jids = _split(events.get(event_id, {}).get("alternative_junction_ids", ""))
+        required_jids = explicit_required_jids or origin_jids or event_alternative_jids
+        # A peptide may only borrow RNA support from the exact junction(s) used
+        # by its own origin.  Support for another edge in the same event is not
+        # transferable.
+        has_exact_rna = bool(required_jids) and required_jids <= exact_rna_junctions
+        required_qc_states = {
+            jid: ("PASS" if jid in qc_passing_junctions else (
+                "FAIL" if "FAIL" in qc_status_by_junction.get(jid, set()) else
+                "INCOMPLETE" if "INCOMPLETE" in qc_status_by_junction.get(jid, set()) else "MISSING"
+            ))
+            for jid in required_jids
+        }
+        required_qc_status = (
+            "PASS" if required_qc_states and all(x == "PASS" for x in required_qc_states.values())
+            else "FAIL" if any(x == "FAIL" for x in required_qc_states.values())
+            else "INCOMPLETE" if any(x == "INCOMPLETE" for x in required_qc_states.values())
+            else "MISSING"
+        )
         independent_rna_sources = {
-            source for jid in event_jids for source in rna_sources_by_junction.get(jid, set()) if source
+            source for jid in required_jids for source in rna_sources_by_junction.get(jid, set()) if source
         }
         causal_rows = list(causal_by_event.get(event_id, []))
-        for jid in event_jids:
+        for jid in required_jids:
             causal_rows.extend(causal_by_junction.get(jid, []))
         seen_causal: set[str] = set()
         causal_rows = [r for r in causal_rows if not (r.get("causal_link_id", "") in seen_causal or seen_causal.add(r.get("causal_link_id", "")))]
@@ -159,19 +188,20 @@ def build_consensus(tables: dict[str, list[dict[str, str]]], *, sample_id: str) 
             translation_level = "EXACT_ORF"
         elif orf and orf.get("orf_validity_status") not in {"", "INVALID", "UNRESOLVED"}:
             orf_grade = "O1"
-            translation_level = "EXACT_PEPTIDE" if len(exact_peptide_generators) >= 2 else "SINGLE_GENERATOR"
+            validity = orf.get("orf_validity_status", "").upper()
+            if validity in {"VALID_EPITOPE_PRODUCT_ONLY", "VALID_PEPTIDE_PRODUCT_ONLY"}:
+                translation_level = "EPITOPE_OR_PEPTIDE_PRODUCT_ONLY"
+            elif validity == "PARTIAL_TRANSLATED_SEGMENT":
+                translation_level = "PARTIAL_TRANSLATED_SEGMENT"
+            else:
+                translation_level = "EXACT_PEPTIDE" if len(exact_peptide_generators) >= 2 else "SINGLE_GENERATOR"
         else:
             orf_grade = "O0"
             translation_level = "UNRESOLVED"
 
         normal_rows: list[dict[str, str]] = []
-        for key in [por, event_id, *event_jids]:
+        for key in [por, event_id, *required_jids]:
             normal_rows.extend(normal_by_entity.get(key, []))
-        detected_statuses = {
-            "DETECTED_MATCHED_NORMAL", "DETECTED_CRITICAL_TISSUE",
-            "DETECTED_BROAD_NORMAL", "LOW_LEVEL_NONCRITICAL_NORMAL",
-            "NORMAL_DETECTED",
-        }
         seen: set[str] = set()
         normal_rows = [
             row for row in normal_rows
@@ -180,15 +210,8 @@ def build_consensus(tables: dict[str, list[dict[str, str]]], *, sample_id: str) 
                 or seen.add(row.get("normal_background_id", ""))
             )
         ]
-        detected_critical = any(
-            row.get("assessment_status") == "DETECTED_CRITICAL_TISSUE"
-            or (
-                row.get("assessment_status") == "NORMAL_DETECTED"
-                and row.get("critical_tissue", "").lower() == "true"
-            )
-            for row in normal_rows
-        )
-        detected_any = any(row.get("assessment_status") in detected_statuses for row in normal_rows)
+        detected_critical = any(assessment_is_critical(row) for row in normal_rows)
+        detected_any = any(assessment_is_detected(row) for row in normal_rows)
         adequate_negative_sources = {
             (row.get("normal_source_type", ""), row.get("normal_source", ""))
             for row in normal_rows if row.get("assessment_status") == "NOT_DETECTED_ADEQUATE_COVERAGE"
@@ -245,6 +268,12 @@ def build_consensus(tables: dict[str, list[dict[str, str]]], *, sample_id: str) 
             caps.append("CAP_K4NEO_ONLY_R3" if kmer_negative_sources else "CAP_NORMAL_BACKGROUND_INCOMPLETE_R3")
         if event_grade == "E0":
             caps.append("CAP_SPLICE_EVENT_RNA_UNCONFIRMED_R3")
+        if required_qc_status != "PASS":
+            caps.append("CAP_REQUIRED_JUNCTION_QC_NOT_PASS_R3")
+        if orf.get("orf_validity_status", "").upper() in {
+            "VALID_EPITOPE_PRODUCT_ONLY", "VALID_PEPTIDE_PRODUCT_ONLY", "PARTIAL_TRANSLATED_SEGMENT",
+        }:
+            caps.append("CAP_PARTIAL_OR_EPITOPE_ONLY_R3")
         if presentation_grade == "P0":
             caps.append("CAP_PRESENTATION_UNASSESSED_R3")
 
@@ -260,6 +289,7 @@ def build_consensus(tables: dict[str, list[dict[str, str]]], *, sample_id: str) 
             "CAP_NORMAL_BACKGROUND_INCOMPLETE_R3", "CAP_K4NEO_ONLY_R3",
             "CAP_SPLICE_EVENT_RNA_UNCONFIRMED_R3", "CAP_PRESENTATION_UNASSESSED_R3",
             "CAP_PEPTIDE_NOVELTY_UNRESOLVED_R3",
+            "CAP_REQUIRED_JUNCTION_QC_NOT_PASS_R3", "CAP_PARTIAL_OR_EPITOPE_ONLY_R3",
         }
         if any(code in caps for code in r3_caps) and tier in {"R1", "R2"}:
             tier = "R3"
@@ -280,12 +310,15 @@ def build_consensus(tables: dict[str, list[dict[str, str]]], *, sample_id: str) 
             "independent_rna_sources": ";".join(sorted(independent_rna_sources)),
             "independent_translation_generators": ";".join(sorted(exact_orf_generators)),
             "independent_peptide_generators": ";".join(sorted(exact_peptide_generators)),
+            "required_junction_ids": ";".join(sorted(required_jids)),
+            "required_junction_qc_status": required_qc_status,
             "event_consensus_status": "DNA_CAUSAL_AND_RNA_SUPPORTED" if has_causal and has_exact_rna else ("RNA_EVENT_SUPPORTED" if has_exact_rna else "RNA_EVENT_UNCONFIRMED"),
             "orf_consensus_status": "MULTI_GENERATOR_EXACT_ORF" if len(exact_orf_generators) >= 2 else ("MULTI_GENERATOR_EXACT_PEPTIDE" if len(exact_peptide_generators) >= 2 else "SINGLE_GENERATOR"),
             "normal_background_status": normal_status, "final_evidence_tier": tier,
             "priority_cap": f"R{cap}" if cap else "", "consensus_reason": (
                 f"event={event_grade}; orf={orf_grade}; translation={translation_level}; normal={normal_grade}; "
-                f"presentation={presentation_grade}; causal={causal_status}; generators={','.join(sorted(all_generators)) or 'NONE'}"
+                f"presentation={presentation_grade}; causal={causal_status}; required_junction_qc={required_qc_status}; "
+                f"generators={','.join(sorted(all_generators)) or 'NONE'}"
             ),
             "hard_fail_codes": ";".join(hard), "cap_codes": ";".join(caps),
         })

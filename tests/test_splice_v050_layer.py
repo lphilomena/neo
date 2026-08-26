@@ -82,9 +82,9 @@ def test_canonical_junction_queries_use_exact_peptide_origins_and_strand(tmp_pat
 def _inputs(tmp_path: Path) -> dict[str, Path]:
     reg = _write(
         tmp_path / "regtools.tsv",
-        "chrom\tstart\tend\tname\tscore\tstrand\tgene_names\n"
-        "chr1\t150\t200\tJ1\t17\t+\tGENE1\n"
-        "chr1\t500\t600\tHIGH_OTHER\t9000\t+\tGENE1\n",
+        "chrom\tstart\tend\tname\tscore\tstrand\tgene_names\tunique_fragment_starts\tmax_overhang\tmedian_mapq\tmultimapping_fraction\ttumor_psi\tcaller_filter\n"
+        "chr1\t150\t200\tJ1\t17\t+\tGENE1\t8\t24\t60\t0.05\t0.20\tPASS\n"
+        "chr1\t500\t600\tHIGH_OTHER\t9000\t+\tGENE1\t100\t30\t60\t0.01\t0.40\tPASS\n",
     )
     gff = _write(
         tmp_path / "merge_graphs_exon_skip_C3.confirmed.gff3",
@@ -518,8 +518,10 @@ def test_rna_assay_identity_collapses_same_source_and_separates_independent_sour
         "orfs": [{"orf_id": "ORF|1", "splice_event_id": "SEV|1", "protein_sequence_sha256": "abc",
                   "frame_status": "IN_FRAME", "orf_validity_status": "VALID", "source_generator": "G1"}],
         "peptide_origins": [{"origin_peptide_id": "POR|1", "peptide_id": "PEP|1", "orf_id": "ORF|1",
-                             "splice_event_id": "SEV|1", "crosses_junction": "true", "contains_novel_aa": "true"}],
+                             "splice_event_id": "SEV|1", "required_junction_ids": "SJ|1",
+                             "crosses_junction": "true", "contains_novel_aa": "true"}],
         "presentation": [], "normal_background": [],
+        "junction_read_qc": [{"junction_id": "SJ|1", "qc_status": "PASS", "resolution_status": "RESOLVED_EXACT"}],
         "tool_evidence": [
             {"entity_id": "SJ|1", "evidence_group": "RNA_JUNCTION", "source_assay_id": "BAM_SHA_1",
              "verified_value": "5", "resolution_status": "RESOLVED_EXACT"},

@@ -34,6 +34,13 @@ def build_parser() -> argparse.ArgumentParser:
     build.add_argument("--junctions")
     build.add_argument("--junction-coordinate-system", default="auto")
     build.add_argument("--junction-source-assay-id", default="")
+    build.add_argument("--junction-qc-policy", choices=["complete", "reads_only"], default="complete")
+    build.add_argument("--min-junction-unique-reads", type=int, default=3)
+    build.add_argument("--min-junction-unique-fragment-starts", type=int, default=2)
+    build.add_argument("--min-junction-overhang", type=int, default=10)
+    build.add_argument("--min-junction-mapping-quality", type=float, default=20.0)
+    build.add_argument("--max-junction-multimapping-fraction", type=float, default=0.20)
+    build.add_argument("--min-junction-tumor-psi", type=float, default=0.05)
     build.add_argument("--annotation-gtf", help="Matched GTF for exact transcript-boundary strand resolution")
     build.add_argument("--star-junctions")
     build.add_argument("--star-junction-source-assay-id", default="")
@@ -129,6 +136,13 @@ def main(argv: list[str] | None = None) -> int:
             junction_query_flank=args.junction_query_flank, junctions=args.junctions,
             junction_coordinate_system=args.junction_coordinate_system,
             junction_source_assay_id=args.junction_source_assay_id,
+            junction_qc_policy=args.junction_qc_policy,
+            min_junction_unique_reads=args.min_junction_unique_reads,
+            min_junction_unique_fragment_starts=args.min_junction_unique_fragment_starts,
+            min_junction_overhang=args.min_junction_overhang,
+            min_junction_mapping_quality=args.min_junction_mapping_quality,
+            max_junction_multimapping_fraction=args.max_junction_multimapping_fraction,
+            min_junction_tumor_psi=args.min_junction_tumor_psi,
             annotation_gtf=args.annotation_gtf,
             star_junctions=args.star_junctions,
             star_junction_source_assay_id=args.star_junction_source_assay_id,
