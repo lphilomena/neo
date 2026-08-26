@@ -108,6 +108,13 @@ def test_wrapper_uses_v2_baseline_and_v3_consensus_and_passes_production_inputs(
     assert "UNIQUE_JUNCTION_READS" in wrapper_text
     assert "TOTAL_JUNCTION_COVERAGE" in wrapper_text
     assert "PSI" in wrapper_text
+    assert "verify_ccf_recalculation_rules" in wrapper_text
+    assert "verify_ccf_output_fields" in wrapper_text
+    assert "ccf_ci_low" in wrapper_text and "ccf_ci_high" in wrapper_text
+    assert "local_cnv_status" in wrapper_text
+    assert "multiplicity_best" in wrapper_text
+    assert "normal_contamination_status" in wrapper_text
+    assert "clonal_compatible" in wrapper_text
 
 
 def test_wrapper_rejects_multiple_rna_input_modes(tmp_path):

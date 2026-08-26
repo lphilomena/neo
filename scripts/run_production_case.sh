@@ -225,6 +225,26 @@ assert mhc2["mutation_position_role"] == "STRUCTURAL_ROLE_UNCERTAIN"'
   fi
 }
 
+verify_ccf_recalculation_rules() {
+  # Fail early when a deployed checkout lacks the production CCF contract:
+  # allele-specific local CN, uncertainty propagation and conservative wording.
+  local check='from neoag.ccf_v2 import _ci_for_vaf, clonality_status, estimate_ccf_raw, find_cn
+profile = {"ccf_lite": {"clonal_threshold": 0.8, "subclonal_threshold": 0.3}}
+cn = find_cn("chr7", 150, [{"chrom": "7", "start": "1", "end": "1000", "total_cn": "2", "major_cn": "1", "minor_cn": "1"}])
+assert cn["matched"] and cn["major_cn"] == "1.0000" and cn["minor_cn"] == "1.0000"
+ccf = estimate_ccf_raw(0.458, 0.92, 2.0, 1.0)
+assert abs(ccf - 0.9956521739) < 1e-6
+lo, hi = _ci_for_vaf(0.458, 500)
+assert 0 < lo < 0.458 < hi < 1
+status = clonality_status(ccf, "high", profile, 0.85, 1.0)
+assert status == "clonal_compatible"
+assert status != "clonal_like"'
+  if ! PYTHONPATH="$PROJECT_ROOT/src" "$PY" -c "$check"; then
+    echo "CCF purity/CN/multiplicity/interval preflight failed; update NeoAg before production execution" >&2
+    return 1
+  fi
+}
+
 verify_mtwt_output_fields() {
   local ranked="$1"
   [[ -s "$ranked" ]] || return 0
@@ -250,6 +270,42 @@ if missing:
   PYTHONPATH="$PROJECT_ROOT/src" "$PY" -c "$check" "$ranked"
 }
 
+verify_ccf_output_fields() {
+  local ccf="$1"
+  [[ -s "$ccf" ]] || { echo "CCF output missing: $ccf" >&2; return 1; }
+  local check='import csv, sys
+path = sys.argv[1]
+required = {
+    "ccf_estimate", "ccf_ci_low", "ccf_ci_high", "ccf_interval_method",
+    "total_cn", "major_cn", "minor_cn", "local_cnv_status",
+    "multiplicity_best", "multiplicity_candidates", "multiplicity_confidence",
+    "mutation_multiplicity_source", "normal_contamination_status", "ccf_interpretation",
+}
+problems = []
+with open(path, encoding="utf-8", newline="") as handle:
+    reader = csv.DictReader(handle, delimiter="\t")
+    missing_header = sorted(required - set(reader.fieldnames or []))
+    if missing_header:
+        raise SystemExit("CCF output missing required columns: " + ",".join(missing_header))
+    for line_no, row in enumerate(reader, start=2):
+        source = " ".join(str(row.get(k, "")) for k in ("event_type", "mutation_source", "ccf_method")).upper()
+        is_dna_small_variant = any(x in source for x in ("SNV", "INDEL", "MISSENSE", "FRAMESHIFT")) and "RNA_ONLY" not in source
+        if not is_dna_small_variant or not str(row.get("tumor_vaf", "")).strip():
+            continue
+        absent = [field for field in ("ccf_estimate", "local_cnv_status", "multiplicity_best", "normal_contamination_status") if not str(row.get(field, "")).strip()]
+        if str(row.get("tumor_depth", "")).strip():
+            absent.extend(field for field in ("ccf_ci_low", "ccf_ci_high") if not str(row.get(field, "")).strip())
+        if str(row.get("ccf_status", "")).strip() == "clonal_like":
+            absent.append("conservative_clonality_interpretation")
+        if row.get("normal_contamination_status") == "NOT_ASSESSED" and row.get("ccf_status") == "clonal_compatible":
+            absent.append("matched_normal_review_before_clonal_compatibility")
+        if absent:
+            problems.append("line {}: {}".format(line_no, ",".join(dict.fromkeys(absent))))
+if problems:
+    raise SystemExit("CCF production validation failed: " + "; ".join(problems[:20]))'
+  PYTHONPATH="$PROJECT_ROOT/src" "$PY" -c "$check" "$ccf"
+}
+
 verify_splice_prefilter_outputs() {
   local funnel="$1" decisions="$2"
   [[ -s "$funnel" ]] || { echo "splice prefilter funnel missing: $funnel" >&2; return 1; }
@@ -272,6 +328,7 @@ verify_splice_prefilter_outputs() {
 cd "$PROJECT_ROOT"
 verify_event_track_precedence
 verify_mtwt_interpretation_rules
+verify_ccf_recalculation_rules
 mkdir -p "$OUTDIR/manifest" "$OUTDIR/logs" "$OUTDIR/tools"
 
 if [[ -f "$PROJECT_ROOT/conf/tools.env.sh" ]]; then
@@ -598,6 +655,7 @@ PYTHONPATH="$PROJECT_ROOT/src" "$PY" -m neoag.production_runner \
 
 verify_mtwt_output_fields "$OUTDIR/final/scoring/ranked_peptides.evidence_consensus.tsv"
 if [[ -d "$OUTDIR/final" ]]; then
+  verify_ccf_output_fields "$OUTDIR/final/clonality/ccf_2.tsv"
   verify_splice_prefilter_outputs \
     "$OUTDIR/final/parsed/splice_prefilter_funnel.tsv" \
     "$OUTDIR/final/parsed/splice_prefilter_decisions.tsv"
