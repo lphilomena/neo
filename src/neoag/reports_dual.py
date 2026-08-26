@@ -3657,6 +3657,61 @@ def _patient_safety_dimensions(row: Mapping[str, Any]) -> str:
     ])
 
 
+def _patient_fusion_boundary_evidence(row: Mapping[str, Any], bundle: ReportBundle) -> str:
+    if _patient_track(row) != "Fusion":
+        return ""
+    peptide = _patient_value(row, "peptide", default="")
+    left_gene = _patient_value(row, "fusion_left_gene", default="")
+    right_gene = _patient_value(row, "fusion_right_gene", default="")
+    if not left_gene or not right_gene:
+        genes = _patient_value(row, "gene", "event_name", default="").split("::", 1)
+        left_gene = left_gene or (genes[0] if genes else "5′伙伴")
+        right_gene = right_gene or (genes[1] if len(genes) > 1 else "3′伙伴")
+    left = _patient_value(row, "fusion_left_peptide", default="")
+    right = _patient_value(row, "fusion_right_peptide", default="")
+    position = _patient_value(
+        row, "junction_position_in_peptide_1based", "junction_offset_in_peptide", default=""
+    )
+    crosses = _patient_value(row, "crosses_junction", default="UNASSESSED").upper()
+    if crosses in {"NO", "FALSE", "0"}:
+        mapping = "该肽不跨融合连接点，不归类为融合新抗原；仅可按肿瘤相关/异常表达抗原另行评估"
+    elif crosses in {"YES", "TRUE", "1"} and left and right and position:
+        mapping = f"{left_gene}来源 {left}｜融合连接点（肽内位置 {position}）｜{right_gene}来源 {right}；两侧均含氨基酸，已证明跨断点"
+    elif crosses in {"YES", "TRUE", "1"}:
+        mapping = "上游标记为跨断点，但缺少肽内连接位置或左右氨基酸映射，尚不能独立证明融合特异性"
+    else:
+        mapping = "跨断点状态未评估；在建立肽内连接位置和左右来源前不得称为融合新抗原"
+
+    transcript = _patient_value(row, "transcript_hypothesis_id", "transcript_id", default="未建立")
+    orf = _patient_value(row, "orf_id", default="未建立")
+    alternatives: list[tuple[str, str, str]] = []
+    event_keys = set(_patient_event_keys(row))
+    for candidate in bundle.peptides:
+        if event_keys and not event_keys.intersection(_patient_event_keys(candidate)):
+            continue
+        candidate_peptide = _patient_value(candidate, "peptide", default="")
+        if not candidate_peptide:
+            continue
+        item = (
+            candidate_peptide,
+            _patient_value(candidate, "transcript_hypothesis_id", "transcript_id", default="未建立"),
+            _patient_value(candidate, "orf_id", default="未建立"),
+        )
+        if item not in alternatives:
+            alternatives.append(item)
+    near_variants = sorted({item[0] for item in alternatives if len(item[0]) == len(peptide) and sum(a != b for a, b in zip(item[0], peptide)) <= 1})
+    if len(near_variants) > 1:
+        comparison = (
+            "同一事件存在近似肽序列假设 " + "/".join(near_variants)
+            + "；必须按患者精确融合转录本、阅读框和ORF逐一归因，未完成前不得视为独立融合新抗原"
+        )
+    elif alternatives:
+        comparison = f"当前候选回链：transcript={transcript}，ORF={orf}；同事件共{len(alternatives)}个肽/转录本/ORF组合"
+    else:
+        comparison = f"当前候选回链：transcript={transcript}，ORF={orf}"
+    return mapping + "；" + comparison
+
+
 def _patient_event_evidence_and_next_step(
     row: Mapping[str, Any], bundle: ReportBundle, val_map: Mapping[str, Mapping[str, str]],
     *, compact_common: bool = False,
@@ -3677,6 +3732,7 @@ def _patient_event_evidence_and_next_step(
     elif compact_common and track == "Fusion" and not _patient_dna_sv_measurements(row):
         dna_evidence = ""
     disease_note = _patient_disease_anchor_note(row, bundle)
+    fusion_boundary = _patient_fusion_boundary_evidence(row, bundle)
     return (
         f"疾病知识：{disease_note}。" if disease_note else ""
     ) + (
@@ -3684,6 +3740,7 @@ def _patient_event_evidence_and_next_step(
         f"{dna_evidence + '。' if dna_evidence else ''}"
         f"RNA数据：{_patient_rna_measurements(row)}。"
         f"安全性分层：{_patient_safety_dimensions(row)}。"
+        f"{('融合肽断点证明：' + fusion_boundary + '。') if fusion_boundary else ''}"
         f"{_patient_dna_rna_interpretation(row) + '。' if _patient_dna_rna_interpretation(row) else ''}"
         f"{_patient_cross_site_rna(row) + '。' if _patient_cross_site_rna(row) else ''}"
         f"主要缺口：{gap_text}。"

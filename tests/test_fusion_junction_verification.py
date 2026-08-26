@@ -53,3 +53,17 @@ def test_verified_count_replaces_caller_count_without_losing_it():
     assert rows[0]["provided_rna_junction_reads"] == "7"
     assert rows[0]["rna_junction_reads"] == "1"
     assert rows[0]["junction_match_status"] == "BAM_VERIFIED"
+
+
+def test_breakpoint_windows_prove_residue_level_fusion_boundary():
+    rows = MODULE.breakpoint_window_records(
+        "ACDEFGHIKLMNPQRST", 5, left_gene="EWSR1", right_gene="WT1", lengths=(9,)
+    )
+    assert rows
+    assert all(row["crosses_junction"] == "yes" for row in rows)
+    assert all(row["fusion_left_peptide"] and row["fusion_right_peptide"] for row in rows)
+    assert all(
+        row["fusion_left_peptide"] + row["fusion_right_peptide"] == row["peptide"]
+        for row in rows
+    )
+    assert all("|" in row["fusion_junction_display"] for row in rows)

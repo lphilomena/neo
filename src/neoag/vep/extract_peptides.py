@@ -126,6 +126,14 @@ OUTPUT_FIELDS = [
     "fusion_window_type",
     "fusion_breakpoint_position_raw",
     "fusion_generation_method",
+    "junction_position_in_peptide_1based",
+    "fusion_left_gene",
+    "fusion_right_gene",
+    "fusion_left_peptide",
+    "fusion_right_peptide",
+    "fusion_junction_display",
+    "fusion_peptide_classification",
+    "fusion_orf_comparison_status",
 ]
 
 

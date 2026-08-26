@@ -3,7 +3,7 @@ import gzip
 import json
 from pathlib import Path
 
-from neoag.reports_dual import ReportBundle, _apply_patient_gene_expression, _augment_runtime_tool_provenance, _find_bam_input, _patient_conflict_summary, _patient_disease_background, _patient_dna_evidence, _patient_event_grade_counts, _patient_evidence_audit_rows, _patient_evidence_summary, _patient_event_change, _patient_expression_tpm_map, _patient_fusion_artifact_review, _patient_hla_loh_consensus, _patient_key_gaps, _patient_limitation, _patient_manual_review_rows, _patient_metric, _patient_presentation_metric, _patient_rna_measurements, _patient_rna_metric, _patient_safety_dimensions, _patient_safety_gap, _patient_tool_rows, _patient_track, _patient_validation, _replace_gene_ids, load_report_bundle, make_dual_reports, make_patient_report, make_technical_report
+from neoag.reports_dual import ReportBundle, _apply_patient_gene_expression, _augment_runtime_tool_provenance, _find_bam_input, _patient_conflict_summary, _patient_disease_background, _patient_dna_evidence, _patient_event_grade_counts, _patient_evidence_audit_rows, _patient_evidence_summary, _patient_event_change, _patient_expression_tpm_map, _patient_fusion_artifact_review, _patient_fusion_boundary_evidence, _patient_hla_loh_consensus, _patient_key_gaps, _patient_limitation, _patient_manual_review_rows, _patient_metric, _patient_presentation_metric, _patient_rna_measurements, _patient_rna_metric, _patient_safety_dimensions, _patient_safety_gap, _patient_tool_rows, _patient_track, _patient_validation, _replace_gene_ids, load_report_bundle, make_dual_reports, make_patient_report, make_technical_report
 from neoag.utils import write_tsv
 
 
@@ -1608,6 +1608,26 @@ def test_junction_safety_uses_exact_sequence_not_partner_expression():
     assert "精确新生序列" in partial_gap
     assert "213.994" not in partial_gap
     assert "18.0" not in partial_gap
+
+
+def test_fusion_boundary_report_shows_both_gene_sides_and_flags_alternative_orfs():
+    row = {
+        "event_id": "F1", "event_type": "Fusion", "gene": "EWSR1::WT1",
+        "peptide": "SSYGQQSEK", "crosses_junction": "yes",
+        "junction_position_in_peptide_1based": "4",
+        "fusion_left_gene": "EWSR1", "fusion_right_gene": "WT1",
+        "fusion_left_peptide": "SSYG", "fusion_right_peptide": "QQSEK",
+        "transcript_id": "FT1", "orf_id": "ORF1",
+    }
+    bundle = _bundle()
+    bundle.peptides = [
+        row,
+        {**row, "peptide": "SSYGQQSVK", "transcript_id": "FT2", "orf_id": "ORF2"},
+    ]
+    text = _patient_fusion_boundary_evidence(row, bundle)
+    assert "EWSR1来源 SSYG｜融合连接点（肽内位置 4）｜WT1来源 QQSEK" in text
+    assert "SSYGQQSEK/SSYGQQSVK" in text
+    assert "必须按患者精确融合转录本、阅读框和ORF逐一归因" in text
 
 
 def test_fusion_safety_dimensions_separate_direct_evidence_from_partner_expression():

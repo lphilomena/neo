@@ -111,6 +111,9 @@ def _base_peptide(pid: str, track: str) -> dict[str, str]:
             "transcript_hypothesis_id": "FT1",
             "crosses_junction": "true",
             "contains_novel_aa": "true",
+            "junction_position_in_peptide_1based": "4",
+            "fusion_left_peptide": "ABCD",
+            "fusion_right_peptide": "EFGH",
             "ccf_status": "RNA_ONLY_UNRESOLVED",
             "ccf_estimate": "NA",
         })
@@ -221,6 +224,16 @@ def test_fusion_complete_computational_chain_without_orthogonal_is_c2():
     assert result.track == "FUSION"
     assert result.tier == "C2"
     assert result.orthogonal_status == UNASSESSED
+
+
+def test_fusion_label_without_residue_boundary_mapping_is_not_supported():
+    row = _base_peptide("P7_missing_boundary", "FUSION")
+    row["junction_position_in_peptide_1based"] = ""
+    row["fusion_left_peptide"] = ""
+    row["fusion_right_peptide"] = ""
+    result = derive_source_chain_confidence(row, {})
+    assert result.tier == "C4"
+    assert "SC_FUSION_BOUNDARY_MAPPING_INCOMPLETE" in result.hard_failure_codes
 
 
 def test_fusion_rt_pcr_confirmation_promotes_to_c1():

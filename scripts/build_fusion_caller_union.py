@@ -326,6 +326,49 @@ def peptide_windows(sequence: str, lengths: tuple[int, ...] = (8, 9, 10, 11)) ->
     return list(dict.fromkeys(seq[start:start + length] for length in lengths for start in range(max(0, len(seq) - length + 1))))
 
 
+def breakpoint_window_records(
+    sequence: str,
+    breakpoint: int,
+    *,
+    left_gene: str = "",
+    right_gene: str = "",
+    lengths: tuple[int, ...] = (8, 9, 10, 11),
+) -> list[dict[str, str]]:
+    """Return peptide windows with at least one residue from each fusion side."""
+    seq = re.sub(r"[^ACDEFGHIKLMNPQRSTVWY]", "", str(sequence or "").upper())
+    if not seq or breakpoint <= 0 or breakpoint >= len(seq):
+        return []
+    records: list[dict[str, str]] = []
+    seen: set[tuple[str, int]] = set()
+    for length in lengths:
+        first_start = max(0, breakpoint - length + 1)
+        last_start = min(breakpoint - 1, len(seq) - length)
+        for start in range(first_start, last_start + 1):
+            peptide = seq[start:start + length]
+            left_count = breakpoint - start
+            if len(peptide) != length or not (1 <= left_count < length):
+                continue
+            key = (peptide, left_count)
+            if key in seen:
+                continue
+            seen.add(key)
+            left = peptide[:left_count]
+            right = peptide[left_count:]
+            records.append({
+                "peptide": peptide,
+                "crosses_junction": "yes",
+                "contains_novel_aa": "yes",
+                "junction_position_in_peptide_1based": str(left_count),
+                "fusion_left_gene": left_gene,
+                "fusion_right_gene": right_gene,
+                "fusion_left_peptide": left,
+                "fusion_right_peptide": right,
+                "fusion_junction_display": f"{left}|{right}",
+                "fusion_peptide_classification": "JUNCTION_SPANNING",
+            })
+    return records
+
+
 def targeted_rescue_rows(
     easyfuse_files: list[Path],
     *,
@@ -391,8 +434,15 @@ def targeted_rescue_rows(
                 "source_tools": "TARGETED_RESCUE,EasyFuseRaw" + (",STAR-Chimeric" if star_support > 0 else ""),
             })
             events.append(enrich_event_layers(base))
-            windows = peptide_windows(row.get("neo_peptide_sequence", ""))
-            for peptide in windows:
+            breakpoint = int(to_float(row.get("neo_peptide_sequence_bp"), 0.0))
+            side_genes = gene_pair_display.split("::", 1)
+            windows = breakpoint_window_records(
+                row.get("neo_peptide_sequence", ""), breakpoint,
+                left_gene=side_genes[0] if side_genes else "",
+                right_gene=side_genes[1] if len(side_genes) > 1 else "",
+            )
+            for window in windows:
+                peptide = window["peptide"]
                 for allele in hla:
                     pbase = {field: "" for field in PEPTIDE_FIELDS}
                     pbase.update({
@@ -409,8 +459,9 @@ def targeted_rescue_rows(
                         "source_tool": "TARGETED_RESCUE",
                         "source_file": str(source),
                         "source_record_id": row.get("rescue_id", ""),
-                        "crosses_junction": "true",
-                        "contains_novel_aa": "true",
+                        **window,
+                        "transcript_id": row.get("ftid", ""),
+                        "fusion_orf_comparison_status": "TRACEABLE_TO_CALLER_TRANSCRIPT" if row.get("ftid") else "ORF_TRANSCRIPT_UNASSESSED",
                         "rna_junction_reads": reads,
                         "rna_junction_source": rescue_status,
                         "binding_rank": "99",
@@ -530,44 +581,48 @@ def generic_caller_rows(path: Path, tool: str, sample_id: str, profile: str, hla
         sequence = re.sub(r"[^ACDEFGHIKLMNPQRSTVWY]", "", sequence)
         explicit_hla = first(row, ["hla", "hla_allele", "allele"], "")
         row_hla = read_hla_text(explicit_hla) or hla
-        windows: list[str] = []
+        window_records: list[dict[str, str]] = []
+        breakpoint = int(to_float(first(row, ["neo_peptide_sequence_bp", "junction_position_in_peptide_1based", "junction_offset_in_peptide"], "0"), 0.0))
         if AA_RE.fullmatch(sequence or ""):
-            if 8 <= len(sequence) <= 12:
-                windows = [sequence]
+            if breakpoint:
+                window_records = breakpoint_window_records(
+                    sequence, breakpoint, left_gene=left_gene, right_gene=right_gene,
+                )
             else:
-                windows = list(dict.fromkeys(sequence[start:start + length] for length in (8, 9, 10, 11) for start in range(max(0, len(sequence) - length + 1))))
-        for peptide in windows:
+                provided = [sequence] if 8 <= len(sequence) <= 12 else peptide_windows(sequence)
+                window_records = [{
+                    "peptide": peptide,
+                    "crosses_junction": "UNASSESSED",
+                    "contains_novel_aa": "UNASSESSED",
+                    "fusion_left_gene": left_gene,
+                    "fusion_right_gene": right_gene,
+                    "fusion_peptide_classification": "BOUNDARY_UNASSESSED",
+                } for peptide in provided]
+        for window in window_records:
+            peptide = window["peptide"]
             for allele in row_hla:
                 pbase = {field: "" for field in PEPTIDE_FIELDS}
                 pbase.update({
                     "peptide_id": safe_id(f"{event_id}|{allele}|{peptide}"), "event_id": event_id,
                     "sample_id": sample_id, "event_type": "Fusion", "gene": pair,
                     "peptide": peptide, "hla_allele": allele, "mhc_class": "I",
-                    "source_tool": tool, "source_file": str(path), "crosses_junction": "true",
-                    "contains_novel_aa": "true", "rna_junction_reads": reads,
+                    "source_tool": tool, "source_file": str(path), **window,
+                    "rna_junction_reads": reads,
+                    "transcript_id": first(row, ["transcript_id", "ftid", "transcript"], ""),
+                    "orf_id": first(row, ["orf_id", "fusion_orf_id"], ""),
+                    "fusion_orf_comparison_status": "TRACEABLE_TO_CALLER_ORF" if first(row, ["orf_id", "fusion_orf_id", "transcript_id", "ftid"], "") else "ORF_TRANSCRIPT_UNASSESSED",
                     "mutation_source": base["mutation_source"], "peptide_consequence": base["peptide_consequence"],
                     "binding_rank": "99", "el_rank": "99", "presentation_score": "0.0",
                     "immunogenicity_score": "0.5", "wildtype_binding_rank": "99", "self_similarity_score": "0.0",
                 })
                 peptides.append(enrich_peptide_layers(pbase))
-        audit.append({"event_id": event_id, "gene_pair": pair, "left_breakpoint": left_bp, "right_breakpoint": right_bp, "direction": direction, "source_tool": tool, "source_file": str(path), "source_row": str(index), "peptide_status": "PROVIDED_ORF_PEPTIDE" if windows else "ORF_PEPTIDE_UNAVAILABLE_REVIEW_ONLY", "admission_policy": "CALLER_PASS_OR_INDEPENDENT_CALLER", "rescue_reason": ""})
+        audit.append({"event_id": event_id, "gene_pair": pair, "left_breakpoint": left_bp, "right_breakpoint": right_bp, "direction": direction, "source_tool": tool, "source_file": str(path), "source_row": str(index), "peptide_status": ("JUNCTION_SPANNING_PEPTIDE" if breakpoint and window_records else "BOUNDARY_UNASSESSED_PEPTIDE" if window_records else "ORF_PEPTIDE_UNAVAILABLE_REVIEW_ONLY"), "admission_policy": "CALLER_PASS_OR_INDEPENDENT_CALLER", "rescue_reason": ""})
     return events, peptides, audit
 
 
 def _breakpoint_windows(sequence: str, breakpoint: int, lengths: tuple[int, ...] = (8, 9, 10, 11)) -> list[str]:
     """Return only peptide windows that contain residues on both sides of a junction."""
-    sequence = re.sub(r"[^ACDEFGHIKLMNPQRSTVWY]", "", str(sequence or "").upper())
-    if not sequence or breakpoint <= 0 or breakpoint >= len(sequence):
-        return []
-    windows: list[str] = []
-    for length in lengths:
-        first_start = max(0, breakpoint - length + 1)
-        last_start = min(breakpoint - 1, len(sequence) - length)
-        for start in range(first_start, last_start + 1):
-            peptide = sequence[start:start + length]
-            if len(peptide) == length and peptide not in windows:
-                windows.append(peptide)
-    return windows
+    return [row["peptide"] for row in breakpoint_window_records(sequence, breakpoint, lengths=lengths)]
 
 
 def diagnostic_rescue_entities(
@@ -612,8 +667,14 @@ def diagnostic_rescue_entities(
         events.append(enrich_event_layers(event))
         sequence = row.get("neo_peptide_sequence", "")
         breakpoint = int(to_float(row.get("neo_peptide_sequence_bp"), 0.0))
-        windows = _breakpoint_windows(sequence, breakpoint)
-        for peptide in windows:
+        side_genes = pair.split("::", 1)
+        windows = breakpoint_window_records(
+            sequence, breakpoint,
+            left_gene=side_genes[0] if side_genes else "",
+            right_gene=side_genes[1] if len(side_genes) > 1 else "",
+        )
+        for window in windows:
+            peptide = window["peptide"]
             for allele in hla:
                 pbase = {field: "" for field in PEPTIDE_FIELDS}
                 pbase.update({
@@ -627,8 +688,9 @@ def diagnostic_rescue_entities(
                     "priority_cap": "C_CAUTION",
                     "gene": pair,
                     "peptide": peptide,
-                    "crosses_junction": "yes",
-                    "contains_novel_aa": "yes",
+                    **window,
+                    "transcript_id": row.get("ftid", ""),
+                    "fusion_orf_comparison_status": "TRACEABLE_TO_CALLER_TRANSCRIPT" if row.get("ftid") else "ORF_TRANSCRIPT_UNASSESSED",
                     "rna_junction_reads": row.get("rna_junction_reads", ""),
                     "hla_allele": allele,
                     "mhc_class": "I",

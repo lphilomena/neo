@@ -465,8 +465,16 @@ def _novel_sequence_requirement(row: Mapping[str, Any], *, track: str) -> Requir
             return _assessment("novel_sequence", "Candidate peptide contains the event-derived novel sequence", SUPPORTED, "SC_PEPTIDE_CONTAINS_MUTATION_WT_BETTER", f"mutation positions={mutation_positions}; WT presentation may be better", fields, fatal_if_negative=True)
     explicit_novel = _truthy(row, "contains_novel_aa", "crosses_junction")
     mutation_positions = _raw(row, "mutation_positions_in_peptide")
+    if explicit_novel is True and track == "FUSION":
+        boundary_position = _raw(row, "junction_position_in_peptide_1based") or _raw(row, "junction_offset_in_peptide")
+        left_peptide = _raw(row, "fusion_left_peptide")
+        right_peptide = _raw(row, "fusion_right_peptide")
+        if not (boundary_position and left_peptide and right_peptide):
+            return _assessment("novel_sequence", "Candidate peptide contains the event-derived novel sequence", NEGATIVE, "SC_FUSION_BOUNDARY_MAPPING_INCOMPLETE", "Fusion peptide was labelled junction-spanning but residue-level left/right boundary mapping is incomplete", fields, fatal_if_negative=True)
     if explicit_novel is True or mutation_positions:
         return _assessment("novel_sequence", "Candidate peptide contains the event-derived novel sequence", SUPPORTED, "SC_NOVEL_SEQUENCE_PRESENT", f"contains_novel={explicit_novel}; mutation_positions={mutation_positions}", fields, fatal_if_negative=True)
+    if explicit_novel is False and track in {"FUSION", "SPLICE"}:
+        return _assessment("novel_sequence", "Candidate peptide contains the event-derived novel sequence", NEGATIVE, "SC_JUNCTION_PEPTIDE_DOES_NOT_CROSS_BOUNDARY", "Peptide is explicitly mapped to only one side of the junction", fields, fatal_if_negative=True)
     if specificity["state"] in {"MT_SPECIFIC", "MARGINAL_MT_ADVANTAGE", "MT_WT_SIMILAR", "WT_BETTER"}:
         return _assessment("novel_sequence", "Candidate peptide contains the event-derived novel sequence", SUPPORTED, "SC_MUTANT_PEPTIDE_RECONSTRUCTED", str(specificity["reason"]), fields, fatal_if_negative=True)
     return _assessment("novel_sequence", "Candidate peptide contains the event-derived novel sequence", UNASSESSED, "SC_NOVEL_SEQUENCE_UNASSESSED", "No explicit mutation/junction/novel-tail mapping", fields, fatal_if_negative=True)

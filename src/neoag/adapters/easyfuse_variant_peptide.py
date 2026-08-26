@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+import re
 from typing import Any, Literal
 
 from ..utils import first, to_float, write_tsv
@@ -183,8 +184,10 @@ def sliding_fusion_neo_peptides(
             mut_pos = ""
             if bp_pos > 0:
                 rel = bp_pos - start
-                if 1 <= rel <= length:
+                if 1 <= rel < length:
                     mut_pos = str(rel)
+            left = peptide[:int(mut_pos)] if mut_pos else ""
+            right = peptide[int(mut_pos):] if mut_pos else ""
             windows.append({
                 "mutant_peptide": peptide,
                 "wildtype_peptide": "",
@@ -192,6 +195,13 @@ def sliding_fusion_neo_peptides(
                 "peptide_start_aa": str(start + 1),
                 "peptide_end_aa": str(start + length),
                 "mutation_position_in_peptide": mut_pos,
+                "junction_position_in_peptide_1based": mut_pos,
+                "fusion_left_peptide": left,
+                "fusion_right_peptide": right,
+                "fusion_junction_display": f"{left}|{right}" if left and right else "",
+                "fusion_peptide_classification": "JUNCTION_SPANNING" if left and right else "NOT_JUNCTION_SPANNING",
+                "crosses_junction": "yes" if left and right else "no",
+                "contains_novel_aa": "yes" if left and right else "no",
             })
     return windows
 
@@ -297,6 +307,11 @@ def easyfuse_row_to_variant_peptide_rows(
     if not neo:
         return []
     bp_pos = int(to_float(first(row, ["neo_peptide_sequence_bp"], "0"), 0.0))
+    fusion_protein = re.sub(
+        r"[^ACDEFGHIKLMNPQRSTVWY]", "",
+        first(row, ["fusion_protein_sequence"], "").upper(),
+    )
+    peptide_context = fusion_protein if 0 < bp_pos < len(fusion_protein) else neo
     g1, g2 = _gene_pair(row)
     gene = _gene_label(g1, g2)
     chrom, pos = _breakpoint_chrom_pos(first(row, ["Breakpoint1", "breakpoint1"], ""))
@@ -311,7 +326,7 @@ def easyfuse_row_to_variant_peptide_rows(
         dedup_per_event=peptide_cfg.dedup_per_event,
         isoform_strategy=peptide_cfg.isoform_strategy,
     )
-    windows = sliding_fusion_neo_peptides(neo, lengths, bp_pos=bp_pos)
+    windows = sliding_fusion_neo_peptides(peptide_context, lengths, bp_pos=bp_pos)
     if peptide_cfg.junction_only:
         windows = [w for w in windows if w.get("mutation_position_in_peptide")]
 
@@ -335,7 +350,7 @@ def easyfuse_row_to_variant_peptide_rows(
             "amino_acids": "",
             "multi_aa_flag": "fusion_neo",
             "minigene": build_fusion_centered_minigene(
-                neo,
+                peptide_context,
                 peptide_start_aa=win["peptide_start_aa"],
                 peptide_end_aa=win["peptide_end_aa"],
                 mini_len=peptide_cfg.mini_len,
@@ -351,6 +366,9 @@ def easyfuse_row_to_variant_peptide_rows(
             ),
             "generation_method": generation_method,
             "fusion_generation_method": generation_method,
+            "fusion_left_gene": g1,
+            "fusion_right_gene": g2,
+            "fusion_orf_comparison_status": "TRACEABLE_TO_CALLER_TRANSCRIPT" if first(row, ["FTID", "ftid"], "") else "ORF_TRANSCRIPT_UNASSESSED",
             **win,
         })
     return out

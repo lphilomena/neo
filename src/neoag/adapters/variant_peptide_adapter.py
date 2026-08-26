@@ -96,8 +96,17 @@ def peptide_from_variant_row(
         "gene": event["gene"],
         "peptide": peptide,
         "wildtype_peptide": wt,
-        "crosses_junction": "",
-        "contains_novel_aa": "",
+        "crosses_junction": row.get("crosses_junction", ""),
+        "contains_novel_aa": row.get("contains_novel_aa", ""),
+        "junction_position_in_peptide_1based": row.get("junction_position_in_peptide_1based", ""),
+        "fusion_left_gene": row.get("fusion_left_gene", ""),
+        "fusion_right_gene": row.get("fusion_right_gene", ""),
+        "fusion_left_peptide": row.get("fusion_left_peptide", ""),
+        "fusion_right_peptide": row.get("fusion_right_peptide", ""),
+        "fusion_junction_display": row.get("fusion_junction_display", ""),
+        "fusion_peptide_classification": row.get("fusion_peptide_classification", ""),
+        "fusion_orf_comparison_status": row.get("fusion_orf_comparison_status", ""),
+        "transcript_id": row.get("transcript_id", ""),
         "rna_junction_reads": "",
         "hla_allele": hla,
         "mhc_class": _mhc_class_for_hla(hla),
@@ -201,8 +210,6 @@ def _catalog_rows_to_raw_peptides(
         for hla in hla_alleles:
             pep = peptide_from_variant_row(row, sample_id, event, hla)
             pep["source_tool"] = source_tool
-            if event.get("event_type") == "Fusion":
-                pep["crosses_junction"] = "yes"
             peptides.append(pep)
     return peptides
 

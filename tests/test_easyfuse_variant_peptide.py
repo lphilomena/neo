@@ -49,6 +49,18 @@ def test_sliding_fusion_neo_peptides_dedupes_windows():
     assert all(8 <= len(p) <= 9 for p in peptides)
 
 
+def test_sliding_fusion_windows_record_both_junction_sides():
+    windows = sliding_fusion_neo_peptides("ACDEFGHIKLMN", (9,), bp_pos=5)
+    spanning = [row for row in windows if row["crosses_junction"] == "yes"]
+    assert spanning
+    assert all(row["fusion_left_peptide"] and row["fusion_right_peptide"] for row in spanning)
+    assert all(
+        row["fusion_junction_display"]
+        == row["fusion_left_peptide"] + "|" + row["fusion_right_peptide"]
+        for row in spanning
+    )
+
+
 
 
 def test_build_fusion_centered_minigene():
