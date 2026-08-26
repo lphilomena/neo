@@ -108,6 +108,11 @@ def merge_safety_gate(peptide: dict, gate: Mapping[str, Any] | None, profile: Ma
         "safety_missing_layers", "safety_priority_cap", "normal_tissue_max_tpm",
         "normal_tissue_max_tissue", "critical_tissue_max_tpm", "critical_tissue_name",
         "normal_hspc_tpm", "normal_hspc_unit",
+        "normal_proteome_exact_match_status", "normal_transcript_junction_match_status",
+        "normal_immunopeptidome_match_status", "similar_peptide_cross_reactivity_status",
+        "source_gene_expression_context_status", "critical_organ_expression_context_status",
+        "hematopoietic_expression_context_status", "tcr_contact_anchor_context_status",
+        "final_safety_conclusion",
     ]:
         if gate.get(k) not in {None, ""}:
             peptide[k] = gate.get(k)

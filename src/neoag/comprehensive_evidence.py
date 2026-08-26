@@ -96,6 +96,11 @@ SAFETY_FIELDS = {
     "reference_proteome_status", "normal_ligandome_status", "anchor_assessment_status",
     "normal_junction_assessment_status", "safety_evidence_completeness",
     "safety_missing_layers", "safety_priority_cap",
+    "normal_proteome_exact_match_status", "normal_transcript_junction_match_status",
+    "normal_immunopeptidome_match_status", "similar_peptide_cross_reactivity_status",
+    "source_gene_expression_context_status", "critical_organ_expression_context_status",
+    "hematopoietic_expression_context_status", "tcr_contact_anchor_context_status",
+    "final_safety_conclusion",
 }
 EVENT_SAFETY_FIELDS = {f"event_{field}" for field in SAFETY_FIELDS}
 LEGACY_RANKING_FIELDS = {

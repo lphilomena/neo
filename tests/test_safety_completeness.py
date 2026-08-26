@@ -1,7 +1,7 @@
 from neoag.config import load_profile
 from neoag.peptide_safety_gate import build_peptide_safety_gate
 from neoag.safety import load_normal_expression
-from neoag.scoring import score
+from neoag.scoring import merge_safety_gate, score
 from neoag.utils import write_tsv
 
 
@@ -24,6 +24,25 @@ def _inputs(tmp_path):
         "self_similarity_score": "0.1",
     }])
     return events, peptides
+
+
+def test_layered_safety_fields_propagate_into_ranked_peptide():
+    gate = {
+        "safety_status": "SAFETY_PARTIAL",
+        "normal_proteome_exact_match_status": "NOT_DETECTED",
+        "normal_transcript_junction_match_status": "NOT_DETECTED",
+        "normal_immunopeptidome_match_status": "NOT_DETECTED",
+        "similar_peptide_cross_reactivity_status": "UNASSESSED",
+        "source_gene_expression_context_status": "ASSESSED",
+        "critical_organ_expression_context_status": "DETECTED_AUXILIARY",
+        "hematopoietic_expression_context_status": "DETECTED_AUXILIARY",
+        "tcr_contact_anchor_context_status": "NOT_APPLICABLE",
+        "final_safety_conclusion": "PARTIAL_DIRECT_SAFETY_EVIDENCE",
+    }
+    row = merge_safety_gate({"peptide_id": "P1"}, gate)
+    for field, value in gate.items():
+        if field != "safety_status":
+            assert row[field] == value
 
 
 def test_missing_safety_resources_are_partial_not_pass(tmp_path):
