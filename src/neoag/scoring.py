@@ -346,8 +346,12 @@ def compute_peptide_efficacy(
 def score_peptide(p, e, profile, pres, summary):
     p = propagate_cross_platform_to_peptide(p, e)
     for field in (
-        "raw_ccf", "ccf_estimate", "ccf_status", "ccf_confidence", "ccf_warning",
-        "ccf_method", "ccf_resolution", "ccf_resolution_reason",
+        "raw_ccf", "ccf_estimate", "ccf_best", "ccf_min", "ccf_max", "ccf_ci_low", "ccf_ci_high",
+        "ccf_status", "ccf_confidence", "ccf_warning", "ccf_method", "ccf_interval_method",
+        "ccf_interpretation", "ccf_formula_assumptions", "local_cnv_status",
+        "total_cn", "major_cn", "minor_cn", "multiplicity_best", "multiplicity_candidates",
+        "multiplicity_confidence", "multiplicity_ambiguity", "mutation_multiplicity_source", "normal_contamination_status",
+        "ccf_resolution", "ccf_resolution_reason",
     ):
         p[field] = e.get(field, p.get(field, ""))
     for field in (
@@ -456,7 +460,11 @@ def score(raw_events, raw_peptides, presentation_evidence, appm_summary_tsv, ccf
             e["ccf_status"] = c.get("ccf_status","")
             e["clonality_multiplier"] = c.get("clonality_multiplier","1.0")
             for field in (
-                "raw_ccf", "ccf_confidence", "ccf_warning", "ccf_method",
+                "raw_ccf", "ccf_best", "ccf_min", "ccf_max", "ccf_ci_low", "ccf_ci_high",
+                "ccf_confidence", "ccf_warning", "ccf_method", "ccf_interval_method",
+                "ccf_interpretation", "ccf_formula_assumptions", "local_cnv_status",
+                "total_cn", "major_cn", "minor_cn", "multiplicity_best", "multiplicity_candidates",
+                "multiplicity_confidence", "multiplicity_ambiguity", "mutation_multiplicity_source", "normal_contamination_status",
                 "ccf_resolution", "ccf_resolution_reason",
             ):
                 e[field] = c.get(field, "")

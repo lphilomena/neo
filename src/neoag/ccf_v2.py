@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -35,6 +36,9 @@ CCF_FIELDS = [
     "total_cn", "major_cn", "minor_cn", "loh_status", "cnv_confidence",
     "multiplicity_candidates", "multiplicity_best", "multiplicity_confidence", "multiplicity_ambiguity",
     "raw_ccf", "ccf_best", "ccf_min", "ccf_max", "ccf_ci_low", "ccf_ci_high",
+    "ccf_interval_method", "ccf_interpretation", "ccf_formula_assumptions",
+    "local_cnv_status", "normal_alt_count", "normal_depth", "normal_vaf", "normal_alt_vaf", "normal_contamination_status",
+    "mutation_multiplicity_source",
     "probability_ccf_gt_0_8", "probability_ccf_lt_0_3",
     # Backward-compatible columns consumed by older score code
     "ccf_estimate", "ccf_status", "clonality_status", "clonality_confidence", "clonality_multiplier",
@@ -165,6 +169,13 @@ def _row_chrom(r: Mapping[str, Any]) -> str:
     return first(r, ["chrom", "chromosome", "chr", "Chromosome"], "")
 
 
+def _normalise_chrom(value: Any) -> str:
+    chrom = str(value or "").strip().lower()
+    if chrom.startswith("chr"):
+        chrom = chrom[3:]
+    return "mt" if chrom in {"m", "mt", "mtdna"} else chrom
+
+
 def _row_start(r: Mapping[str, Any]) -> int:
     return int(to_float(first(r, ["start", "Start", "start.pos", "loc.start", "seg_start", "chromStart"], "0"), 0))
 
@@ -207,7 +218,7 @@ def find_cn(chrom: str, pos: str | int | float, cnv_rows: list[dict[str, str]]) 
     if p < 0:
         return best
     for r in cnv_rows:
-        if _row_chrom(r) != chrom:
+        if _normalise_chrom(_row_chrom(r)) != _normalise_chrom(chrom):
             continue
         start, end = _row_start(r), _row_end(r)
         if start <= p <= end:
@@ -247,8 +258,12 @@ def estimate_ccf(vaf: float, purity: float, total_cn: float, multiplicity: float
     return clamp(estimate_ccf_raw(vaf, purity, total_cn, multiplicity), 0.0, 1.0)
 
 
-def enumerate_ccf(vaf: float, purity: float, total_cn: float) -> dict[str, Any]:
-    max_m = max(1, int(round(max(total_cn, 1.0))))
+def enumerate_ccf(vaf: float, purity: float, total_cn: float, max_multiplicity: float | None = None) -> dict[str, Any]:
+    # A clonal mutation cannot occupy more copies than the major allele.  Using
+    # total CN here creates a false multiplicity ambiguity even in diploid 1+1
+    # segments, so prefer allele-specific major CN whenever it is available.
+    multiplicity_bound = max_multiplicity if max_multiplicity and max_multiplicity > 0 else total_cn
+    max_m = max(1, int(round(max(multiplicity_bound, 1.0))))
     vals: list[tuple[int, float]] = []
     for m in range(1, max_m + 1):
         c = estimate_ccf_raw(vaf, purity, total_cn, float(m))
@@ -311,9 +326,41 @@ def _vaf_from_event(e: Mapping[str, Any]) -> tuple[float, int | None, int | None
 def _ci_for_vaf(vaf: float, depth: int | None) -> tuple[float | None, float | None]:
     if not depth or depth <= 0:
         return None, None
-    # Wilson interval would be better; normal approximation is transparent and stable for this triage layer.
-    se = math.sqrt(max(vaf * (1 - vaf), 0.0) / max(depth, 1))
-    return max(0.0, vaf - 1.96 * se), min(1.0, vaf + 1.96 * se)
+    # Wilson 95% interval remains stable for low counts and VAFs near 0 or 1.
+    z = 1.96
+    n = float(depth)
+    denominator = 1.0 + z * z / n
+    centre = (vaf + z * z / (2.0 * n)) / denominator
+    margin = z * math.sqrt(vaf * (1.0 - vaf) / n + z * z / (4.0 * n * n)) / denominator
+    return max(0.0, centre - margin), min(1.0, centre + margin)
+
+
+def _normal_allele_evidence(e: Mapping[str, Any]) -> tuple[int | None, int | None, float | None, str]:
+    alt = int(to_float(first(e, ["normal_alt_count", "normal_alt_reads", "normal_alt_support"], ""), -1))
+    depth = int(to_float(first(e, ["normal_depth", "normal_total_depth", "normal_dp"], ""), -1))
+    vaf = to_float(first(e, ["normal_vaf", "normal_alt_vaf", "normal_af"], ""), -1.0)
+    if vaf < 0 and alt >= 0 and depth > 0:
+        vaf = alt / depth
+    if alt < 0 and depth <= 0 and vaf < 0:
+        return None, None, None, "NOT_ASSESSED"
+    # This is a review flag, not a germline classifier. Caller FILTER and the
+    # matched-normal genotype remain authoritative upstream evidence.
+    contaminated = (alt >= 3 and depth > 0) or vaf >= 0.02
+    return (
+        alt if alt >= 0 else None,
+        depth if depth > 0 else None,
+        vaf if vaf >= 0 else None,
+        "MATCHED_NORMAL_ALT_REVIEW" if contaminated else "NO_MATERIAL_NORMAL_ALT_DETECTED",
+    )
+
+
+def _purity_bounds(purity_info: Mapping[str, Any], purity: float) -> tuple[float, float]:
+    raw = str(purity_info.get("purity_range") or "")
+    values = [float(x) for x in re.findall(r"(?:^|[^0-9.])([01](?:\.\d+)?)", raw)]
+    values = [x for x in values if 0 < x <= 1]
+    if len(values) >= 2:
+        return min(values), max(values)
+    return purity, purity
 
 
 def _event_method(e: Mapping[str, Any]) -> str:
@@ -383,17 +430,23 @@ def _probability_from_interval(ccf_best: float | None, lo: float | None, hi: flo
     return f"{clamp(p):.4f}"
 
 
-def clonality_status(ccf: float | None, confidence: str, profile: Mapping[str, Any]) -> str:
+def clonality_status(
+    ccf: float | None,
+    confidence: str,
+    profile: Mapping[str, Any],
+    ccf_ci_low: float | None = None,
+    ccf_ci_high: float | None = None,
+) -> str:
     if ccf is None:
         return "unresolved"
     cfg = profile.get("ccf_lite", {}) if profile else {}
     clonal = float(cfg.get("clonal_threshold", 0.80))
     sub = float(cfg.get("subclonal_threshold", 0.30))
-    if ccf >= clonal:
-        return "clonal_like"
-    if ccf >= sub:
-        return "subclonal_like"
-    return "low_frequency_subclonal"
+    if confidence in {"high", "medium"} and ccf_ci_low is not None and ccf_ci_low >= clonal:
+        return "clonal_compatible"
+    if ccf_ci_high is not None and ccf_ci_high < clonal:
+        return "subclonal_compatible" if ccf_ci_high >= sub else "low_frequency_subclonal_compatible"
+    return "clonality_indeterminate"
 
 
 def clonality_multiplier(status: str, profile: Mapping[str, Any]) -> float:
@@ -401,11 +454,11 @@ def clonality_multiplier(status: str, profile: Mapping[str, Any]) -> float:
     if status == "RNA_ONLY_UNRESOLVED":
         # Missing DNA clonality evidence is not evidence of a low-frequency clone.
         return float(cfg.get("rna_only_unresolved_multiplier", 1.0))
-    if status == "clonal_like":
+    if status in {"clonal_like", "clonal_compatible"}:
         return 1.0
-    if status == "subclonal_like":
+    if status in {"subclonal_like", "subclonal_compatible", "clonality_indeterminate"}:
         return float(cfg.get("subclonal_multiplier", 0.75))
-    if status == "low_frequency_subclonal":
+    if status in {"low_frequency_subclonal", "low_frequency_subclonal_compatible"}:
         return float(cfg.get("low_frequency_multiplier", 0.45))
     return float(cfg.get("missing_ccf_multiplier", 0.65))
 
@@ -699,6 +752,7 @@ def _base_confidence(
     purity_info: Mapping[str, Any],
     depth: int | None,
     multiplicity_confidence: str,
+    normal_contamination_status: str = "NOT_ASSESSED",
 ) -> tuple[str, list[str]]:
     warning: list[str] = []
     conf = "medium"
@@ -733,6 +787,11 @@ def _base_confidence(
     if multiplicity_confidence in {"low", "ambiguous"}:
         conf = "low" if conf == "medium" else ("medium" if conf == "high" else conf)
         warning.append(f"multiplicity_{multiplicity_confidence}")
+    if normal_contamination_status == "MATCHED_NORMAL_ALT_REVIEW":
+        conf = "low"
+        warning.append("matched_normal_alt_requires_review")
+    elif normal_contamination_status == "NOT_ASSESSED":
+        warning.append("matched_normal_contamination_not_assessed")
     return conf, warning
 
 
@@ -774,8 +833,10 @@ def build_ccf_2(
         vaf_observed = _has_tumor_allele_evidence(e)
         vaf, alt, depth = _vaf_from_event(e)
         vaf_lo, vaf_hi = _ci_for_vaf(vaf, depth)
+        normal_alt, normal_depth, normal_vaf, normal_status = _normal_allele_evidence(e)
         cn = find_cn(chrom, pos, cnv)
         total_cn = float(cn["total_cn"])
+        major_cn = to_float(cn.get("major_cn", ""), -1.0)
         method = _event_method(e)
         raw_ccf = None
         ccf_best = ccf_min = ccf_max = None
@@ -784,6 +845,7 @@ def build_ccf_2(
         mult_candidates = ""
         mult_conf = "unresolved"
         mult_ambiguity = "unresolved"
+        mult_source = "unresolved"
         status = "unresolved"
         confidence = "low"
         warning: list[str] = []
@@ -799,7 +861,31 @@ def build_ccf_2(
             status = "vaf_only_unresolved"
             warning.append("missing_purity")
         else:
-            enum = enumerate_ccf(vaf, float(purity), total_cn)
+            explicit_m = to_float(first(e, [
+                "mutation_multiplicity", "mutation_copy_number", "mutant_copy_number",
+                "variant_copy_number", "multiplicity_best",
+            ], ""), -1.0)
+            if explicit_m > 0:
+                explicit_ccf = estimate_ccf_raw(vaf, float(purity), total_cn, explicit_m)
+                enum = {
+                    "best_m": explicit_m,
+                    "raw_best": explicit_ccf,
+                    "best": clamp(explicit_ccf),
+                    "min": clamp(explicit_ccf),
+                    "max": clamp(explicit_ccf),
+                    "candidates": f"{explicit_m:g}",
+                    "multiplicity_confidence": "high",
+                    "multiplicity_ambiguity": "explicit_variant_copy_number",
+                }
+                mult_source = "provided_event_variant_copy_number"
+            else:
+                enum = enumerate_ccf(
+                    vaf,
+                    float(purity),
+                    total_cn,
+                    major_cn if major_cn > 0 else None,
+                )
+                mult_source = "enumerated_from_local_allele_specific_cn"
             raw_ccf = enum["raw_best"]
             ccf_best, ccf_min, ccf_max = enum["best"], enum["min"], enum["max"]
             best_m = str(enum["best_m"])
@@ -807,20 +893,29 @@ def build_ccf_2(
             mult_conf = str(enum["multiplicity_confidence"])
             mult_ambiguity = str(enum["multiplicity_ambiguity"])
             if vaf_lo is not None and purity and float(purity) > 0:
-                ci_low = estimate_ccf(vaf_lo, float(purity), total_cn, float(enum["best_m"]))
-                ci_high = estimate_ccf(vaf_hi, float(purity), total_cn, float(enum["best_m"]))
+                purity_lo, purity_hi = _purity_bounds(purity_info, float(purity))
+                interval_values = [
+                    estimate_ccf(vaf_bound, purity_bound, total_cn, float(enum["best_m"]))
+                    for vaf_bound in (vaf_lo, vaf_hi)
+                    for purity_bound in (purity_lo, purity_hi)
+                ]
+                ci_low, ci_high = min(interval_values), max(interval_values)
             confidence, warning = _base_confidence(
                 method=method,
                 cn=cn,
                 purity_info=purity_info,
                 depth=depth,
                 multiplicity_confidence=mult_conf,
+                normal_contamination_status=normal_status,
             )
             if raw_ccf > 1.0:
                 warning.append("raw_ccf_above_1_clamped")
             elif raw_ccf < 0.0:
                 warning.append("raw_ccf_below_0_clamped")
-            status = clonality_status(ccf_best, confidence, profile)
+            status = clonality_status(ccf_best, confidence, profile, ci_low, ci_high)
+            if normal_status == "NOT_ASSESSED" and status == "clonal_compatible":
+                status = "clonality_indeterminate"
+                warning.append("clonality_requires_matched_normal_review")
         clon_conf = _clonality_confidence(
             ccf_confidence=confidence,
             multiplicity_confidence=mult_conf,
@@ -866,6 +961,19 @@ def build_ccf_2(
             "ccf_max": "" if ccf_max is None else f"{ccf_max:.4f}",
             "ccf_ci_low": "" if ci_low is None else f"{ci_low:.4f}",
             "ccf_ci_high": "" if ci_high is None else f"{ci_high:.4f}",
+            "ccf_interval_method": "Wilson 95% VAF interval propagated through purity/CN/multiplicity formula" if ci_low is not None else "not_available_without_tumor_depth",
+            "ccf_interpretation": status,
+            "ccf_formula_assumptions": (
+                f"CCF=VAF*(purity*total_cn+2*(1-purity))/(purity*m);m={best_m or 'unresolved'};"
+                f"local_cn={'matched' if cn.get('matched') else 'diploid_fallback'}"
+            ),
+            "local_cnv_status": "MATCHED_LOCAL_SEGMENT" if cn.get("matched") else "DIPLOID_FALLBACK_LOW_CONFIDENCE",
+            "normal_alt_count": "" if normal_alt is None else str(normal_alt),
+            "normal_depth": "" if normal_depth is None else str(normal_depth),
+            "normal_vaf": "" if normal_vaf is None else f"{normal_vaf:.4f}",
+            "normal_alt_vaf": "" if normal_vaf is None else f"{normal_vaf:.4f}",
+            "normal_contamination_status": normal_status,
+            "mutation_multiplicity_source": mult_source,
             "probability_ccf_gt_0_8": _probability_from_interval(ccf_best, ci_low, ci_high, 0.8, "gt"),
             "probability_ccf_lt_0_3": _probability_from_interval(ccf_best, ci_low, ci_high, 0.3, "lt"),
             "ccf_estimate": "NA" if ccf_best is None else f"{ccf_best:.4f}",

@@ -2698,10 +2698,25 @@ def _patient_ccf_assessment(row: Mapping[str, Any], bundle: ReportBundle | None 
     confidence_invalid = not confidence or any(token in confidence for token in ("UNASSESSED", "UNSPECIFIED", "UNKNOWN", "NOT_AVAILABLE", "LOW"))
     if ccf_value is not None and 0 <= ccf_value <= 2 and not confidence_invalid:
         state = _patient_value(row, "clonality_state", "ccf_status", default="已形成估计")
-        return True, f"克隆性={_patient_status_text(state)}；CCF={ccf_text}；置信度={_patient_status_text(confidence)}"
+        ci_low = _patient_value(row, "ccf_ci_low", default="")
+        ci_high = _patient_value(row, "ccf_ci_high", default="")
+        interval = f"（95%区间 {ci_low}-{ci_high}）" if ci_low and ci_high else "（未形成95%区间）"
+        local_cn = _patient_value(row, "local_cnv_status", default="未记录局部CNV匹配状态")
+        total_cn = _patient_value(row, "total_cn", "total_copy_number", default="未提供")
+        major_cn = _patient_value(row, "major_cn", default="未提供")
+        minor_cn = _patient_value(row, "minor_cn", default="未提供")
+        multiplicity = _patient_value(row, "multiplicity_best", "mutation_multiplicity_assumption", default="未解析")
+        normal_status = _patient_value(row, "normal_contamination_status", default="配对正常污染未评估")
+        return True, (
+            f"克隆性/覆盖解释={_patient_status_text(state)}；CCF={ccf_text}{interval}；"
+            f"置信度={_patient_status_text(confidence)}；局部CN={total_cn}（major={major_cn}, minor={minor_cn}；{_patient_status_text(local_cn)}）；"
+            f"变异拷贝数假设={multiplicity}；{_patient_status_text(normal_status)}。"
+            "该结果表示与相应克隆覆盖范围相容，不构成克隆性的直接证明"
+        )
     purity_status = str((bundle.purity_consensus if bundle else {}).get("status") or "").upper()
     reason = "样本纯度低且缺少可用CCF结果" if "LOW_PURITY" in purity_status else "缺少可用CCF数值或可靠置信度"
-    return False, f"克隆性=未形成可靠估计；原因={reason}；处理=不作为阴性，也不作为正向加分"
+    local_cn = _patient_value(row, "local_cnv_status", default="局部CNV状态未记录")
+    return False, f"克隆性=未形成可靠估计；原因={reason}；局部CNV={_patient_status_text(local_cn)}；处理=不作为阴性，也不作为正向加分"
 
 
 _SPLICE_FUNNEL_LABELS = {
@@ -5692,10 +5707,17 @@ def make_technical_report(path: str | Path, bundle: ReportBundle) -> None:
             f"<p><b>CCF:</b> status={esc(c.get('ccf_status', ppt.get('ccf_status')))}; "
             f"raw={esc(c.get('raw_ccf', ppt.get('raw_ccf')))}; "
             f"estimate={esc(c.get('ccf_estimate', ppt.get('ccf_estimate')))}; "
+            f"95% CI={esc(c.get('ccf_ci_low', ppt.get('ccf_ci_low')))}-"
+            f"{esc(c.get('ccf_ci_high', ppt.get('ccf_ci_high')))}; "
             f"confidence={esc(c.get('ccf_confidence', ppt.get('ccf_confidence')))}; "
             f"method={esc(c.get('ccf_method', ppt.get('ccf_method')))}; "
+            f"local_CN={esc(c.get('total_cn', ppt.get('total_cn')))} "
+            f"(major={esc(c.get('major_cn', ppt.get('major_cn')))}, minor={esc(c.get('minor_cn', ppt.get('minor_cn')))}); "
+            f"multiplicity={esc(c.get('multiplicity_best', ppt.get('multiplicity_best')))}; "
+            f"normal_check={esc(c.get('normal_contamination_status', ppt.get('normal_contamination_status')))}; "
             f"multiplier={esc(c.get('clonality_multiplier', ppt.get('ccf_multiplier')))}; "
-            f"warning=<span class='mono'>{esc(c.get('ccf_warning', ppt.get('ccf_warning')))}</span></p>"
+            f"warning=<span class='mono'>{esc(c.get('ccf_warning', ppt.get('ccf_warning')))}</span>. "
+            "A high VAF or point CCF is compatibility evidence only; clonality requires the interval, local allele-specific CN, purity and matched-normal review.</p>"
         )
         out.append(
             f"<p><b>WES/WGS evidence:</b> {_badge(ppt.get('cross_platform_status'))}; "

@@ -113,6 +113,72 @@ def test_ccf21_accepts_sequenza_segment_columns(tmp_path):
     assert row["cnv_confidence"] == "high"
 
 
+def test_ccf21_recomputes_diploid_high_vaf_with_interval_and_conservative_wording(tmp_path):
+    events = tmp_path / "events.tsv"
+    purity = tmp_path / "purity.tsv"
+    cnv = tmp_path / "cnv.tsv"
+    write_tsv(events, [{
+        "event_id": "E_DNA", "sample_id": "S1", "mutation_source": "SNV",
+        "chrom": "chr7", "pos": "150", "tumor_vaf": "0.458",
+        "tumor_depth": "500", "tumor_alt_count": "229",
+        "normal_depth": "120", "normal_alt_count": "0",
+    }])
+    write_tsv(purity, [{"purity": "0.92", "ploidy": "2.12", "source": "multi_tool_consensus", "confidence": "high"}])
+    # Deliberately omit the chr prefix to exercise cross-tool chromosome normalization.
+    write_tsv(cnv, [{"chrom": "7", "start": "1", "end": "1000", "total_cn": "2", "major_cn": "1", "minor_cn": "1"}])
+    row = build_ccf_2(events, purity, cnv, load_profile("default"), tmp_path / "ccf.tsv")[0]
+    assert abs(float(row["ccf_estimate"]) - 0.9957) < 0.001
+    assert row["multiplicity_candidates"] == "1"
+    assert row["multiplicity_best"] == "1"
+    assert row["local_cnv_status"] == "MATCHED_LOCAL_SEGMENT"
+    assert row["normal_contamination_status"] == "NO_MATERIAL_NORMAL_ALT_DETECTED"
+    assert row["ccf_interval_method"].startswith("Wilson 95%")
+    assert float(row["ccf_ci_low"]) < float(row["ccf_estimate"]) <= float(row["ccf_ci_high"])
+    assert row["ccf_status"] in {"clonal_compatible", "clonality_indeterminate"}
+    assert row["ccf_status"] != "clonal_like"
+
+
+def test_ccf21_flags_diploid_fallback_and_matched_normal_alt(tmp_path):
+    events = tmp_path / "events.tsv"
+    purity = tmp_path / "purity.tsv"
+    write_tsv(events, [{
+        "event_id": "E_REVIEW", "sample_id": "S1", "mutation_source": "InDel",
+        "chrom": "chr2", "pos": "200", "tumor_vaf": "0.40",
+        "tumor_depth": "100", "tumor_alt_count": "40",
+        "normal_depth": "100", "normal_alt_count": "4", "normal_vaf": "0.04",
+    }])
+    write_tsv(purity, [{"purity": "0.80", "ploidy": "2", "confidence": "high"}])
+    row = build_ccf_2(events, purity, None, load_profile("default"), tmp_path / "ccf.tsv")[0]
+    assert row["local_cnv_status"] == "DIPLOID_FALLBACK_LOW_CONFIDENCE"
+    assert row["normal_contamination_status"] == "MATCHED_NORMAL_ALT_REVIEW"
+    assert row["ccf_confidence"] == "low"
+    assert "default_copy_number_2" in row["ccf_warning"]
+    assert "matched_normal_alt_requires_review" in row["ccf_warning"]
+    assert row["ccf_status"] == "clonality_indeterminate"
+
+
+def test_ccf21_uses_explicit_variant_copy_number_and_purity_range(tmp_path):
+    events = tmp_path / "events.tsv"
+    purity = tmp_path / "purity.json"
+    cnv = tmp_path / "cnv.tsv"
+    write_tsv(events, [{
+        "event_id": "E_GAIN", "sample_id": "S1", "mutation_source": "SNV",
+        "chrom": "3", "pos": "300", "tumor_vaf": "0.30", "tumor_depth": "200",
+        "tumor_alt_count": "60", "variant_copy_number": "2",
+    }])
+    purity.write_text(json.dumps({
+        "status": "CONCORDANT", "recommended_purity": 0.85,
+        "range": "0.80-0.90", "n_tools": 2, "tool_values": {"FACETS": 0.8, "PURPLE": 0.9},
+    }))
+    write_tsv(cnv, [{"chrom": "chr3", "start": "1", "end": "1000", "total_cn": "4", "major_cn": "3", "minor_cn": "1"}])
+    row = build_ccf_2(events, purity, cnv, load_profile("default"), tmp_path / "ccf.tsv")[0]
+    assert row["multiplicity_candidates"] == "2"
+    assert row["mutation_multiplicity_source"] == "provided_event_variant_copy_number"
+    assert row["multiplicity_confidence"] == "high"
+    assert float(row["ccf_ci_low"]) < float(row["ccf_ci_high"])
+    assert "purity*total_cn" in row["ccf_formula_assumptions"]
+
+
 def test_ccf21_external_clonality_conflict_and_clusters(tmp_path):
     events = tmp_path / "events.tsv"
     purity = tmp_path / "purity.tsv"

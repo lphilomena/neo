@@ -18,6 +18,11 @@ CCF/clonality 估计与 modifier 输出
 
 ## 什么时候不要使用
 - RNA-only fusion 不应伪造 DNA CCF
+- SNV/InDel 使用 `CCF = VAF * (purity * total_CN + 2 * (1-purity)) / (purity * mutation_multiplicity)` 重算
+- 局部 CNV 匹配兼容 `chr1`/`1` 命名；优先使用 total/major/minor CN，缺失时的二倍体假设必须标记低置信
+- 从肿瘤 ALT/depth 计算 Wilson 95% VAF 区间并传播为 CCF 区间；同时保留可行 mutation multiplicity 和歧义
+- 配对正常样本 ALT 支持须触发污染/胚系残留审阅，不得静默忽略
+- 高 VAF 或高 CCF 点估计只能写为“与克隆性相容”；局部 CN、纯度、区间或正常样本证据不足时保持未定
 
 ## 必需输入
 - `event_table_or_ranked_peptides`

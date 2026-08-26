@@ -93,8 +93,11 @@ CROSS_SITE_RNA_FIELDS = {
 CCF_FIELDS = {
     "raw_ccf", "ccf_estimate", "ccf_best", "ccf_status", "clonality_status",
     "ccf_confidence", "ccf_warning", "ccf_method", "ccf_resolution",
-    "ccf_resolution_reason", "ccf_multiplier", "purity", "total_cn", "minor_cn",
-    "multiplicity",
+    "ccf_resolution_reason", "ccf_multiplier", "purity", "total_cn", "major_cn", "minor_cn",
+    "ccf_min", "ccf_max", "ccf_ci_low", "ccf_ci_high", "ccf_interval_method",
+    "ccf_interpretation", "ccf_formula_assumptions", "local_cnv_status",
+    "multiplicity", "multiplicity_best", "multiplicity_candidates", "multiplicity_confidence",
+    "multiplicity_ambiguity", "mutation_multiplicity_source", "normal_contamination_status",
 }
 APPM_FIELDS = {
     "appm_multiplier", "appm_multiplier_reason", "appm_integrity_status",

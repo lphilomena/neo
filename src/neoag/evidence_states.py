@@ -395,15 +395,19 @@ def derive_clonality_state(row: Mapping[str, Any], rules: Mapping[str, Any]) -> 
     del rules
     resolution = _text(row, "ccf_resolution", "ccf_status", "clonality_status", "ccf_confidence")
     ccf = _float(row, "ccf_estimate", "ccf_best", "l3_clonality_score")
+    ci_low = _float(row, "ccf_ci_low")
+    ci_high = _float(row, "ccf_ci_high")
+    confidence = _text(row, "ccf_confidence", "clonality_confidence")
     if any(token in resolution for token in CONFLICT_TOKENS):
         return _result("CONFLICT", 0, resolution, conflict=True)
     if ccf is None or "UNRESOLVED" in resolution:
         return _result("UNASSESSED", 0, resolution or "CCF unavailable", assessed=False)
-    if ccf >= 0.8 and "LOW" not in resolution:
-        return _result("CLONAL", 3, f"CCF={ccf:g}; {resolution}")
-    if ccf >= 0.5:
-        return _result("SUPPORTED", 2, f"CCF={ccf:g}; {resolution}")
-    return _result("SUBCLONAL", 1, f"CCF={ccf:g}; {resolution}")
+    interval = f"; 95% CI={ci_low:g}-{ci_high:g}" if ci_low is not None and ci_high is not None else ""
+    if ci_low is not None and ci_low >= 0.8 and "LOW" not in confidence:
+        return _result("CLONAL_COMPATIBLE", 3, f"CCF={ccf:g}{interval}; compatible with clonality, not proof; {resolution}")
+    if ci_high is not None and ci_high < 0.8:
+        return _result("SUBCLONAL_COMPATIBLE", 1, f"CCF={ccf:g}{interval}; {resolution}")
+    return _result("CLONALITY_INDETERMINATE", 2, f"CCF={ccf:g}{interval}; interval or evidence quality does not resolve clonality; {resolution}")
 
 
 def derive_hla_appm_state(row: Mapping[str, Any], rules: Mapping[str, Any]) -> dict[str, Any]:
