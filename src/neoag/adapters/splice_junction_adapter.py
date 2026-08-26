@@ -126,6 +126,10 @@ def _apply_match_fields(
     if match.junction_id:
         entity = index.registry.entities[match.junction_id]
         junction = entity.junction
+        primary_records = [
+            record for record in entity.records
+            if record.source_tool.casefold() in {tool.casefold() for tool in index.primary_tools}
+        ] or list(entity.records)
         out.update(
             {
                 "genome_build": junction.genome_build,
@@ -139,6 +143,10 @@ def _apply_match_fields(
                 "junction_coordinate_system": "intron_1based_closed",
                 "junction_resolution_status": "RESOLVED",
                 "junction_resolution_reason": match.match_method,
+                "unique_junction_reads": str(max((record.unique_split_reads for record in primary_records), default=0)),
+                "junction_total_coverage": str(max((record.total_split_reads for record in primary_records), default=0)),
+                "splice_psi": next((str(record.row.get(key) or "").strip() for record in primary_records for key in ("splice_psi", "junction_psi", "tumor_psi", "psi", "PSI") if str(record.row.get(key) or "").strip()), ""),
+                "splice_alignment_qc_status": "PASS",
                 "rna_junction_source": ";".join(
                     sorted(
                         {
@@ -177,6 +185,16 @@ def enrich_splice_peptide_layers(
 
     if index is not None:
         out, _ = _apply_match_fields(out, index, event=event)
+    if event:
+        for field in (
+            "unique_junction_reads", "junction_total_coverage", "splice_psi",
+            "splice_alignment_qc_status", "matched_normal_junction_status",
+            "matched_normal_junction_reads", "normal_cohort_junction_status",
+            "annotated_normal_isoform_status", "splice_annotation_status",
+            "splice_orf_status", "splice_nmd_status",
+        ):
+            if not str(out.get(field, "")).strip() and str(event.get(field, "")).strip():
+                out[field] = event[field]
     return enrich_peptide_layers(out, event)
 
 

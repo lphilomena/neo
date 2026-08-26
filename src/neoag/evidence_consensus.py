@@ -566,6 +566,8 @@ def _derived_grade_caps(
     ccf_confidence = " ".join(str(source.get(field, "")).upper() for field in ("ccf_confidence", "ccf_resolution"))
     if "LOW" in ccf_confidence:
         caps.append(("R2", "CAP_CCF_LOW_CONFIDENCE"))
+    if track in {"MISSENSE", "INDEL", "DNA_SV"} and states["clonality"]["state"] == "UNASSESSED":
+        caps.append(("R3", "CAP_CCF_UNASSESSED_DNA_EVENT"))
     presentation = states["presentation_consensus"]["state"]
     if presentation == "PRESENTATION_SINGLE_TOOL":
         caps.append(("R3", "CAP_SINGLE_PRESENTATION_TOOL"))

@@ -103,6 +103,11 @@ def test_wrapper_uses_v2_baseline_and_v3_consensus_and_passes_production_inputs(
     assert "verify_mtwt_output_fields" in wrapper_text
     assert "ranked_peptides.evidence_consensus.tsv" in wrapper_text
     assert "mt_wt_interpretation_caution" in wrapper_text
+    assert "verify_splice_prefilter_outputs" in wrapper_text
+    assert "splice_prefilter_funnel.tsv" in wrapper_text
+    assert "UNIQUE_JUNCTION_READS" in wrapper_text
+    assert "TOTAL_JUNCTION_COVERAGE" in wrapper_text
+    assert "PSI" in wrapper_text
 
 
 def test_wrapper_rejects_multiple_rna_input_modes(tmp_path):

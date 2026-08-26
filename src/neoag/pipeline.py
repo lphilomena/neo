@@ -20,6 +20,7 @@ from .peptide_safety_gate import build_peptide_safety_gate
 from .immune_escape import build_immune_escape_evidence
 from .schemas import PRESENTATION_FIELDS
 from .comprehensive_evidence import build_comprehensive_peptide_evidence
+from .splice_prefilter import prefilter_splice_peptides
 from .evidence_consensus import build_evidence_consensus, load_consensus_rules
 from .tools.registry import RunContext
 from .utils import copy_if_different, read_tsv, write_tsv, write_json
@@ -92,6 +93,13 @@ def run(
         parse_pvactools_outputs(pvac_paths, sample_id, profile["_profile_name"], raw_events_path, raw_peptides_path)
     else:
         raise ValueError("run requires pvac_paths or pre-built raw_events + raw_peptides")
+
+    # Preserve the full splice pool, then reduce it before expensive HLA and
+    # immunogenicity predictors. Missing evidence enters a bounded REVIEW lane
+    # rather than being silently treated as PASS or a biological negative.
+    splice_prefilter_summary = prefilter_splice_peptides(
+        raw_peptides_path, profile, parsed, raw_events=raw_events_path
+    )
 
     provenance_registry = ProvenanceRegistry()
     if vep_appm:
@@ -297,6 +305,7 @@ def run(
             if purity or hla_loh else ""
         ),
         "purity_cnv_tools": purity_tools,
+        "splice_prefilter": splice_prefilter_summary,
         "purity_cnv_consensus": {
             "recommended_purity": purity_tools[0]["purity"],
             "recommended_ploidy": purity_tools[0]["ploidy"],

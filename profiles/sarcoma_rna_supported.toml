@@ -88,6 +88,11 @@ min_tumor_vaf = 0.0
 min_rna_alt_reads = 2
 min_rna_vaf = 0.02
 min_rna_junction_reads = 3
+min_splice_unique_reads = 3
+min_splice_total_coverage = 10
+min_splice_psi = 0.05
+max_splice_review_prediction_events = 200
+max_splice_peptide_hla_per_event = 20
 failure_mode = "multiply"
 failure_multiplier = 0.10
 

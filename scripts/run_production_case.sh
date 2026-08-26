@@ -250,6 +250,25 @@ if missing:
   PYTHONPATH="$PROJECT_ROOT/src" "$PY" -c "$check" "$ranked"
 }
 
+verify_splice_prefilter_outputs() {
+  local funnel="$1" decisions="$2"
+  [[ -s "$funnel" ]] || { echo "splice prefilter funnel missing: $funnel" >&2; return 1; }
+  [[ -s "$decisions" ]] || { echo "splice prefilter decisions missing: $decisions" >&2; return 1; }
+  local required=(
+    ALIGNMENT_COORDINATE_QC UNIQUE_JUNCTION_READS TOTAL_JUNCTION_COVERAGE PSI
+    MATCHED_NORMAL_JUNCTION NORMAL_COHORT_JUNCTION ANNOTATED_NORMAL_ISOFORM
+    CREDIBLE_ORF NMD JUNCTION_SPANNING_PEPTIDE NORMAL_PROTEOME_EXCLUSION
+    SELECTED_FOR_PRESENTATION
+  )
+  local stage
+  for stage in "${required[@]}"; do
+    grep -q "^${stage}[[:space:]]" "$funnel" || {
+      echo "splice prefilter funnel missing stage: $stage" >&2
+      return 1
+    }
+  done
+}
+
 cd "$PROJECT_ROOT"
 verify_event_track_precedence
 verify_mtwt_interpretation_rules
@@ -578,5 +597,10 @@ PYTHONPATH="$PROJECT_ROOT/src" "$PY" -m neoag.production_runner \
   --execute
 
 verify_mtwt_output_fields "$OUTDIR/final/scoring/ranked_peptides.evidence_consensus.tsv"
+if [[ -d "$OUTDIR/final" ]]; then
+  verify_splice_prefilter_outputs \
+    "$OUTDIR/final/parsed/splice_prefilter_funnel.tsv" \
+    "$OUTDIR/final/parsed/splice_prefilter_decisions.tsv"
+fi
 
 echo "[OK] done: $OUTDIR/final/reports/"

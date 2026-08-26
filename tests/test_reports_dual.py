@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from neoag.reports_dual import ReportBundle, _apply_patient_gene_expression, _augment_runtime_tool_provenance, _find_bam_input, _patient_conflict_summary, _patient_disease_background, _patient_dna_evidence, _patient_event_grade_counts, _patient_evidence_audit_rows, _patient_evidence_summary, _patient_event_change, _patient_expression_tpm_map, _patient_fusion_artifact_review, _patient_fusion_boundary_evidence, _patient_hla_loh_consensus, _patient_key_gaps, _patient_limitation, _patient_manual_review_rows, _patient_metric, _patient_presentation_metric, _patient_presentation_quantitative_row, _patient_rna_measurements, _patient_rna_metric, _patient_safety_dimensions, _patient_safety_gap, _patient_tool_rows, _patient_track, _patient_validation, _replace_gene_ids, load_report_bundle, make_dual_reports, make_patient_report, make_technical_report
+from neoag.reports_dual import _patient_ccf_coverage_rows, _patient_splice_funnel_rows
 from neoag.utils import write_tsv
 
 
@@ -86,6 +87,39 @@ def test_patient_report_is_plain_language(tmp_path):
     assert "缺失证据统一视为未评估" in text
     assert "DQA1/DQB1" not in text
     assert "EWSR1::WT1" not in text
+
+
+def test_splice_funnel_and_ccf_coverage_are_event_level_and_explicit():
+    bundle = _bundle()
+    bundle.events = [
+        {"event_id": "S1", "event_type": "Splice", "mutation_source": "RNA_ONLY", "ccf_status": "RNA_ONLY_UNRESOLVED"},
+        {"event_id": "V1", "event_type": "SNV", "ccf_status": "UNASSESSED"},
+    ]
+    bundle.peptides = [{
+        "event_id": "S1", "event_type": "Splice", "peptide": "ABCDEFGHI",
+        "rna_junction_reads": "12", "presentation_consensus_state": "PRESENTATION_CONSISTENT_STRONG",
+    }]
+    bundle.provenance["splice_filter_funnel_rows"] = [{
+        "stage": "UNIQUE_JUNCTION_READS", "entered_events": "10", "assessed_events": "6",
+        "passed_events": "4", "failed_events": "2", "unassessed_events": "4",
+        "possible_remaining_range": "4-8", "criterion": "explicit unique reads >= 3",
+    }]
+    funnel = _patient_splice_funnel_rows(bundle)
+    assert funnel[0]["筛选阶段"] == "unique junction reads门槛"
+    assert funnel[0]["阶段后可能剩余"] == "4-8"
+    assert funnel[-1]["筛选阶段"] == "通过HLA呈递门槛"
+    ccf = {row["事件类型"]: row for row in _patient_ccf_coverage_rows(bundle)}
+    assert ccf["Splice"]["RNA-only不适用"] == "1"
+    assert ccf["SNV"]["缺失/未解析"] == "1"
+
+
+def test_splice_rna_measurements_do_not_substitute_tpm_for_psi_or_unique_reads():
+    text = _patient_rna_measurements({
+        "event_type": "Splice", "gene_expression_tpm": "20", "rna_junction_reads": "12",
+    })
+    assert "unique junction reads未记录" in text
+    assert "junction总覆盖未记录" in text
+    assert "PSI未记录（不能用基因TPM替代）" in text
 
 
 def test_patient_top_candidates_include_non_r4_technical_review_rows(tmp_path):

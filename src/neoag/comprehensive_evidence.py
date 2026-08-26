@@ -74,6 +74,11 @@ RNA_FIELDS = {
     "rna_vaf_source",
     "rna_junction_reads", "rna_junction_source", "rna_frame_status", "junction_reads",
     "junction_source", "junction_status",
+    "unique_junction_reads", "junction_total_coverage", "splice_psi",
+    "splice_alignment_qc_status", "matched_normal_junction_status",
+    "matched_normal_junction_reads", "normal_cohort_junction_status",
+    "annotated_normal_isoform_status", "splice_annotation_status",
+    "splice_orf_status", "splice_nmd_status", "splice_prefilter_status",
 }
 CROSS_SITE_RNA_FIELDS = {
     "secondary_sample_id", "sample_identity_status", "cross_site_status",

@@ -1597,6 +1597,13 @@ def load_report_bundle(
     if root:
         _augment_runtime_tool_provenance(root, prov)
         _augment_purity_cnv_provenance(root, prov)
+        funnel_path = root / "parsed" / "splice_prefilter_funnel.tsv"
+        if not funnel_path.is_file():
+            configured_funnel = str((prov.get("splice_prefilter") or {}).get("funnel") or "") if isinstance(prov.get("splice_prefilter"), Mapping) else ""
+            if configured_funnel:
+                funnel_path = Path(configured_funnel)
+        if funnel_path.is_file():
+            prov["splice_filter_funnel_rows"] = _read_optional(funnel_path)
     if patient_inputs:
         explicit_inputs = patient_inputs.get("input_files") if isinstance(patient_inputs.get("input_files"), Mapping) else patient_inputs
         prov["input_files"] = dict(explicit_inputs)
@@ -2697,6 +2704,137 @@ def _patient_ccf_assessment(row: Mapping[str, Any], bundle: ReportBundle | None 
     return False, f"克隆性=未形成可靠估计；原因={reason}；处理=不作为阴性，也不作为正向加分"
 
 
+_SPLICE_FUNNEL_LABELS = {
+    "RAW_SPLICE_EVENTS_IN_UNIFIED_INPUT": "进入统一事件层的异常剪接事件",
+    "ALIGNMENT_COORDINATE_QC": "坐标与比对质量过滤",
+    "UNIQUE_JUNCTION_READS": "unique junction reads门槛",
+    "TOTAL_JUNCTION_COVERAGE": "junction总覆盖门槛",
+    "PSI": "PSI门槛",
+    "MATCHED_NORMAL_JUNCTION": "患者配对/邻近正常样本比较",
+    "NORMAL_COHORT_JUNCTION": "GTEx/正常组织junction库比较",
+    "ANNOTATED_NORMAL_ISOFORM": "去除已注释正常异构体",
+    "CREDIBLE_ORF": "可信ORF/阅读框",
+    "NMD": "NMD风险过滤",
+    "JUNCTION_SPANNING_PEPTIDE": "生成真正跨异常junction的肽",
+    "NORMAL_PROTEOME_EXCLUSION": "正常蛋白组精确匹配排除",
+    "SELECTED_FOR_PRESENTATION": "进入HLA呈递预测",
+    "HLA_PRESENTATION": "通过HLA呈递门槛",
+}
+
+
+def _patient_splice_funnel_rows(bundle: ReportBundle) -> list[dict[str, str]]:
+    stored = bundle.provenance.get("splice_filter_funnel_rows")
+    rows: list[dict[str, str]] = []
+    if isinstance(stored, list):
+        for item in stored:
+            if not isinstance(item, Mapping):
+                continue
+            stage = str(item.get("stage") or "")
+            rows.append({
+                "筛选阶段": _SPLICE_FUNNEL_LABELS.get(stage, stage or "未命名阶段"),
+                "进入事件": str(item.get("entered_events") or "未记录"),
+                "已评估": str(item.get("assessed_events") or "0"),
+                "明确通过": str(item.get("passed_events") or "0"),
+                "明确未通过": str(item.get("failed_events") or "0"),
+                "未评估": str(item.get("unassessed_events") or "0"),
+                "阶段后可能剩余": str(item.get("possible_remaining_range") or "未记录"),
+                "规则/说明": str(item.get("criterion") or ""),
+            })
+
+    splice_events = {
+        str(row.get("event_group_id") or row.get("event_id") or f"splice-{index}")
+        for index, row in enumerate(bundle.events)
+        if _patient_track(row) == "Splice"
+    }
+    if not rows and splice_events:
+        rows.append({
+            "筛选阶段": "进入统一事件层的异常剪接事件",
+            "进入事件": str(len(splice_events)), "已评估": str(len(splice_events)),
+            "明确通过": str(len(splice_events)), "明确未通过": "0", "未评估": "0",
+            "阶段后可能剩余": str(len(splice_events)),
+            "规则/说明": "仅能确认进入统一事件层的数量；未找到上游逐级漏斗，不能称为原始aligner junction总数",
+        })
+        for stage in (
+            "ALIGNMENT_COORDINATE_QC", "UNIQUE_JUNCTION_READS", "TOTAL_JUNCTION_COVERAGE", "PSI",
+            "MATCHED_NORMAL_JUNCTION", "NORMAL_COHORT_JUNCTION", "ANNOTATED_NORMAL_ISOFORM",
+            "CREDIBLE_ORF", "NMD", "JUNCTION_SPANNING_PEPTIDE", "NORMAL_PROTEOME_EXCLUSION",
+        ):
+            rows.append({
+                "筛选阶段": _SPLICE_FUNNEL_LABELS[stage], "进入事件": str(len(splice_events)),
+                "已评估": "0", "明确通过": "0", "明确未通过": "0",
+                "未评估": str(len(splice_events)), "阶段后可能剩余": f"0-{len(splice_events)}",
+                "规则/说明": "该阶段的结构化计数未写入运行结果；不能从Top候选或基因TPM反推",
+            })
+
+    peptide_groups: dict[str, list[Mapping[str, Any]]] = {}
+    for index, row in enumerate(bundle.peptides):
+        if _patient_track(row) != "Splice":
+            continue
+        key = str(row.get("event_group_id") or row.get("event_id") or f"splice-peptide-{index}")
+        peptide_groups.setdefault(key, []).append(row)
+    if peptide_groups:
+        assessed = 0
+        passed = 0
+        for event_rows in peptide_groups.values():
+            states = {
+                str(row.get("presentation_consensus_state") or row.get("presentation_evidence_grade") or "").upper()
+                for row in event_rows
+            }
+            if states - {"", "UNASSESSED", "PRESENTATION_UNASSESSED"}:
+                assessed += 1
+            if any(state in {"PRESENTATION_CONSISTENT_STRONG", "PRESENTATION_MODERATE", "A", "B"} for state in states):
+                passed += 1
+        rows.append({
+            "筛选阶段": _SPLICE_FUNNEL_LABELS["HLA_PRESENTATION"],
+            "进入事件": str(len(peptide_groups)), "已评估": str(assessed),
+            "明确通过": str(passed), "明确未通过": str(max(0, assessed - passed)),
+            "未评估": str(len(peptide_groups) - assessed),
+            "阶段后可能剩余": f"{passed}-{passed + len(peptide_groups) - assessed}",
+            "规则/说明": "按独立剪接事件汇总；NetMHCpan/MHCflurry核心呈递共识为强或中等时计为通过",
+        })
+    return rows
+
+
+def _patient_ccf_coverage_rows(bundle: ReportBundle) -> list[dict[str, str]]:
+    grouped: dict[str, dict[str, Mapping[str, Any]]] = {}
+    for index, row in enumerate(bundle.events):
+        track = _patient_track(row)
+        event_id = str(row.get("event_group_id") or row.get("event_id") or f"event-{index}")
+        grouped.setdefault(track, {})[event_id] = row
+    result: list[dict[str, str]] = []
+    for track in ("SNV", "InDel", "DNA SV", "Fusion", "Splice"):
+        event_rows = list(grouped.get(track, {}).values())
+        if not event_rows:
+            continue
+        reliable = low = unresolved = not_applicable = 0
+        for row in event_rows:
+            ok, _ = _patient_ccf_assessment(row, bundle)
+            _, value = _patient_numeric_value(row, "ccf_estimate", "ccf_best", "raw_ccf")
+            source = " ".join(str(row.get(field) or "").upper() for field in ("mutation_source", "ccf_status", "ccf_method"))
+            if ok:
+                reliable += 1
+            elif value is not None:
+                low += 1
+            elif track in {"Fusion", "Splice"} and ("RNA_ONLY" in source or not str(row.get("tumor_vaf") or "").strip()):
+                not_applicable += 1
+            else:
+                unresolved += 1
+        eligible = len(event_rows) - not_applicable
+        coverage = f"{(100.0 * reliable / eligible):.1f}%" if eligible else "不适用"
+        impact = (
+            "RNA-only事件不能从RNA reads推导DNA CCF；需DNA-SV/位点证据或正交验证"
+            if not_applicable == len(event_rows)
+            else "缺失CCF的DNA来源事件不能确认克隆覆盖范围，并限制进入高等级候选"
+            if unresolved or low else "当前可用于克隆性分层"
+        )
+        result.append({
+            "事件类型": track, "独立事件": str(len(event_rows)), "可靠CCF": str(reliable),
+            "低置信数值": str(low), "缺失/未解析": str(unresolved), "RNA-only不适用": str(not_applicable),
+            "可评估事件覆盖率": coverage, "解释与影响": impact,
+        })
+    return result
+
+
 def _patient_candidate_integrity(row: Mapping[str, Any]) -> tuple[bool, list[str]]:
     missing: list[str] = []
     if not str(row.get("event_id") or "").strip():
@@ -3680,6 +3818,22 @@ def _patient_rna_measurements(row: Mapping[str, Any]) -> str:
                     f"上游工具汇总junction reads {provided_reads}，与已核实值 {junction_reads} 的"
                     "统计口径不一致，需复核来源记录"
                 )
+        if track == "Splice":
+            unique_reads = _patient_numeric_display(_patient_observed_value(row, "unique_junction_reads"), 0)
+            total_coverage = _patient_numeric_display(_patient_observed_value(row, "junction_total_coverage"), 0)
+            psi = _patient_numeric_display(_patient_observed_value(row, "splice_psi"), 4)
+            values.append(
+                f"unique junction reads {unique_reads}"
+                if unique_reads is not None else "unique junction reads未记录（不能用caller总reads替代）"
+            )
+            values.append(
+                f"junction总覆盖 {total_coverage}"
+                if total_coverage is not None else "junction总覆盖未记录"
+            )
+            values.append(
+                f"PSI {psi}"
+                if psi is not None else "PSI未记录（不能用基因TPM替代）"
+            )
     else:
         values.append(f"RNA位点深度 {depth}" if depth is not None else _patient_missing_rna_label(row, "RNA位点深度"))
         values.append(f"RNA alt reads {alt_reads}" if alt_reads is not None else _patient_missing_rna_label(row, "RNA alt reads"))
@@ -4910,6 +5064,17 @@ def make_patient_report(
     out.append(_table(_patient_qc_rows(bundle), ["项目", "结果", "解释"]))
     out.append("<p class='small'>以下并列展示各纯度工具的估算。共识值用于CNV、CCF和LOH解释；明显冲突时保留全部结果及低置信度说明，不静默选择FACETS。</p>")
     out.append(_table(_patient_purity_rows(bundle), ["工具/模式", "纯度", "倍性", "QC/状态", "交叉验证说明"]))
+    ccf_coverage_rows = _patient_ccf_coverage_rows(bundle)
+    if ccf_coverage_rows:
+        out.append("<h3>CCF覆盖度与缺失影响</h3>")
+        out.append(
+            "<p class='small'>CCF按独立事件和事件类型统计。RNA-only融合/剪接不把RNA junction reads伪装成DNA CCF；"
+            "DNA来源事件缺失CCF时，不能判断候选覆盖的肿瘤细胞比例，也不能作为克隆性正向证据。</p>"
+        )
+        out.append(_table(ccf_coverage_rows, [
+            "事件类型", "独立事件", "可靠CCF", "低置信数值", "缺失/未解析",
+            "RNA-only不适用", "可评估事件覆盖率", "解释与影响",
+        ]))
     out.append("</div>")
 
     out.append("<div class='section'><h2>3. HLA分型与抗原呈递条件</h2>")
@@ -4937,6 +5102,18 @@ def make_patient_report(
     out.append("<div class='section'><h2>4. 重点变异事件（按类型、按事件去重）</h2>")
     overall = [{"事件类型": track, "事件数": count, "主要复核重点": {"SNV": "DNA深度/VAF、RNA alt、MT/WT", "InDel": "局部重比对、阅读框、NMD和phasing", "Fusion": "精确断点、junction reads、frame和正常read-through", "Splice": "精确junction、PSI/reads、正常isoform和ORF", "DNA SV": "断点与异常转录本"}.get(track, "事件真实性和证据完整性")} for track, count in sorted(track_counts.items())]
     out.append(_table(overall, ["事件类型", "事件数", "主要复核重点"]))
+    splice_funnel_rows = _patient_splice_funnel_rows(bundle)
+    if splice_funnel_rows:
+        out.append("<h3>异常剪接逐级筛选漏斗</h3>")
+        out.append(
+            "<p class='small'>漏斗按独立剪接事件统计，而不是Peptide-HLA行数。缺字段不会被当作通过；"
+            "“阶段后可能剩余”给出明确通过数到包含未评估事件的上限。unique junction reads、总覆盖和PSI分别读取，"
+            "不会用基因TPM或caller汇总reads互相替代。</p>"
+        )
+        out.append(_table(splice_funnel_rows, [
+            "筛选阶段", "进入事件", "已评估", "明确通过", "明确未通过", "未评估",
+            "阶段后可能剩余", "规则/说明",
+        ]))
     for track in ("SNV", "InDel", "Fusion", "Splice", "DNA SV"):
         representatives = _patient_event_representatives(
             bundle.events, ranked, max(event_top_n, len(bundle.events), len(ranked)), track,
@@ -5410,6 +5587,24 @@ def make_technical_report(path: str | Path, bundle: ReportBundle) -> None:
     if bundle.ccf:
         out.append("<div class='section'><h2>CCF / Clonality</h2>")
         out.append(_table(bundle.ccf, list(bundle.ccf[0].keys()), max_rows=100))
+        out.append("</div>")
+
+    ccf_coverage_rows = _patient_ccf_coverage_rows(bundle)
+    if ccf_coverage_rows:
+        out.append("<div class='section'><h2>CCF Coverage Audit</h2>")
+        out.append(_table(ccf_coverage_rows, [
+            "事件类型", "独立事件", "可靠CCF", "低置信数值", "缺失/未解析",
+            "RNA-only不适用", "可评估事件覆盖率", "解释与影响",
+        ]))
+        out.append("</div>")
+
+    splice_funnel_rows = _patient_splice_funnel_rows(bundle)
+    if splice_funnel_rows:
+        out.append("<div class='section'><h2>Splice Filtering Funnel</h2>")
+        out.append(_table(splice_funnel_rows, [
+            "筛选阶段", "进入事件", "已评估", "明确通过", "明确未通过", "未评估",
+            "阶段后可能剩余", "规则/说明",
+        ]))
         out.append("</div>")
 
     out.append("<div class='section'><h2>Peptide Mechanism Cards</h2>")

@@ -74,6 +74,15 @@ def test_complete_and_missing_consensus_states():
     assert "clonality" in missing["evidence_missing_layers"]
 
 
+def test_dna_event_without_ccf_is_capped_at_r3():
+    row = complete_row("P9")
+    row["ccf_status"] = "UNASSESSED"
+    row["l3_clonality_score"] = ""
+    ranked = score_evidence_consensus(row)
+    assert ranked["evidence_grade"] == "R3"
+    assert "CAP_CCF_UNASSESSED_DNA_EVENT" in ranked["evidence_grade_cap_reasons"]
+
+
 def test_parallel_ranking_preserves_input_and_adds_deterministic_rank(tmp_path: Path):
     source = tmp_path / "ranked.tsv"
     output = tmp_path / "consensus.tsv"
