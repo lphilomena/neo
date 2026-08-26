@@ -301,12 +301,14 @@ def source_chain_track(row: Mapping[str, Any]) -> str:
     """Return the upstream event source class, not the downstream peptide consequence."""
 
     explicit = _text(row, "source_chain_track", "candidate_source_track")
-    for track in ("SNV", "INDEL", "FUSION", "SPLICE"):
+    for track in ("SNV", "INDEL", "FUSION", "SPLICE", "DNA_SV"):
         if explicit == track:
             return track
 
     source = _text(row, "mutation_source", "source_event_type", "variant_type")
     event = _text(row, "event_type", "consequence", "peptide_consequence")
+    if any(token in source for token in ("DNA_SV", "STRUCTURAL", "SV", "BND")):
+        return "DNA_SV"
     if "FUSION" in source or "FUSION" in event:
         return "FUSION"
     # A DNA SNV/InDel that causes a splice consequence remains a DNA-source candidate.
@@ -1007,11 +1009,88 @@ def _splice_requirements(row: Mapping[str, Any], rules: Mapping[str, Any]) -> li
     ]
 
 
+def _dna_sv_adjacency_requirement(row: Mapping[str, Any]) -> RequirementAssessment:
+    fields = _present(
+        row, "genome_build", "adjacency_key", "chrom1", "pos1", "strand1",
+        "chrom2", "pos2", "strand2", "callers", "record_ids", "filter_status",
+    )
+    key = _raw(row, "adjacency_key")
+    build = _raw(row, "genome_build")
+    status = _text(row, "filter_status", "vcf_filter")
+    if status and "PASS" not in status:
+        return _assessment(
+            "sv_exact_adjacency", "Canonical PASS-filtered DNA-SV adjacency",
+            NEGATIVE, "SC_DNA_SV_VCF_FILTER_FAILED", status, fields,
+            fatal_if_negative=True,
+        )
+    if key and build and all(_raw(row, name) for name in ("chrom1", "pos1", "strand1", "chrom2", "pos2", "strand2")):
+        return _assessment(
+            "sv_exact_adjacency", "Canonical PASS-filtered DNA-SV adjacency",
+            SUPPORTED, "SC_DNA_SV_EXACT_ADJACENCY", f"build={build}; key={key}", fields,
+            fatal_if_negative=True,
+        )
+    return _assessment(
+        "sv_exact_adjacency", "Canonical PASS-filtered DNA-SV adjacency",
+        UNASSESSED, "SC_DNA_SV_ADJACENCY_INCOMPLETE",
+        "Genome build, both oriented breakends and canonical adjacency key are required", fields,
+        fatal_if_negative=True,
+    )
+
+
+def _dna_sv_product_requirement(row: Mapping[str, Any]) -> RequirementAssessment:
+    fields = _present(
+        row, "reconstruction_status", "reconstruction_method", "reconstruction_confidence",
+        "rna_evidence_match", "rna_evidence_qc", "transcript_id", "protein_sequence_id",
+    )
+    status = _text(row, "reconstruction_status")
+    method = _text(row, "reconstruction_method")
+    match = _text(row, "rna_evidence_match")
+    qc = _text(row, "rna_evidence_qc")
+    if "HYPOTHESIS" in status or "DNA_ONLY" in method or "UNRESOLVED" in status:
+        return _assessment(
+            "sv_expressed_product", "Exact expressed rearrangement transcript and ORF",
+            UNASSESSED, "SC_DNA_SV_ORF_HYPOTHESIS_ONLY", status or method, fields,
+            fatal_if_negative=True,
+        )
+    if (
+        "CONFIRMED_EXPRESSED_PRODUCT" in status
+        and "EXTERNAL_EXPRESSED_TRANSCRIPT" in method
+        and "EXACT_BREAKPOINT" in match
+        and "PASS" in qc
+    ):
+        return _assessment(
+            "sv_expressed_product", "Exact expressed rearrangement transcript and ORF",
+            SUPPORTED, "SC_DNA_SV_EXPRESSED_PRODUCT_CONFIRMED",
+            f"status={status}; method={method}; RNA={match}/{qc}", fields,
+            fatal_if_negative=True,
+        )
+    return _assessment(
+        "sv_expressed_product", "Exact expressed rearrangement transcript and ORF",
+        UNASSESSED, "SC_DNA_SV_EXPRESSED_PRODUCT_UNASSESSED",
+        "A breakpoint-matched RNA product, translatable ORF and residue-level junction are required", fields,
+        fatal_if_negative=True,
+    )
+
+
+def _dna_sv_requirements(row: Mapping[str, Any], rules: Mapping[str, Any]) -> list[RequirementAssessment]:
+    return [
+        _dna_sv_adjacency_requirement(row),
+        _event_qc_requirement(row, rules, track="DNA_SV"),
+        _somatic_status_requirement(row, rules),
+        _rna_or_direct_requirement(row, rules, track="DNA_SV"),
+        _dna_sv_product_requirement(row),
+        _novel_sequence_requirement(row, track="DNA_SV"),
+        _peptide_hla_traceability_requirement(row, require_orf=True),
+        _normal_background_requirement(row, track="DNA_SV", mandatory=True),
+    ]
+
+
 _REQUIREMENT_BUILDERS: dict[str, Callable[[Mapping[str, Any], Mapping[str, Any]], list[RequirementAssessment]]] = {
     "SNV": _snv_requirements,
     "INDEL": _indel_requirements,
     "FUSION": _fusion_requirements,
     "SPLICE": _splice_requirements,
+    "DNA_SV": _dna_sv_requirements,
 }
 
 

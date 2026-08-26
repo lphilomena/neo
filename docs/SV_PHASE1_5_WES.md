@@ -28,6 +28,7 @@ neoag sv-build-raw-wes \
   --reference-fasta data/fixtures_sv/mini_ref.fa \
   --gencode-gtf data/fixtures_sv/mini.gtf \
   --hla data/fixtures_sv/hla.txt \
+  --capture-bed data/fixtures_sv/capture.bed \
   --expression data/fixtures_sv/expression.tsv \
   --rna-junctions data/fixtures_sv/rna_junctions.tsv \
   --outdir results/SVMINI_sv_wes_adapter
@@ -41,6 +42,7 @@ neoag sv-run-full-wes \
   --reference-fasta data/fixtures_sv/mini_ref.fa \
   --gencode-gtf data/fixtures_sv/mini.gtf \
   --hla data/fixtures_sv/hla.txt \
+  --capture-bed data/fixtures_sv/capture.bed \
   --rna-junctions data/fixtures_sv/rna_junctions.tsv \
   --binding-stub \
   --outdir results/SVMINI_sv_wes_e2e

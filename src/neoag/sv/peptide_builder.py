@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .protein_reconstruct import ProteinReconstruction
+from .identity import stable_identifier
 
 
 def read_hla_alleles(path_or_values: str | Path | list[str] | None) -> list[str]:
@@ -96,6 +97,9 @@ def build_mhc1_peptides(
     out: list[PeptideCandidate] = []
     seen: set[tuple[str, str, str, int]] = set()
     for prot in proteins:
+        if prot.reconstruction_confidence != "high" or not prot.reconstruction_method.startswith("external_expressed_transcript:"):
+            # DNA-only heuristic products are useful hypotheses, not peptide-generation inputs.
+            continue
         seq = (prot.protein_sequence or "").strip().upper().replace("*", "")
         wt = (prot.wt_protein_sequence or "").strip().upper().replace("*", "")
         if not seq:
@@ -132,7 +136,14 @@ def build_mhc1_peptides(
                     if key in seen:
                         continue
                     seen.add(key)
-                    pid = f"SVPEP_{prot.event_id}_{hla.replace('*','').replace(':','')}_{start0+1}_{L}_{abs(hash(peptide)) % 1000000}"
+                    pid = stable_identifier(
+                        "SVPEP",
+                        prot.event_id,
+                        hla,
+                        start0 + 1,
+                        L,
+                        peptide,
+                    )
                     out.append(PeptideCandidate(
                         peptide_id=pid,
                         event_id=prot.event_id,

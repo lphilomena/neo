@@ -177,16 +177,28 @@ class SVRecord:
         return 0.0
 
 
-def _select_sample_indices(sample_names: list[str], tumor_sample_name: str | None, normal_sample_name: str | None) -> tuple[int | None, int | None]:
+def _select_sample_indices(
+    sample_names: list[str],
+    tumor_sample_name: str | None,
+    normal_sample_name: str | None,
+    *,
+    require_explicit_pair: bool = True,
+) -> tuple[int | None, int | None]:
     if not sample_names:
         return None, None
-    tumor_i = sample_names.index(tumor_sample_name) if tumor_sample_name in sample_names else None
+    if tumor_sample_name and tumor_sample_name not in sample_names:
+        raise ValueError(f"Tumor sample {tumor_sample_name!r} is not in VCF samples={sample_names}")
+    if normal_sample_name and normal_sample_name not in sample_names:
+        raise ValueError(f"Normal sample {normal_sample_name!r} is not in VCF samples={sample_names}")
+    if len(sample_names) >= 2 and require_explicit_pair and not (tumor_sample_name and normal_sample_name):
+        raise ValueError(
+            "Multi-sample SV VCF requires explicit tumor_sample_name and normal_sample_name; "
+            f"refusing to infer sample order from {sample_names}"
+        )
+    tumor_i = sample_names.index(tumor_sample_name) if tumor_sample_name in sample_names else 0
     normal_i = sample_names.index(normal_sample_name) if normal_sample_name in sample_names else None
-    if tumor_i is None:
-        # Conservative default for Manta tumor-normal VCFs is often NORMAL,TUMOR.
-        tumor_i = len(sample_names) - 1
-    if normal_i is None and len(sample_names) >= 2:
-        normal_i = 0 if tumor_i != 0 else 1
+    if tumor_i == normal_i and normal_i is not None:
+        raise ValueError("Tumor and normal sample names resolve to the same VCF sample")
     return tumor_i, normal_i
 
 
@@ -196,6 +208,8 @@ def parse_vcf_records(
     *,
     tumor_sample_name: str | None = None,
     normal_sample_name: str | None = None,
+    require_explicit_sample_names: bool = True,
+    include_nonpass: bool = False,
 ) -> list[SVRecord]:
     records: list[SVRecord] = []
     sample_names: list[str] = []
@@ -210,7 +224,12 @@ def parse_vcf_records(
             if line.startswith("#CHROM"):
                 header = line.rstrip("\n").split("\t")
                 sample_names = header[9:]
-                tumor_i, normal_i = _select_sample_indices(sample_names, tumor_sample_name, normal_sample_name)
+                tumor_i, normal_i = _select_sample_indices(
+                    sample_names,
+                    tumor_sample_name,
+                    normal_sample_name,
+                    require_explicit_pair=require_explicit_sample_names,
+                )
                 continue
             if line.startswith("#"):
                 continue
@@ -218,6 +237,9 @@ def parse_vcf_records(
             if len(parts) < 8:
                 continue
             chrom, pos, rid, ref, alt, qual, filt, info_raw = parts[:8]
+            filter_tokens = {token.strip().upper() for token in filt.split(";") if token.strip()}
+            if not include_nonpass and filter_tokens != {"PASS"}:
+                continue
             info = parse_info(info_raw)
             svtype = str(info.get("SVTYPE") or "")
             bnd = parse_bnd_alt(alt)
@@ -313,11 +335,20 @@ def read_sv_inputs(
     *,
     tumor_sample_name: str | None = None,
     normal_sample_name: str | None = None,
+    require_explicit_sample_names: bool = True,
+    include_nonpass: bool = False,
 ) -> list[SVRecord]:
     paths = [Path(p) for p in sv_vcfs]
     caller_names = list(callers or [])
     out: list[SVRecord] = []
     for i, p in enumerate(paths):
         caller = caller_names[i] if i < len(caller_names) and caller_names[i] else p.stem.replace(".vcf", "")
-        out.extend(parse_vcf_records(p, caller, tumor_sample_name=tumor_sample_name, normal_sample_name=normal_sample_name))
+        out.extend(parse_vcf_records(
+            p,
+            caller,
+            tumor_sample_name=tumor_sample_name,
+            normal_sample_name=normal_sample_name,
+            require_explicit_sample_names=require_explicit_sample_names,
+            include_nonpass=include_nonpass,
+        ))
     return out

@@ -17,13 +17,7 @@ def classify_wes_tier(event: dict) -> str:
     base = str(event.get("event_confidence_tier") or event.get("final_sv_confidence") or "")
     capture = str(event.get("capture_interpretability") or "UNASSESSED")
     if capture in {"", "UNASSESSED", "NOT_ASSESSED", "CAPTURE_NOT_PROVIDED"}:
-        if rna >= 3:
-            return "WES_Tier1"
-        if base == "Tier1":
-            return "WES_Tier1"
-        if base == "Tier2" or rna >= 1:
-            return "WES_Tier2"
-        return "WES_Tier3"
+        return "WES_UNINTERPRETABLE"
     cap_ok = capture in {"HIGH", "MEDIUM"}
     cap_low = capture == "LOW"
 

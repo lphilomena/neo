@@ -1,0 +1,2 @@
+genome_build	chrom1	pos1	strand1	chrom2	pos2	strand2	gene1	gene2	transcript1	transcript2	protein_sequence	wildtype_protein_sequence	junction_aa_position	in_frame	orf_status	source_tool	source_record_id
+GRCh38	chr1	60	+	chr2	31	-	GENE1	GENE2	TX1	TX2	MKTLLVAVAVATLSSGAAQAPVVKAFGQWERTYIPNKSLLDYA	MKTLLVAVAVATLSSGAAQAAAAAAAAAAAAAAAAAAAAAAAAAA	20	yes	CONFIRMED	Arriba+AGFusion	ARRIBA_FIXTURE_001

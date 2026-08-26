@@ -24,12 +24,15 @@ def test_sv_phase1_builds_raw_tables(tmp_path):
         sample_id="SVMINI",
         sv_vcfs=[FX / "mini_sv.vcf"],
         callers=["GRIDSS2"],
+        tumor_sample_name="TUMOR",
+        normal_sample_name="NORMAL",
         reference_fasta=FX / "mini_ref.fa",
         gencode_gtf=FX / "mini.gtf",
         hla=FX / "hla.txt",
         outdir=tmp_path,
         expression_tsv=FX / "expression.tsv",
-        rna_junction_tsv=FX / "rna_junctions.tsv",
+        rna_junction_tsv=FX / "rna_junctions_exact.tsv",
+        expressed_products_tsv=FX / "expressed_products.tsv",
         normal_expression_tsv=FX / "normal_expression.tsv",
         normal_hla_ligands_tsv=FX / "normal_hla_ligands.tsv",
         peptide_lengths=(8, 9, 10, 11, 12),
@@ -45,4 +48,6 @@ def test_sv_phase1_builds_raw_tables(tmp_path):
     assert all(p["hla_allele"] in {"HLA-A*02:01", "HLA-B*07:02"} for p in raw_peptides)
     assert {len(p["peptide"]) for p in raw_peptides} == {8, 9, 10, 11, 12}
     assert sv_events[0]["rna_support_status"] == "RNA_JUNCTION_SUPPORTED"
-    assert proteins[0]["reconstruction_method"] == "heuristic_cds_prefix_suffix"
+    assert proteins[0]["reconstruction_method"].startswith("external_expressed_transcript:")
+    assert sv_events[0]["rna_evidence_match"] == "EXACT_BREAKPOINT"
+    assert sv_events[0]["rna_evidence_qc"] == "PASS"

@@ -2,10 +2,19 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from .sv_callset import SVRecord
+from .identity import Breakend
 
 
-def _norm_chrom_pair(r: SVRecord) -> tuple[str, str, int, int]:
-    return (r.chrom1, r.chrom2, r.pos1, r.pos2)
+def _canonical_endpoints(r: SVRecord) -> tuple[Breakend, Breakend]:
+    return tuple(sorted((
+        Breakend.create(r.chrom1, r.pos1, r.strand1),
+        Breakend.create(r.chrom2, r.pos2, r.strand2),
+    )))  # type: ignore[return-value]
+
+
+def _norm_chrom_pair(r: SVRecord) -> tuple[str, str, int, int, str, str]:
+    a, b = _canonical_endpoints(r)
+    return (a.chrom, b.chrom, a.pos, b.pos, a.strand, b.strand)
 
 
 def _compatible(a: SVRecord, b: SVRecord, distance: int = 200, consider_type: bool = True, consider_strand: bool = True) -> bool:
@@ -15,12 +24,14 @@ def _compatible(a: SVRecord, b: SVRecord, distance: int = 200, consider_type: bo
             pass
         else:
             return False
-    if a.chrom1 != b.chrom1 or a.chrom2 != b.chrom2:
+    a1, a2 = _canonical_endpoints(a)
+    b1, b2 = _canonical_endpoints(b)
+    if a1.chrom != b1.chrom or a2.chrom != b2.chrom:
         return False
-    if abs(a.pos1 - b.pos1) > distance or abs(a.pos2 - b.pos2) > distance:
+    if abs(a1.pos - b1.pos) > distance or abs(a2.pos - b2.pos) > distance:
         return False
     if consider_strand:
-        for x, y in ((a.strand1, b.strand1), (a.strand2, b.strand2)):
+        for x, y in ((a1.strand, b1.strand), (a2.strand, b2.strand)):
             if x in "+-" and y in "+-" and x != y:
                 return False
     return True

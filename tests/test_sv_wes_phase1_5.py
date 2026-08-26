@@ -9,11 +9,9 @@ FX = ROOT / "data" / "fixtures_sv"
 
 
 def test_classify_wes_tier():
-    assert classify_wes_tier({"rna_junction_reads": 3}) == "WES_Tier1"
-    assert classify_wes_tier({"rna_junction_reads": 0, "event_confidence_tier": "Tier1"}) == "WES_Tier1"
-    assert classify_wes_tier({"rna_junction_reads": 1}) == "WES_Tier2"
-    assert classify_wes_tier({"rna_junction_reads": 0, "event_confidence_tier": "Tier2"}) == "WES_Tier2"
-    assert classify_wes_tier({"rna_junction_reads": 0, "event_confidence_tier": "Tier3"}) == "WES_Tier3"
+    assert classify_wes_tier({"rna_junction_reads": 3}) == "WES_UNINTERPRETABLE"
+    assert classify_wes_tier({"rna_junction_reads": 3, "event_confidence_tier": "Tier1", "capture_interpretability": "HIGH"}) == "WES_Tier1"
+    assert classify_wes_tier({"rna_junction_reads": 1, "event_confidence_tier": "Tier2", "capture_interpretability": "HIGH"}) == "WES_Tier2"
 
 
 def test_wes_adapter_builds_raw_tables(tmp_path):
@@ -21,12 +19,16 @@ def test_wes_adapter_builds_raw_tables(tmp_path):
         sample_id="SVMINI",
         sv_vcfs=[FX / "mini_sv.vcf"],
         callers=["GRIDSS2"],
+        tumor_sample_name="TUMOR",
+        normal_sample_name="NORMAL",
         reference_fasta=FX / "mini_ref.fa",
         gencode_gtf=FX / "mini.gtf",
         hla=FX / "hla.txt",
         outdir=tmp_path,
         expression_tsv=FX / "expression.tsv",
-        rna_junction_tsv=FX / "rna_junctions.tsv",
+        rna_junction_tsv=FX / "rna_junctions_exact.tsv",
+        expressed_products_tsv=FX / "expressed_products.tsv",
+        capture_bed=FX / "capture.bed",
         normal_expression_tsv=FX / "normal_expression.tsv",
         normal_hla_ligands_tsv=FX / "normal_hla_ligands.tsv",
     )
@@ -44,10 +46,14 @@ def test_wes_adapter_class_wrapper(tmp_path):
         sample_id="SVMINI",
         sv_vcfs=[FX / "mini_sv.vcf"],
         callers=["GRIDSS2"],
+        tumor_sample_name="TUMOR",
+        normal_sample_name="NORMAL",
         reference_fasta=FX / "mini_ref.fa",
         gencode_gtf=FX / "mini.gtf",
         hla=FX / "hla.txt",
         outdir=tmp_path,
-        rna_junction_tsv=FX / "rna_junctions.tsv",
+        rna_junction_tsv=FX / "rna_junctions_exact.tsv",
+        expressed_products_tsv=FX / "expressed_products.tsv",
+        capture_bed=FX / "capture.bed",
     )
     assert Path(out["raw_peptides"]).is_file()

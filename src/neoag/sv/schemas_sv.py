@@ -1,5 +1,5 @@
 SV_EVENT_FULL_FIELDS = [
-    "sv_event_id", "event_id", "sample_id", "evidence_scope", "svtype",
+    "sv_event_id", "event_id", "sample_id", "evidence_scope", "genome_build", "adjacency_key", "svtype",
     "chrom1", "pos1", "strand1", "chrom2", "pos2", "strand2", "bnd_alt",
     "cipos", "ciend", "svlen", "inserted_sequence",
     "callers", "caller_count", "record_ids",
@@ -15,7 +15,8 @@ SV_EVENT_FULL_FIELDS = [
     "gene1", "gene2", "transcript1", "transcript2", "exon1", "exon2",
     "cds_phase1", "cds_phase2", "effect_class", "fusion_in_frame", "frameshift",
     "protein_sequence_id", "junction_aa_position", "rna_junction_reads",
-    "rna_support_status", "final_sv_confidence", "reconstruction_status", "reconstruction_reason",
+    "rna_support_status", "rna_evidence_match", "rna_evidence_qc", "final_sv_confidence",
+    "reconstruction_status", "reconstruction_reason",
     "filter_status", "filter_reason",
 ]
 

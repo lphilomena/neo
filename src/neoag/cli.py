@@ -534,6 +534,9 @@ def cmd_sv_build_raw(args):
         allow_tier2=not args.tier1_only,
         capture_bed=getattr(args, "capture_bed", None),
         peptide_lengths=_mhc1_lengths_from_args(args),
+        genome_build=args.genome_build,
+        expressed_products_tsv=args.expressed_products,
+        include_nonpass=args.include_nonpass,
     )
     print("SV Phase 1 raw inputs completed.")
     for k, v in out.items():
@@ -611,6 +614,9 @@ def cmd_sv_run_full(args):
         capture_near_bp=getattr(args, "capture_near_bp", 250),
         capture_slop_bp=getattr(args, "capture_slop_bp", 1000),
         peptide_lengths=_mhc1_lengths_from_args(args),
+        genome_build=args.genome_build,
+        expressed_products_tsv=args.expressed_products,
+        include_nonpass=args.include_nonpass,
     )
     score_out = run_sv_score(
         outdir=args.outdir,
@@ -660,6 +666,9 @@ def _sv_build_raw_common(args, *, wes: bool):
         merge_distance_bp=args.merge_distance_bp,
         allow_tier2=not args.tier1_only,
         peptide_lengths=_mhc1_lengths_from_args(args),
+        genome_build=args.genome_build,
+        expressed_products_tsv=args.expressed_products,
+        include_nonpass=args.include_nonpass,
         **({
             "capture_bed": getattr(args, "capture_bed", None),
             "capture_near_bp": getattr(args, "capture_near_bp", 250),
@@ -702,6 +711,9 @@ def cmd_sv_run_full_wes(args):
         capture_near_bp=getattr(args, "capture_near_bp", 250),
         capture_slop_bp=getattr(args, "capture_slop_bp", 1000),
         peptide_lengths=_mhc1_lengths_from_args(args),
+        genome_build=args.genome_build,
+        expressed_products_tsv=args.expressed_products,
+        include_nonpass=args.include_nonpass,
     )
     score_out = run_sv_score(
         outdir=args.outdir,
@@ -1482,6 +1494,9 @@ def build_parser():
     sv.add_argument("--normal-sample-name")
     sv.add_argument("--expression")
     sv.add_argument("--rna-junctions")
+    sv.add_argument("--expressed-products", help="Exact-breakpoint expressed fusion product TSV; required for peptide generation")
+    sv.add_argument("--genome-build", default="GRCh38")
+    sv.add_argument("--include-nonpass", action="store_true", help="Research audit only: retain non-PASS VCF records")
     sv.add_argument("--normal-expression")
     sv.add_argument("--normal-hla-ligands")
     sv.add_argument("--merge-distance-bp", type=int, default=200)
@@ -1533,6 +1548,9 @@ def build_parser():
     svf.add_argument("--normal-sample-name")
     svf.add_argument("--expression")
     svf.add_argument("--rna-junctions")
+    svf.add_argument("--expressed-products", help="Exact-breakpoint expressed fusion product TSV; required for peptide generation")
+    svf.add_argument("--genome-build", default="GRCh38")
+    svf.add_argument("--include-nonpass", action="store_true", help="Research audit only: retain non-PASS VCF records")
     svf.add_argument("--normal-expression")
     svf.add_argument("--normal-hla-ligands")
     svf.add_argument("--reference-proteome")
@@ -1567,9 +1585,12 @@ def build_parser():
     svw.add_argument("--normal-sample-name")
     svw.add_argument("--expression")
     svw.add_argument("--rna-junctions")
+    svw.add_argument("--expressed-products", help="Exact-breakpoint expressed fusion product TSV; required for peptide generation")
+    svw.add_argument("--genome-build", default="GRCh38")
+    svw.add_argument("--include-nonpass", action="store_true", help="Research audit only: retain non-PASS VCF records")
     svw.add_argument("--normal-expression")
     svw.add_argument("--normal-hla-ligands")
-    svw.add_argument("--capture-bed", help="WES capture BED; enables capture-aware Phase 1.5 status")
+    svw.add_argument("--capture-bed", required=True, help="WES capture BED; mandatory in hardened mode")
     svw.add_argument("--capture-near-bp", type=int, default=250)
     svw.add_argument("--capture-slop-bp", type=int, default=1000)
     svw.add_argument("--merge-distance-bp", type=int, default=200)
@@ -1594,9 +1615,12 @@ def build_parser():
     svfw.add_argument("--normal-sample-name")
     svfw.add_argument("--expression")
     svfw.add_argument("--rna-junctions")
+    svfw.add_argument("--expressed-products", help="Exact-breakpoint expressed fusion product TSV; required for peptide generation")
+    svfw.add_argument("--genome-build", default="GRCh38")
+    svfw.add_argument("--include-nonpass", action="store_true", help="Research audit only: retain non-PASS VCF records")
     svfw.add_argument("--normal-expression")
     svfw.add_argument("--normal-hla-ligands")
-    svfw.add_argument("--capture-bed", help="WES capture BED; enables capture-aware Phase 1.5 status")
+    svfw.add_argument("--capture-bed", required=True, help="WES capture BED; mandatory in hardened mode")
     svfw.add_argument("--capture-near-bp", type=int, default=250)
     svfw.add_argument("--capture-slop-bp", type=int, default=1000)
     svfw.add_argument("--reference-proteome")

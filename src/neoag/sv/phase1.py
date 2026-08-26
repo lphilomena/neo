@@ -15,8 +15,14 @@ from .sv_filter import score_cluster_confidence, passes_phase1
 from .reference import FastaReference, GtfAnnotation
 from .protein_reconstruct import reconstruct_cluster_protein, ProteinReconstruction
 from .peptide_builder import build_mhc1_peptides, read_hla_alleles
-from .evidence import load_expression, load_normal_expression, normal_expr_for_genes, load_normal_ligands, load_junction_reads
+from .evidence import load_expression, load_normal_expression, normal_expr_for_genes, load_normal_ligands
 from .wes_capture import CaptureRegions, write_expanded_beds, annotate_cluster_capture
+from .identity import canonical_breakpoint_key, stable_identifier
+from .exact_evidence import (
+    load_exact_junction_evidence,
+    load_expressed_products,
+    product_meta,
+)
 
 
 
@@ -43,14 +49,12 @@ def _wes_priority_cap_from_profile(profile: dict[str, Any], tier: str) -> str:
     return str(caps.get(key) or fallback)
 
 def _event_id(sample_id: str, svtype: str, gene1: str, gene2: str, chrom1: str, pos1: int, chrom2: str, pos2: int) -> str:
-    gene_part = f"{gene1}_{gene2}" if gene2 and gene2 != gene1 else gene1 or "NA"
-    return safe_id(f"SV_{sample_id}_{svtype}_{gene_part}_{chrom1}_{pos1}_{chrom2}_{pos2}")
+    del gene1, gene2
+    return stable_identifier("SV", sample_id, svtype, chrom1, pos1, chrom2, pos2)
 
 
 def _event_expression(effect_class: str, gene1: str, gene2: str, expr: dict[str, float], rna_reads: int) -> float:
-    if rna_reads > 0:
-        # Junction evidence is not TPM; use a bounded proxy only for event-level scoring.
-        return min(20.0, max(1.0, float(rna_reads)))
+    del rna_reads  # Junction read support is not an expression unit and must never be used as TPM.
     if effect_class == "SV_Fusion" and gene1 and gene2:
         vals = [expr.get(g, 0.0) for g in (gene1, gene2) if g]
         return min(vals) if vals else 0.0
@@ -69,6 +73,8 @@ def _sv_event_row(cluster, event_id: str, sample_id: str, meta: dict[str, Any], 
         "sv_event_id": event_id,
         "event_id": event_id,
         "sample_id": sample_id,
+        "genome_build": extra.get("genome_build", ""),
+        "adjacency_key": extra.get("adjacency_key", ""),
         "svtype": rep.svtype,
         "chrom1": rep.chrom1,
         "pos1": rep.pos1,
@@ -117,7 +123,9 @@ def _sv_event_row(cluster, event_id: str, sample_id: str, meta: dict[str, Any], 
         "protein_sequence_id": protein.protein_sequence_id if protein else "",
         "junction_aa_position": meta.get("junction_aa_position", ""),
         "rna_junction_reads": rna_reads,
-        "rna_support_status": "RNA_JUNCTION_SUPPORTED" if rna_reads >= 3 else ("RNA_WEAK_JUNCTION" if rna_reads > 0 else "RNA_NOT_AVAILABLE_OR_NOT_DETECTED"),
+        "rna_support_status": "RNA_JUNCTION_SUPPORTED" if extra.get("rna_evidence_qc") == "PASS" else ("RNA_JUNCTION_LOW_QC" if rna_reads > 0 else "RNA_NOT_AVAILABLE_OR_NOT_DETECTED"),
+        "rna_evidence_match": extra.get("rna_evidence_match", "NO_EXACT_MATCH"),
+        "rna_evidence_qc": extra.get("rna_evidence_qc", "UNASSESSED"),
         "final_sv_confidence": conf.tier,
         "reconstruction_status": meta.get("reconstruction_status", "failed"),
         "reconstruction_reason": meta.get("reconstruction_reason", ""),
@@ -157,6 +165,7 @@ def _raw_event_from_sv(svrow: dict[str, Any], protein: ProteinReconstruction | N
         "disease_profile": profile_name,
         "event_type": effect_class,
         "mutation_source": "SV",
+        "source_chain_track": "DNA_SV",
         "peptide_consequence": infer_peptide_consequence(event_type=effect_class),
         "evidence_scope": svrow.get("evidence_scope", "GENOME_WIDE"),
         "priority_cap": svrow.get("priority_cap", ""),
@@ -165,6 +174,21 @@ def _raw_event_from_sv(svrow: dict[str, Any], protein: ProteinReconstruction | N
         "event_name": gene_label or svrow["event_id"],
         "chrom": svrow.get("chrom1", ""),
         "pos": svrow.get("pos1", ""),
+        "genome_build": svrow.get("genome_build", ""),
+        "canonical_junction_id": svrow.get("adjacency_key", ""),
+        "adjacency_key": svrow.get("adjacency_key", ""),
+        "chrom1": svrow.get("chrom1", ""),
+        "pos1": svrow.get("pos1", ""),
+        "strand1": svrow.get("strand1", ""),
+        "chrom2": svrow.get("chrom2", ""),
+        "pos2": svrow.get("pos2", ""),
+        "strand2": svrow.get("strand2", ""),
+        "rna_evidence_match": svrow.get("rna_evidence_match", ""),
+        "rna_evidence_qc": svrow.get("rna_evidence_qc", ""),
+        "filter_status": svrow.get("filter_status", ""),
+        "reconstruction_status": svrow.get("reconstruction_status", ""),
+        "reconstruction_method": protein.reconstruction_method if protein else "",
+        "reconstruction_confidence": protein.reconstruction_confidence if protein else "",
         "ref": "N",
         "alt": svrow.get("bnd_alt") or f"<{effect_class}>",
         "transcript_id": protein.transcript_id if protein else svrow.get("transcript1", ""),
@@ -176,6 +200,8 @@ def _raw_event_from_sv(svrow: dict[str, Any], protein: ProteinReconstruction | N
         "tumor_vaf": f"{vaf:.4f}",
         "tumor_depth": f"{t_depth:.0f}",
         "tumor_alt_count": f"{t_alt:.0f}",
+        "normal_depth": str(svrow.get("normal_local_depth") or ""),
+        "normal_alt_count": str(svrow.get("normal_alt_support") or ""),
         "clonality": f"{min(1.0, vaf / 0.35 if vaf > 0 else 0.0):.4f}",
         "persistence": "0.7000" if effect_class in {"SV_Fusion", "SV_Frameshift"} else "0.5000",
         "tumor_specificity": f"{clamp(specificity):.4f}",
@@ -198,13 +224,15 @@ def _raw_event_from_sv(svrow: dict[str, Any], protein: ProteinReconstruction | N
     return enrich_event_layers(base)
 
 
-def _raw_peptide_from_candidate(cand, effect_class: str, gene_label: str, rna_reads: int = 0, evidence_scope: str = "", priority_cap: str = "", wes_confidence_tier: str = "") -> dict[str, Any]:
+def _raw_peptide_from_candidate(cand, effect_class: str, gene_label: str, rna_reads: int = 0, evidence_scope: str = "", priority_cap: str = "", wes_confidence_tier: str = "", svrow: dict[str, Any] | None = None, protein: ProteinReconstruction | None = None) -> dict[str, Any]:
+    svrow = svrow or {}
     base = {
         "peptide_id": cand.peptide_id,
         "event_id": cand.event_id,
         "sample_id": cand.sample_id,
         "event_type": effect_class,
         "mutation_source": "SV",
+        "source_chain_track": "DNA_SV",
         "peptide_consequence": infer_peptide_consequence(event_type=effect_class),
         "evidence_scope": evidence_scope,
         "priority_cap": priority_cap,
@@ -215,6 +243,21 @@ def _raw_peptide_from_candidate(cand, effect_class: str, gene_label: str, rna_re
         "crosses_junction": cand.crosses_junction,
         "contains_novel_aa": cand.contains_novel_aa,
         "rna_junction_reads": str(rna_reads),
+        "genome_build": svrow.get("genome_build", ""),
+        "canonical_junction_id": svrow.get("adjacency_key", ""),
+        "adjacency_key": svrow.get("adjacency_key", ""),
+        "chrom1": svrow.get("chrom1", ""),
+        "pos1": svrow.get("pos1", ""),
+        "strand1": svrow.get("strand1", ""),
+        "chrom2": svrow.get("chrom2", ""),
+        "pos2": svrow.get("pos2", ""),
+        "strand2": svrow.get("strand2", ""),
+        "rna_evidence_match": svrow.get("rna_evidence_match", ""),
+        "rna_evidence_qc": svrow.get("rna_evidence_qc", ""),
+        "filter_status": svrow.get("filter_status", ""),
+        "reconstruction_status": svrow.get("reconstruction_status", ""),
+        "reconstruction_method": protein.reconstruction_method if protein else "",
+        "reconstruction_confidence": protein.reconstruction_confidence if protein else "",
         "hla_allele": cand.hla_allele,
         "mhc_class": cand.mhc_class,
         "source_tool": "SVPhase1",
@@ -351,6 +394,11 @@ def build_sv_phase1_raw(
     capture_near_bp: int = 250,
     capture_slop_bp: int = 1000,
     peptide_lengths: tuple[int, ...] = (8, 9, 10, 11),
+    genome_build: str = "GRCh38",
+    expressed_products_tsv: str | Path | None = None,
+    strict_sample_names: bool = True,
+    include_nonpass: bool = False,
+    allow_heuristic_proteins: bool = False,
 ) -> dict[str, str]:
     outdir = Path(outdir)
     parsed_dir = outdir / "parsed"
@@ -367,7 +415,10 @@ def build_sv_phase1_raw(
     expr = load_expression(expression_tsv)
     normal_expr = load_normal_expression(normal_expression_tsv)
     normal_ligands = load_normal_ligands(normal_hla_ligands_tsv)
-    junction_reads = load_junction_reads(rna_junction_tsv)
+    junction_evidence = load_exact_junction_evidence(rna_junction_tsv, default_build=genome_build)
+    expressed_products = load_expressed_products(expressed_products_tsv, default_build=genome_build)
+    if wes_mode and not capture_bed:
+        raise ValueError("WES SV mode requires capture_bed; capture-unaware WES SV ranking is forbidden")
     capture_regions = CaptureRegions.from_bed(capture_bed) if (wes_mode and capture_bed) else None
     capture_paths = write_expanded_beds(capture_bed, outdir / "capture", near_bp=capture_near_bp, slop_bp=capture_slop_bp) if (wes_mode and capture_bed) else {}
 
@@ -376,8 +427,17 @@ def build_sv_phase1_raw(
     else:
         from . import sv_filter as filt
 
-    records = read_sv_inputs(sv_vcfs, callers, tumor_sample_name=tumor_sample_name, normal_sample_name=normal_sample_name)
-    clusters = cluster_sv_records(records, distance=merge_distance_bp)
+    sv_rules = profile.get("sv_wes_phase1_5" if wes_mode else "sv_phase1", {}) or {}
+    effective_merge_distance = int(sv_rules.get("merge_distance_bp", merge_distance_bp))
+    records = read_sv_inputs(
+        sv_vcfs,
+        callers,
+        tumor_sample_name=tumor_sample_name,
+        normal_sample_name=normal_sample_name,
+        require_explicit_sample_names=strict_sample_names,
+        include_nonpass=include_nonpass,
+    )
+    clusters = cluster_sv_records(records, distance=effective_merge_distance)
 
     sv_rows: list[dict[str, Any]] = []
     proteins: list[ProteinReconstruction] = []
@@ -390,26 +450,57 @@ def build_sv_phase1_raw(
         rep = cluster.representative
         provisional_gene1 = ann.gene_at(rep.chrom1, rep.pos1)
         provisional_gene2 = ann.gene_at(rep.chrom2, rep.pos2)
-        gene_pair = f"{provisional_gene1}::{provisional_gene2}" if provisional_gene1 and provisional_gene2 else ""
-        rna_reads = max(
-            junction_reads.get(gene_pair, 0),
-            junction_reads.get(f"{provisional_gene2}::{provisional_gene1}", 0),
+        adjacency_key = canonical_breakpoint_key(
+            genome_build, rep.chrom1, rep.pos1, rep.strand1,
+            rep.chrom2, rep.pos2, rep.strand2,
         )
+        exact_rna = junction_evidence.get(adjacency_key)
+        rna_reads = exact_rna.support_reads if exact_rna and exact_rna.qc_pass else 0
+        score_kwargs = {
+            "min_tumor_sr": int(sv_rules.get("min_tumor_sr", 1 if wes_mode else 2)),
+            "min_tumor_pe": int(sv_rules.get("min_tumor_pe", 2 if wes_mode else 4)),
+            "max_normal_sr": int(sv_rules.get("max_normal_sr", 0)),
+            "max_normal_pe": int(sv_rules.get("max_normal_pe", 1)),
+            "max_breakpoint_ci_bp": int(sv_rules.get("max_breakpoint_ci_bp", 750 if wes_mode else 500)),
+            "rna_junction_reads": rna_reads,
+        }
         cap_meta = annotate_cluster_capture(cluster, capture_regions, near_bp=capture_near_bp, slop_bp=capture_slop_bp) if wes_mode else {}
-        conf = filt.score_wes_confidence(cluster, rna_junction_reads=rna_reads, capture_interpretability=cap_meta.get("capture_interpretability")) if wes_mode else score_cluster_confidence(cluster, rna_junction_reads=rna_reads)
+        conf = filt.score_wes_confidence(cluster, capture_interpretability=cap_meta.get("capture_interpretability"), **score_kwargs) if wes_mode else score_cluster_confidence(cluster, **score_kwargs)
         if not (filt.passes_wes_phase1_5(cluster, conf, allow_tier2=allow_tier2) if wes_mode else passes_phase1(cluster, conf, allow_tier2=allow_tier2)):
             continue
         eid = _event_id(sample_id, rep.svtype, provisional_gene1, provisional_gene2, rep.chrom1, rep.pos1, rep.chrom2, rep.pos2)
-        # Event-specific lookup can override provisional RNA evidence.
-        rna_reads = max(rna_reads, junction_reads.get(eid, 0))
-        cap_meta = annotate_cluster_capture(cluster, capture_regions, near_bp=capture_near_bp, slop_bp=capture_slop_bp) if wes_mode else {}
-        conf = filt.score_wes_confidence(cluster, rna_junction_reads=rna_reads, capture_interpretability=cap_meta.get("capture_interpretability")) if wes_mode else score_cluster_confidence(cluster, rna_junction_reads=rna_reads)
-        protein, meta = reconstruct_cluster_protein(cluster, eid, sample_id, ann, ref)
+        product = expressed_products.get(adjacency_key)
+        if product:
+            protein = product.to_reconstruction(eid, sample_id)
+            meta = product_meta(product)
+        else:
+            heuristic_protein, meta = reconstruct_cluster_protein(cluster, eid, sample_id, ann, ref)
+            if heuristic_protein:
+                heuristic_protein.reconstruction_confidence = "low"
+                heuristic_protein.reconstruction_method = "DNA_ONLY_HYPOTHESIS:" + heuristic_protein.reconstruction_method
+                heuristic_protein.reconstruction_reason = "ORF_HYPOTHESIS_UNRESOLVED;" + heuristic_protein.reconstruction_reason
+            protein = heuristic_protein if allow_heuristic_proteins else None
+            meta["reconstruction_status"] = "hypothesis_only"
+            meta["reconstruction_reason"] = "ORF_HYPOTHESIS_UNRESOLVED; exact expressed product not supplied"
         priority_cap = _wes_priority_cap_from_profile(profile, conf.tier) if wes_mode else ""
-        extra = {**cap_meta, "evidence_scope": "EXOME_CAPTURE_LIMITED" if wes_mode else "GENOME_WIDE", "wes_confidence_tier": conf.tier if wes_mode else "", "priority_cap": priority_cap}
+        extra = {
+            **cap_meta,
+            "evidence_scope": "EXOME_CAPTURE_LIMITED" if wes_mode else "GENOME_WIDE",
+            "wes_confidence_tier": conf.tier if wes_mode else "",
+            "priority_cap": priority_cap,
+            "genome_build": genome_build,
+            "adjacency_key": adjacency_key,
+            "rna_evidence_match": "EXACT_BREAKPOINT" if exact_rna else "NO_EXACT_MATCH",
+            "rna_evidence_qc": "PASS" if exact_rna and exact_rna.qc_pass else ("FAIL" if exact_rna else "UNASSESSED"),
+        }
         svrow = _sv_event_row(cluster, eid, sample_id, meta, conf, protein, rna_reads, extra)
         sv_rows.append(svrow)
-        if not protein or meta.get("reconstruction_status") != "ok":
+        if (
+            not protein
+            or meta.get("reconstruction_status") != "confirmed_expressed_product"
+            or not exact_rna
+            or not exact_rna.qc_pass
+        ):
             continue
         if meta.get("effect_class") not in {"SV_Fusion", "SV_Frameshift", "SV_Junction", "SV_Insertion"}:
             continue
@@ -425,7 +516,7 @@ def build_sv_phase1_raw(
         sidecar_peptides.extend(cands)
         gene_label = raw_event["gene"]
         for cand in cands:
-            raw_peptides.append(_raw_peptide_from_candidate(cand, str(svrow.get("effect_class")), gene_label, rna_reads, raw_event.get("evidence_scope", ""), raw_event.get("priority_cap", ""), svrow.get("wes_confidence_tier", "")))
+            raw_peptides.append(_raw_peptide_from_candidate(cand, str(svrow.get("effect_class")), gene_label, rna_reads, raw_event.get("evidence_scope", ""), raw_event.get("priority_cap", ""), svrow.get("wes_confidence_tier", ""), svrow=svrow, protein=protein))
 
     raw_events_path = parsed_dir / "raw_events.tsv"
     raw_peptides_path = parsed_dir / "raw_peptides.tsv"
@@ -461,6 +552,12 @@ def build_sv_phase1_raw(
         "warning": "SV Phase 1 is a computational triage adapter; validate SVs and RNA junctions experimentally.",
         "capture_bed": str(capture_bed) if capture_bed else None,
         "capture_sidecars": capture_paths,
+        "genome_build": genome_build,
+        "expressed_products_tsv": str(expressed_products_tsv) if expressed_products_tsv else None,
+        "strict_sample_names": strict_sample_names,
+        "include_nonpass": include_nonpass,
+        "allow_heuristic_proteins": allow_heuristic_proteins,
+        "rna_evidence_identity": "exact_canonical_breakpoint_only",
     }
     if wes_mode:
         prov_payload["evidence_scope"] = "EXOME_CAPTURE_LIMITED"

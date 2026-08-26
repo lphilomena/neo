@@ -30,6 +30,11 @@ def build_sv_wes_phase1_5_raw(
     capture_near_bp: int = 250,
     capture_slop_bp: int = 1000,
     peptide_lengths: tuple[int, ...] = (8, 9, 10, 11),
+    genome_build: str = "GRCh38",
+    expressed_products_tsv: str | Path | None = None,
+    strict_sample_names: bool = True,
+    include_nonpass: bool = False,
+    allow_heuristic_proteins: bool = False,
 ) -> dict[str, str]:
     """Build raw_events/raw_peptides using WES Phase 1.5 filters and profile."""
     return build_sv_phase1_raw(
@@ -54,6 +59,11 @@ def build_sv_wes_phase1_5_raw(
         capture_near_bp=capture_near_bp,
         capture_slop_bp=capture_slop_bp,
         peptide_lengths=peptide_lengths,
+        genome_build=genome_build,
+        expressed_products_tsv=expressed_products_tsv,
+        strict_sample_names=strict_sample_names,
+        include_nonpass=include_nonpass,
+        allow_heuristic_proteins=allow_heuristic_proteins,
     )
 
 

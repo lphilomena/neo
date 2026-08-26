@@ -1,9 +1,11 @@
 # Layer 1: mutation_source | Layer 2: peptide_consequence | Layer 3: scored in ranked_peptides (l3_*)
 EVENT_FIELDS = [
-    "event_id","splice_event_id","sample_id","disease_profile","event_type","mutation_source","peptide_consequence",
+    "event_id","splice_event_id","sample_id","disease_profile","event_type","mutation_source","source_chain_track","peptide_consequence",
     "evidence_scope","priority_cap","wes_confidence_tier",
     "gene","event_name","splice_event_type","junction_ids",
-    "genome_build","canonical_junction_id","source_junction_id",
+    "genome_build","canonical_junction_id","source_junction_id","adjacency_key",
+    "chrom1","pos1","strand1","chrom2","pos2","strand2",
+    "rna_evidence_match","rna_evidence_qc","reconstruction_status","reconstruction_method","reconstruction_confidence","filter_status",
     "junction_chrom","junction_start","junction_end","junction_strand","junction_donor","junction_acceptor",
     "junction_coordinate_system","junction_resolution_status","junction_resolution_reason",
     "junction_match_status","junction_match_method","junction_support_status","junction_support_conflict","junction_support_reason",
@@ -52,10 +54,12 @@ EVENT_FIELDS = [
 ]
 
 PEPTIDE_FIELDS = [
-    "peptide_id","event_id","splice_event_id","transcript_hypothesis_id","orf_id","origin_peptide_id","sample_id","event_type","mutation_source","peptide_consequence",
+    "peptide_id","event_id","splice_event_id","transcript_hypothesis_id","orf_id","origin_peptide_id","sample_id","event_type","mutation_source","source_chain_track","peptide_consequence",
     "evidence_scope","priority_cap","wes_confidence_tier",
     "gene","peptide","wildtype_peptide","splice_event_type","junction_ids",
-    "genome_build","canonical_junction_id","source_junction_id",
+    "genome_build","canonical_junction_id","source_junction_id","adjacency_key",
+    "chrom1","pos1","strand1","chrom2","pos2","strand2",
+    "rna_evidence_match","rna_evidence_qc","reconstruction_status","reconstruction_method","reconstruction_confidence","filter_status",
     "junction_chrom","junction_start","junction_end","junction_strand","junction_donor","junction_acceptor",
     "junction_coordinate_system","junction_resolution_status","junction_resolution_reason",
     "junction_match_status","junction_match_method","junction_support_status","junction_support_conflict","junction_support_reason",
