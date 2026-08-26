@@ -54,7 +54,7 @@ def test_patient_report_is_plain_language(tmp_path):
     assert "关键人工审阅事件" in text
     assert "进入本表不等于自动升级为R1/R2" in text
     assert "关键证据与下一步" in text
-    section6 = text.split("6. Top候选综合证据与实验建议（前20项）", 1)[1].split("7. 分析方法与工具状态", 1)[0]
+    section6 = text.split("6. 人工复核候选的综合证据与实验建议（1个）", 1)[1].split("7. 分析方法与工具状态", 1)[0]
     assert "<th>候选</th>" in section6
     assert "<th>为什么值得关注</th>" in section6
     assert "<th>当前不确定性</th>" in section6
@@ -66,9 +66,9 @@ def test_patient_report_is_plain_language(tmp_path):
     assert "RNA位点深度 20" in text
     assert "RNA alt reads 4" in text
     assert "RNA VAF 0.2000" in text
-    assert "5. 候选肽段Top 50（跨赛道、按事件去重）" in text
-    assert "重点候选 Top 50" in text
-    candidate_section = text.split("5. 候选肽段Top 50（跨赛道、按事件去重）", 1)[1].split("6. Top候选综合证据与实验建议（前20项）", 1)[0]
+    assert "5. 当前进入人工复核的候选Peptide–HLA组合（去重后1个）" in text
+    assert "当前展示1个去重候选组合" in text
+    candidate_section = text.split("5. 当前进入人工复核的候选Peptide–HLA组合（去重后1个）", 1)[1].split("6. 人工复核候选的综合证据与实验建议（1个）", 1)[0]
     assert "<th>关键证据与下一步</th>" in candidate_section
     assert "<th>关键证据</th>" not in candidate_section
     assert "<th>主要限制</th>" not in candidate_section
@@ -156,13 +156,13 @@ def test_patient_top_candidates_include_non_r4_technical_review_rows(tmp_path):
     out = tmp_path / "patient_top100.html"
     make_patient_report(out, bundle, event_top_n=20, candidate_top_n=100)
     text = out.read_text(encoding="utf-8")
-    section = text.split("<h3>重点候选 Top 100</h3>", 1)[1].split("</table>", 1)[0]
+    section = text.split("<h3>当前展示100个去重候选组合</h3>", 1)[1].split("</table>", 1)[0]
     assert section.count("<tr>") - 1 == 100
     assert section.count("<td>R3-REVIEW</td>") == 100
     assert "G99" in section
     assert "G100" not in section
 
-    interpretation = text.split("6. Top候选综合证据与实验建议（前20项）", 1)[1].split("7. 分析方法与工具状态", 1)[0]
+    interpretation = text.split("6. 人工复核候选的综合证据与实验建议（20个）", 1)[1].split("7. 分析方法与工具状态", 1)[0]
     assert interpretation.count("<tr>") - 1 == 20
     assert "G19 |" in interpretation
     assert "G20 |" not in interpretation
@@ -353,6 +353,28 @@ def test_patient_home_conclusion_is_direct_and_derived_from_current_results(tmp_
     assert "本次重点审阅：" not in text
 
 
+def test_patient_candidate_section_counts_final_peptide_hla_deduplication(tmp_path):
+    bundle = _bundle()
+    bundle.events = [
+        {"event_id": "E1", "gene": "GENEA", "event_type": "SNV", "best_evidence_grade": "R3", "evidence_missing_layers": "rna"},
+        {"event_id": "E2", "gene": "GENEA", "event_type": "SNV", "best_evidence_grade": "R3", "evidence_missing_layers": "safety"},
+    ]
+    common = {"gene": "GENEA", "event_type": "SNV", "peptide": "ABCDEFGHI", "hla_allele": "HLA-A*02:01"}
+    bundle.peptides = [
+        {**common, "peptide_id": "P1", "event_id": "E1"},
+        {**common, "peptide_id": "P2", "event_id": "E2"},
+    ]
+    out = tmp_path / "patient_deduplicated_count.html"
+    make_patient_report(out, bundle, candidate_top_n=100)
+    text = out.read_text(encoding="utf-8")
+    assert "候选Peptide–HLA组合（去重后1个）" in text
+    assert "人工复核候选的综合证据与实验建议（1个）" in text
+    assert "Top 100" not in text
+    assert "前20项" not in text
+    section = text.split("<h3>当前展示1个去重候选组合</h3>", 1)[1].split("</table>", 1)[0]
+    assert section.count("<tr>") - 1 == 1
+
+
 def test_patient_event_top_table_uses_event_level_r3_subgrade(tmp_path):
     bundle = _bundle()
     bundle.events[0].update({
@@ -385,7 +407,7 @@ def test_patient_report_top_limits_are_configurable(tmp_path):
     make_patient_report(out, _bundle(), event_top_n=1, candidate_top_n=3)
     text = out.read_text(encoding="utf-8")
     assert "SNV Top 1" in text
-    assert "5. 候选肽段Top 3（跨赛道、按事件去重）" in text
+    assert "5. 当前进入人工复核的候选Peptide–HLA组合（去重后1个）" in text
 
 
 def test_patient_report_has_track_top5_when_present(tmp_path):
@@ -1839,7 +1861,7 @@ def test_disease_knowledge_prioritizes_display_without_changing_r_grade(tmp_path
     out = tmp_path / "patient_anchor.html"
     make_patient_report(out, bundle, event_top_n=2, candidate_top_n=2)
     text = out.read_text(encoding="utf-8")
-    section = text.split("重点候选 Top 2", 1)[1].split("</table>", 1)[0]
+    section = text.split("当前展示2个去重候选组合", 1)[1].split("</table>", 1)[0]
     assert section.index("EWSR1::WT1") < section.index("PPP1R9B::PPP1R9B")
     assert "仅优先展示，不自动提升R等级" in text
     assert "<td>R3-" in section

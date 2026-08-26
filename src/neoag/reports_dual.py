@@ -5214,7 +5214,11 @@ def make_patient_report(
         out.append("<p class='small'>本次未筛出具有明确机制标记、多工具支持或证据冲突的独立人工审阅事件。</p>")
     out.append("</div>")
 
-    out.append(f"<div class='section'><h2>5. 候选肽段Top {candidate_top_n}（跨赛道、按事件去重）</h2>")
+    displayed_candidate_count = len(top)
+    out.append(
+        "<div class='section'><h2>5. 当前进入人工复核的候选Peptide–HLA组合"
+        f"（去重后{displayed_candidate_count}个）</h2>"
+    )
 
     def patient_candidate_rows(rows: list[dict[str, str]]) -> list[dict[str, Any]]:
         result = []
@@ -5231,7 +5235,7 @@ def make_patient_report(
 
     candidate_headers = ["排名", "基因", "类型", "肽段-HLA", "等级", "关键证据与下一步"]
     out.append(
-        f"<h3>重点候选 Top {candidate_top_n}</h3>"
+        f"<h3>当前展示{displayed_candidate_count}个去重候选组合</h3>"
         "<p class='small'>本表按事件级证据等级展示候选：R1、R2及R3的三个细分等级"
         "（R3-READY、R3-GAP、R3-REVIEW）。表内不再使用未细分的R3；其中R3-READY表示候选基本合理、"
         "仍需完成指定确认步骤，R3-GAP表示关键资料缺失，R3-REVIEW表示证据冲突或伪影风险需人工复核。"
@@ -5256,11 +5260,11 @@ def make_patient_report(
     ]))
     out.append(f"<p class='small'>当前暂缓/不推进及完整性门槛未通过的{len(paused_representatives)}个事件代表候选不进入患者版重点表，仅保留在科研技术版审阅池。排序仍采用R1–R4、同赛道Pareto、确定性tie-break和事件去重。</p></div>")
 
-    interpretation_top_n = min(20, candidate_top_n)
-    interpretation_top = top[:interpretation_top_n]
-    out.append(f"<div class='section'><h2>6. Top候选综合证据与实验建议（前{interpretation_top_n}项）</h2>")
+    interpretation_top = top[:20]
+    interpretation_count = len(interpretation_top)
+    out.append(f"<div class='section'><h2>6. 人工复核候选的综合证据与实验建议（{interpretation_count}个）</h2>")
     out.append(
-        f"<p>本节只解读正式候选排序最前的{interpretation_top_n}项；建议顺序：先确认事件和异常转录本真实性，"
+        f"<p>本节解读当前进入人工复核的{interpretation_count}个去重候选组合；建议顺序：先确认事件和异常转录本真实性，"
         "再补RNA alt/VAF或精确junction证据，完成MT/WT、正常背景和限制性HLA复核，最后开展短肽、长肽、"
         "minigene及T细胞功能实验。</p>"
     )
