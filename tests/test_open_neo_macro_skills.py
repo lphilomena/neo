@@ -34,6 +34,7 @@ from neoag.open_neo.install_check import (
 from neoag.open_neo.auto_config import configure_machine
 from neoag.open_neo.cli import build_parser
 from neoag.open_neo.review import _event_kind, _merge_review_context, build_review_rows, run_review, select_first_batch
+from neoag.open_neo.review_integrity import audit_review_inputs
 from neoag.open_neo.routing import inspect_manifest
 from neoag.open_neo.run import run_open_neo
 from neoag.open_neo.public_assets import _download, _extract_split_archive, _normalize_hf_endpoint, sync_public_assets
@@ -1555,6 +1556,41 @@ def test_open_neo_review_blocks_promoted_hard_failure(tmp_path: Path):
     (result_dir / "scoring/all_tool_results.tsv").write_text(text, encoding="utf-8")
     result = run_review({"result_dir": str(result_dir), "outdir": str(tmp_path / "review")})
     assert result["status"] == "BLOCKED"
+
+
+def test_review_integrity_blocks_mass_r4_with_missing_core_presentation(tmp_path: Path):
+    result_dir = tmp_path / "result"
+    _write_review_fixture(result_dir)
+    scoring = result_dir / "scoring"
+    header = (
+        "evidence_rank\tpeptide_id\tevent_id\tevent_type\tgene\tpeptide\thla_allele\t"
+        "evidence_grade\tpareto_front\trna_support_state\tsafety_state\t"
+        "presentation_consensus_state\tmutant_specificity_state\tclonality_state\t"
+        "ccf_confidence\thla_appm_state\tevidence_completeness_state\thard_failure\t"
+        "netmhcpan_mt_rank_el\tmhcflurry_presentation_score\n"
+    )
+    rows = "".join(
+        f"{index + 1}\tP{index}\tE1\tSNV\tGENE1\tAAAAAAAAA\tHLA-A*02:01\t"
+        "R4\t1\tRNA_UNASSESSED\tSAFETY_PARTIAL\tPRESENTATION_WEAK\tUNASSESSED\t"
+        "UNRESOLVED\tlow\tHLA_LOH_UNASSESSED\tPARTIAL\tno\t99\t0\n"
+        for index in range(20)
+    )
+    peptide_path = scoring / "ranked_peptides.evidence_consensus.tsv"
+    peptide_path.write_text(header + rows, encoding="utf-8")
+    (scoring / "all_tool_results.tsv").write_text(header + rows, encoding="utf-8")
+    artifacts = {
+        "run_manifest": str(scoring / "run_manifest.json"),
+        "consensus_events": str(scoring / "ranked_events.evidence_consensus.tsv"),
+        "consensus_peptides": str(peptide_path),
+        "weighted_baseline": str(scoring / "ranked_peptides.weighted_baseline.tsv"),
+        "all_tool_results": str(scoring / "all_tool_results.tsv"),
+        "validation_plan": str(scoring / "validation_plan.tsv"),
+    }
+    result = audit_review_inputs(artifacts, tmp_path / "audit")
+    assert result["status"] == "BLOCKED"
+    checks = {row["check"]: row for row in result["checks"]}
+    assert checks["evidence_grade_distribution"]["status"] == "WARN"
+    assert checks["core_presentation_coverage"]["status"] == "FAIL"
 
 
 def test_review_priority_uses_evidence_reason_codes_and_phase_deduplication():

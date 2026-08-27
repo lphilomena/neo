@@ -76,3 +76,13 @@ Forbidden wording: confirmed neoantigen, guaranteed benefit, clinical resistance
 Skill3 is read-only with respect to Skill2 outputs. It uses `ranked_peptides.evidence_consensus.tsv`, `ranked_events.evidence_consensus.tsv`, `fusion_consensus.tsv`, `splice_consensus.tsv`, and `all_tool_results.tsv` as the authoritative source of report content.
 It must not create a second `production_patient/` report tree or maintain an independent simplified patient-report template.
 When a report defect originates in missing or invalid upstream evidence, record it and return it to Skill2 instead of fabricating a display value. When the defect is renderer-only, regenerate Skill3 without altering Skill2 outputs and record the before/after integrity check.
+
+Before selecting candidates or rendering reports, Skill3 must also:
+
+- inspect R1-R4 counts and block review when all-R4 coincides with absent core
+  NetMHCpan/MHCflurry coverage;
+- calculate tool coverage over unique applicable peptide-HLA combinations and
+  distinguish missing, unsupported and failed results;
+- show only event tracks present in the canonical event ranking;
+- read the Splice prefilter funnel when Splice is present and explicitly
+  distinguish strict PASS from bounded REVIEW and UNASSESSED stages.

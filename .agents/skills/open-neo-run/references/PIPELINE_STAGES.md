@@ -16,9 +16,26 @@ existing modules and fine-grained Skills.
    signature-matching completed stages.
 7. Candidate normalization for VCF, fusion, splice, SV or peptide entries.
 8. Presentation, expression, RNA, HLA/APPM, CCF and safety evidence assembly.
+   Core predictor reuse is schema- and key-validated. A supplied NetMHCpan or
+   MHCflurry table that maps to fewer than the minimum candidate peptide-HLA
+   keys is rejected instead of silently producing rank `99`, score `0`, or an
+   all-R4 result. Raw caller output and normalized evidence are separate input
+   contracts.
 9. Canonical `all_tool_results.tsv` and explicit conflicts/consensus tables.
 10. Immutable weighted baseline plus independent Evidence-consensus ranking.
 11. Output manifest, run manifest, `run_state.json` and audit log.
+
+Before ranking, calculate predictor coverage over unique applicable
+peptide-HLA combinations. NetMHCstabpan applies only to supported HLA-I 8-11mer
+combinations; report both numerator and this denominator, generate a missing
+combination input for resume, and merge completed evidence without rerunning
+already covered combinations.
+
+Only materialize tracks supported by actual biological inputs. VCF splice-like
+consequences remain SNV/InDel unless a canonical RNA junction event and its
+provenance exist; Fusion is never relabelled DNA_SV. Preserve the complete
+Splice funnel with PASS, REVIEW, FAIL and UNASSESSED counts. A bounded REVIEW
+lane is not a strict full-funnel pass.
 
 ## Resource scheduler
 

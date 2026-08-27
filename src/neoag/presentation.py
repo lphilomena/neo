@@ -17,6 +17,29 @@ def by_key(rows):
             result[key] = row
     return result
 
+
+def _validate_core_predictor_coverage(peptides, evidence, tool):
+    """Reject a supplied core predictor table that cannot map to this run."""
+    if not evidence or not peptides:
+        return
+    candidate_keys = {
+        safe_id(
+            f"{str(row.get('peptide') or '').strip().upper()}_"
+            f"{normalize_hla_allele(str(row.get('hla_allele') or ''))}"
+        )
+        for row in peptides
+        if str(row.get("peptide") or "").strip()
+        and normalize_hla_allele(str(row.get("hla_allele") or ""))
+    }
+    overlap = len(candidate_keys.intersection(evidence))
+    minimum = 1 if len(candidate_keys) < 100 else max(5, int(len(candidate_keys) * 0.01))
+    if overlap < minimum:
+        raise ValueError(
+            f"{tool} evidence maps to only {overlap}/{len(candidate_keys)} candidate peptide-HLA keys; "
+            "check that the file is the normalized evidence table for this run rather than an "
+            "incompatible raw output, stale copied result, or table with mismatched HLA notation"
+        )
+
 def grade(binding, presentation, complete):
     if complete <= 0:
         return "MISSING"
@@ -45,6 +68,8 @@ def build_presentation_evidence(
     chop_rows = read_tsv(netchop) if netchop else []
     chop_by_id = {row.get("peptide_id", ""): row for row in chop_rows if row.get("peptide_id")}
     chop_by_peptide = {row.get("peptide", ""): row for row in chop_rows if row.get("peptide")}
+    _validate_core_predictor_coverage(peptides, net, "NetMHCpan")
+    _validate_core_predictor_coverage(peptides, mhc, "MHCflurry")
     w = profile.get("presentation_weights", {})
     w_ba = float(w.get("netmhcpan_ba", 0.25))
     w_el = float(w.get("netmhcpan_el", 0.35))
@@ -62,6 +87,7 @@ def build_presentation_evidence(
         wt_n = net.get(wt_key, {}) if wt_key else {}
         wt_m = mhc.get(wt_key, {}) if wt_key else {}
         s = stab.get(key, {})
+        wt_s = stab.get(wt_key, {}) if wt_key else {}
         c = chop_by_id.get(p.get("peptide_id", ""), {}) or chop_by_peptide.get(p.get("peptide", ""), {})
         ba = n.get("netmhcpan_ba_rank", "")
         el = n.get("netmhcpan_el_rank", "")
@@ -112,6 +138,8 @@ def build_presentation_evidence(
             "netmhcpan_wt_rank_el": wt_n.get("netmhcpan_el_rank") or evidence_value("netmhcpan_wt_rank_el"),
             "netmhcstabpan_score": str(to_float(s.get("netmhcstabpan_score"), 0.0)) if s else "",
             "netmhcstabpan_rank": str(to_float(s.get("netmhcstabpan_rank"), 99.0)) if s else "",
+            "netmhcstabpan_wt_score": str(to_float(wt_s.get("netmhcstabpan_score"), 0.0)) if wt_s else "",
+            "netmhcstabpan_wt_rank": str(to_float(wt_s.get("netmhcstabpan_rank"), 99.0)) if wt_s else "",
             "netchop_31d_max_score": c.get("netchop_31d_max_score", ""),
             "netchop_31d_mean_score": c.get("netchop_31d_mean_score", ""),
             "netchop_31d_cterm_score": c.get("netchop_31d_cterm_score", ""),

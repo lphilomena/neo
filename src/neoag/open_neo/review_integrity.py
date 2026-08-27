@@ -37,6 +37,25 @@ def _safe_int(value: Any) -> int:
         return 0
 
 
+def _safe_float(value: Any) -> float | None:
+    try:
+        text = str(value or "").strip()
+        return float(text) if text else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _event_track(row: dict[str, str]) -> str:
+    value = str(
+        row.get("event_type")
+        or row.get("biological_event_track")
+        or row.get("evidence_track")
+        or ""
+    ).strip().upper().replace("-", "_")
+    aliases = {"MISSENSE": "SNV", "INSERTION": "INDEL", "DELETION": "INDEL"}
+    return aliases.get(value, value or "UNASSESSED")
+
+
 def _manifest_hash_records(value: Any) -> list[tuple[str, str]]:
     records: list[tuple[str, str]] = []
     if isinstance(value, dict):
@@ -160,6 +179,104 @@ def audit_review_inputs(artifacts: dict[str, str], outdir: str | Path) -> dict[s
     _add(checks, "hard_fail_not_promoted", "FAIL" if promoted_hard_fail else "PASS", "ERROR", f"violations={len(promoted_hard_fail)}")
     if promoted_hard_fail:
         overall = "BLOCKED"
+
+    grade_counts: dict[str, int] = {}
+    for row in peptides:
+        grade = str(row.get("evidence_grade") or "UNASSESSED").strip().upper()
+        grade_counts[grade] = grade_counts.get(grade, 0) + 1
+    all_r4 = len(peptides) >= 20 and grade_counts.get("R4", 0) == len(peptides)
+    _add(
+        checks,
+        "evidence_grade_distribution",
+        "WARN" if all_r4 else "PASS",
+        "WARNING",
+        ";".join(f"{key}={grade_counts[key]}" for key in sorted(grade_counts))
+        + ("; all candidates are R4: verify core evidence coverage before review" if all_r4 else ""),
+    )
+
+    net_assessed = 0
+    mhc_assessed = 0
+    for row in peptides:
+        net_rank = _safe_float(row.get("netmhcpan_mt_rank_el") or row.get("netmhcpan_el_rank"))
+        mhc_score = _safe_float(row.get("mhcflurry_presentation_score"))
+        if net_rank is not None and net_rank < 99:
+            net_assessed += 1
+        if mhc_score is not None and mhc_score > 0:
+            mhc_assessed += 1
+    core_missing = len(peptides) >= 20 and (net_assessed == 0 or mhc_assessed == 0)
+    _add(
+        checks,
+        "core_presentation_coverage",
+        "FAIL" if core_missing else "PASS",
+        "ERROR" if core_missing else "WARNING",
+        f"peptides={len(peptides)}; netmhcpan_assessed={net_assessed}; mhcflurry_assessed={mhc_assessed}",
+    )
+    if core_missing:
+        overall = "BLOCKED"
+
+    stabpan_eligible: set[tuple[str, str]] = set()
+    stabpan_covered: set[tuple[str, str]] = set()
+    for row in peptides:
+        peptide = str(row.get("peptide") or "").strip().upper()
+        hla = str(row.get("hla_allele") or "").strip().upper()
+        if 8 <= len(peptide) <= 11 and hla.startswith(("HLA-A", "HLA-B", "HLA-C")):
+            key = (peptide, hla)
+            stabpan_eligible.add(key)
+            rank = _safe_float(row.get("netmhcstabpan_rank"))
+            score = _safe_float(row.get("netmhcstabpan_score"))
+            if (rank is not None and rank < 99) or score is not None:
+                stabpan_covered.add(key)
+    if not stabpan_eligible:
+        stabpan_status = "NOT_APPLICABLE"
+    elif not stabpan_covered:
+        stabpan_status = "UNASSESSED"
+    elif len(stabpan_covered) < len(stabpan_eligible):
+        stabpan_status = "WARN"
+    else:
+        stabpan_status = "PASS"
+    _add(
+        checks,
+        "netmhcstabpan_applicable_coverage",
+        stabpan_status,
+        "WARNING",
+        f"covered_unique={len(stabpan_covered)}; eligible_unique={len(stabpan_eligible)}; "
+        f"missing_unique={len(stabpan_eligible - stabpan_covered)}",
+    )
+
+    tracks = sorted({_event_track(row) for row in events if _event_track(row) != "UNASSESSED"})
+    _add(
+        checks,
+        "applicable_event_tracks",
+        "PASS" if tracks else "UNASSESSED",
+        "WARNING",
+        "tracks=" + (",".join(tracks) if tracks else "none"),
+    )
+
+    consensus_path = Path(artifacts.get("consensus_events") or "")
+    search_roots = [consensus_path.parent, consensus_path.parent.parent, consensus_path.parent.parent.parent]
+    funnel = next(
+        (
+            root / "parsed/splice_prefilter_funnel.tsv"
+            for root in search_roots
+            if (root / "parsed/splice_prefilter_funnel.tsv").is_file()
+        ),
+        None,
+    )
+    if "SPLICE" not in tracks:
+        _add(checks, "splice_prefilter_funnel", "NOT_APPLICABLE", "INFO", "No Splice events in formal event ranking")
+    elif funnel is None:
+        _add(checks, "splice_prefilter_funnel", "WARN", "WARNING", "Splice is applicable but splice_prefilter_funnel.tsv was not found")
+    else:
+        _, funnel_rows = read_tsv(funnel)
+        unassessed = sum(_safe_int(row.get("unassessed")) for row in funnel_rows)
+        _add(
+            checks,
+            "splice_prefilter_funnel",
+            "PASS" if unassessed == 0 else "WARN",
+            "WARNING",
+            f"stages={len(funnel_rows)}; unassessed={unassessed}; REVIEW candidates are not strict funnel PASS",
+            str(funnel),
+        )
 
     missing_as_negative = []
     for row in peptides:

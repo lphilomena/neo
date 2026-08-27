@@ -147,11 +147,27 @@ For Fusion and Splice candidates, keep direct peptide/junction safety evidence s
    treated as a negative result or silently omitted from the final status.
 8. Cross-check HLA typing, LOHHLA/SpecHLA HLA LOH, fusion, splice, presentation and FACETS/Sequenza/PURPLE/ASCAT purity/CNV/CCF evidence by domain; missing evidence remains `UNASSESSED`. For every DNA-supported SNV/InDel, recompute CCF from tumor VAF or ALT/depth, consensus purity, the matched local total and allele-specific copy numbers, and biologically feasible mutation multiplicities. Propagate a Wilson 95% VAF interval through the CCF formula, retain multiplicity ambiguity and matched-normal ALT warnings, and label diploid fallback as low confidence. A high VAF or point CCF may be described only as compatible with clonality, never as proof. Fusion consensus is a union with provenance, not a mutually exclusive caller choice. When using the production-case wrapper, preserve its single-RNA-input-mode rule: choose one of RNA FASTQ, RNA BAM, or existing RNA VAF.
 9. Build `all_tool_results.tsv`, long-form tool evidence and explicit consensus/conflict outputs.
+   Before accepting reused core presentation evidence, validate its schema and
+   exact peptide-HLA key coverage. Stop when NetMHCpan/MHCflurry coverage
+   collapses or supplied evidence would make most rows fall back to sentinel
+   values (`rank=99`, `score=0`). Never substitute a final normalized table for
+   a raw caller input unless the receiving field explicitly accepts normalized
+   evidence.
+   Compute auxiliary predictor coverage on unique applicable combinations.
+   For NetMHCstabpan this means supported HLA-I 8-11mers; retain unsupported
+   combinations as NOT_APPLICABLE, emit the missing applicable combinations
+   for incremental resume, and merge newly completed rows with existing rows.
 10. Preserve the weighted baseline, generate independent Evidence consensus rankings, compare both rankings, and write run/audit manifests. Treat `ranked_peptides.evidence_consensus.tsv` and `ranked_events.evidence_consensus.tsv` as the final report/Excel ranking inputs; use `ranked_peptides.tsv` only as the legacy weighted baseline or compatibility source.
     Preserve quantitative presentation fields in the final peptide table: NetMHCpan MT/WT EL and BA percentile ranks plus IC50 when emitted, MHCflurry MT/WT affinity percentile and presentation score, NetMHCstabpan MT/WT stability output, PRIME/BigMHC/DeepImmuno values, peptide length, mutation/junction position and computed MT/WT rank deltas or ratios. Record predictor allele support and extrapolation metadata when the tool provides it; otherwise keep these fields `UNASSESSED` rather than inferring support from a returned score.
     For every paired SNV/InDel peptide, also derive `mutation_position_role`, `mutation_position_interpretation`, `wt_self_reactivity_risk_status`, and `wt_self_reactivity_risk_reason`. Treat conventional MHC-I P2/P-omega changes as primary-anchor changes, internal non-primary-anchor changes only as *putative* TCR-facing positions, and keep MHC-II roles unresolved unless a binding register is available. A strong-binding WT peptide is an explicit self-reactivity/tolerance review signal and caps evidence-based progression; MT/WT rank difference, fold change or DAI must never independently establish immunogenicity.
 11. Generate the technical Pipeline report by default. Do not generate a patient-facing report unless explicitly requested; the final patient report belongs to `open-neo-review`.
     When a patient snapshot is explicitly requested, default to 20 event-level representatives per applicable track and 100 cross-track peptide candidates. Preserve `event_top_n` and `candidate_top_n` as overridable run parameters and record them in the production manifest.
+12. Run final regression gates: core predictor coverage must be non-zero, mass
+    sentinel fallback is forbidden, and an unexpected all-R4 distribution is
+    review-blocking until its evidence coverage is explained. Materialize only
+    tracks present in canonical events. Preserve the Splice funnel and label
+    PASS, REVIEW, FAIL and UNASSESSED separately; top-N REVIEW retention is not
+    strict funnel validation.
 
 ## Required outputs
 

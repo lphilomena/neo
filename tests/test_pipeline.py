@@ -27,6 +27,27 @@ def test_presentation(tmp_path):
     assert any(r["presentation_evidence_grade"] in {"A","B"} for r in rows)
 
 
+def test_presentation_rejects_unmappable_core_predictor_evidence(tmp_path):
+    peptides = tmp_path / "peptides.tsv"
+    peptides.write_text(
+        "peptide_id\tevent_id\tsample_id\tpeptide\thla_allele\tmhc_class\n"
+        "P1\tE1\tS1\tAAAAAAAAA\tHLA-A*02:01\tI\n",
+        encoding="utf-8",
+    )
+    stale = tmp_path / "stale_netmhcpan.tsv"
+    stale.write_text(
+        "peptide\thla_allele\tnetmhcpan_ba_rank\tnetmhcpan_el_rank\n"
+        "BBBBBBBBB\tHLA-B*07:02\t0.1\t0.1\n",
+        encoding="utf-8",
+    )
+    try:
+        build_presentation_evidence(peptides, stale, None, load_profile("default"))
+    except ValueError as exc:
+        assert "maps to only 0/1" in str(exc)
+    else:
+        raise AssertionError("unmappable core predictor evidence was silently accepted")
+
+
 def test_presentation_merges_netchop_by_peptide_id(tmp_path):
     pep = tmp_path / "peptides.tsv"
     pep.write_text("peptide_id\tevent_id\tsample_id\tpeptide\thla_allele\tmhc_class\nP1\tE1\tS1\tAAAAAAAAA\tHLA-A*02:01\tI\n")
@@ -62,8 +83,15 @@ def test_presentation_links_existing_wildtype_predictions(tmp_path):
         "S1\tWTPEPTID\tHLA-A*02:01\tWTPEPTID_HLA_A_02_01\t2.5\t0.4\t0.3\n",
         encoding="utf-8",
     )
+    stab = tmp_path / "stab.tsv"
+    stab.write_text(
+        "sample_id\tpeptide\thla_allele\tpeptide_hla_key\tnetmhcstabpan_score\tnetmhcstabpan_rank\n"
+        "S1\tMTPEPTID\tHLA-A*02:01\tMTPEPTID_HLA_A_02_01\t0.8\t0.7\n"
+        "S1\tWTPEPTID\tHLA-A*02:01\tWTPEPTID_HLA_A_02_01\t0.2\t4.5\n",
+        encoding="utf-8",
+    )
 
-    rows = build_presentation_evidence(pep, net, mhc, load_profile("default"))
+    rows = build_presentation_evidence(pep, net, mhc, load_profile("default"), netmhcstabpan=stab)
 
     assert rows[0]["wildtype_peptide"] == "WTPEPTID"
     assert rows[0]["netmhcpan_wt_rank_ba"] == "2.5"
@@ -71,6 +99,10 @@ def test_presentation_links_existing_wildtype_predictions(tmp_path):
     assert rows[0]["mhcflurry_wt_affinity_percentile"] == "2.5"
     assert rows[0]["mhcflurry_wt_processing_score"] == "0.4"
     assert rows[0]["mhcflurry_wt_presentation_score"] == "0.3"
+    assert rows[0]["netmhcstabpan_score"] == "0.8"
+    assert rows[0]["netmhcstabpan_rank"] == "0.7"
+    assert rows[0]["netmhcstabpan_wt_score"] == "0.2"
+    assert rows[0]["netmhcstabpan_wt_rank"] == "4.5"
 
 def test_appm_and_ccf(tmp_path):
     profile = load_profile("leukemia")
