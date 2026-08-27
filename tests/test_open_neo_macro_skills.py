@@ -17,6 +17,8 @@ from neoag.open_neo.install_check import (
     DEFAULT_ASSET_SOURCE_HOST,
     DEFAULT_ASSET_SOURCE_ROOT,
     _apply_default_asset_source,
+    _apply_production_runtime_fixes,
+    _asset_manifest_uses_placeholder_source,
     _assess_tier,
     _deployment_command,
     _collect_claude_code_status,
@@ -656,6 +658,38 @@ def test_install_skill_defaults_to_central_asset_server(monkeypatch):
     })
     assert explicit["asset_source_host"] == "user@other-host"
     assert explicit["asset_source_root"] == "/srv/other-assets"
+
+
+def test_asset_manifest_placeholder_detection_does_not_require_conda(tmp_path: Path):
+    manifest = tmp_path / "assets.tsv"
+    manifest.write_text(
+        "asset_name\tsource_path\ttarget_path\n"
+        "reference\t/srv/neoag-assets/source/data/ref\t/srv/neoag-assets/install/data/ref\n",
+        encoding="utf-8",
+    )
+    assert _asset_manifest_uses_placeholder_source(manifest) is True
+
+
+def test_runtime_fixes_select_facets_capable_r_environment(tmp_path: Path):
+    project = tmp_path / "project"
+    conda_base = tmp_path / "miniforge3"
+    rscript = conda_base / "envs/neoag-r/bin/Rscript"
+    rscript.parent.mkdir(parents=True)
+    rscript.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    rscript.chmod(0o755)
+
+    outputs = _apply_production_runtime_fixes(
+        {
+            "deploy_root": str(tmp_path / "deploy"),
+            "tools_root": str(tmp_path / "tools"),
+            "reference_root": str(tmp_path / "refs"),
+            "conda_base": str(conda_base),
+        },
+        project,
+    )
+    local_env = Path(outputs["runtime_env_overrides"])
+    text = local_env.read_text(encoding="utf-8")
+    assert f"FACETS_R_ENV_PREFIX={conda_base / 'envs/neoag-r'}" in text
 
 
 def test_install_skill_propagates_explicit_conda_base(tmp_path):

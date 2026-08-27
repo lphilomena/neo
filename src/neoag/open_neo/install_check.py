@@ -189,19 +189,6 @@ def _rewrite_asset_manifest(
 
 
 def _asset_manifest_uses_placeholder_source(manifest: str | Path) -> bool:
-    facets_r_prefix = conda_base / "envs/neoag-facets"
-    for env_name in ("neoag-facets", "neoag-r", "neoag-fusion", "neoag-tools"):
-        candidate = conda_base / f"envs/{env_name}/bin/Rscript"
-        if not candidate.is_file():
-            continue
-        status, _ = _probe_command([
-            str(candidate), "-e",
-            "quit(status=ifelse(requireNamespace('facets', quietly=TRUE), 0, 1))",
-        ], timeout=30)
-        if status == "OK":
-            facets_r_prefix = candidate.parent.parent
-            break
-
     lines = [
         line for line in Path(manifest).read_text(encoding="utf-8").splitlines()
         if line.strip() and not line.lstrip().startswith("#")
@@ -279,6 +266,18 @@ def _apply_production_runtime_fixes(args: dict[str, Any], project_root: Path) ->
     tools_root = Path(str(args.get("tools_root") or deploy_root / "env_tool")).expanduser()
     reference_root = Path(str(args.get("reference_root") or deploy_root / "refs")).expanduser()
     conda_base = Path(str(args.get("conda_base") or os.environ.get("NEOAG_CONDA_BASE") or tools_root / "miniforge3")).expanduser()
+    facets_r_prefix = conda_base / "envs/neoag-facets"
+    for env_name in ("neoag-facets", "neoag-r", "neoag-fusion", "neoag-tools"):
+        candidate = conda_base / f"envs/{env_name}/bin/Rscript"
+        if not candidate.is_file():
+            continue
+        status, _ = _probe_command([
+            str(candidate), "-e",
+            "quit(status=ifelse(requireNamespace('facets', quietly=TRUE), 0, 1))",
+        ], timeout=30)
+        if status == "OK":
+            facets_r_prefix = candidate.parent.parent
+            break
 
     local_env = project_root / "conf/tools.env.local.sh"
     hmf_home = _first_existing_path([
