@@ -61,7 +61,9 @@ def _minimum(rows: list[Mapping[str, Any]], fields: tuple[str, ...], threshold: 
 def _is_splice(row: Mapping[str, Any]) -> bool:
     event_type = str(row.get("event_type", "") or "").strip().lower()
     consequence = str(row.get("peptide_consequence", "") or "").strip().lower()
-    return event_type in SPLICE_EVENT_TYPES or consequence == "splice_junction"
+    if event_type:
+        return event_type in SPLICE_EVENT_TYPES
+    return consequence == "splice_junction"
 
 
 def _event_key(row: Mapping[str, Any], index: int) -> str:
@@ -82,6 +84,16 @@ def _stage_definitions(profile: Mapping[str, Any]) -> list[tuple[str, str, Calla
                 ("splice_alignment_qc_status", "junction_resolution_status", "junction_match_status"),
                 pass_tokens={"PASS", "RESOLVED", "EXACT", "PRIMARY_SOURCE_RECORD"},
                 fail_tokens={"FAIL", "UNRESOLVED", "UNSTRANDED", "CONFLICT", "AMBIGUOUS"},
+            ),
+        ),
+        (
+            "FORMAL_JUNCTION_READ_QC",
+            "complete junction read QC passed (reads, unique starts, anchor, MAPQ, multimapping, PSI and caller filter)",
+            lambda rows: _status(
+                rows,
+                ("junction_read_qc_status",),
+                pass_tokens={"PASS"},
+                fail_tokens={"FAIL", "INCOMPLETE"},
             ),
         ),
         (

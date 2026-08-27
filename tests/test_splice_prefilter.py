@@ -9,6 +9,7 @@ def splice_row(event_id: str, **updates):
         "peptide_id": event_id + "-P", "event_id": event_id, "event_type": "Splice",
         "peptide_consequence": "splice_junction", "peptide": "ABCDEFGHI",
         "hla_allele": "HLA-A*02:01", "junction_resolution_status": "RESOLVED",
+        "junction_read_qc_status": "PASS",
         "unique_junction_reads": "5", "junction_total_coverage": "20", "splice_psi": "0.2",
         "matched_normal_junction_status": "NOT_DETECTED",
         "normal_cohort_junction_status": "NOT_DETECTED",
@@ -61,3 +62,33 @@ def test_splice_prefilter_rejects_known_normal_isoform_and_unstranded_mapping(tm
     decisions = {row["event_id"]: row for row in read_tsv(tmp_path / "splice_prefilter_decisions.tsv")}
     assert "ANNOTATED_NORMAL_ISOFORM" in decisions["KNOWN"]["failed_stages"]
     assert "ALIGNMENT_COORDINATE_QC" in decisions["UNSTRANDED"]["failed_stages"]
+
+
+def test_structured_event_type_prevents_non_splice_misclassification(tmp_path):
+    path = tmp_path / "raw_peptides.tsv"
+    variant = {field: "" for field in PEPTIDE_FIELDS}
+    variant.update({
+        "peptide_id": "SNV1-P",
+        "event_id": "SNV1",
+        "event_type": "SNV",
+        "peptide_consequence": "splice_junction",
+        "peptide": "ABCDEFGHI",
+    })
+    write_tsv(path, [variant], PEPTIDE_FIELDS)
+
+    result = prefilter_splice_peptides(path, {"gates": {}}, tmp_path)
+
+    assert result["raw_splice_events"] == 0
+    assert read_tsv(path)[0]["event_id"] == "SNV1"
+    assert read_tsv(tmp_path / "splice_prefilter_decisions.tsv") == []
+
+
+def test_splice_prefilter_rejects_failed_formal_junction_read_qc(tmp_path):
+    path = tmp_path / "raw_peptides.tsv"
+    write_tsv(path, [splice_row("READ_QC_FAIL", junction_read_qc_status="FAIL")], PEPTIDE_FIELDS)
+
+    prefilter_splice_peptides(path, {"gates": {}}, tmp_path)
+
+    assert read_tsv(path) == []
+    decision = read_tsv(tmp_path / "splice_prefilter_decisions.tsv")[0]
+    assert "FORMAL_JUNCTION_READ_QC" in decision["failed_stages"]
