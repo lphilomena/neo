@@ -12,7 +12,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ENV_NAME="${NEOAG_GATK_ENV:-neoag-gatk}"
 YML="${ROOT}/conda/env.neoag-gatk.yml"
-TOOLS_ENV="${ROOT}/conf/tools.env.sh"
+TOOLS_ENV="${NEOAG_TOOLS_ENV:-${ROOT}/conf/tools.env.local.sh}"
 CONDA_BASE="${NEOAG_CONDA_BASE:-$(command conda info --base)}"
 GATK_BIN="${CONDA_BASE}/envs/${ENV_NAME}/bin"
 

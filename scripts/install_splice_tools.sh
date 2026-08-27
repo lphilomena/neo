@@ -12,9 +12,11 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CONDA_BASE="${NEOAG_CONDA_BASE:-$(command conda info --base)}"
 TOOLS_ROOT="${NEOAG_TOOLS_ROOT:-${ROOT}}"
+PORTABLE_ENVS="${NEOAG_CONDA_ENVS_PATH:-${CONDA_ENVS_PATH:-}}"
+[[ -z "$PORTABLE_ENVS" ]] || export CONDA_ENVS_PATH="$PORTABLE_ENVS"
 ENV_NAME="${NEOAG_SPLICE_ENV:-neoag-splice}"
 SNAF_ENV_NAME="${NEOAG_SNAF_ENV:-neoag-snaf}"
-TOOLS_ENV="${ROOT}/conf/tools.env.sh"
+TOOLS_ENV="${NEOAG_TOOLS_ENV:-${ROOT}/conf/tools.env.local.sh}"
 BIN_DIR="${ROOT}/bin"
 YML="${ROOT}/conda/env.neoag-splice.yml"
 export CONDA_CHANNEL_ALIAS="${NEOAG_CONDA_CHANNEL_ALIAS:-${CONDA_CHANNEL_ALIAS:-https://conda.anaconda.org}}"
@@ -79,6 +81,7 @@ cat > "${BIN_DIR}/regtools-neoag" <<EOF
 set -euo pipefail
 exec "${CONDA_BASE}/bin/conda" run -n "${ENV_NAME}" regtools "\$@"
 EOF
+[[ -z "$PORTABLE_ENVS" ]] || sed -i "2a export CONDA_ENVS_PATH=\"${PORTABLE_ENVS}\"" "${BIN_DIR}/regtools-neoag"
 chmod +x "${BIN_DIR}/regtools-neoag"
 
 PVACSPLICE_BIN="${CONDA_BASE}/envs/neoag-tools/bin/pvacsplice"
@@ -163,6 +166,7 @@ if [[ "${INSTALL_SNAF}" == "1" ]]; then
 set -euo pipefail
 exec "${CONDA_BASE}/bin/conda" run -n "${SNAF_ENV_NAME}" python -m snaf "\$@"
 EOF
+    [[ -z "$PORTABLE_ENVS" ]] || sed -i "2a export CONDA_ENVS_PATH=\"${PORTABLE_ENVS}\"" "${BIN_DIR}/snaf-neoag"
     chmod +x "${BIN_DIR}/snaf-neoag"
   fi
 else
@@ -223,8 +227,14 @@ if [[ -x "${BIN_DIR}/pvacsplice-neoag" ]]; then
   "${BIN_DIR}/pvacsplice-neoag" --help | head -8 || true
 fi
 if [[ -x "${BIN_DIR}/snaf-neoag" ]]; then
-  "${CONDA_BASE}/bin/conda" run -n "${SNAF_ENV_NAME}" python -c \
-    'import snaf, tensorflow as tf; print("SNAF import OK; TensorFlow " + tf.__version__)'
+  snaf_smoke_dir="$(mktemp -d)"
+  mkdir -p "${snaf_smoke_dir}/assets"
+  (
+    cd "${snaf_smoke_dir}"
+    "${CONDA_BASE}/bin/conda" run -n "${SNAF_ENV_NAME}" python -c \
+      'import snaf, tensorflow as tf; print("SNAF import OK; TensorFlow " + tf.__version__)'
+  )
+  rm -rf "${snaf_smoke_dir}"
 fi
 if [[ -x "${BIN_DIR}/splicemutr-neoag" ]]; then
   "${BIN_DIR}/splicemutr-neoag" doctor

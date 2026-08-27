@@ -14,7 +14,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TOOLS_ROOT="${NEOAG_TOOLS_ROOT:-${ROOT}}"
 TARGET="${LOHHLA_HOME:-${TOOLS_ROOT}/tools/lohhla}"
-TOOLS_ENV="${ROOT}/conf/tools.env.sh"
+TOOLS_ENV="${NEOAG_TOOLS_ENV:-${ROOT}/conf/tools.env.local.sh}"
 BIN_DIR="${ROOT}/bin"
 CONDA_BASE="${NEOAG_CONDA_BASE:-${TOOLS_ROOT}/miniforge3}"
 RSCRIPT_BIN="${NEOAG_LOHHLA_RSCRIPT:-}"

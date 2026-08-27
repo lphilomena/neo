@@ -89,7 +89,7 @@ exec "${PREFIX}/bin/vep" "\$@"
 EOF
 chmod +x "${WRAPPER_DIR}/vep"
 VEP_BIN="${WRAPPER_DIR}/vep"
-TOOLS_ENV="${ROOT}/conf/tools.env.sh"
+TOOLS_ENV="${NEOAG_TOOLS_ENV:-${ROOT}/conf/tools.env.local.sh}"
 mkdir -p "${ROOT}/conf"
 if [[ ! -f "${TOOLS_ENV}" ]]; then
   cat > "${TOOLS_ENV}" <<EOF

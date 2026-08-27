@@ -75,6 +75,19 @@ run_r_env() {
   PATH="${NEOAG_CONDA_BASE}/envs/${R_ENV}/bin:${PATH}" LD_LIBRARY_PATH="${NEOAG_CONDA_BASE}/envs/${R_ENV}/lib:${LD_LIBRARY_PATH:-}" "$@"
 }
 
+validate_seqz() {
+  local seqz="$1"
+  [[ -s "${seqz}" ]] || return 1
+  gzip -cd "${seqz}" 2>/dev/null | awk -F '\t' '
+    NR == 1 {
+      if (NF != 14 || $1 != "chromosome" || $2 != "position") exit 1
+      next
+    }
+    NF != 14 { exit 1 }
+    END { if (NR < 2) exit 1 }
+  '
+}
+
 echo "[$(date -Is)] run_sequenza_sample_by_chrom sample=${SAMPLE_ID}"
 echo "    tumor=${TUMOR_BAM}"
 echo "    normal=${NORMAL_BAM}"
@@ -100,7 +113,7 @@ if [[ -z "${BINNED_SEQZ}" && -z "${MERGED_SEQZ}" ]]; then
   require_bam_inputs
 fi
 
-if [[ -z "${BINNED_SEQZ}" && ! -s "${GC}" ]]; then
+if [[ -z "${BINNED_SEQZ}" && -z "${MERGED_SEQZ}" && ! -s "${GC}" ]]; then
   mkdir -p "$(dirname "${GC}")"
   echo "[$(date -Is)] generating GC wiggle"
   run_env sequenza-utils gc_wiggle -f "${REF}" -w "${GC_WINDOW}" -o "${GC}"
@@ -115,7 +128,7 @@ run_chrom() {
   local chrom="$1"
   local seqz="${OUTDIR}/chrom/${SAMPLE_ID}.${chrom}.seqz.gz"
   local seqz_tmp="${seqz}.tmp.$$"
-  if [[ -s "${seqz}" ]] && gzip -t "${seqz}" 2>/dev/null; then
+  if validate_seqz "${seqz}"; then
     echo "[$(date -Is)] reuse ${chrom} ${seqz}"
     return 0
   fi
@@ -139,25 +152,25 @@ run_chrom() {
     --het "${HET}" \
     -C "${chrom}" \
     -o "${seqz_tmp}"
-  gzip -t "${seqz_tmp}"
+  validate_seqz "${seqz_tmp}"
   mv "${seqz_tmp}" "${seqz}"
   if [[ -s "${seqz_tmp}.tbi" ]]; then
     mv "${seqz_tmp}.tbi" "${seqz}.tbi"
   fi
 }
-export -f run_chrom
+export -f run_chrom validate_seqz
 export SAMPLE_ID TUMOR_BAM NORMAL_BAM REF GC OUTDIR ENV NEOAG_CONDA_BASE SAMTOOLS TABIX QLIMIT MIN_DEPTH_N HOM HET PATH LD_LIBRARY_PATH
 
 if [[ -n "${BINNED_SEQZ}" ]]; then
-  [[ -s "${BINNED_SEQZ}" ]] || { echo "ERROR missing BINNED_SEQZ ${BINNED_SEQZ}" >&2; exit 1; }
+  validate_seqz "${BINNED_SEQZ}" || { echo "ERROR invalid or truncated BINNED_SEQZ ${BINNED_SEQZ}" >&2; exit 1; }
   BINNED="${BINNED_SEQZ}"
   echo "[$(date -Is)] reuse provided binned seqz ${BINNED}"
 else
   MERGED="${MERGED_SEQZ:-${OUTDIR}/${SAMPLE_ID}.merged.seqz.gz}"
   if [[ -n "${MERGED_SEQZ}" ]]; then
-    [[ -s "${MERGED}" ]] || { echo "ERROR missing MERGED_SEQZ ${MERGED}" >&2; exit 1; }
+    validate_seqz "${MERGED}" || { echo "ERROR invalid or truncated MERGED_SEQZ ${MERGED}" >&2; exit 1; }
     echo "[$(date -Is)] reuse provided merged seqz ${MERGED}"
-  elif [[ "${FORCE}" != 1 && "${REUSE_MERGED}" == 1 && -s "${MERGED}" ]]; then
+  elif [[ "${FORCE}" != 1 && "${REUSE_MERGED}" == 1 ]] && validate_seqz "${MERGED}"; then
     echo "[$(date -Is)] reuse merged seqz ${MERGED}"
   else
     require_bam_inputs
@@ -169,11 +182,15 @@ else
       for chrom in ${CHROMS}; do
         f="${OUTDIR}/chrom/${SAMPLE_ID}.${chrom}.seqz.gz"
         [[ -s "$f" ]] || { echo "ERROR missing chrom seqz $f" >&2; exit 1; }
+        if ! validate_seqz "$f"; then
+          echo "ERROR invalid or truncated chrom seqz $f" >&2
+          exit 1
+        fi
         if [[ "$first" == 1 ]]; then
-          zcat "$f"
+          gzip -cd "$f"
           first=0
         else
-          zcat "$f" | tail -n +2
+          gzip -cd "$f" | tail -n +2
         fi
       done
     } | gzip -c > "${MERGED}.tmp"
@@ -181,7 +198,7 @@ else
   fi
 
   BINNED="${OUTDIR}/${SAMPLE_ID}.w${BIN_WINDOW}.seqz.gz"
-  if [[ "${FORCE}" != 1 && "${REUSE_BINNED}" == 1 && -s "${BINNED}" ]]; then
+  if [[ "${FORCE}" != 1 && "${REUSE_BINNED}" == 1 ]] && validate_seqz "${BINNED}"; then
     echo "[$(date -Is)] reuse binned seqz ${BINNED}"
   else
     echo "[$(date -Is)] seqz_binning window=${BIN_WINDOW}"

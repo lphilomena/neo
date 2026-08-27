@@ -65,7 +65,7 @@ REFERENCE_ALIASES = {
     "easyfuse_ref": ("easyfuse_ref",),
     "fusioncatcher_ref": ("fusioncatcher_ref",),
     "salmon_index": ("salmon_index",),
-    "tx2gene": ("tx2gene",),
+    "tx2gene": ("tx2gene", "salmon_tx2gene"),
     "rsem_reference": ("rsem_reference",),
     "normal_expression": ("normal_expression",),
     "normal_hla_ligands": ("normal_hla_ligands", "normal_ligandome"),
@@ -320,6 +320,13 @@ def build_automatic_production_plan(
     tumor_dna_fastq = _pair(inputs.get("tumor_dna_fastq"))
     normal_dna_fastq = _pair(inputs.get("normal_dna_fastq"))
     tumor_rna_fastq = _pair(inputs.get("tumor_rna_fastq"))
+    if not tumor_rna_fastq:
+        r1_values = inputs.get("rna_fastq1")
+        r2_values = inputs.get("rna_fastq2")
+        r1_values = r1_values if isinstance(r1_values, list) else ([r1_values] if r1_values else [])
+        r2_values = r2_values if isinstance(r2_values, list) else ([r2_values] if r2_values else [])
+        if r1_values and r2_values:
+            tumor_rna_fastq = (str(r1_values[0]), str(r2_values[0]))
     tumor_rna_bam = str(inputs.get("tumor_rna_bam") or "")
     somatic_vcf = str(inputs.get("somatic_vcf") or "")
     hla_file = str(inputs.get("hla_file") or "")

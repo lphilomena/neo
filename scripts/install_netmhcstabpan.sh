@@ -256,7 +256,7 @@ EOF
   exit 1
 fi
 
-TOOLS_ENV="${ROOT}/conf/tools.env.sh"
+TOOLS_ENV="${NEOAG_TOOLS_ENV:-${ROOT}/conf/tools.env.local.sh}"
 if [[ -f "${TOOLS_ENV}" ]]; then
   if ! grep -q '^export NETMHCSTABPAN_HOME=' "${TOOLS_ENV}"; then
     cat >> "${TOOLS_ENV}" <<EOF

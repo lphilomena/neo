@@ -130,7 +130,7 @@ fi
 
 
 PROJECT_BIN="${ROOT}/bin"
-TOOLS_ENV="${ROOT}/conf/tools.env.sh"
+TOOLS_ENV="${NEOAG_TOOLS_ENV:-${ROOT}/conf/tools.env.local.sh}"
 ARRIBA_BIN="${CONDA_BASE}/envs/${ENV_NAME}/bin/arriba"
 mkdir -p "${PROJECT_BIN}" "${ROOT}/conf"
 if [[ -x "${ARRIBA_BIN}" ]]; then

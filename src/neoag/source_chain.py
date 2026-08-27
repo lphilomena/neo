@@ -306,7 +306,21 @@ def source_chain_track(row: Mapping[str, Any]) -> str:
             return track
 
     source = _text(row, "mutation_source", "source_event_type", "variant_type")
+    primary_event = _text(row, "event_type")
     event = _text(row, "event_type", "consequence", "peptide_consequence")
+    # A declared upstream event type outranks mixed source labels such as
+    # SNV_INDEL and downstream consequences such as splice_junction.
+    if primary_event:
+        if any(token in primary_event for token in ("DNA_SV", "SV_FUSION", "STRUCTURAL", "BND")):
+            return "DNA_SV"
+        if "FUSION" in primary_event:
+            return "FUSION"
+        if "SPLICE" in primary_event or "JUNCTION" in primary_event:
+            return "SPLICE"
+        if any(token in primary_event for token in ("INDEL", "INSERTION", "DELETION", "DUPLICATION", "FRAMESHIFT")):
+            return "INDEL"
+        if any(token in primary_event for token in ("SNV", "SNP", "MISSENSE", "SUBSTITUTION")):
+            return "SNV"
     if any(token in source for token in ("DNA_SV", "STRUCTURAL", "SV", "BND")):
         return "DNA_SV"
     if "FUSION" in source or "FUSION" in event:

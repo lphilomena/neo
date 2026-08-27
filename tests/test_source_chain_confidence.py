@@ -165,6 +165,23 @@ def test_source_chain_track_uses_upstream_event_source():
     assert source_chain_track(row) == "INDEL"
 
 
+def test_source_chain_track_prefers_declared_snv_over_mixed_source_label():
+    row = {
+        "event_type": "SNV",
+        "mutation_source": "SNV_INDEL",
+        "peptide_consequence": "splice_junction",
+    }
+    assert source_chain_track(row) == "SNV"
+
+
+def test_source_chain_track_keeps_sv_fusion_on_dna_sv_track():
+    row = {
+        "event_type": "SV_Fusion",
+        "mutation_source": "SV",
+    }
+    assert source_chain_track(row) == "DNA_SV"
+
+
 def test_snv_complete_cross_modal_chain_is_c1():
     result = derive_source_chain_confidence(_base_peptide("P1", "SNV"), {})
     assert result.track == "SNV"

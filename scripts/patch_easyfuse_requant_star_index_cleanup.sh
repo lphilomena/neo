@@ -7,12 +7,23 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck source=/dev/null
 source "${ROOT}/conf/tools.env.sh" 2>/dev/null || true
 
-if [[ ! -f "${NEOAG_EASYFUSE_HOME:-}/modules/05_requantification.nf" && -f "${ROOT}/../open-neo-deploy/env_tool/tools/EasyFuse/modules/05_requantification.nf" ]]; then
-  NEOAG_EASYFUSE_HOME="${ROOT}/../open-neo-deploy/env_tool/tools/EasyFuse"
-fi
+easyfuse_home="${NEOAG_EASYFUSE_HOME:?ERROR: set NEOAG_EASYFUSE_HOME}"
+module=""
+for candidate in \
+  "${easyfuse_home}/modules/05_requantification.nf" \
+  "${easyfuse_home}/modules/06_requantification.nf" \
+  "${easyfuse_home}"/modules/*requantification*.nf; do
+  [[ -f "${candidate}" ]] || continue
+  if grep -q 'process[[:space:]]\+STAR_CUSTOM' "${candidate}"; then
+    module="${candidate}"
+    break
+  fi
+done
 
-module="${NEOAG_EASYFUSE_HOME:?ERROR: set NEOAG_EASYFUSE_HOME}/modules/05_requantification.nf"
-[[ -f "${module}" ]] || { echo "ERROR: EasyFuse module not found: ${module}" >&2; exit 1; }
+if [[ -z "${module}" ]]; then
+  echo "INFO: EasyFuse has no STAR_CUSTOM requantification module; compatibility patch not required"
+  exit 0
+fi
 
 python3 - "${module}" <<'PY'
 from pathlib import Path
@@ -26,7 +37,8 @@ if not match:
     raise SystemExit(f"STAR_CUSTOM block not found in {p}")
 
 prefix, body, suffix = match.groups()
-cleanup = """\n    if [ -f ${star_index}/genomeParameters.txt ]; then
+cleanup = """
+    if [ -f ${star_index}/genomeParameters.txt ]; then
         sed -i.bak -e '/^genomeType[[:space:]]/d' -e '/^genomeTransform/d' ${star_index}/genomeParameters.txt
     fi
 """
@@ -36,6 +48,9 @@ if "genomeTransform" in body and "genomeParameters.txt" in body:
 else:
     star_pos = body.find("\n    STAR --genomeDir ${star_index}")
     if star_pos < 0:
+        if "bp_quant align" in body:
+            print(f"EasyFuse bp_quant STAR_CUSTOM does not require direct STAR index cleanup: {p}")
+            raise SystemExit(0)
         raise SystemExit(f"STAR_CUSTOM STAR command not found in {p}")
     body = body[:star_pos] + cleanup + body[star_pos:]
     p.write_text(text[:match.start()] + prefix + body + suffix + text[match.end():])

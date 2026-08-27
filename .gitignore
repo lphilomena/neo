@@ -92,6 +92,9 @@ configs/local/
 /bin/netMHCpan
 /bin/netmhcpan
 /bin/splicemutr-neoag
+/bin/regtools-neoag
+/bin/snaf-neoag
+/bin/pvacsplice-neoag
 /bin/spladder-neoag
 /bin/immunopepper-neoag
 /bin/irfinder-s-neoag

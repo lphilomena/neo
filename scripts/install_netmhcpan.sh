@@ -237,7 +237,7 @@ export NETMHCPAN_HOME NETMHCpan="${NETMHCPAN_HOME}"
 export PATH="${NETMHCPAN_HOME}:${PATH}"
 if netMHCpan -h 2>&1 | head -3; then
   echo "==> NetMHCpan installed at ${NETMHCPAN_HOME}"
-  TOOLS_ENV="${ROOT}/conf/tools.env.sh"
+  TOOLS_ENV="${NEOAG_TOOLS_ENV:-${ROOT}/conf/tools.env.local.sh}"
   if [[ -f "${TOOLS_ENV}" ]] && ! grep -q 'NetMHCpan — installed via scripts/install_netmhcpan.sh' "${TOOLS_ENV}"; then
     cat >> "${TOOLS_ENV}" <<EOF
 

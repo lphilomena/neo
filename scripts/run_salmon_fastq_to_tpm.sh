@@ -8,6 +8,7 @@ Environment fallback:
   SALMON_BIN       salmon executable, default: salmon on PATH
   SALMON_INDEX     Salmon transcriptome index
   SALMON_TX2GENE   transcript-to-gene TSV/CSV
+  PYTHON           Python executable used for TPM aggregation
 USAGE
 }
 FASTQ1=""; FASTQ2=""; OUTDIR=""; SAMPLE_ID="sample"; SALMON_INDEX="${SALMON_INDEX:-}"; TX2GENE="${SALMON_TX2GENE:-}"; THREADS="${SALMON_THREADS:-8}"
@@ -31,11 +32,17 @@ done
 [[ -n "$TX2GENE" && -f "$TX2GENE" ]] || { echo "ERROR: SALMON_TX2GENE/--tx2gene missing or not a file: ${TX2GENE:-unset}" >&2; exit 3; }
 SALMON_BIN="${SALMON_BIN:-$(command -v salmon || true)}"
 [[ -n "$SALMON_BIN" && -x "$SALMON_BIN" ]] || { echo "ERROR: salmon executable not found; set SALMON_BIN or put salmon on PATH" >&2; exit 3; }
+PYTHON_BIN="${PYTHON:-$(command -v python3 || command -v python || true)}"
+[[ -n "$PYTHON_BIN" && -x "$PYTHON_BIN" ]] || { echo "ERROR: Python executable not found; set PYTHON" >&2; exit 3; }
 mkdir -p "$OUTDIR"
 QUANT_DIR="$OUTDIR/salmon_quant"
 LOG="$OUTDIR/salmon_quant.log"
-"$SALMON_BIN" quant -i "$SALMON_INDEX" -l A -1 "$FASTQ1" -2 "$FASTQ2" -p "$THREADS" --validateMappings -o "$QUANT_DIR" >"$LOG" 2>&1
-python "$(dirname "$0")/salmon_quant_to_gene_tpm.py" --quant-sf "$QUANT_DIR/quant.sf" --tx2gene "$TX2GENE" --out "$OUTDIR/gene_tpm.tsv"
+if [[ ! -s "$QUANT_DIR/quant.sf" ]]; then
+  "$SALMON_BIN" quant -i "$SALMON_INDEX" -l A -1 "$FASTQ1" -2 "$FASTQ2" -p "$THREADS" --validateMappings -o "$QUANT_DIR" >"$LOG" 2>&1
+else
+  printf 'Reusing existing Salmon quantification: %s\n' "$QUANT_DIR/quant.sf" >>"$LOG"
+fi
+"$PYTHON_BIN" "$(dirname "$0")/salmon_quant_to_gene_tpm.py" --quant-sf "$QUANT_DIR/quant.sf" --tx2gene "$TX2GENE" --out "$OUTDIR/gene_tpm.tsv"
 awk 'BEGIN{FS=OFS="\t"} NR==1{for(i=1;i<=NF;i++){if($i=="Name") id=i; if($i=="TPM") tpm=i} print "transcript_id","tpm"; next} id && tpm {print $id,$tpm}' \
   "$QUANT_DIR/quant.sf" > "$OUTDIR/transcript_tpm.tsv"
 cat > "$OUTDIR/rna_fastq_to_tpm.summary.json" <<JSON

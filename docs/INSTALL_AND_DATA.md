@@ -4,7 +4,7 @@ This guide is the deployment checklist for NeoAg Event Pipeline v0.4.3. It cover
 
 The online release is intentionally lightweight. It includes source code, workflows, tests, configuration examples, and small fixtures. It does not include licensed tools, large references, real patient data, results, work directories, conda packs, or Nextflow caches.
 
-For agent-assisted migration to a new machine, start with the skill-first deployment guide: [Skill-first migration package](SKILL_FIRST_MIGRATION.md). The safe bootstrap command is:
+For agent-assisted migration to a new machine, start with the current [Skill1 installation guide](../README.md#skill1-install-and-verify-the-machine). The safe bootstrap command is:
 
 ```bash
 bash scripts/bootstrap_agent_deploy.sh
@@ -511,8 +511,8 @@ When the host system lacks `/bin/tcsh` or has glibc older than the official NetM
 
 ### Priority tool containers
 
-Docker/Apptainer runtimes for NetMHCpan, NetMHCstabpan, HLA-LA, SpecHLA, PURPLE/AMBER/COBALT, and EasyFuse are documented in [docs/PRIORITY_TOOL_CONTAINERS.md](docs/PRIORITY_TOOL_CONTAINERS.md). These images contain only runtime dependencies; licensed tools and large reference data are mounted from host paths.
+Docker/Apptainer runtimes for NetMHCpan, NetMHCstabpan, HLA-LA, SpecHLA, PURPLE/AMBER/COBALT, and EasyFuse are documented in [PRIORITY_TOOL_CONTAINERS.md](PRIORITY_TOOL_CONTAINERS.md). These images contain only runtime dependencies; licensed tools and large reference data are mounted from host paths.
 
 ### Project data paths
 
-Host-side reference and tool data paths for real deployments are summarized in [docs/PROJECT_DATA_PATHS.md](docs/PROJECT_DATA_PATHS.md). Keep large reference data and licensed tool packages outside git and mount/configure them at runtime.
+Host-side reference and tool data paths for real deployments are summarized in [PROJECT_DATA_PATHS.md](PROJECT_DATA_PATHS.md). Keep large reference data and licensed tool packages outside git and mount/configure them at runtime.

@@ -17,7 +17,7 @@ ASCAT_ENV="${NEOAG_ASCAT_ENV:-neoag-ascat}"
 PYCLONE_ENV="${NEOAG_PYCLONE_ENV:-neoag-pyclone}"
 ASCAT_YML="${ROOT}/conda/env.neoag-ascat.yml"
 PYCLONE_YML="${ROOT}/conda/env.neoag-pyclone.yml"
-TOOLS_ENV="${ROOT}/conf/tools.env.sh"
+TOOLS_ENV="${NEOAG_TOOLS_ENV:-${ROOT}/conf/tools.env.local.sh}"
 BIOC_CACHE_HELPER="${ROOT}/.agents/skills/neoag-remote-deploy/scripts/with_bioc_data_cache.sh"
 
 if ! command -v conda >/dev/null 2>&1; then

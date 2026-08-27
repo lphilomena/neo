@@ -119,7 +119,7 @@ export PATH="${NETMHCPAN_HOME}:${PATH}"
 export NEOAG_NETMHCPAN_BACKEND="${NEOAG_NETMHCPAN_BACKEND:-local}"
 
 # NetMHCstabpan — install: bash scripts/install_netmhcstabpan.sh [--iedb]
-export NETMHCSTABPAN_HOME="${NEOAG_TOOLS_ROOT}/tools/netMHCstabpan"
+export NETMHCSTABPAN_HOME="${NETMHCSTABPAN_HOME:-${NEOAG_NETMHCSTABPAN_HOME:-${NEOAG_TOOLS_ROOT}/tools/netMHCstabpan}}"
 if [[ ! -x "${NETMHCSTABPAN_HOME}/netMHCstabpan" && -n "${NEOAG_TOOL_QUARANTINE}" && -x "${NEOAG_TOOL_QUARANTINE}/netMHCstabpan/netMHCstabpan" ]]; then
   export NETMHCSTABPAN_HOME="${NEOAG_TOOL_QUARANTINE}/netMHCstabpan"
 fi
@@ -229,12 +229,14 @@ if [[ -n "${OPTITYPE_ENV:-}" && -x "${OPTITYPE_ENV}/bin/optitype" ]]; then
 fi
 
 # NetChop 3.1d
-export NETCHOP_HOME="/root/neo/licensed_tools/netchop/netchop-3.1"
-export NETCHOP="/root/neo/licensed_tools/netchop/netchop-3.1/Linux_x86_64"
-export NETCHOP_BIN="/root/neo/env_tool/bin/netChop"
-export PATH="/root/neo/env_tool/bin:${PATH}"
+export NEOAG_LICENSED_ROOT="${NEOAG_LICENSED_ROOT:-${NEOAG_PROJECT_ROOT}/licensed_tools}"
+export NETCHOP_HOME="${NETCHOP_HOME:-${NEOAG_LICENSED_ROOT}/netchop/netchop-3.1}"
+export NETCHOP="${NETCHOP:-${NETCHOP_HOME}/Linux_x86_64}"
+export NETCHOP_BIN="${NETCHOP_BIN:-${NEOAG_TOOLS_ROOT}/bin/netChop}"
 
-export NEOAG_SPLICEMUTR_ENV="neoag-splicemutr"
-export NEOAG_SPLICEMUTR_HOME="/home/na/project/open-neo-deploy/env_tool/tools/SpliceMutr"
-export NEOAG_SPLICEMUTR_BIN="/home/na/project/neo/bin/splicemutr-neoag"
-export SPLICEMUTR_WORKFLOW="/home/na/project/open-neo-deploy/env_tool/tools/SpliceMutr/simulation/running_splicemutr/run_splicemutr.smk"
+export NEOAG_SPLICEMUTR_ENV="${NEOAG_SPLICEMUTR_ENV:-neoag-splicemutr}"
+export NEOAG_SPLICEMUTR_HOME="${NEOAG_SPLICEMUTR_HOME:-${NEOAG_TOOLS_ROOT}/tools/SpliceMutr}"
+export NEOAG_SPLICEMUTR_BIN="${NEOAG_SPLICEMUTR_BIN:-${NEOAG_TOOLS_ROOT}/bin/splicemutr-neoag}"
+export SPLICEMUTR_WORKFLOW="${SPLICEMUTR_WORKFLOW:-${NEOAG_SPLICEMUTR_HOME}/simulation/running_splicemutr/run_splicemutr.smk}"
+
+export NEOAG_ALTANALYZE_IMAGE="${NEOAG_ALTANALYZE_IMAGE:-neoag-altanalyze:snaf}"

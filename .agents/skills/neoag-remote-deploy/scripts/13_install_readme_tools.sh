@@ -34,6 +34,9 @@ INSTALL_FUSION=0
 INSTALL_SPLICE=0
 INSTALL_SNAF=1
 INSTALL_SPLICEMUTR=1
+INSTALL_ALTANALYZE=1
+ALTANALYZE_IMAGE_SOURCE="${NEOAG_ALTANALYZE_IMAGE_SOURCE:-frankligy123/altanalyze@sha256:b93cb071af933290daf385a75152349a0f1c75678bd61f72528f372a100e41bd}"
+ALTANALYZE_IMAGE="${NEOAG_ALTANALYZE_IMAGE:-neoag-altanalyze:snaf}"
 INSTALL_SPECHLA=0
 INSTALL_HLALA=0
 HLALA_VERSION="1.0.4"
@@ -133,6 +136,10 @@ Tool groups:
   --splice                   RegTools + pVACsplice + SNAF + SpliceMutr (defaults) and optional splice tools
   --skip-snaf                Skip SNAF when installing the splice group
   --skip-splicemutr          Skip SpliceMutr when installing the splice group
+  --skip-altanalyze          Skip the pinned SNAF AltAnalyze image
+  --altanalyze-image-source IMAGE_OR_DIGEST
+                              Source image (default: SNAF author image pinned by digest)
+  --altanalyze-image IMAGE   Local runtime tag (default: neoag-altanalyze:snaf)
   --spechla                  Register/load SpecHLA container assets and database if present
   --spechla-source DIR       Existing complete SpecHLA source tree; required when the staged image has runtime only
   --hla-la                   Register/load HLA-LA container assets and PRG graph if present
@@ -242,6 +249,9 @@ while [[ $# -gt 0 ]]; do
     --splice) INSTALL_SPLICE=1; shift ;;
     --skip-snaf) INSTALL_SNAF=0; shift ;;
     --skip-splicemutr) INSTALL_SPLICEMUTR=0; shift ;;
+    --skip-altanalyze) INSTALL_ALTANALYZE=0; shift ;;
+    --altanalyze-image-source) ALTANALYZE_IMAGE_SOURCE="$2"; shift 2 ;;
+    --altanalyze-image) ALTANALYZE_IMAGE="$2"; shift 2 ;;
     --spechla) INSTALL_SPECHLA=1; shift ;;
     --spechla-source) SPECHLA_SOURCE="$2"; INSTALL_SPECHLA=1; shift 2 ;;
     --hla-la) INSTALL_HLALA=1; shift ;;
@@ -1077,7 +1087,34 @@ if [[ "$INSTALL_SPLICE" == "1" ]]; then
   if [[ "$INSTALL_SPLICEMUTR" == "1" && "$EXECUTE" == "1" ]]; then
     need_download_ok "SpliceMutr pinned Git source"
   fi
-  run "install splice tools" env NEOAG_INSTALL_SNAF="$INSTALL_SNAF" NEOAG_INSTALL_SPLICEMUTR="$INSTALL_SPLICEMUTR" NEOAG_ALLOW_DOWNLOAD="$ALLOW_DOWNLOAD" bash scripts/install_splice_tools.sh
+  splice_env=(
+    NEOAG_INSTALL_SNAF="$INSTALL_SNAF"
+    NEOAG_INSTALL_SPLICEMUTR="$INSTALL_SPLICEMUTR"
+    NEOAG_ALLOW_DOWNLOAD="$ALLOW_DOWNLOAD"
+  )
+  if [[ ! -w "$CONDA_BASE/envs" \
+    || ( -d "$CONDA_BASE/envs/neoag-splice" && ! -w "$CONDA_BASE/envs/neoag-splice" ) \
+    || ( -d "$CONDA_BASE/envs/neoag-snaf" && ! -w "$CONDA_BASE/envs/neoag-snaf" ) \
+    || ( -d "$CONDA_BASE/envs/neoag-splicemutr" && ! -w "$CONDA_BASE/envs/neoag-splicemutr" ) ]]; then
+    portable_envs="$TOOLS_ROOT/conda_envs"
+    mkdir -p "$portable_envs"
+    splice_env+=(
+      CONDA_ENVS_PATH="$portable_envs"
+      NEOAG_CONDA_ENVS_PATH="$portable_envs"
+      NEOAG_SPLICE_ENV=neoag-splice-portable
+      NEOAG_SNAF_ENV=neoag-snaf-portable
+      NEOAG_SPLICEMUTR_ENV=neoag-splicemutr-portable
+    )
+    log "Conda env root is not writable; using portable splice environments under $portable_envs"
+  fi
+  run "install splice tools" env "${splice_env[@]}" bash scripts/install_splice_tools.sh
+  if [[ "$INSTALL_SNAF" == "1" && "$INSTALL_ALTANALYZE" == "1" ]]; then
+    [[ "$EXECUTE" != "1" ]] || need_download_ok "pinned SNAF AltAnalyze container image"
+    run "install AltAnalyze image" env \
+      NEOAG_ALTANALYZE_IMAGE_SOURCE="$ALTANALYZE_IMAGE_SOURCE" \
+      NEOAG_ALTANALYZE_IMAGE="$ALTANALYZE_IMAGE" \
+      bash scripts/install_altanalyze_image.sh
+  fi
 fi
 register_spechla_if_requested
 register_hlala_if_requested

@@ -15,6 +15,7 @@ Environment:
   RSEM_BIN                 rsem-calculate-expression executable, default: command on PATH
   RSEM_REFERENCE           RSEM reference prefix built from matching transcriptome/GTF
   RSEM_THREADS             thread count
+  RSEM_ALIGNER             auto, bowtie, bowtie2, or star; default: auto
 USAGE
 }
 
@@ -44,7 +45,27 @@ mkdir -p "$OUTDIR"
 LOG="$OUTDIR/rsem_quant.log"
 OUT_PREFIX="$OUTDIR/$SAMPLE_ID"
 
-"$RSEM_BIN" --paired-end -p "$THREADS" --estimate-rspd --append-names \
+ALIGNER_ARGS=()
+case "${RSEM_ALIGNER:-auto}" in
+  auto)
+    if command -v bowtie >/dev/null 2>&1; then
+      :
+    elif command -v bowtie2 >/dev/null 2>&1; then
+      ALIGNER_ARGS+=(--bowtie2)
+    elif command -v STAR >/dev/null 2>&1; then
+      ALIGNER_ARGS+=(--star)
+    else
+      echo "ERROR: no supported RSEM aligner found (bowtie, bowtie2, or STAR)" >&2
+      exit 3
+    fi
+    ;;
+  bowtie) command -v bowtie >/dev/null 2>&1 || { echo "ERROR: bowtie not found" >&2; exit 3; } ;;
+  bowtie2) command -v bowtie2 >/dev/null 2>&1 || { echo "ERROR: bowtie2 not found" >&2; exit 3; }; ALIGNER_ARGS+=(--bowtie2) ;;
+  star) command -v STAR >/dev/null 2>&1 || { echo "ERROR: STAR not found" >&2; exit 3; }; ALIGNER_ARGS+=(--star) ;;
+  *) echo "ERROR: unsupported RSEM_ALIGNER=${RSEM_ALIGNER}" >&2; exit 3 ;;
+esac
+
+"$RSEM_BIN" --paired-end -p "$THREADS" --estimate-rspd --append-names "${ALIGNER_ARGS[@]}" \
   "$FASTQ1" "$FASTQ2" "$RSEM_REFERENCE" "$OUT_PREFIX" >"$LOG" 2>&1
 
 GENES_RESULTS="$OUT_PREFIX.genes.results"

@@ -5,18 +5,20 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CONDA_BASE="${NEOAG_CONDA_BASE:-$(conda info --base)}"
 TOOLS_ROOT="${NEOAG_TOOLS_ROOT:-${ROOT}}"
+PORTABLE_ENVS="${NEOAG_CONDA_ENVS_PATH:-${CONDA_ENVS_PATH:-}}"
+[[ -z "$PORTABLE_ENVS" ]] || export CONDA_ENVS_PATH="$PORTABLE_ENVS"
 ENV_NAME="${NEOAG_SPLICEMUTR_ENV:-neoag-splicemutr}"
 REF="${NEOAG_SPLICEMUTR_REF:-ac0d17005cb37810bc1e6c9a50d7707f8bd3ae66}"
-PACKAGE_URL="${NEOAG_SPLICEMUTR_PACKAGE_URL:-https://gh-proxy.com/https://github.com/FertigLab/splicemutr/archive/${REF}.tar.gz}"
+PACKAGE_URL="${NEOAG_SPLICEMUTR_PACKAGE_URL:-https://codeload.github.com/FertigLab/splicemutr/tar.gz/${REF}}"
 ARCHIVE="${NEOAG_SPLICEMUTR_ARCHIVE:-${TOOLS_ROOT}/sources/SpliceMutr-${REF}.tar.gz}"
 GENOMEINFO_ARCHIVE="${NEOAG_GENOMEINFODBDATA_ARCHIVE:-${TOOLS_ROOT}/sources/GenomeInfoDbData_1.2.11.tar.gz}"
-GENOMEINFO_URL="${NEOAG_GENOMEINFODBDATA_URL:-https://mghp.osn.xsede.org/bir190004-bucket01/archive.bioconductor.org/packages/3.18/data/annotation/src/contrib/GenomeInfoDbData_1.2.11.tar.gz}"
+GENOMEINFO_URL="${NEOAG_GENOMEINFODBDATA_URL:-https://bioconductor.statistik.tu-dortmund.de/packages/3.18/data/annotation/src/contrib/GenomeInfoDbData_1.2.11.tar.gz}"
 GENOMEINFO_MD5="2a4cbfc2031992fed3c9445f450890a2"
 BSGENOME_PACKAGE="${NEOAG_SPLICEMUTR_BSGENOME_PACKAGE:-${NEOAG_REFERENCE_ROOT:-/opt/neoag/refs}/data/splice/splicemutr/r_library/BSgenome.Hsapiens.UCSC.hg38}"
 HOME_DIR="${NEOAG_SPLICEMUTR_HOME:-${TOOLS_ROOT}/tools/SpliceMutr}"
 YML="${ROOT}/conda/env.neoag-splicemutr.yml"
 BIN_DIR="${ROOT}/bin"
-TOOLS_ENV="${ROOT}/conf/tools.env.sh"
+TOOLS_ENV="${NEOAG_TOOLS_ENV:-${ROOT}/conf/tools.env.local.sh}"
 export CONDA_CHANNEL_ALIAS="${NEOAG_CONDA_CHANNEL_ALIAS:-${CONDA_CHANNEL_ALIAS:-https://conda.anaconda.org}}"
 
 curl_supports_retry_all_errors() {
@@ -188,6 +190,7 @@ case "\${1:-doctor}" in
   *) echo "ERROR: unknown command: \$1" >&2; exit 2 ;;
 esac
 EOF
+[[ -z "$PORTABLE_ENVS" ]] || sed -i "2a export CONDA_ENVS_PATH=\"${PORTABLE_ENVS}\"" "${BIN_DIR}/splicemutr-neoag"
 chmod +x "${BIN_DIR}/splicemutr-neoag"
 
 for assignment in \
@@ -205,5 +208,5 @@ done
 
 echo "==> SpliceMutr smoke"
 "${BIN_DIR}/splicemutr-neoag" doctor
-echo "==> SpliceMutr installed at ${HOME_DIR} (${REF})"
+echo "==> SpliceMutr installed at ${HOME_DIR}; ref=${REF}"
 echo "NOTE: hg38 BSgenome was validated; GTF/TxDb, STAR index, and cohort junction inputs remain runtime assets."

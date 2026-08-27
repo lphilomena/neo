@@ -11,7 +11,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CONDA_BASE="${NEOAG_CONDA_BASE:-$(command conda info --base)}"
 export PATH="${CONDA_BASE}/bin:${PATH}"
 ENV_NAME="${NEOAG_FACETS_ENV:-neoag-facets}"
-TOOLS_ENV="${ROOT}/conf/tools.env.sh"
+TOOLS_ENV="${NEOAG_TOOLS_ENV:-${ROOT}/conf/tools.env.local.sh}"
 BIN_DIR="${ROOT}/bin"
 mkdir -p "${BIN_DIR}"
 

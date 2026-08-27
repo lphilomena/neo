@@ -24,8 +24,11 @@ Usage:
     [--asset-root <liup_neodata4git>] \
     [--reference-fasta <GRCh38.fasta>] \
     [--gencode-gtf <matching.gtf; also used for exact splice strand/origin reconstruction>] \
+    [--hla-file <consensus HLA allele file>] \
     [--sequenza <result_file_or_dir>] \
     [--purple <result_file_or_dir>] \
+    [--lohhla <normalized_hla_loh.tsv>] \
+    [--spechla-loh <normalized_hla_loh.tsv>] \
     [--expression <gene_tpm.tsv>] \
     [--transcript-expression <transcript_tpm.tsv|quant.sf>] \
     [--rna-fastq1 <R1.fq.gz[,lane2_R1.fq.gz]>] \
@@ -81,8 +84,11 @@ OUTDIR=""
 SOMATIC_VCF=""
 REFERENCE_FASTA=""
 GENCODE_GTF=""
+HLA_FILE=""
 SEQUENZA=""
 PURPLE=""
+LOHHLA=""
+SPECHLA_LOH=""
 EXPRESSION=""
 TRANSCRIPT_EXPRESSION=""
 RNA_FASTQ1=""
@@ -120,8 +126,11 @@ while [[ $# -gt 0 ]]; do
     --asset-root) ASSET="$2"; CLI_ASSET="$2"; shift 2 ;;
     --reference-fasta) REFERENCE_FASTA="$2"; shift 2 ;;
     --gencode-gtf) GENCODE_GTF="$2"; shift 2 ;;
+    --hla-file) HLA_FILE="$2"; shift 2 ;;
     --sequenza) SEQUENZA="$2"; shift 2 ;;
     --purple) PURPLE="$2"; shift 2 ;;
+    --lohhla) LOHHLA="$2"; shift 2 ;;
+    --spechla-loh) SPECHLA_LOH="$2"; shift 2 ;;
     --expression) EXPRESSION="$2"; shift 2 ;;
     --transcript-expression) TRANSCRIPT_EXPRESSION="$2"; shift 2 ;;
     --rna-fastq1) RNA_FASTQ1="$2"; shift 2 ;;
@@ -456,18 +465,46 @@ GEN_ARGS=(
   --somatic-vcf "$SOMATIC_VCF"
 )
 
-add_if --optitype "$CASE_ROOT/hla/optitype/${SAMPLE_ID}_blood_result.tsv"
-add_if --optitype "$CASE_ROOT/hla/optitype/${SAMPLE_ID}_result.tsv"
-add_if --spechla-typing "$CASE_ROOT/hla/spechla/typing/normal/${SAMPLE_ID}_blood/hla.result.txt"
-add_if --hla-la "$CASE_ROOT/hla/hla_la/working/${SAMPLE_ID}_blood/hla/R1_bestguess_G.txt"
+if [[ -n "$HLA_FILE" ]]; then
+  add_if --hla-file "$HLA_FILE"
+elif ! add_first_existing --hla-file \
+  "$CASE_ROOT/hla/consensus/hla_consensus.txt" \
+  "$CASE_ROOT/evidence/hla_typing/recommended_hla.txt"; then
+  add_first_existing --optitype \
+    "$CASE_ROOT/hla/optitype/results/${SAMPLE_ID}_blood_result.tsv" \
+    "$CASE_ROOT/hla/optitype/${SAMPLE_ID}_blood_result.tsv" \
+    "$CASE_ROOT/hla/optitype/${SAMPLE_ID}_result.tsv" || true
+  add_if --spechla-typing "$CASE_ROOT/hla/spechla/typing/normal/${SAMPLE_ID}_blood/hla.result.txt"
+  add_if --hla-la "$CASE_ROOT/hla/hla_la/working/${SAMPLE_ID}_blood/hla/R1_bestguess_G.txt"
+fi
 add_if --facets "$CASE_ROOT/facets/omni2p5_snponly_downsample"
 add_if --ascat "$CASE_ROOT/ascat"
 if [[ -n "$SEQUENZA" ]]; then GEN_ARGS+=(--sequenza "$SEQUENZA"); else add_if --sequenza "$CASE_ROOT/sequenza"; fi
 if [[ -n "$PURPLE" ]]; then GEN_ARGS+=(--purple "$PURPLE"); else add_if --purple "$CASE_ROOT/purple"; fi
-add_if --purity "$CASE_ROOT/evidence/purity.tsv"
-add_if --cnv "$CASE_ROOT/evidence/cnv_segments.tsv"
-add_if --lohhla "$CASE_ROOT/evidence/hla_loh.tsv"
-add_if --spechla-loh "$CASE_ROOT/evidence/hla_loh.spechla.tsv"
+add_first_existing --purity \
+  "$CASE_ROOT/purity/consensus/recommended_purity.tsv" \
+  "$CASE_ROOT/evidence/purity.tsv" || true
+add_first_existing --cnv \
+  "$CASE_ROOT/purity/consensus/recommended_cnv_segments.tsv" \
+  "$CASE_ROOT/evidence/cnv_segments.tsv" || true
+if [[ -n "$LOHHLA" ]]; then
+  add_if --lohhla "$LOHHLA"
+else
+  discovered_lohhla="$(latest_matching_file "$CASE_ROOT" -path '*/lohhla/hla_loh.tsv' -o -name '*HLAlossPrediction_CI*.txt')"
+  add_first_existing --lohhla \
+    "$CASE_ROOT/hla_loh/lohhla/hla_loh.tsv" \
+    "$CASE_ROOT/evidence/hla_loh.tsv" \
+    "$discovered_lohhla" || true
+fi
+if [[ -n "$SPECHLA_LOH" ]]; then
+  add_if --spechla-loh "$SPECHLA_LOH"
+else
+  discovered_spechla_loh="$(latest_matching_file "$CASE_ROOT" -path '*/spechla/hla_loh.tsv' -o -name 'hla_loh.spechla.tsv')"
+  add_first_existing --spechla-loh \
+    "$CASE_ROOT/hla_loh/spechla/hla_loh.tsv" \
+    "$CASE_ROOT/evidence/hla_loh.spechla.tsv" \
+    "$discovered_spechla_loh" || true
+fi
 if [[ -n "$EXPRESSION" ]]; then
   add_if --expression "$EXPRESSION"
 else

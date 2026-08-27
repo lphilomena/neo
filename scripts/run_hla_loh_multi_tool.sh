@@ -39,10 +39,24 @@ done
 read_recommendation() {
   awk -F '\t' '
     NR == 1 { for (i=1; i<=NF; i++) h[$i]=i; next }
-    NR == 2 { print $(h["purity"]), $(h["ploidy"]); exit }
+    NR == 2 {
+      purity_col = h["purity"] ? h["purity"] : h["recommended_purity"]
+      ploidy_col = h["ploidy"]
+      print (purity_col ? $(purity_col) : ""), (ploidy_col ? $(ploidy_col) : "")
+      exit
+    }
   ' "$PURITY_TSV"
 }
 read -r PURITY PLOIDY < <(read_recommendation)
+if ! awk -v q="$PLOIDY" 'BEGIN { exit !(q > 0) }'; then
+  PLOIDY="$(awk -F '\t' '
+    NR == 1 { for (i=1; i<=NF; i++) h[$i]=i; next }
+    NR > 1 && $(h["status"]) == "FOUND" && $(h["ploidy"]) > 0 {
+      sum += $(h["ploidy"]); n++
+    }
+    END { if (n) printf "%.6f", sum / n }
+  ' "$(dirname "$PURITY_TSV")/purity_cnv_tool_summary.tsv")"
+fi
 awk -v p="$PURITY" -v q="$PLOIDY" 'BEGIN { exit !(p > 0 && p <= 1 && q > 0) }' || {
   echo "ERROR: recommended purity/ploidy are invalid: purity=$PURITY ploidy=$PLOIDY" >&2
   exit 4
@@ -72,7 +86,8 @@ require_multi_tool_purity_consensus() {
       next
     }
     NR == 2 {
-      status = $(h["consensus_status"])
+      status_col = h["consensus_status"] ? h["consensus_status"] : h["status"]
+      status = status_col ? $(status_col) : ""
       exit !(status != "" && status != "SINGLE_TOOL")
     }
   ' "$consensus_tsv" || {
