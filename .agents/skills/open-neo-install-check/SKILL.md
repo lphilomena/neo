@@ -30,6 +30,10 @@ description: Public macro Skill1 for Open-Neo installation, new-machine migratio
   site-managed Conda or Miniforge root, including a NAS path. When supplied,
   the Skill uses that installation and does not search for or install another
   Miniconda/Miniforge.
+- Optional `--conda-pkgs-source DIR` / `NEOAG_CONDA_PKGS_SOURCE`: a readable,
+  pre-populated Conda package cache from the asset source or a previous machine.
+  Skill1 copies missing cache entries into the machine-local writable
+  `env_tool/conda_pkgs` before solving environments.
 - Optional `--install-claude-code`: install Claude Code with Anthropic's
   official native installer. The default release channel is `stable`; use
   `--claude-code-channel latest` or an exact `X.Y.Z` version when required.
@@ -48,6 +52,18 @@ description: Public macro Skill1 for Open-Neo installation, new-machine migratio
 8. Run Doctor and evaluate required tools, alternative capability groups, critical references and sidecars against the requested tier. Missing required references can never produce READY. If the selected Conda installation is readable but its named splice environments are not writable, create user-writable portable environments under the selected tools root and record `CONDA_ENVS_PATH` in generated wrappers; never require sudo or assume a username.
 9. Write deployment checkpoints, configuration fixes, and an installation status delta for safe resume/review. Full installs default to no wall-clock timeout; `--install-timeout SECONDS` can be supplied when an operator wants a bounded run. If the macro is interrupted or times out, it terminates the whole installer process group before recording an `INTERRUPTED` or `TIMEOUT` checkpoint so `resume` can continue from a controlled state.
 10. Write `deployment_report.md`, machine-readable status files, and an audit log.
+
+The local `env_tool/conda_pkgs` directory is a persistent package cache, not an
+assumed complete offline distribution. Skill1 first seeds it from
+`--conda-pkgs-source` when supplied and automatically probes common
+`conda_pkgs` locations below a mounted shared asset root. Packages already in
+that cache are reused; only missing packages are fetched from the environment
+file's configured channels, including Bioconda where required. Conda is
+configured with extended connect/read timeouts, exponential backoff and 12 HTTP
+retries. If a step still reports `IncompleteRead`, `Connection broken`, timeout,
+HTTP 429 or transient 5xx errors, the idempotent installer step is retried while
+retaining downloaded package-cache content. A non-network solver/package error
+is not retried blindly.
 
 For PRIME, MixMHCpred and BigMHC, the approved installer treats the pinned
 source tree and model files as deployment assets. It first synchronizes

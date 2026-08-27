@@ -1464,6 +1464,9 @@ def _deployment_command(args: dict[str, Any], project_root: Path, layout: RunLay
     conda_base = args.get("conda_base") or os.environ.get("NEOAG_CONDA_BASE", "")
     if conda_base:
         command += ["--conda-base", str(conda_base)]
+    conda_pkgs_source = args.get("conda_pkgs_source") or os.environ.get("NEOAG_CONDA_PKGS_SOURCE", "")
+    if conda_pkgs_source:
+        command += ["--conda-pkgs-source", str(conda_pkgs_source)]
     asset_manifest = args.get("asset_manifest")
     deployment_reference_manifest = args.get("deployment_reference_manifest") or args.get("reference_manifest")
     if asset_manifest:

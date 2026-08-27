@@ -7,6 +7,8 @@ TOOLS_ROOT="${NEOAG_TOOLS_ROOT:-$DEPLOY_ROOT/env_tool}"
 LICENSED_ROOT="${NEOAG_LICENSED_ROOT:-$DEPLOY_ROOT/licensed_tools}"
 REFERENCE_ROOT="${NEOAG_REFERENCE_ROOT:-$DEPLOY_ROOT/refs}"
 CONDA_BASE=""
+CONDA_PKGS_SOURCE="${NEOAG_CONDA_PKGS_SOURCE:-}"
+CONDA_DOWNLOAD_RETRIES="${NEOAG_CONDA_DOWNLOAD_RETRIES:-12}"
 OUTDIR="work/remote_deploy"
 EXECUTE=0
 ALLOW_DOWNLOAD=0
@@ -102,6 +104,8 @@ Common options:
   --licensed-root DIR         Licensed tool root (default: NEOAG_LICENSED_ROOT or /opt/neoag/licensed_tools)
   --reference-root DIR        Reference root (default: NEOAG_REFERENCE_ROOT or /opt/neoag/refs)
   --conda-base DIR            Miniforge/conda base (default: tools-root/miniforge3)
+  --conda-pkgs-source DIR     Optional pre-populated Conda package cache copied before network solves
+  --conda-download-retries N  Conda HTTP retry count (default: 12)
   --install-miniforge         Install Miniforge3 if conda is missing (default enabled)
   --no-install-miniforge      Do not install Miniforge automatically if conda is missing
   --miniforge-url URL         Miniforge installer URL
@@ -217,6 +221,8 @@ while [[ $# -gt 0 ]]; do
     --licensed-root) LICENSED_ROOT="$2"; shift 2 ;;
     --reference-root) REFERENCE_ROOT="$2"; shift 2 ;;
     --conda-base) CONDA_BASE="$2"; shift 2 ;;
+    --conda-pkgs-source) CONDA_PKGS_SOURCE="$2"; shift 2 ;;
+    --conda-download-retries) CONDA_DOWNLOAD_RETRIES="$2"; shift 2 ;;
     --install-miniforge) INSTALL_MINIFORGE=1; shift ;;
     --no-install-miniforge) INSTALL_MINIFORGE=0; shift ;;
     --miniforge-url) MINIFORGE_URL="$2"; shift 2 ;;
@@ -329,7 +335,28 @@ run() {
   log "==> [$MODE] $label"
   log "+ $*"
   if [[ "$EXECUTE" == "1" ]]; then
-    "$@" 2>&1 | tee -a "$LOG"
+    local attempt=1 max_attempts="${NEOAG_INSTALL_STEP_RETRIES:-4}" rc attempt_log
+    while true; do
+      attempt_log="$OUTDIR/.install_attempt.$$.${attempt}.log"
+      set +e
+      "$@" 2>&1 | tee -a "$LOG" "$attempt_log"
+      rc=${PIPESTATUS[0]}
+      set -e
+      if [[ "$rc" == "0" ]]; then
+        rm -f "$attempt_log"
+        return 0
+      fi
+      if [[ "$attempt" -ge "$max_attempts" ]] || ! grep -Eqi \
+        'IncompleteRead|Connection broken|Connection reset|ReadTimeout|RemoteDisconnected|ChunkedEncodingError|Temporary failure in name resolution|SSL.*EOF|CondaHTTPError|HTTP[^0-9]*(429|500|502|503|504)' \
+        "$attempt_log"; then
+        rm -f "$attempt_log"
+        return "$rc"
+      fi
+      log "WARN: retryable network interruption during '$label'; preserving Conda cache and retrying step ($attempt/$max_attempts)"
+      rm -f "$attempt_log"
+      sleep "${NEOAG_INSTALL_STEP_RETRY_SLEEP:-20}"
+      attempt=$((attempt + 1))
+    done
   fi
 }
 
@@ -352,7 +379,44 @@ find_conda_base() {
 }
 
 set_local_conda_pkg_cache() {
-  run "set local conda package cache" bash -lc "mkdir -p '$TOOLS_ROOT/conda_pkgs' && '$CONDA_BASE/bin/conda' config --remove-key pkgs_dirs >/dev/null 2>&1 || true; '$CONDA_BASE/bin/conda' config --add pkgs_dirs '$TOOLS_ROOT/conda_pkgs' >/dev/null 2>&1"
+  local local_cache="$TOOLS_ROOT/conda_pkgs" source="${CONDA_PKGS_SOURCE:-}"
+  local candidate
+  if [[ -z "$source" ]]; then
+    for candidate in \
+      "$SHARED_ASSET_ROOT/conda_pkgs" \
+      "$SHARED_ASSET_ROOT/env_tool/conda_pkgs" \
+      "$SHARED_ASSET_ROOT/data/conda_pkgs" \
+      "$REFERENCE_ROOT/conda_pkgs" \
+      "$REFERENCE_ROOT/data/conda_pkgs"; do
+      [[ "$candidate" != /conda_pkgs && "$candidate" != /env_tool/conda_pkgs && "$candidate" != /data/conda_pkgs ]] || continue
+      if [[ -d "$candidate" ]] && find "$candidate" -mindepth 1 -maxdepth 1 \
+        \( -type f -o -type d \) -print -quit | grep -q .; then
+        source="$candidate"
+        break
+      fi
+    done
+  fi
+  if [[ -n "$source" ]]; then
+    [[ -d "$source" ]] || { echo "CONDA_PKGS_SOURCE_INVALID: $source" >&2; exit 31; }
+    if [[ "$(readlink -f "$source")" != "$(readlink -m "$local_cache")" ]]; then
+      run "seed local Conda package cache" bash -lc "mkdir -p '$local_cache'; rsync -a --ignore-existing \
+        --exclude '*.partial' --exclude '*.part' --exclude '*.tmp' --exclude '*.lock' \
+        '$source/' '$local_cache/'"
+    fi
+    log "Conda package cache source: $source"
+  else
+    log "INFO: no pre-populated Conda package cache supplied; missing packages will be downloaded from configured channels"
+  fi
+  run "configure resilient local Conda package cache" bash -lc "mkdir -p '$local_cache'; \
+    find '$local_cache' -maxdepth 2 -type f \
+      \( -name '*.partial' -o -name '*.part' -o -name '*.tmp' -o -name '*.lock' \) -delete; \
+    '$CONDA_BASE/bin/conda' config --remove-key pkgs_dirs >/dev/null 2>&1 || true; \
+    '$CONDA_BASE/bin/conda' config --add pkgs_dirs '$local_cache'; \
+    '$CONDA_BASE/bin/conda' config --set remote_connect_timeout_secs 60; \
+    '$CONDA_BASE/bin/conda' config --set remote_read_timeout_secs 600; \
+    '$CONDA_BASE/bin/conda' config --set remote_max_retries '$CONDA_DOWNLOAD_RETRIES'; \
+    '$CONDA_BASE/bin/conda' config --set remote_backoff_factor 2"
+  export CONDA_PKGS_DIRS="$local_cache"
 }
 
 

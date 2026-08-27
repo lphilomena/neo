@@ -7,6 +7,7 @@ TOOLS_ROOT="${NEOAG_TOOLS_ROOT:-$DEPLOY_ROOT/env_tool}"
 REFERENCE_ROOT="${NEOAG_REFERENCE_ROOT:-$DEPLOY_ROOT/refs}"
 LICENSED_ROOT="${NEOAG_LICENSED_ROOT:-$DEPLOY_ROOT/licensed_tools}"
 CONDA_BASE=""
+CONDA_PKGS_SOURCE="${NEOAG_CONDA_PKGS_SOURCE:-}"
 OUTDIR="work/agent_deploy/new_machine_install"
 ASSET_MANIFEST="configs/assets/production_assets.tsv"
 REFERENCE_MANIFEST="configs/references/reference_manifest.yaml"
@@ -55,6 +56,7 @@ Common options:
   --reference-root DIR        Reference root (default: NEOAG_REFERENCE_ROOT or /opt/neoag/refs)
   --licensed-root DIR         Licensed tool root (default: NEOAG_LICENSED_ROOT or /opt/neoag/licensed_tools)
   --conda-base DIR            Miniforge/conda base (default: tools-root/miniforge3)
+  --conda-pkgs-source DIR     Pre-populated Conda package cache for offline-first installation
   --outdir DIR                Work/report directory
   --asset-manifest FILE       Large asset manifest (default: configs/assets/production_assets.tsv)
   --reference-manifest FILE   YAML reference manifest verified after asset sync
@@ -125,6 +127,7 @@ while [[ $# -gt 0 ]]; do
     --reference-root) REFERENCE_ROOT="$2"; shift 2 ;;
     --licensed-root) LICENSED_ROOT="$2"; shift 2 ;;
     --conda-base) CONDA_BASE="$2"; shift 2 ;;
+    --conda-pkgs-source) CONDA_PKGS_SOURCE="$2"; shift 2 ;;
     --outdir) OUTDIR="$2"; shift 2 ;;
     --asset-manifest) ASSET_MANIFEST="$2"; shift 2 ;;
     --reference-manifest) REFERENCE_MANIFEST="$2"; shift 2 ;;
@@ -197,6 +200,7 @@ install_args=(
   --vep-version "$VEP_VERSION"
 )
 [[ "$ALLOW_DOWNLOAD" == "1" ]] && install_args+=(--allow-download)
+[[ -n "$CONDA_PKGS_SOURCE" ]] && install_args+=(--conda-pkgs-source "$CONDA_PKGS_SOURCE")
 [[ "$EXECUTE" == "1" ]] && install_args+=(--execute)
 if [[ "$INSTALL_CLAUDE_CODE" == "1" ]]; then
   install_args+=(--claude-code --claude-code-channel "$CLAUDE_CODE_CHANNEL" --claude-code-installer-url "$CLAUDE_CODE_INSTALLER_URL")

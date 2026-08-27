@@ -72,6 +72,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--conda-base",
         help="Existing Conda/Miniforge root; use this NAS/site installation instead of auto-installing Miniforge",
     )
+    install.add_argument(
+        "--conda-pkgs-source",
+        help="Optional pre-populated Conda package cache copied before network channel downloads",
+    )
     install.add_argument("--profile", default="local")
     install.add_argument("--run-demo", action="store_true")
     install.add_argument("--run-pytest", action="store_true")

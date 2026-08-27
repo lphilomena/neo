@@ -673,6 +673,29 @@ def test_install_skill_propagates_explicit_conda_base(tmp_path):
     assert command[command.index("--conda-base") + 1] == "/nas/apps/miniforge3"
 
 
+def test_install_skill_propagates_conda_package_cache_source(tmp_path):
+    project = tmp_path / "project"
+    script = project / ".agents/skills/neoag-remote-deploy/scripts/16_install_new_machine.sh"
+    script.parent.mkdir(parents=True)
+    script.write_text("#!/bin/sh\n", encoding="utf-8")
+    layout = RunLayout.create(tmp_path / "run")
+    command = _deployment_command(
+        {"deployment_tier": "full", "conda_pkgs_source": "/mnt/assets/conda_pkgs"},
+        project,
+        layout,
+        execute=False,
+    )
+    assert command[command.index("--conda-pkgs-source") + 1] == "/mnt/assets/conda_pkgs"
+
+
+def test_install_cli_accepts_conda_package_cache_source():
+    args = build_parser().parse_args([
+        "install-check", "--outdir", "work/install",
+        "--conda-pkgs-source", "/mnt/assets/conda_pkgs",
+    ])
+    assert args.conda_pkgs_source == "/mnt/assets/conda_pkgs"
+
+
 def test_install_skill_propagates_claude_code_bootstrap(tmp_path):
     project = tmp_path / "project"
     script = project / ".agents/skills/neoag-remote-deploy/scripts/16_install_new_machine.sh"
