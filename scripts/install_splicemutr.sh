@@ -93,7 +93,13 @@ else
   CONDA_RUNNER=conda
 fi
 
-env_exists() { conda_safe env list | awk '{print $1}' | grep -qx "$1"; }
+env_exists() {
+  local portable_root="${PORTABLE_ENVS%%:*}"
+  if [[ -n "${portable_root}" && -f "${portable_root}/$1/conda-meta/history" ]]; then
+    return 0
+  fi
+  conda_safe env list | awk '{print $1}' | grep -qx "$1"
+}
 env_is_ready() {
   env_exists "$1" && conda_safe run -n "$1" python -c 'import Bio, numpy, pandas, sklearn' >/dev/null 2>&1 \
     && conda_safe run -n "$1" Rscript -e 'library(BSgenome); library(GenomicFeatures); library(optparse)' >/dev/null 2>&1 \
