@@ -3,7 +3,7 @@ import gzip
 import json
 from pathlib import Path
 
-from neoag.reports_dual import ReportBundle, _apply_patient_gene_expression, _augment_runtime_tool_provenance, _find_bam_input, _patient_conflict_summary, _patient_disease_background, _patient_dna_evidence, _patient_event_grade_counts, _patient_evidence_audit_rows, _patient_evidence_summary, _patient_event_change, _patient_expression_tpm_map, _patient_fusion_artifact_review, _patient_fusion_boundary_evidence, _patient_hla_loh_consensus, _patient_key_gaps, _patient_limitation, _patient_manual_review_rows, _patient_metric, _patient_presentation_metric, _patient_presentation_quantitative_row, _patient_rna_measurements, _patient_rna_metric, _patient_safety_dimensions, _patient_safety_gap, _patient_tool_rows, _patient_track, _patient_validation, _replace_gene_ids, load_report_bundle, make_dual_reports, make_patient_report, make_technical_report
+from neoag.reports_dual import ReportBundle, _apply_patient_gene_expression, _augment_runtime_tool_provenance, _find_bam_input, _patient_conflict_summary, _patient_disease_background, _patient_dna_evidence, _patient_event_grade_counts, _patient_event_representatives, _patient_evidence_audit_rows, _patient_evidence_summary, _patient_event_change, _patient_expression_tpm_map, _patient_fusion_artifact_review, _patient_fusion_boundary_evidence, _patient_hla_loh_consensus, _patient_key_gaps, _patient_limitation, _patient_manual_review_rows, _patient_metric, _patient_presentation_metric, _patient_presentation_quantitative_row, _patient_rna_measurements, _patient_rna_metric, _patient_safety_dimensions, _patient_safety_gap, _patient_tool_rows, _patient_track, _patient_validation, _replace_gene_ids, load_report_bundle, make_dual_reports, make_patient_report, make_technical_report
 from neoag.reports_dual import _patient_ccf_coverage_rows, _patient_splice_funnel_rows
 from neoag.utils import write_tsv
 
@@ -400,6 +400,26 @@ def test_patient_event_evidence_is_compact_and_omits_rna_source():
     assert "junction reads 18" in text
     assert "数据来源" not in text
     assert "raw_events" not in text
+
+
+def test_patient_fusion_table_collapses_same_peptide_hla_across_hypotheses():
+    events = [
+        {
+            "event_id": "FUSION_ENOPH1_EWSR1_chr4_82430884_chr22_29292137",
+            "event_type": "Fusion", "gene": "ENOPH1::EWSR1",
+            "best_peptide": "AEVTVILL", "best_hla_allele": "HLA-B*40:01",
+        },
+        {
+            "event_id": "FUSION_ENOPH1_EWSR1_chr4_82430913_chr22_29292137",
+            "event_type": "Fusion", "gene": "ENOPH1::EWSR1",
+            "best_peptide": "AEVTVILL", "best_hla_allele": "HLA-B*40:01",
+        },
+    ]
+    selected = _patient_event_representatives(events, [], limit=10, track="Fusion")
+    assert len(selected) == 1
+    assert selected[0]["patient_display_hypothesis_count"] == "2"
+    assert "82430884" in selected[0]["patient_display_member_event_ids"]
+    assert "82430913" in selected[0]["patient_display_member_event_ids"]
 
 
 def test_patient_report_top_limits_are_configurable(tmp_path):

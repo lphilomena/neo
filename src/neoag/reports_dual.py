@@ -2423,6 +2423,21 @@ def _patient_event_keys(row: Mapping[str, Any]) -> list[str]:
     return keys
 
 
+def _patient_display_candidate_key(row: Mapping[str, Any], track: str) -> str:
+    """Identify a patient-facing candidate without collapsing technical events."""
+    keys = _patient_event_keys(row)
+    fallback = keys[0] if keys else str(row.get("event_name") or row.get("gene") or "").strip()
+    if track != "Fusion":
+        return fallback
+
+    gene_pair = re.sub(r"\s+", "", str(row.get("gene") or row.get("event_name") or "")).upper()
+    peptide = re.sub(r"[^A-Z]", "", str(row.get("best_peptide") or row.get("peptide") or "").upper())
+    hla = re.sub(r"[^A-Z0-9]", "", str(row.get("best_hla_allele") or row.get("hla_allele") or "").upper())
+    if "::" in gene_pair and peptide and hla:
+        return f"FUSION_DISPLAY|{gene_pair}|{peptide}|{hla}"
+    return fallback
+
+
 def _patient_event_representatives(
     events: list[dict[str, str]],
     peptides: list[dict[str, str]],
@@ -2437,6 +2452,7 @@ def _patient_event_representatives(
 
     selected: list[dict[str, str]] = []
     seen: set[str] = set()
+    selected_by_display_key: dict[str, dict[str, str]] = {}
     # ranked_events is authoritative. Peptide rows are only a fallback for older
     # bundles whose event table did not carry this analysis track at all.
     event_sources = [row for row in events if _patient_track(row) == track]
@@ -2449,7 +2465,23 @@ def _patient_event_representatives(
         peptide = next((peptide_by_event[key] for key in keys if key in peptide_by_event), None)
         combined = dict(peptide or {})
         combined.update({key: value for key, value in source.items() if str(value or "").strip()})
+        display_key = _patient_display_candidate_key(combined, track)
+        if display_key in selected_by_display_key:
+            retained = selected_by_display_key[display_key]
+            retained["patient_display_hypothesis_count"] = str(
+                int(retained.get("patient_display_hypothesis_count") or "1") + 1
+            )
+            retained_ids = _patient_event_keys(retained)
+            for key in keys:
+                if key not in retained_ids:
+                    retained_ids.append(key)
+            retained["patient_display_member_event_ids"] = ";".join(retained_ids)
+            seen.update(keys or [event_key])
+            continue
+        combined["patient_display_hypothesis_count"] = "1"
+        combined["patient_display_member_event_ids"] = ";".join(keys)
         selected.append(combined)
+        selected_by_display_key[display_key] = combined
         seen.update(keys or [event_key])
         if len(selected) >= limit:
             break
@@ -4084,6 +4116,9 @@ def _patient_event_evidence_and_next_step(
         _patient_rna_metric(row),
         _patient_presentation_metric(row),
     ]
+    hypothesis_count = int(str(row.get("patient_display_hypothesis_count") or "1"))
+    if track == "Fusion" and hypothesis_count > 1:
+        evidence.append(f"患者报告已合并展示{hypothesis_count}个断点/转录本假设；事件级结果仍分别保留")
     if not (compact_common and track in {"Fusion", "Splice"}):
         evidence.append(_patient_metric("MT/WT", row, "mutant_specificity_status", "mutant_specificity_state"))
     gaps = _patient_key_gaps(row, bundle)
