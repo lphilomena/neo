@@ -458,6 +458,7 @@ def run_open_neo(args: dict[str, Any]) -> dict[str, Any]:
                 cache_dir=public_asset_cache,
                 repo_id=str(args.get("public_asset_repo") or "open-neo/open-neo-public-assets"),
                 revision=str(args.get("public_asset_revision") or "main"),
+                endpoint=args.get("hf_endpoint"),
                 execute=execute,
             )
         except PublicAssetSyncError as exc:

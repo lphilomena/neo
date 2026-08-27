@@ -1905,6 +1905,7 @@ def run_install_check(args: dict[str, Any]) -> dict[str, Any]:
             cache_dir=public_asset_cache,
             repo_id=str(args.get("public_asset_repo") or "open-neo/open-neo-public-assets"),
             revision=str(args.get("public_asset_revision") or "main"),
+            endpoint=args.get("hf_endpoint"),
             execute=False,
         )
         result.outputs["public_asset_marker"] = str(public_sync_plan["marker"])
@@ -1916,6 +1917,7 @@ def run_install_check(args: dict[str, Any]) -> dict[str, Any]:
                 "asset_root": str(public_asset_root),
                 "cache_dir": str(public_asset_cache),
                 "marker": str(public_sync_plan["marker"]),
+                "hf_endpoint": str(public_sync_plan["hf_endpoint"]),
             },
         ))
 
@@ -1968,6 +1970,7 @@ def run_install_check(args: dict[str, Any]) -> dict[str, Any]:
                 cache_dir=public_asset_cache,
                 repo_id=str(args.get("public_asset_repo") or "open-neo/open-neo-public-assets"),
                 revision=str(args.get("public_asset_revision") or "main"),
+                endpoint=args.get("hf_endpoint"),
                 execute=True,
             )
         except PublicAssetSyncError as exc:

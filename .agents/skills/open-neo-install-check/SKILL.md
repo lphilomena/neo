@@ -93,8 +93,11 @@ instead of restarting a partial large download through another client. Runs veri
 every published SHA-256, stream-extract it under the selected reference root,
 and synchronize the separately published RSEM and SpliceMutr BSgenome additions.
 A repository-commit marker makes resume idempotent; complete files and an already
-verified extraction are skipped. Override the mirror with
-`--public-asset-repo`, revision with `--public-asset-revision`, locations with
+verified extraction are skipped. Select a Hugging Face endpoint with
+`--hf-endpoint` or the `HF_ENDPOINT` environment variable (for example,
+`export HF_ENDPOINT=https://hf-mirror.com`); the CLI option takes precedence
+and the official `https://huggingface.co` endpoint remains the fallback.
+Override the Dataset repository with `--public-asset-repo`, revision with `--public-asset-revision`, locations with
 `--public-asset-root`/`--public-asset-cache`, or disable this fallback with
 `--no-sync-public-assets`.
 

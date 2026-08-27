@@ -67,6 +67,7 @@
     "sync_public_assets": {"type": "boolean"},
     "public_asset_repo": {"type": "string"},
     "public_asset_revision": {"type": "string"},
+    "hf_endpoint": {"type": "string", "description": "Optional Hugging Face base URL; otherwise uses HF_ENDPOINT or the official endpoint."},
     "public_asset_root": {"type": "string"},
     "public_asset_cache": {"type": "string"},
     "predictor_deps": {"type": "string"},

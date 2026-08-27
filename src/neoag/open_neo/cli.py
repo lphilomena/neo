@@ -99,6 +99,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     install.add_argument("--public-asset-repo", default="open-neo/open-neo-public-assets")
     install.add_argument("--public-asset-revision", default="main")
+    install.add_argument(
+        "--hf-endpoint",
+        help="Hugging Face base URL; defaults to HF_ENDPOINT or https://huggingface.co",
+    )
     install.add_argument("--public-asset-root")
     install.add_argument("--public-asset-cache")
     install.add_argument("--asset-manifest")
@@ -194,6 +198,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     run.add_argument("--public-asset-repo", default="open-neo/open-neo-public-assets")
     run.add_argument("--public-asset-revision", default="main")
+    run.add_argument(
+        "--hf-endpoint",
+        help="Hugging Face base URL; defaults to HF_ENDPOINT or https://huggingface.co",
+    )
     run.add_argument("--public-asset-root")
     run.add_argument("--public-asset-cache")
     run.add_argument("--predictor-deps", "--pred-deps", dest="predictor_deps")

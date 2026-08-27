@@ -18,6 +18,7 @@ from neoag.controlled_execution.io_utils import now_iso, write_json
 
 DEFAULT_PUBLIC_ASSET_REPO = "open-neo/open-neo-public-assets"
 DEFAULT_PUBLIC_ASSET_REVISION = "main"
+DEFAULT_HF_ENDPOINT = "https://huggingface.co"
 ARCHIVE_PREFIX = "open_neo_public_assets_openrefs_"
 SUPPLEMENT_PREFIXES = (
     "data/rna/rsem_reference/",
@@ -32,6 +33,16 @@ REQUIRED_SENTINELS = (
 
 class PublicAssetSyncError(RuntimeError):
     pass
+
+
+def _normalize_hf_endpoint(endpoint: str | None = None) -> str:
+    value = str(endpoint or os.environ.get("HF_ENDPOINT") or DEFAULT_HF_ENDPOINT).strip().rstrip("/")
+    parsed = urllib.parse.urlparse(value)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise PublicAssetSyncError(
+            f"Invalid Hugging Face endpoint: {value!r}; use an absolute http(s) URL"
+        )
+    return value
 
 
 class _MultipartReader(io.RawIOBase):
@@ -75,10 +86,11 @@ def _api_json(url: str) -> Any:
         raise PublicAssetSyncError(f"Unable to query public asset repository: {url}: {exc}") from exc
 
 
-def _repository_state(repo_id: str, revision: str) -> tuple[str, list[dict[str, Any]]]:
-    info = _api_json(f"https://huggingface.co/api/datasets/{repo_id}")
+def _repository_state(repo_id: str, revision: str, *, endpoint: str | None = None) -> tuple[str, list[dict[str, Any]]]:
+    base = _normalize_hf_endpoint(endpoint)
+    info = _api_json(f"{base}/api/datasets/{repo_id}")
     tree_url = (
-        f"https://huggingface.co/api/datasets/{repo_id}/tree/"
+        f"{base}/api/datasets/{repo_id}/tree/"
         f"{urllib.parse.quote(revision, safe='')}?recursive=true&expand=false"
     )
     tree = _api_json(tree_url)
@@ -128,6 +140,7 @@ def _download(
     *,
     expected_size: int = 0,
     expected_sha256: str = "",
+    endpoint: str | None = None,
 ) -> str:
     destination.parent.mkdir(parents=True, exist_ok=True)
     if destination.is_file():
@@ -144,6 +157,7 @@ def _download(
         "--repo-type", "dataset", "--revision", revision, "--local-dir", str(local_dir),
     ]
     env = os.environ.copy()
+    env["HF_ENDPOINT"] = _normalize_hf_endpoint(endpoint)
     env.setdefault("HF_HUB_DOWNLOAD_TIMEOUT", "600")
     env.setdefault("HF_HUB_ETAG_TIMEOUT", "60")
     proc = subprocess.run(command, text=True, capture_output=True, check=False, env=env)
@@ -222,6 +236,7 @@ def sync_public_assets(
     cache_dir: str | Path,
     repo_id: str = DEFAULT_PUBLIC_ASSET_REPO,
     revision: str = DEFAULT_PUBLIC_ASSET_REVISION,
+    endpoint: str | None = None,
     execute: bool = False,
 ) -> dict[str, Any]:
     """Synchronize redistributable fixed assets from the public Dataset.
@@ -232,12 +247,14 @@ def sync_public_assets(
     """
     root = Path(asset_root).expanduser().resolve()
     cache = Path(cache_dir).expanduser().resolve()
+    hf_endpoint = _normalize_hf_endpoint(endpoint)
     marker = root / ".open_neo_public_assets.json"
     if not execute:
         return {
             "status": "REUSED" if _local_ready(root) else "PLANNED",
             "repo_id": repo_id,
             "revision": revision,
+            "hf_endpoint": hf_endpoint,
             "asset_root": str(root),
             "cache_dir": str(cache),
             "marker": str(marker),
@@ -245,7 +262,7 @@ def sync_public_assets(
 
     root.mkdir(parents=True, exist_ok=True)
     cache.mkdir(parents=True, exist_ok=True)
-    commit_sha, files = _repository_state(repo_id, revision)
+    commit_sha, files = _repository_state(repo_id, revision, endpoint=hf_endpoint)
     file_map = {str(item["path"]): item for item in files}
     part_names = sorted(
         path for path in file_map
@@ -256,7 +273,7 @@ def sync_public_assets(
 
     checksum_path = cache / "SHA256SUMS"
     _download(repo_id, revision, "SHA256SUMS", checksum_path,
-              expected_size=int(file_map["SHA256SUMS"].get("size") or 0))
+              expected_size=int(file_map["SHA256SUMS"].get("size") or 0), endpoint=hf_endpoint)
     checksums = _parse_checksums(checksum_path)
     parts: list[Path] = []
     downloaded = 0
@@ -267,6 +284,7 @@ def sync_public_assets(
             repo_id, revision, name, destination,
             expected_size=int(file_map[name].get("size") or 0),
             expected_sha256=checksums.get(Path(name).name, ""),
+            endpoint=hf_endpoint,
         )
         downloaded += action == "DOWNLOADED"
         reused += action == "REUSED"
@@ -291,6 +309,7 @@ def sync_public_assets(
         action = _download(
             repo_id, revision, remote_path, root / "data" / relative,
             expected_size=int(item.get("size") or 0),
+            endpoint=hf_endpoint,
         )
         supplement_count += action == "DOWNLOADED"
 
@@ -298,6 +317,7 @@ def sync_public_assets(
         "schema_version": "open-neo-public-assets-v1",
         "repo_id": repo_id,
         "revision": revision,
+        "hf_endpoint": hf_endpoint,
         "commit_sha": commit_sha,
         "archive_id": archive_id,
         "archive_parts": len(parts),
