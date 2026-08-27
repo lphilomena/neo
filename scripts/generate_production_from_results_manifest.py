@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import os
 import sys
@@ -30,6 +31,25 @@ def require_path_list(value: str | None, label: str) -> str:
         raise SystemExit(f"{label} missing: {value}")
     resolved = [require(path, label) for path in paths]
     return ",".join(resolved)
+
+
+def discover_vep_cache(reference_fasta: str, normal_junctions: str | None = None, explicit: str | None = None) -> str:
+    candidates = [
+        explicit or "",
+        os.environ.get("NEOAG_VEP_CACHE", ""),
+        str(Path(os.environ["OPEN_NEO_ASSET_ROOT"]) / "data/vep") if os.environ.get("OPEN_NEO_ASSET_ROOT") else "",
+        str(Path(os.environ["OPEN_NEO_REFERENCE_ROOT"]) / "data/vep") if os.environ.get("OPEN_NEO_REFERENCE_ROOT") else "",
+    ]
+    for source in (reference_fasta, normal_junctions or ""):
+        if source:
+            candidates.extend(str(parent / "vep") for parent in Path(source).resolve().parents)
+    for value in dict.fromkeys(item for item in candidates if item):
+        path = Path(value).expanduser()
+        if (path / "homo_sapiens").is_dir():
+            return str(path.resolve())
+        if path.name.endswith("_GRCh38") and path.parent.name == "homo_sapiens":
+            return str(path.parent.parent.resolve())
+    return ""
 
 
 def resolve_result_file(path: str | None, label: str, names: tuple[str, ...]) -> str:
@@ -121,6 +141,7 @@ def main() -> int:
         help="Independent Evidence-consensus R1-R4 rules; does not replace the weighted profile.",
     )
     ap.add_argument("--reference-fasta")
+    ap.add_argument("--vep-cache", help="VEP cache root containing homo_sapiens/<version>_GRCh38")
     ap.add_argument("--hla-file"); ap.add_argument("--optitype"); ap.add_argument("--spechla-typing"); ap.add_argument("--hla-la"); ap.add_argument("--somatic-vcf")
     ap.add_argument("--facets"); ap.add_argument("--sequenza"); ap.add_argument("--purple"); ap.add_argument("--ascat")
     ap.add_argument("--purity"); ap.add_argument("--cnv")
@@ -174,6 +195,38 @@ def main() -> int:
         raise SystemExit("--star-sjdb-overhang must be a positive integer")
     if args.event_top_n < 1 or args.candidate_top_n < 1:
         raise SystemExit("--event-top-n and --candidate-top-n must be positive integers")
+    splice_status_path = Path(args.output).resolve().parent / "splice_source_status.tsv"
+    splice_status_path.parent.mkdir(parents=True, exist_ok=True)
+    primary_splice = args.junctions or args.star_sj or ""
+    splice_rows = [
+        {
+            "source": "junctions",
+            "status": "AVAILABLE" if primary_splice and Path(primary_splice).exists() else "MISSING",
+            "path": str(primary_splice),
+            "reason": "primary tumor junction evidence" if primary_splice else "no --junctions/--star-sj input",
+        },
+        {
+            "source": "snaf",
+            "status": "AVAILABLE" if args.snaf and Path(args.snaf).exists() else "MISSING",
+            "path": str(args.snaf or ""),
+            "reason": "configured result" if args.snaf else "no completed sNAF result supplied",
+        },
+        {
+            "source": "splicemutr",
+            "status": "AVAILABLE" if args.splicemutr and Path(args.splicemutr).exists() else "MISSING",
+            "path": str(args.splicemutr or ""),
+            "reason": "configured result" if args.splicemutr else "no completed SpliceMutr result supplied",
+        },
+    ]
+    with splice_status_path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=["source", "status", "path", "reason"], delimiter="\t")
+        writer.writeheader()
+        writer.writerows(splice_rows)
+    if primary_splice and not (args.snaf or args.splicemutr):
+        print(
+            f"WARNING: splice junction evidence is present but neither sNAF nor SpliceMutr output was supplied; see {splice_status_path}",
+            file=sys.stderr,
+        )
     root = Path(args.project_root).resolve()
     profile_path = Path(args.profile)
     if not profile_path.is_absolute():
@@ -410,11 +463,7 @@ def main() -> int:
     candidate_stages = []
     if args.somatic_vcf:
         reference_env = f"NEOAG_REFERENCE_FASTA={q(reference_fasta)} " if reference_fasta else ""
-        vep_cache = os.environ.get("NEOAG_VEP_CACHE", "")
-        if not vep_cache and args.normal_junctions:
-            candidate_cache = Path(args.normal_junctions).resolve().parents[2] / "vep"
-            if candidate_cache.is_dir():
-                vep_cache = str(candidate_cache)
+        vep_cache = discover_vep_cache(reference_fasta, args.normal_junctions, args.vep_cache)
         vep_cache_arg = f" --vep-cache {q(vep_cache)}" if vep_cache and Path(vep_cache).is_dir() else ""
         command = f"{reference_env}PYTHONPATH={q(root / 'src')} {q(sys.executable)} {q(root / 'scripts/run_candidate_upstream.py')} --mode snv --input {q(require(args.somatic_vcf, 'somatic VCF'))} --hla-file {q(hla)} --sample-id {q(args.sample_id)} --outdir {{outdir}}/branches/snv{vep_cache_arg}"
         stage(lines, "snv_indel_candidates", source="SNV_INDEL", command=command, outputs={"raw_events": "{outdir}/branches/snv/parsed/raw_events.tsv", "raw_peptides": "{outdir}/branches/snv/parsed/raw_peptides.tsv"}, depends=hla_dependency)

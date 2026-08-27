@@ -125,6 +125,7 @@ download.
 
 1. Detect inputs in deterministic order: manifest declarations, explicit CLI fill-ins, directory scanning, then extension/header inference. Validate non-empty files, HLA syntax, VCF samples/build, BAM indexes, capture BED and output writability.
 2. Probe tool entrypoints, validated command templates, references, licenses and input compatibility. Write `capability_decisions.tsv`; PATH presence alone is not treated as a safe sample-level runner. For SNV/InDel candidate generation, require VEP plugin support for MT/WT extraction (`Wildtype.pm` and `Frameshift.pm` via `refs.vep_plugins` or `NEOAG_VEP_PLUGINS`) whenever variant candidates are expected.
+   Resolve and pass the deployed VEP cache root explicitly to every candidate-generation command. Accept a cache only when it contains `homo_sapiens/<version>_GRCh38`; do not allow an empty `~/.vep` to shadow it. For tumor-normal identity, use the repository `run_bam_matcher_pair.sh`, pin its Java runtime, verify BAM/FASTA/loci-VCF chromosome naming before launch, and reuse a completed non-empty identity TSV on resume.
 3. For tumor-normal BAM input, verify genotype identity with BAM-matcher when configured. Never use the bundled hg19 panel with GRCh38 BAMs.
 4. Route to the existing fine-grained internal Skills and generate `capability_aware.production.toml` for raw inputs.
 5. Run Doctor/preflight.
@@ -140,7 +141,10 @@ For Fusion and Splice candidates, keep direct peptide/junction safety evidence s
    primary expression handoff and RSEM is scheduled as an expression cross-check.
    SNAF and SpliceMutr are default splice stages. Their database/workflow
    assets must be present before execution; missing assets block the splice
-   branch and are reported explicitly.
+   branch and are reported explicitly. Existing-results manifest generation
+   must always write `manifest/splice_source_status.tsv` with separate rows for
+   primary junction evidence, sNAF and SpliceMutr. A missing source is never
+   treated as a negative result or silently omitted from the final status.
 8. Cross-check HLA typing, LOHHLA/SpecHLA HLA LOH, fusion, splice, presentation and FACETS/Sequenza/PURPLE/ASCAT purity/CNV/CCF evidence by domain; missing evidence remains `UNASSESSED`. For every DNA-supported SNV/InDel, recompute CCF from tumor VAF or ALT/depth, consensus purity, the matched local total and allele-specific copy numbers, and biologically feasible mutation multiplicities. Propagate a Wilson 95% VAF interval through the CCF formula, retain multiplicity ambiguity and matched-normal ALT warnings, and label diploid fallback as low confidence. A high VAF or point CCF may be described only as compatible with clonality, never as proof. Fusion consensus is a union with provenance, not a mutually exclusive caller choice. When using the production-case wrapper, preserve its single-RNA-input-mode rule: choose one of RNA FASTQ, RNA BAM, or existing RNA VAF.
 9. Build `all_tool_results.tsv`, long-form tool evidence and explicit consensus/conflict outputs.
 10. Preserve the weighted baseline, generate independent Evidence consensus rankings, compare both rankings, and write run/audit manifests. Treat `ranked_peptides.evidence_consensus.tsv` and `ranked_events.evidence_consensus.tsv` as the final report/Excel ranking inputs; use `ranked_peptides.tsv` only as the legacy weighted baseline or compatibility source.
@@ -155,6 +159,7 @@ For Fusion and Splice candidates, keep direct peptide/junction safety evidence s
 - `capability_plan.json`, `capability_decisions.tsv`, `capability_aware.production.toml`
 - `manifest/production.results.toml` when using `scripts/run_production_case.sh`
 - `rna_preprocessing_status.tsv`, `rna_preprocessing_summary.json`
+- `manifest/splice_source_status.tsv`, including explicit AVAILABLE/MISSING status for primary junctions, sNAF and SpliceMutr
 - `gene_tpm.tsv`, `transcript_tpm.tsv`, `rna_alt_vaf.tsv` when generated or discovered; final ranking tables must retain the joined expression and RNA VAF fields used by reports
 - `wildtype_peptide`, WT binding columns and mutant-specificity status for SNV/InDel candidates in `ranked_peptides.evidence_consensus.tsv`; missing MT/WT evidence is a required gate failure, not a silent `UNASSESSED` final state
 - `peptide_safety.tsv` with separate normal-proteome, normal transcript/junction, normal immunopeptidome, similar-peptide cross-reactivity, source-gene expression, critical-organ expression, hematopoietic expression, final safety conclusion and evidence-completeness fields

@@ -42,6 +42,8 @@ def test_wrapper_uses_v2_baseline_and_v3_consensus_and_passes_production_inputs(
         path.write_text("fixture\n")
         paths[name] = path
     star_index = make_star_index(tmp_path / "star_index")
+    vep_cache = tmp_path / "vep"
+    (vep_cache / "homo_sapiens/112_GRCh38").mkdir(parents=True)
     star_chimeric = tmp_path / "Chimeric.out.junction"
     star_chimeric.write_text("chr22\t100\t+\tchr11\t200\t-\t1\t0\t0\tread1\n")
     star = tmp_path / "STAR"
@@ -69,6 +71,7 @@ def test_wrapper_uses_v2_baseline_and_v3_consensus_and_passes_production_inputs(
         "--python", str(fake_python),
         "--netmhcstabpan-home", str(stabpan),
         "--reference-fasta", str(paths["reference.fa"]),
+        "--vep-cache", str(vep_cache),
         "--gencode-gtf", str(paths["gencode.gtf"]),
         "--sequenza", str(paths["sequenza.tsv"]),
         "--purple", str(paths["purple.tsv"]),
@@ -96,7 +99,7 @@ def test_wrapper_uses_v2_baseline_and_v3_consensus_and_passes_production_inputs(
     assert "--evidence-consensus-rules" in generator_call
     assert "sarcoma_evidence_consensus_v3_source_chain.toml" in generator_call
     for flag in (
-        "--reference-fasta", "--gencode-gtf", "--sequenza", "--purple",
+        "--reference-fasta", "--vep-cache", "--gencode-gtf", "--sequenza", "--purple",
         "--rna-fastq1", "--rna-fastq2", "--star-index", "--star-executable",
         "--star-chimeric", "--samtools-executable", "--rna-threads",
     ):

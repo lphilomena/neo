@@ -23,6 +23,7 @@ Usage:
     [--candidate-top-n <N; default 100>] \
     [--asset-root <liup_neodata4git>] \
     [--reference-fasta <GRCh38.fasta>] \
+    [--vep-cache <VEP cache root>] \
     [--gencode-gtf <matching.gtf; also used for exact splice strand/origin reconstruction>] \
     [--hla-file <consensus HLA allele file>] \
     [--sequenza <result_file_or_dir>] \
@@ -83,6 +84,7 @@ CASE_ROOT=""
 OUTDIR=""
 SOMATIC_VCF=""
 REFERENCE_FASTA=""
+VEP_CACHE="${NEOAG_VEP_CACHE:-}"
 GENCODE_GTF=""
 HLA_FILE=""
 SEQUENZA=""
@@ -125,6 +127,7 @@ while [[ $# -gt 0 ]]; do
     --candidate-top-n) CANDIDATE_TOP_N="$2"; shift 2 ;;
     --asset-root) ASSET="$2"; CLI_ASSET="$2"; shift 2 ;;
     --reference-fasta) REFERENCE_FASTA="$2"; shift 2 ;;
+    --vep-cache) VEP_CACHE="$2"; shift 2 ;;
     --gencode-gtf) GENCODE_GTF="$2"; shift 2 ;;
     --hla-file) HLA_FILE="$2"; shift 2 ;;
     --sequenza) SEQUENZA="$2"; shift 2 ;;
@@ -611,6 +614,10 @@ fi
 # Explicit reference and RNA inputs are passed through unchanged. They are not
 # inferred from patient-specific paths because build/version mismatches are unsafe.
 [[ -n "$REFERENCE_FASTA" ]] && GEN_ARGS+=(--reference-fasta "$REFERENCE_FASTA")
+if [[ -z "$VEP_CACHE" && -n "$ASSET" && -d "$ASSET/data/vep/homo_sapiens" ]]; then
+  VEP_CACHE="$ASSET/data/vep"
+fi
+[[ -n "$VEP_CACHE" ]] && GEN_ARGS+=(--vep-cache "$VEP_CACHE")
 [[ -n "$GENCODE_GTF" ]] && GEN_ARGS+=(--gencode-gtf "$GENCODE_GTF")
 [[ -n "$RNA_FASTQ1" ]] && GEN_ARGS+=(--rna-fastq1 "$RNA_FASTQ1" --rna-fastq2 "$RNA_FASTQ2")
 [[ -n "$RNA_BAM" ]] && GEN_ARGS+=(--rna-bam "$RNA_BAM")
@@ -628,7 +635,7 @@ echo "[INFO] generate manifest: $OUTDIR/manifest/production.results.toml"
 [[ -n "$ASSET" ]] && export NEOAG_TOOLS_ROOT="$ASSET"
 [[ -n "$PRED_DEPS" ]] && export NEOAG_TOOL_QUARANTINE="$PRED_DEPS"
 if [[ -n "$ASSET" ]]; then
-  export NEOAG_VEP_CACHE="${NEOAG_VEP_CACHE:-$ASSET/data/vep}"
+  export NEOAG_VEP_CACHE="${VEP_CACHE:-$ASSET/data/vep}"
 fi
 export NEOAG_VEP_CACHE_VERSION="${NEOAG_VEP_CACHE_VERSION:-105}"
 PY_PREFIX="$(cd "$(dirname "$PY")/.." && pwd)"

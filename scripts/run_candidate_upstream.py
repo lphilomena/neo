@@ -18,6 +18,25 @@ def read_hla(path: Path) -> list[str]:
     return list(dict.fromkeys(value.upper() if value.upper().startswith("HLA-") else "HLA-" + value.upper() for value in values))
 
 
+def discover_vep_cache(explicit: str, reference_fasta: str) -> str:
+    reference_fasta = reference_fasta or os.environ.get("NEOAG_REFERENCE_FASTA", "")
+    candidates = [
+        explicit,
+        os.environ.get("NEOAG_VEP_CACHE", ""),
+        str(Path(os.environ["OPEN_NEO_ASSET_ROOT"]) / "data/vep") if os.environ.get("OPEN_NEO_ASSET_ROOT") else "",
+        str(Path(os.environ["OPEN_NEO_REFERENCE_ROOT"]) / "data/vep") if os.environ.get("OPEN_NEO_REFERENCE_ROOT") else "",
+    ]
+    if reference_fasta:
+        candidates.extend(str(parent / "vep") for parent in Path(reference_fasta).resolve().parents)
+    for value in dict.fromkeys(item for item in candidates if item):
+        path = Path(value).expanduser()
+        if (path / "homo_sapiens").is_dir():
+            return str(path.resolve())
+        if path.name.endswith("_GRCh38") and path.parent.name == "homo_sapiens":
+            return str(path.parent.parent.resolve())
+    return ""
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Normalize one candidate source using a runtime HLA consensus")
     parser.add_argument("--mode", choices=["snv", "fusion", "splice"], required=True)
@@ -42,13 +61,19 @@ def main() -> int:
     outdir.mkdir(parents=True, exist_ok=True)
     inputs: dict[str, object] = {"hla_alleles": alleles}
     if args.mode == "snv":
+        reference_fasta = args.reference_fasta or os.environ.get("NEOAG_REFERENCE_FASTA", "")
+        vep_cache = discover_vep_cache(args.vep_cache, reference_fasta)
+        if not vep_cache:
+            raise SystemExit(
+                "VEP cache not found; provide --vep-cache or set NEOAG_VEP_CACHE/OPEN_NEO_ASSET_ROOT"
+            )
         inputs.update({
             "entry_mode": "snv_indel",
             "variants_vcf": str(source.resolve()),
             "variant_peptide_extraction": True,
             "auto_vep_annotate": True,
-            "reference_fasta": args.reference_fasta,
-            "vep_cache": args.vep_cache,
+            "reference_fasta": reference_fasta,
+            "vep_cache": vep_cache,
             "vep_plugins": args.vep_plugins,
             "normal_proteome_fasta": args.normal_proteome,
         })
@@ -60,7 +85,7 @@ def main() -> int:
             "[tools]\nenabled = []\n\n[inputs]\nentry_mode = \"snv_indel\"\n"
             f'variants_vcf = "{source.resolve()}"\nvariant_peptide_extraction = true\nauto_vep_annotate = true\n'
             f'hla_alleles = [{", ".join(repr(value) for value in alleles)}]\n'
-            f'reference_fasta = "{args.reference_fasta}"\nvep_cache = "{args.vep_cache}"\n'
+            f'reference_fasta = "{reference_fasta}"\nvep_cache = "{vep_cache}"\n'
             f'vep_plugins = "{args.vep_plugins}"\n'
             f'normal_proteome_fasta = "{args.normal_proteome}"\n',
             encoding="utf-8",

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import gzip
 import hashlib
 import json
 import os
@@ -820,6 +821,49 @@ def _read_text_if_small(path: Path, *, max_bytes: int = 2_000_000) -> str:
     return ""
 
 
+def _vep_cache_root(path: str) -> Path | None:
+    """Return the VEP cache root, accepting either root or version directories."""
+    if not path:
+        return None
+    candidate = Path(os.path.expandvars(os.path.expanduser(path)))
+    if candidate.name.endswith("_GRCh38") and candidate.parent.name == "homo_sapiens":
+        candidate = candidate.parent.parent
+    elif candidate.name == "homo_sapiens":
+        candidate = candidate.parent
+    species = candidate / "homo_sapiens"
+    try:
+        versions = [item for item in species.iterdir() if item.is_dir() and item.name.endswith("_GRCh38")]
+    except OSError:
+        return None
+    return candidate if versions else None
+
+
+def _first_reference_contig(path: str, *, fasta: bool) -> str:
+    if not path:
+        return ""
+    source = Path(os.path.expandvars(os.path.expanduser(path)))
+    if fasta:
+        source = Path(str(source) + ".fai")
+    if not _safe_path_is_file(source):
+        return ""
+    opener = gzip.open if source.suffix == ".gz" else open
+    try:
+        with opener(source, "rt", encoding="utf-8", errors="replace") as handle:
+            for line in handle:
+                if line.startswith("#") or not line.strip():
+                    continue
+                return line.split("\t", 1)[0].strip()
+    except OSError:
+        return ""
+    return ""
+
+
+def _contig_style(contig: str) -> str:
+    if not contig:
+        return "UNKNOWN"
+    return "CHR" if contig.lower().startswith("chr") else "NO_CHR"
+
+
 def _production_row(area: str, check: str, status: str, severity: str, evidence: str, recommendation: str = "") -> dict[str, str]:
     return {
         "area": area,
@@ -849,6 +893,16 @@ def _production_run_readiness(args: dict[str, Any], project_root: Path, tier: st
         return "SKIPPED", rows
 
     refs = _reference_paths(args.get("reference_manifest"))
+
+    declared_vep = _declared_reference("vep_cache", refs)
+    vep_root = _vep_cache_root(declared_vep)
+    rows.append(_production_row(
+        "variant_annotation", "vep_cache_layout",
+        "OK" if vep_root else "BLOCKED",
+        "INFO" if vep_root else "BLOCKER",
+        str(vep_root or declared_vep or "VEP cache not declared"),
+        "Configure the cache root containing homo_sapiens/<version>_GRCh38; do not use an empty or broken ~/.vep path.",
+    ))
 
     sequenza_cmd = _resolve_tool_executable("sequenza", "sequenza-utils", args, env_names=[str(os.environ.get("SEQUENZA_ENV") or "neoag-tools"), "neoag-tools", "neoag-sequenza"])
     if sequenza_cmd:
@@ -1405,6 +1459,51 @@ def _production_run_readiness(args: dict[str, Any], project_root: Path, tier: st
         "BLOCKER" if python2_risk else "INFO",
         str(bam_matcher_script) if bam_text else "script not found",
         "Use NEOAG_PYTHON or python3 for bam-matcher result parsing.",
+    ))
+
+    java_cmd = _resolve_tool_executable("java", "java", args, env_names=["neoag-runtime", "neoag-gatk", "neoag-tools"])
+    java_status, java_evidence = _probe_command([java_cmd, "-version"], ok_codes={0}) if java_cmd else ("MISSING", "java not resolved")
+    java_configured = all(token in bam_text for token in ("BAM_MATCHER_JAVA", "JAVA_HOME", "java:"))
+    bam_java_ok = java_status == "OK" and java_configured
+    rows.append(_production_row(
+        "sample_identity", "bam_matcher_java_runtime",
+        "OK" if bam_java_ok else "BLOCKED",
+        "INFO" if bam_java_ok else "BLOCKER",
+        f"java={java_cmd or 'missing'}; probe={java_evidence}; runner_configures_java={java_configured}",
+        "Install a working Java runtime and make run_bam_matcher_pair.sh write its absolute path into the BAM Matcher config.",
+    ))
+
+    fasta_path = _declared_reference("reference_fasta", refs)
+    loci_path = _declared_reference("bam_matcher_loci", refs)
+    fasta_contig = _first_reference_contig(fasta_path, fasta=True)
+    loci_contig = _first_reference_contig(loci_path, fasta=False)
+    contigs_ok = bool(fasta_contig and loci_contig and _contig_style(fasta_contig) == _contig_style(loci_contig))
+    rows.append(_production_row(
+        "sample_identity", "bam_matcher_reference_contigs",
+        "OK" if contigs_ok else "BLOCKED",
+        "INFO" if contigs_ok else "BLOCKER",
+        f"reference={fasta_contig or 'unreadable'}({_contig_style(fasta_contig)}); loci={loci_contig or 'unreadable'}({_contig_style(loci_contig)})",
+        "Use a BAM Matcher loci VCF and reference FASTA with the same chr/non-chr convention as the BAM headers.",
+    ))
+
+    prime_cmd = _resolve_tool_executable("prime", "PRIME", args)
+    mix_cmd = _resolve_tool_executable("mixmhcpred", "MixMHCpred", args)
+    prime_python = _first_existing_path([
+        Path(str(os.environ.get("NEOAG_PRIME_PYTHON") or "")),
+        conda_base / "envs/neoag-tools/bin/python",
+        conda_base / "envs/neoag-immunogenicity/bin/python",
+    ], require_file=True)
+    numpy_status, numpy_evidence = (
+        _probe_command([str(prime_python), "-c", "import numpy; print(numpy.__version__)"])
+        if prime_python else ("MISSING", "PRIME Python not resolved")
+    )
+    support_ok = bool(prime_cmd and mix_cmd and numpy_status == "OK")
+    rows.append(_production_row(
+        "immunogenicity", "prime_mixmhcpred_runtime",
+        "OK" if support_ok else "WARN",
+        "INFO" if support_ok else "WARN",
+        f"PRIME={prime_cmd or 'missing'}; MixMHCpred={mix_cmd or 'missing'}; python={prime_python or 'missing'}; numpy={numpy_evidence}",
+        "Pin NEOAG_PRIME_PYTHON to an interpreter with NumPy and configure the real PRIME and MixMHCpred installations.",
     ))
 
     hla_la_cmd = _resolve_tool_executable("hla_la", "HLA-LA.pl", args)

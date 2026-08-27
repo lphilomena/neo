@@ -34,10 +34,21 @@ FREEBAYES_BIN="${BAM_MATCHER_FREEBAYES:-$(command -v freebayes 2>/dev/null || tr
 [[ -x "$FREEBAYES_BIN" ]] || FREEBAYES_BIN="$ENV_BIN/freebayes"
 [[ -x "$SAMTOOLS_BIN" ]] || { echo "ERROR: samtools unavailable" >&2; exit 127; }
 [[ -x "$FREEBAYES_BIN" ]] || { echo "ERROR: freebayes unavailable" >&2; exit 127; }
+JAVA_BIN="${BAM_MATCHER_JAVA:-}"
+[[ -x "$JAVA_BIN" ]] || JAVA_BIN="${JAVA_HOME:+$JAVA_HOME/bin/java}"
+[[ -x "$JAVA_BIN" ]] || JAVA_BIN="$(command -v java 2>/dev/null || true)"
+for candidate in \
+  "$ENV_BIN/java" \
+  "${NEOAG_CONDA_BASE:-}/envs/neoag-runtime/bin/java" \
+  "${NEOAG_CONDA_BASE:-}/envs/neoag-gatk/bin/java"; do
+  [[ -x "$JAVA_BIN" ]] && break
+  [[ -x "$candidate" ]] && JAVA_BIN="$candidate"
+done
+[[ -x "$JAVA_BIN" ]] || { echo "ERROR: Java unavailable; set BAM_MATCHER_JAVA or JAVA_HOME" >&2; exit 127; }
 [[ -s "$REF.fai" ]] || { echo "ERROR: reference FASTA index missing: $REF.fai" >&2; exit 2; }
 mkdir -p "$OUTDIR/cache" "$OUTDIR/scratch"
 LOCI_EFFECTIVE="$LOCI"
-bam_contig="$($SAMTOOLS_BIN view -H "$BAM1" | awk '$1 == "@SQ" {for (i=1; i<=NF; i++) if ($i ~ /^SN:/) {sub(/^SN:/, "", $i); print $i; exit}}')"
+bam_contig="$($SAMTOOLS_BIN view -H "$BAM1" | awk '$1 == "@SQ" && !found {for (i=1; i<=NF; i++) if ($i ~ /^SN:/) {sub(/^SN:/, "", $i); print $i; found=1}}')"
 loci_contig="$(awk '!/^#/ {print $1; exit}' "$LOCI")"
 if [[ "$bam_contig" == chr* && "$loci_contig" != chr* ]]; then
   LOCI_EFFECTIVE="$OUTDIR/$(basename "$LOCI").chr"
@@ -79,7 +90,7 @@ GATK:
 freebayes: $FREEBAYES_BIN
 samtools: $SAMTOOLS_BIN
 varscan:
-java: $(command -v java || true)
+java: $JAVA_BIN
 [ScriptOptions]
 DP_threshold: $DEPTH
 number_of_SNPs:

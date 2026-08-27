@@ -25,6 +25,8 @@ from neoag.open_neo.install_check import (
     _required_asset_sources_missing,
     _rewrite_asset_manifest,
     _run_deployment,
+    _contig_style,
+    _vep_cache_root,
     _stage_release,
     _write_local_manifest_templates,
     run_install_check,
@@ -80,6 +82,18 @@ def test_public_asset_cli_defaults_and_opt_out():
     assert run.sync_public_assets is True
     assert run.public_asset_repo == "open-neo/open-neo-public-assets"
     assert run.public_asset_root == "/srv/open-neo/refs"
+
+
+def test_install_readiness_normalizes_vep_cache_and_contig_style(tmp_path: Path):
+    cache = tmp_path / "vep"
+    version = cache / "homo_sapiens/112_GRCh38"
+    version.mkdir(parents=True)
+    assert _vep_cache_root(str(cache)) == cache
+    assert _vep_cache_root(str(version)) == cache
+    assert _vep_cache_root(str(tmp_path / "empty")) is None
+    assert _contig_style("chr1") == "CHR"
+    assert _contig_style("1") == "NO_CHR"
+    assert _contig_style("") == "UNKNOWN"
 
 
 def test_public_asset_plan_is_offline_and_detects_marker(tmp_path: Path):
