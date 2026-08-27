@@ -46,7 +46,9 @@ PATIENT_STATUS_LABELS = {
     "EVENT_STRONG": "事件获得较强支持",
     "EVENT_PARTIAL": "事件获得部分支持",
     "RNA_CONFIRMED": "RNA中检测到直接支持",
-    "RNA_NEGATIVE": "RNA中未检测到直接支持，需结合覆盖度解释",
+    "RNA_UNASSESSED": "RNA位点无有效覆盖，当前无法判断突变等位基因是否表达",
+    "RNA_LOW_SUPPORT": "RNA位点覆盖过低，ALT=0仅表示证据不足",
+    "RNA_NEGATIVE": "RNA位点覆盖充分但ALT=0，突变等位基因RNA表达未获得支持",
     "GENE_EXPRESSION_ONLY": "仅确认基因表达，尚未确认突变表达",
     "PRESENTATION_CONSISTENT_STRONG": "两个核心工具呈递预测一致且较强",
     "PRESENTATION_DISCORDANT": "核心呈递工具结果不一致",
@@ -55,10 +57,10 @@ PATIENT_STATUS_LABELS = {
     "MT_SPECIFIC": "突变肽具有较强特异性",
     "MARGINAL_MT_ADVANTAGE": "MT相对WT仅轻度改善，不能单独作为免疫原性正向证据",
     "WT_STRONG_BINDING_REVIEW": "WT仍预测为强结合，需重点复核自身反应与免疫耐受风险",
-    "WT_BINDING_REVIEW": "WT仍保留预测结合，需进行配对安全性复核",
+    "WT_BINDING_REVIEW": "WT仍保留预测结合，需进行配对自身相似性与交叉反应风险复核",
     "WT_LOW_PREDICTED_BINDING": "WT预测结合较弱，但不能据此排除耐受或交叉反应",
     "HLA_LOH_UNASSESSED": "限制性HLA多工具确认未完成",
-    "SAFETY_PARTIAL": "正常组织安全性仅部分评估（具体缺口见候选说明）",
+    "SAFETY_PARTIAL": "自身相似性与正常组织风险筛查仅部分完成（具体缺口见候选说明）",
     "SUPPORTED": "获得支持",
     "CLONAL": "倾向克隆性事件",
     "C1": "候选来源链完整且有正交支持",
@@ -1185,9 +1187,9 @@ def _apply_junction_verification(
 PRIORITY_PATIENT = {
     "A": "优先推荐进一步验证",
     "B": "值得考虑验证",
-    "B_CAUTION": "可考虑，但需关注安全性",
+    "B_CAUTION": "可考虑，但需关注自身相似性与正常组织背景风险",
     "C": "证据有限，谨慎推进",
-    "C_CAUTION": "证据有限且需安全性复核",
+    "C_CAUTION": "证据有限且需复核自身相似性与正常组织背景风险",
     "D": "当前不建议推进",
 }
 
@@ -1202,12 +1204,12 @@ CONSEQUENCE_PATIENT = {
 }
 
 FIELD_GLOSSARY = {
-    "efficacy_score": "综合免疫学评分（0–1），整合表达、结合、呈递、安全性等维度。",
+    "efficacy_score": "综合免疫学评分（0–1），整合表达、结合、呈递、自身相似性与正常组织背景等维度。",
     "final_priority": "最终优先级分层：A/B 为优先候选，C 为需更多证据，D 为不建议推进。",
     "presentation_evidence_grade": "HLA 结合与加工呈递证据等级（A 最优）。",
     "appm_multiplier": "抗原加工呈递通路（APPM）完整性对候选的折减系数。",
     "ccf_multiplier": "肿瘤克隆性（CCF）对候选的折减系数。",
-    "safety_status": "整合完整肽、正常连接/转录本、正常免疫肽组及相似自身肽的安全性初筛结果；来源基因表达仅作辅助背景。",
+    "safety_status": "整合完整肽、正常连接/转录本、正常免疫肽组及相似自身肽的数据库风险筛查结果；来源基因表达仅作辅助背景，不代表临床安全性验证。",
     "escape_status": "免疫逃逸机制（如 HLA 丢失）对候选的影响评估。",
     "validation_mode": "建议的实验验证设计类型（短肽对、长肽、minigene 等）。",
     "recommended_assay": "推荐的体外验证实验类型。",
@@ -1365,10 +1367,77 @@ def _patient_disease_anchor_note(row: Mapping[str, Any], bundle: ReportBundle | 
     anchor = _disease_anchor(row, bundle)
     if not anchor:
         return ""
-    note = str(anchor.get("label") or "疾病锚定事件")
+    note = str(anchor.get("molecular_significance") or anchor.get("label") or "分子知识库锚定事件")
     if anchor.get("peptide_evidence"):
         note += f"；该Peptide-HLA组合已记录外部功能/呈递证据（{anchor['peptide_evidence']}）"
-    return note + "；仅优先展示，不自动提升R等级"
+    return note + "；属于分子知识库关联，不替代病理诊断；仅优先展示，不自动提升R等级"
+
+
+def _patient_detected_disease_anchors(bundle: ReportBundle) -> list[dict[str, Any]]:
+    """Return molecular knowledge anchors observed in this run, independent of diagnosis."""
+    detected: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for row in [*bundle.events, *bundle.peptides]:
+        anchor = _disease_anchor(row, bundle)
+        if not anchor:
+            continue
+        event = str(anchor.get("event") or row.get("gene") or row.get("event_name") or "").strip()
+        key = _normalized_event_label(event)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        item = dict(anchor)
+        item["event"] = event
+        detected.append(item)
+    detected.sort(key=lambda item: (int(item.get("review_priority") or 999), str(item.get("event") or "")))
+    return detected
+
+
+def _patient_molecular_anchor_summary(bundle: ReportBundle) -> tuple[str, str]:
+    anchors = _patient_detected_disease_anchors(bundle)
+    if not anchors:
+        if bundle.disease_knowledge.get("status") == "LOADED":
+            return "未检出已配置的疾病锚定事件", "知识库筛查结果；不等同于排除临床诊断"
+        return "未评估", "未加载疾病知识配置"
+    labels = [str(anchor.get("event") or "疾病锚定事件") for anchor in anchors]
+    significance = [
+        str(anchor.get("molecular_significance") or anchor.get("label") or "").strip()
+        for anchor in anchors
+    ]
+    return "、".join(labels), "；".join(value for value in significance if value)
+
+
+def _patient_molecular_anchor_callouts(bundle: ReportBundle) -> list[str]:
+    callouts: list[str] = []
+    for anchor in _patient_detected_disease_anchors(bundle):
+        event = str(anchor.get("event") or "疾病锚定事件")
+        interpretation = str(anchor.get("patient_interpretation") or "").strip()
+        if not interpretation and _normalized_event_label(event) == "EWSR1::WT1":
+            interpretation = (
+                "检测到EWSR1::WT1融合。该融合是DSRCT的关键分子特征；"
+                "如本事件经独立方法确认，应结合病理及临床资料进行诊断整合。"
+                "本报告本身不替代病理诊断。"
+            )
+        if not interpretation:
+            interpretation = (
+                f"检测到知识库锚定事件{event}；其分子疾病关联需结合独立验证、病理和临床资料解释，"
+                "本报告本身不建立或替代临床诊断。"
+            )
+        references = anchor.get("references") or []
+        source_text = ""
+        for reference in references:
+            if not isinstance(reference, Mapping):
+                continue
+            name = str(reference.get("name") or "权威疾病知识来源")
+            url = str(reference.get("url") or "").strip()
+            source_text = f"<p class='small'>知识库来源：<a href='{esc(url)}'>{esc(name)}</a></p>" if url else f"<p class='small'>知识库来源：{esc(name)}</p>"
+            break
+        callouts.append(
+            "<div class='info'><h3>核心分子发现：" + esc(event) + "</h3><p>" + esc(interpretation) + "</p>"
+            "<p class='small'>该事件因机制意义优先展示，但不会自动提升R等级；融合转录本、断点、阅读框、ORF、"
+            "跨断点肽、HLA呈递及实验验证仍分别评估。</p>" + source_text + "</div>"
+        )
+    return callouts
 
 
 def _augment_runtime_tool_provenance(root: Path, provenance: dict[str, Any]) -> None:
@@ -1924,7 +1993,7 @@ def _patient_fusion_interpretation(event: Mapping[str, Any]) -> str:
     if gene.startswith("HLA-"):
         return "HLA 高多态区域事件，优先排查比对或转录本拼接影响"
     if str(event.get("safety_status") or "") == "CAUTION":
-        return "RNA junction 有支持，但正常组织背景或安全性证据仍需复核"
+        return "RNA junction 有支持，但自身相似性与正常组织背景风险仍需复核"
     return "候选融合事件；需用独立方法确认断点和阅读框"
 
 
@@ -2015,12 +2084,13 @@ def _make_patient_report_legacy(path: str | Path, bundle: ReportBundle) -> None:
     out.append("<ul class='compact'>")
     out.append(f"<li><b>样本编号：</b>{esc(bundle.sample_id or '未注明')}</li>")
     out.append(f"<li><b>分析场景：</b>{esc(bundle.entry_mode or '肿瘤新抗原筛选')}</li>")
-    out.append("<li><b>数据层：</b>肿瘤 WES、肿瘤 WGS、配对血液正常样本、肿瘤 RNA/融合、HLA 分型，以及纯度、CNV 和 CCF 证据。</li>")
+    out.append("<li><b>数据层：</b>肿瘤 WES、肿瘤 WGS、配对血液正常样本、肿瘤 RNA/融合、HLA 分型，以及纯度和CNV证据。</li>")
     out.append(f"<li><b>当前候选使用的 HLA-I 背景：</b>{esc(_top_hla_alleles(bundle.peptides))}</li>")
     out.append("<li><b>HLA LOH 背景：</b>当前检出的丢失信号位于 HLA-II（DQA1/DQB1）；未见 HLA-A/B/C 丢失影响当前 HLA-I 候选，受 HLA LOH 影响的候选肽数为 0。</li>")
     out.append(f"<li><b>评分方案：</b>{esc(bundle.profile.get('_profile_name', 'default'))}</li>")
     out.append("<li><b>临床样本关系：</b>精确取材日期、部位、治疗前后关系仍须以临床样本清单核实，本报告不据测序文件名推断。</li>")
-    out.append("</ul><p class='small'>HLA 分型用于判断候选肽可能由哪些 HLA 分子呈递；它本身不证明肿瘤细胞已经加工并展示该肽段。</p></div>")
+    out.append("</ul><p class='small'>HLA 分型用于判断候选肽可能由哪些 HLA 分子呈递；它本身不证明肿瘤细胞已经加工并展示该肽段。</p>")
+    out.append("<div class='warn'><b>克隆性证据边界：</b>多数候选目前尚不能可靠判断其是否存在于大部分肿瘤细胞中，因此克隆性仍是主要证据缺口之一。</div></div>")
 
     out.append("<div class='section'><h2>3. 肿瘤是否具备抗原呈递条件</h2>")
     presentation_rows = [
@@ -2090,7 +2160,7 @@ def _make_patient_report_legacy(path: str | Path, bundle: ReportBundle) -> None:
             "wes_wgs_evidence": _patient_platform_label(str(event.get("cross_platform_status") or "")),
             "interpretation": (
                 "两相邻变异已完成同一单倍型重构" if event.get("haplotype_status") == "PHASED_CIS_COMBINED"
-                else "需结合病理、克隆性和实验验证判断作用"
+                else "需结合病理和实验验证判断作用"
             ),
         })
     out.append(_table(mutation_rows, ["gene", "cancer_context", "protein_change", "type", "rna_evidence", "wes_wgs_evidence", "interpretation"]))
@@ -2174,7 +2244,7 @@ def _make_patient_report_legacy(path: str | Path, bundle: ReportBundle) -> None:
             "event": "EWSR1::WT1",
             "change": _patient_event_change(ews),
             "retain_reason": "DSRCT 标志性驱动融合，生物学优先级高于一般自动分数",
-            "do_not_auto_advance": "融合肽呈递、安全性和 WT/正常背景尚未完成",
+            "do_not_auto_advance": "融合肽呈递、自身相似性和 WT/正常背景筛查尚未完成",
             "required_review": "断点/阅读框、junction RNA、长肽/minigene 和功能验证",
         })
     out.append("<div class='section'><h2>8. 需要人工保留、但不应按自动分数直接推进的事件</h2>")
@@ -2186,7 +2256,7 @@ def _make_patient_report_legacy(path: str | Path, bundle: ReportBundle) -> None:
         {"tier": "研究层 1B", "scope": "疾病驱动融合及异常 junction", "examples": "EWSR1::WT1", "action": "单独成组，优先长肽/minigene，不以短肽分数替代加工验证"},
         {"tier": "研究层 2", "scope": "样本/时间点特异或另一平台低水平支持", "examples": "KRAS 等", "action": "先确认目标取材中的 DNA/RNA 存在，再决定是否进入免疫学实验"},
         {"tier": "人工复核层", "scope": "复杂 InDel、源检测未复现、弱支持", "examples": "按 targeted pileup 标记的事件", "action": "IGV、局部组装或独立测序后重新评分"},
-        {"tier": "暂缓层", "scope": "正常样本支持、明显安全性风险或总体为 D", "examples": "AXDND1 等正常支持事件", "action": "不进入首批实验；先排除胚系、正常组织表达和交叉反应"},
+        {"tier": "暂缓层", "scope": "正常样本支持、明确自身同序列/正常背景排除证据或总体为 D", "examples": "AXDND1 等正常支持事件", "action": "不进入首批实验；先排除胚系、正常组织表达和交叉反应"},
     ]
     out.append("<div class='section'><h2>9. 最值得关注的候选分层</h2>")
     out.append(_table(tier_rows, ["tier", "scope", "examples", "action"]))
@@ -2243,9 +2313,9 @@ def _make_patient_report_legacy(path: str | Path, bundle: ReportBundle) -> None:
 
     out.append("<div class='section'><h2>12. 为什么当前没有直接进入高优先级的候选</h2><ul class='compact'>")
     if not any(str(p.get("final_priority") or "") in {"A", "B", "B_CAUTION"} for p in bundle.peptides):
-        out.append("<li>当前没有 A/B 级候选。主要原因不是“完全没有候选”，而是正常组织安全性、RNA 支持、突变特异性或样本间一致性仍需补证。</li>")
+        out.append("<li>当前没有 A/B 级候选。主要原因不是“完全没有候选”，而是自身相似性与正常组织背景筛查、RNA 支持、突变特异性或样本间一致性仍需补证。</li>")
     out.append("<li>C_CAUTION 表示候选具有一定计算证据，但在进入首批实验或治疗设计前必须完成针对性复核。</li>")
-    out.append("<li>D 级表示目前不建议推进，常见原因包括安全性风险、正常样本支持、呈递证据不足或关键证据缺失。</li>")
+    out.append("<li>D 级表示目前不建议推进，常见原因包括明确自身同序列/正常背景排除证据、正常样本支持、呈递证据不足或关键证据缺失。</li>")
     out.append("<li>同一事件可产生多个长度和多个 HLA 限制性肽段，因此肽段组合数远高于独立变异事件数。</li>")
     out.append("</ul></div>")
 
@@ -2276,7 +2346,7 @@ def _make_patient_report_legacy(path: str | Path, bundle: ReportBundle) -> None:
     out.append("<li><b>确认突变转录：</b>SNV/InDel 检查 RNA alt reads/RNA VAF；融合和剪接检查 junction reads、阅读框及异常转录本。</li>")
     out.append("<li><b>确认突变特异性：</b>比较 MT 与 WT 的 HLA 结合、呈递和免疫原性；WT 相当或更强者不进入首批。</li>")
     out.append("<li><b>确认加工呈递：</b>短肽候选做 MT/WT 成对验证；移码、剪接和融合优先长肽或 minigene，并在条件允许时做免疫肽组学。</li>")
-    out.append("<li><b>确认免疫功能与安全性：</b>再开展 ELISpot、四聚体/多聚体、细胞毒实验，并补正常组织、HSPC、自身肽和脱靶复核。</li>")
+    out.append("<li><b>确认免疫功能并开展实验性脱靶复核：</b>再开展 ELISpot、四聚体/多聚体、细胞毒实验，并补正常组织、HSPC、自身肽和交叉反应验证。</li>")
     out.append("</ol></div>")
 
     experiment_rows = [
@@ -2291,15 +2361,15 @@ def _make_patient_report_legacy(path: str | Path, bundle: ReportBundle) -> None:
 
     out.append("<div class='section'><h2>16. 面向患者的核心结论</h2>")
     out.append("<p>本次分析发现了若干值得继续研究的候选，尤其包括与 DSRCT 密切相关的 <b>EWSR1::WT1</b> 融合，以及部分在 DNA、RNA 和 HLA 预测层面得到支持的突变事件。肿瘤的 HLA-I 抗原呈递能力看起来是<b>部分保留</b>的，因此继续做新抗原实验验证具有研究依据。</p>")
-    out.append("<p>但目前没有候选达到“仅凭计算结果即可用于治疗”的证据标准。部分事件在 WES/WGS、不同取材或正常样本之间存在差异，正常组织安全性和真实加工呈递也尚未完整验证。当前最重要的下一步是按分层进行事件确认、RNA/断点验证、MT-WT 对照和 T 细胞功能实验，而不是直接按自动排名选择治疗方案。</p>")
+    out.append("<p>但目前没有候选达到“仅凭计算结果即可用于治疗”的证据标准。部分事件在 WES/WGS、不同取材或正常样本之间存在差异，自身相似性与正常组织背景尚未完成实验性脱靶验证，真实加工呈递也尚未完整验证。当前最重要的下一步是按分层进行事件确认、RNA/断点验证、MT-WT 对照和 T 细胞功能实验，而不是直接按自动排名选择治疗方案。</p>")
     out.append("</div>")
 
     out.append("<div class='warn'><h2>17. 数据来源与解释边界</h2><ul class='compact'>")
-    out.append("<li><b>数据来源：</b>肿瘤 WES、肿瘤 WGS、配对血液正常样本、肿瘤 RNA/融合结果、HLA 分型、纯度/CNV/CCF，以及呈递、免疫原性、APPM/逃逸与正常组织安全性参考。</li>")
+    out.append("<li><b>数据来源：</b>肿瘤 WES、肿瘤 WGS、配对血液正常样本、肿瘤 RNA/融合结果、HLA 分型、纯度/CNV，以及呈递、免疫原性、APPM/逃逸、自身相似性与正常组织背景参考。</li>")
     out.append("<li><b>跨平台边界：</b>WES 与 WGS 可能来自不同肿瘤文库或时间点；本报告展示的蛋白改变型 SNV/InDel 差异同时受捕获范围、深度、低纯度、异质性、caller、VEP 转录本选择与局部组装影响。完整 coding/splice PASS 全集保留在技术 QC 中。</li>")
     out.append("<li><b>融合边界：</b>检测到驱动融合不等于其 junction 肽一定被加工、呈递或被 T 细胞识别。</li>")
     out.append("<li>本分析为<strong>计算机辅助筛选</strong>，预测结合亲和力不等于体内呈递，更不等于临床疗效。</li>")
-    out.append("<li>APPM、CCF、安全性与免疫逃逸评估依赖输入数据完整度；缺失数据不等于“无风险”。</li>")
+    out.append("<li>APPM、自身相似性/正常组织风险筛查与免疫逃逸评估依赖输入数据完整度；缺失数据不等于“无风险”。</li>")
     out.append("<li>本报告<strong>不包含</strong>原始测序质控、文件路径或生信命令细节；技术细节见科研技术版报告。</li>")
     out.append("<li>不得将本报告直接用于患者诊断、预后判断或个体化治疗处方。</li>")
     out.append("</ul></div>")
@@ -2310,7 +2380,7 @@ def _make_patient_report_legacy(path: str | Path, bundle: ReportBundle) -> None:
 R_GRADE_PATIENT = {
     "R1": ("第一批实验优先", "关键证据较完整，可优先进入研究性实验验证。"),
     "R2": ("值得推进", "总体证据较好，但仍有一项或少量谨慎因素需要补充。"),
-    "R3": ("优先补证据", "先补 RNA、事件真实性、安全性或呈递证据，再决定是否进入免疫学实验。"),
+    "R3": ("优先补证据", "先补 RNA、事件真实性、自身相似性/正常组织背景或呈递证据，再决定是否进入免疫学实验。"),
     "R4": ("当前暂不推进", "存在硬失败、明确风险、证据明显不足或呈递一致弱等原因。"),
 }
 
@@ -2331,6 +2401,12 @@ def _patient_event_grade(row: Mapping[str, Any]) -> str:
     review_required = str(row.get("manual_review_required") or "").strip().lower() in {"yes", "true", "1"}
     has_conflict = bool(str(row.get("evidence_conflict_layers") or "").strip())
     has_gap = bool(str(row.get("evidence_missing_layers") or "").strip())
+    rna_state = str(row.get("rna_support_state") or row.get("best_rna_support_state") or "").strip().upper()
+    rna_reason = str(row.get("rna_support_reason_code") or row.get("best_rna_support_reason_code") or "").strip().upper()
+    if rna_state == "RNA_NEGATIVE" or rna_reason == "RNA_NO_ALT_ADEQUATE_COVERAGE":
+        return "R3-REVIEW"
+    if rna_state in {"RNA_UNASSESSED", "RNA_LOW_SUPPORT"} or rna_reason in {"RNA_NO_COVERAGE_UNKNOWN", "RNA_NO_ALT_LOW_COVERAGE"}:
+        return "R3-GAP"
     if review_required or has_conflict:
         return "R3-REVIEW"
     if has_gap:
@@ -2679,11 +2755,27 @@ def _patient_presentation_quantitative_row(row: Mapping[str, Any], rank: int) ->
         f"presentation score MT={value('mhcflurry_mt_presentation_score', 'mhcflurry_presentation_score')}, "
         f"WT={value('mhcflurry_wt_presentation_score')}"
     )
-    stability = (
-        f"NetMHCstabpan rank={value('netmhcstabpan_rank')}%, "
-        f"score/稳定性={value('netmhcstabpan_score')}; "
-        f"WT rank={value('netmhcstabpan_wt_rank')}%, WT score={value('netmhcstabpan_wt_score')}"
-    )
+    stab_rank = observed("netmhcstabpan_rank")
+    stab_score = observed("netmhcstabpan_score")
+    wt_stab_rank = observed("netmhcstabpan_wt_rank")
+    wt_stab_score = observed("netmhcstabpan_wt_score")
+    if stab_rank is None and stab_score is None:
+        stability = "NetMHCstabpan：当前肽段-HLA未载入可用稳定性结果"
+    else:
+        stability = (
+            f"NetMHCstabpan rank={stab_rank + '%' if stab_rank is not None else '未提供'}, "
+            f"score/稳定性={stab_score if stab_score is not None else '未提供'}"
+        )
+    wt_peptide = observed("wildtype_peptide")
+    if wt_peptide:
+        stability += (
+            f"；WT rank={wt_stab_rank + '%' if wt_stab_rank is not None else '未提供'}, "
+            f"WT score={wt_stab_score if wt_stab_score is not None else '未提供'}"
+        )
+    elif _patient_track(row) in {"Fusion", "Splice"}:
+        stability += "；传统点突变式WT稳定性不适用，需使用正常连接或正常异构体肽对照"
+    else:
+        stability += "；WT肽序列未提供，无法计算WT稳定性"
     auxiliary = (
         f"PRIME MT={value('prime_score')} (rank={value('prime_rank')}), "
         f"WT={value('prime_wt_score')} (rank={value('prime_wt_rank')}); "
@@ -2764,8 +2856,11 @@ _SPLICE_FUNNEL_LABELS = {
     "NMD": "NMD风险过滤",
     "JUNCTION_SPANNING_PEPTIDE": "生成真正跨异常junction的肽",
     "NORMAL_PROTEOME_EXCLUSION": "正常蛋白组精确匹配排除",
-    "SELECTED_FOR_PRESENTATION": "进入HLA呈递预测",
-    "HLA_PRESENTATION": "通过HLA呈递门槛",
+    "NORMAL_TRANSCRIPTOME_EXCLUSION": "正常转录组精确匹配排除",
+    "FORMAL_GATE_COMPLETE": "完成全部前置生物学门控",
+    "SELECTED_FOR_PRESENTATION": "送入计算预测（含探索池）",
+    "HLA_PRESENTATION": "正式前置门控后的HLA呈递支持",
+    "EXPLORATORY_PRESENTATION": "探索性HLA预测（不计为正式通过）",
 }
 
 
@@ -2820,9 +2915,20 @@ def _patient_splice_funnel_rows(bundle: ReportBundle) -> list[dict[str, str]]:
         key = str(row.get("event_group_id") or row.get("event_id") or f"splice-peptide-{index}")
         peptide_groups.setdefault(key, []).append(row)
     if peptide_groups:
+        formal_groups: dict[str, list[Mapping[str, Any]]] = {}
+        exploratory_groups: dict[str, list[Mapping[str, Any]]] = {}
+        for event_id, event_rows in peptide_groups.items():
+            formal = any(
+                str(row.get("splice_formal_gate_pass") or "").lower() in {"yes", "true", "1"}
+                or str(row.get("splice_candidate_pool") or "").upper() == "FORMAL_SPLICE_CANDIDATE"
+                or str(row.get("splice_prefilter_status") or "").upper() == "PASS"
+                for row in event_rows
+            )
+            (formal_groups if formal else exploratory_groups)[event_id] = event_rows
+
         assessed = 0
         passed = 0
-        for event_rows in peptide_groups.values():
+        for event_rows in formal_groups.values():
             states = {
                 str(row.get("presentation_consensus_state") or row.get("presentation_evidence_grade") or "").upper()
                 for row in event_rows
@@ -2833,12 +2939,28 @@ def _patient_splice_funnel_rows(bundle: ReportBundle) -> list[dict[str, str]]:
                 passed += 1
         rows.append({
             "筛选阶段": _SPLICE_FUNNEL_LABELS["HLA_PRESENTATION"],
-            "进入事件": str(len(peptide_groups)), "已评估": str(assessed),
+            "进入事件": str(len(formal_groups)), "已评估": str(assessed),
             "明确通过": str(passed), "明确未通过": str(max(0, assessed - passed)),
-            "未评估": str(len(peptide_groups) - assessed),
-            "阶段后可能剩余": f"{passed}-{passed + len(peptide_groups) - assessed}",
-            "规则/说明": "按独立剪接事件汇总；NetMHCpan/MHCflurry核心呈递共识为强或中等时计为通过",
+            "未评估": str(len(formal_groups) - assessed),
+            "阶段后可能剩余": f"{passed}-{passed + len(formal_groups) - assessed}",
+            "规则/说明": "只统计已完成全部前置生物学门控的独立剪接事件；核心呈递共识为强或中等时才计为支持",
         })
+        if exploratory_groups:
+            exploratory_assessed = sum(
+                bool({
+                    str(row.get("presentation_consensus_state") or row.get("presentation_evidence_grade") or "").upper()
+                    for row in event_rows
+                } - {"", "UNASSESSED", "PRESENTATION_UNASSESSED"})
+                for event_rows in exploratory_groups.values()
+            )
+            rows.append({
+                "筛选阶段": _SPLICE_FUNNEL_LABELS["EXPLORATORY_PRESENTATION"],
+                "进入事件": str(len(exploratory_groups)), "已评估": str(exploratory_assessed),
+                "明确通过": "0", "明确未通过": "0",
+                "未评估": str(len(exploratory_groups) - exploratory_assessed),
+                "阶段后可能剩余": "0",
+                "规则/说明": "前置证据不完整；即使已计算HLA预测，也只用于技术探索，不计为正式通过或患者候选",
+            })
     return rows
 
 
@@ -3020,17 +3142,14 @@ def _patient_candidate_appm_status(bundle: ReportBundle | None) -> str:
 
 
 def _patient_evidence_summary(row: Mapping[str, Any], bundle: ReportBundle | None = None) -> str:
-    _, clonality = _patient_ccf_assessment(row, bundle)
-    clonality_summary = clonality.split("；", 1)[0]
     return "；".join([
         _patient_metric("事件", row, "event_authenticity_state", "cross_platform_status"),
         _patient_metric("RNA", row, "rna_support_state", "rna_support_status"),
         _patient_metric("呈递", row, "presentation_consensus_state", "presentation_evidence_grade"),
         _patient_metric("MT/WT", row, "mutant_specificity_status", "mutant_specificity_state"),
-        clonality_summary,
         f"限制性HLA={_patient_candidate_hla_status(bundle)}",
         f"APPM={_patient_candidate_appm_status(bundle)}",
-        _patient_metric("安全性", row, "safety_state", "safety_status"),
+        _patient_metric("自身相似性/正常组织风险", row, "safety_state", "safety_status"),
         _patient_metric("来源链", row, "source_chain_confidence_tier"),
     ])
 
@@ -3057,7 +3176,7 @@ _PATIENT_CONFLICT_FIELD_LABELS = {
     "hla_loh_status": "HLA LOH状态",
     "escape_status": "免疫逃逸状态",
     "appm_integrity_status": "APPM完整性状态",
-    "safety_status": "安全性状态",
+    "safety_status": "自身相似性与正常组织风险筛查状态",
     "reference_proteome_exact_match": "正常蛋白组精确匹配",
 }
 
@@ -3071,8 +3190,8 @@ _PATIENT_CONFLICT_SOURCE_LABELS = {
     "ccf_2": "CCF/拷贝数证据",
     "appm_peptide_modifiers": "APPM证据",
     "peptide_escape_flags": "HLA LOH/免疫逃逸证据",
-    "peptide_safety": "肽段安全性证据",
-    "event_safety": "事件安全性证据",
+    "peptide_safety": "肽段自身相似性与正常组织风险证据",
+    "event_safety": "事件自身相似性与正常组织风险证据",
     "ranked_peptides": "旧主排序副本",
     "validation_plan": "验证计划",
 }
@@ -3098,7 +3217,9 @@ def _patient_conflict_summary(row: Mapping[str, Any], max_items: int = 4) -> str
     derived_sources = {"ranked_peptides", "validation_plan"}
     provenance_only_fields = {
         "source_file", "source_record_id", "source_records", "source_row_number",
-        "source_tools", "provenance_record_count",
+        "source_tools", "provenance_record_count", "ccf_estimate", "ccf_best", "raw_ccf",
+        "ccf_ci_low", "ccf_ci_high", "ccf_confidence", "ccf_confidence_state",
+        "clonality_status", "clonality_state", "multiplicity_best",
     }
     for detail in details:
         field_name = str(detail.get("field") or "").strip()
@@ -3146,15 +3267,12 @@ def _patient_limitation(row: Mapping[str, Any], bundle: ReportBundle | None = No
         (("rna_support_state", "rna_support_status"), "RNA证据未评估"),
         (("presentation_consensus_state", "presentation_evidence_grade"), "呈递证据未评估"),
         (("mutant_specificity_status", "mutant_specificity_state"), "MT/WT未评估"),
-        (("safety_state", "safety_status"), "安全性证据未评估"),
+        (("safety_state", "safety_status"), "自身相似性与正常组织风险筛查未评估"),
         (("source_chain_confidence_tier",), "来源链未评估"),
     ]
     for fields, label in checks:
         if not _patient_assessed(row, *fields) and label not in limitations:
             limitations.append(label)
-    ccf_reliable, ccf_assessment = _patient_ccf_assessment(row, bundle)
-    if not ccf_reliable:
-        limitations.append(ccf_assessment)
     integrity_ok, integrity_missing = _patient_candidate_integrity(row)
     if not integrity_ok:
         limitations.append("候选完整性检查未通过：" + "、".join(integrity_missing))
@@ -3212,10 +3330,9 @@ def _patient_comprehensive_evidence(row: Mapping[str, Any], bundle: ReportBundle
         "呈递工具": presentation,
         "加工/稳定性": processing,
         "MT/WT": _patient_metric("状态", row, "mutant_specificity_status", "mutant_specificity_state"),
-        "克隆性/CCF": _patient_ccf_assessment(row, bundle)[1],
         "限制性HLA状态": _patient_candidate_hla_status(bundle),
         "APPM状态": _patient_candidate_appm_status(bundle),
-        "安全性": _patient_metric("状态", row, "safety_state", "safety_status"),
+        "自身相似性与正常组织风险": _patient_metric("状态", row, "safety_state", "safety_status"),
         "免疫原性": _patient_metric("score", row, "immunogenicity_composite_score", "immunogenicity_score", "bigmhc_im_score"),
         "可追溯性": _patient_metric("等级", row, "source_chain_confidence_tier"),
     }
@@ -3228,7 +3345,7 @@ def _patient_evidence_audit_rows(rows: list[dict[str, str]], bundle: ReportBundl
         ("核心呈递共识", ("presentation_consensus_state", "presentation_evidence_grade")),
         ("加工/稳定性", ("mhcflurry_processing_score", "netmhcstabpan_rank", "netmhcstabpan_score", "netchop_31d_cterm_score", "netchop_31d_max_score", "netchop_processing_status", "tap_processing_status")),
         ("MT/WT特异性", ("mutant_specificity_status", "mutant_specificity_state")),
-        ("安全性", ("safety_state", "safety_status")),
+        ("自身相似性与正常组织风险", ("safety_state", "safety_status")),
         (
             "免疫原性",
             (
@@ -3352,29 +3469,7 @@ def _patient_evidence_audit_rows(rows: list[dict[str, str]], bundle: ReportBundl
         for reliable, detail in hla_reliability
     )
     appm_assessed = total if _patient_candidate_appm_status(bundle) != "未评估" else 0
-    ccf_reliable = 0
-    ccf_low_confidence = 0
-    ccf_unresolved = 0
-    for row in rows:
-        reliable, _ = _patient_ccf_assessment(row, bundle)
-        if reliable:
-            ccf_reliable += 1
-            continue
-        _, ccf_value = _patient_numeric_value(row, "ccf_estimate", "ccf_best", "raw_ccf")
-        if ccf_value is not None:
-            ccf_low_confidence += 1
-        else:
-            ccf_unresolved += 1
     result.insert(5, {
-        "证据维度": "克隆性/CCF",
-        "可作为当前分层证据": f"{ccf_reliable}（可靠估计）",
-        "尚不能作为可靠证据": (
-            f"{ccf_low_confidence + ccf_unresolved}"
-            f"（已计算但低置信 {ccf_low_confidence}；未形成数值或不适用 {ccf_unresolved}）"
-        ),
-        "判定口径": f"Top {total}；低置信CCF保留数值用于审阅，但不作为正向加分或阴性结论",
-    })
-    result.insert(6, {
         "证据维度": "限制性HLA状态",
         "可作为当前分层证据": f"{hla_assessed}（逐等位基因多工具一致）",
         "尚不能作为可靠证据": f"{total - hla_assessed}（其中单工具或QC不足 {hla_single_or_incomplete}）",
@@ -3383,7 +3478,7 @@ def _patient_evidence_audit_rows(rows: list[dict[str, str]], bundle: ReportBundl
             "仅单工具阴性或另一工具QC不足不计为完整保留证据"
         ),
     })
-    result.insert(7, {
+    result.insert(6, {
         "证据维度": "APPM状态",
         "可作为当前分层证据": str(appm_assessed),
         "尚不能作为可靠证据": str(total - appm_assessed),
@@ -3461,7 +3556,7 @@ _PATIENT_SOURCE_TOOL_META = {
     "isoquant": ("IsoQuant", "长读长转录本重建"), "sqanti3": ("SQANTI3", "长读长转录本结构质控"),
     "immunopepper": ("ImmunoPepper", "异常转录本翻译与肽段生成"),
     "pvacbind": ("pVACbind", "peptide-HLA呈递预测"), "pvactools": ("pVACtools", "新抗原候选分析"),
-    "vep": ("VEP", "变异功能注释"), "facets": ("FACETS", "纯度、CNV与CCF证据"),
+    "vep": ("VEP", "变异功能注释"), "facets": ("FACETS", "纯度与CNV证据"),
     "sequenza": ("Sequenza", "纯度、倍性与CNV证据"), "purple": ("PURPLE", "纯度、倍性与CNV证据"),
     "ascat": ("ASCAT", "等位基因特异CNV证据"), "spechla": ("SpecHLA", "HLA分型与HLA-LOH证据"),
     "lohhla": ("LOHHLA", "HLA-I等位基因LOH证据"), "optitype": ("OptiType", "HLA-I分型"),
@@ -3533,15 +3628,15 @@ def _patient_validation(row: Mapping[str, Any], val_map: Mapping[str, Mapping[st
     if explicit:
         translations = (
             ("do not advance", "当前暂缓/不推进；先解决阻断性证据，再决定是否重新评估"),
-            ("safety-focused validation before efficacy assay", "先完成针对性的正常组织与脱靶安全性复核，再考虑有效性实验"),
-            ("requires focused safety validation", "先完成针对性的正常组织、正常蛋白组和脱靶安全性复核，再决定是否进入功能实验"),
+            ("safety-focused validation before efficacy assay", "先完成正常组织数据库复核及实验性脱靶/交叉反应验证，再考虑有效性实验"),
+            ("requires focused safety validation", "先完成正常组织、正常蛋白组数据库筛查及实验性脱靶/交叉反应验证，再决定是否进入功能实验"),
             ("novel c-terminal tail", "新生C端肽段：优先采用覆盖新生尾部的混合长肽（15–27 aa）和/或移码minigene；短肽仅作次级验证"),
             ("mutant short peptide", "突变短肽（8–11 aa）与匹配的正常短肽对照；建议开展MHC-I ELISpot或多聚体实验"),
             ("fusion junction long peptide", "优先采用跨融合断点的长肽和/或融合minigene，并先确认精确断点与阅读框"),
             ("abnormal splice/exon-junction long peptide", "优先采用覆盖异常剪接连接点的长肽（15–27 aa）和/或剪接minigene，不应仅依赖短肽"),
             ("mt/wt paired validation required", "补做突变肽与正常肽成对验证；确认突变特异性后再进入功能实验"),
             ("exclude from first validation batch", "暂不纳入首批验证；先补齐当前证据缺口"),
-            ("clonality/persistence caution", "先复核克隆性和持续性，再决定实验优先级"),
+            ("clonality/persistence caution", "先补充拷贝数、纯度和变异证据，再决定实验优先级"),
         )
         lowered = explicit.lower()
         for marker, translated in translations:
@@ -3732,9 +3827,11 @@ def _patient_dna_rna_interpretation(row: Mapping[str, Any]) -> str:
         rna_depth = None
     dna_alt = max(dna_alt_values)
     if dna_alt > 4 and rna_alt == 0:
-        if rna_depth is not None and rna_depth < 10:
-            return "解读：DNA/VCF支持该变异；RNA位点覆盖偏低，不能据此判定RNA突变表达阴性"
-        return "解读：DNA/VCF支持该变异；RNA位点复核未检出ALT，表示突变等位基因RNA表达证据不足，但不否定DNA层面变异"
+        if rna_depth is None or rna_depth <= 0:
+            return "解读：DNA/VCF支持该变异；RNA位点无有效覆盖，当前无法判断突变等位基因是否表达，不能作为阴性证据"
+        if rna_depth < 10:
+            return f"解读：DNA/VCF支持该变异；RNA位点覆盖仅{rna_depth:g}×，ALT=0只表示证据不足，不能作为阴性证据"
+        return f"解读：DNA/VCF支持该变异；RNA位点在充分覆盖（{rna_depth:g}×）下ALT=0，突变等位基因RNA表达未获得支持，作为显著负证据并限制候选等级；但不否定DNA层面变异存在"
     if dna_alt > 4 and rna_alt is not None and rna_alt >= 5:
         return "解读：DNA/VCF与RNA层面均有ALT reads支持"
     if dna_alt > 4 and rna_alt is not None and rna_alt > 0:
@@ -3797,7 +3894,7 @@ def _patient_junction_reads_measurement(row: Mapping[str, Any], junction_reads: 
             return "caller报告junction reads未提供（尚未独立回链核实）"
         return "junction reads未提供（核实状态未确认）"
     if independently_verified:
-        return f"主比对表已按精确junction回链，unique junction reads {junction_reads}"
+        return f"主比对表已按精确junction回链，精确junction支持reads {junction_reads}"
     if exact_canonical_link:
         return f"已按标准化精确junction坐标回链，junction reads {junction_reads}"
     if track == "Splice" and exact_cross_tool_link:
@@ -4020,21 +4117,24 @@ def _patient_safety_dimensions(row: Mapping[str, Any]) -> str:
         hematopoietic += "（伙伴基因辅助背景）" if hematopoietic != "未评估" else "（辅助背景）"
 
     conclusion_codes = {
-        "REJECT_DIRECT_SAFETY_EVIDENCE": "直接安全证据提示排除",
-        "REVIEW_DIRECT_SAFETY_EVIDENCE": "存在直接安全信号，需专项复核",
-        "PARTIAL_DIRECT_SAFETY_EVIDENCE": "直接安全证据不完整，暂不能定论",
-        "NO_DIRECT_SAFETY_SIGNAL_DETECTED": "已评估层未见直接安全信号；不等于已证明安全",
+        "REJECT_DIRECT_SAFETY_EVIDENCE": "当前数据库筛查发现明确的同序列或正常背景排除证据",
+        "REVIEW_DIRECT_SAFETY_EVIDENCE": "当前数据库筛查发现需专项复核的自身相似性或正常背景证据",
+        "PARTIAL_DIRECT_SAFETY_EVIDENCE": "数据库风险筛查证据不完整，暂不能评价实验性脱靶或交叉反应风险",
+        "NO_DIRECT_SAFETY_SIGNAL_DETECTED": (
+            "当前数据库筛查未发现明确的同序列排除证据；"
+            "尚未完成实验性脱靶和交叉反应验证"
+        ),
     }
     conclusion_code = str(row.get("final_safety_conclusion") or "").strip().upper()
     conclusion = conclusion_codes.get(conclusion_code)
     if not conclusion:
         safety = _patient_value(row, "safety_state", "safety_tier", "safety_status", default="").upper()
         if safety in {"SAFETY_REJECT", "REJECT", "FAIL"}:
-            conclusion = "直接安全证据提示排除"
+            conclusion = "当前数据库筛查发现明确的同序列或正常背景排除证据"
         elif safety in {"SAFETY_REVIEW", "SAFETY_HIGH_RISK", "REVIEW", "CAUTION"}:
-            conclusion = "需按直接肽段/连接证据专项复核"
+            conclusion = "需按精确肽段或连接序列专项复核自身相似性与正常背景"
         else:
-            conclusion = "证据不完整，暂不能定论"
+            conclusion = "数据库风险筛查证据不完整，暂不能评价实验性脱靶或交叉反应风险"
     completeness = _patient_numeric_display(_patient_observed_value(row, "safety_evidence_completeness"), 2)
     if completeness is not None:
         conclusion += f"（直接证据完整度 {float(completeness) * 100:.0f}%）"
@@ -4047,7 +4147,7 @@ def _patient_safety_dimensions(row: Mapping[str, Any]) -> str:
         f"来源基因正常组织表达={source_expression}",
         f"关键器官表达={critical_expression}",
         f"正常造血系统表达={hematopoietic}",
-        f"最终安全结论={conclusion}",
+        f"数据库风险筛查结论={conclusion}",
     ])
 
 
@@ -4076,8 +4176,15 @@ def _patient_fusion_boundary_evidence(row: Mapping[str, Any], bundle: ReportBund
     else:
         mapping = "跨断点状态未评估；在建立肽内连接位置和左右来源前不得称为融合新抗原"
 
-    transcript = _patient_value(row, "transcript_hypothesis_id", "transcript_id", default="未建立")
+    transcript = _patient_value(row, "transcript_hypothesis_id", "fusion_transcript_id", "transcript_id", default="未建立")
     orf = _patient_value(row, "orf_id", default="未建立")
+    pool = _patient_value(row, "fusion_candidate_pool", default="")
+    if pool == "ORF_SUPPORTED":
+        orf_layer = "已建立 transcript→breakpoint→ORF→peptide 完整回链，进入ORF支持候选层"
+    elif pool == "REJECTED_ORF_INVALID":
+        orf_layer = "ORF或肽段回链无效/冲突，仅保留审计，不进入推进候选层"
+    else:
+        orf_layer = "ORF尚未建立，仅进入探索池；不与ORF已确认的融合肽处于同一候选层"
     alternatives: list[tuple[str, str, str]] = []
     event_keys = set(_patient_event_keys(row))
     for candidate in bundle.peptides:
@@ -4103,7 +4210,7 @@ def _patient_fusion_boundary_evidence(row: Mapping[str, Any], bundle: ReportBund
         comparison = f"当前候选回链：transcript={transcript}，ORF={orf}；同事件共{len(alternatives)}个肽/转录本/ORF组合"
     else:
         comparison = f"当前候选回链：transcript={transcript}，ORF={orf}"
-    return mapping + "；" + comparison
+    return mapping + "；" + comparison + "；" + orf_layer
 
 
 def _patient_event_evidence_and_next_step(
@@ -4137,7 +4244,7 @@ def _patient_event_evidence_and_next_step(
         f"{dna_evidence + '。' if dna_evidence else ''}"
         f"RNA数据：{_patient_rna_measurements(row)}。"
         f"{_patient_mtwt_caution(row) + '。' if _patient_mtwt_caution(row) else ''}"
-        f"安全性分层：{_patient_safety_dimensions(row)}。"
+        f"自身相似性与正常组织风险筛查：{_patient_safety_dimensions(row)}。"
         f"{('融合肽断点证明：' + fusion_boundary + '。') if fusion_boundary else ''}"
         f"{_patient_dna_rna_interpretation(row) + '。' if _patient_dna_rna_interpretation(row) else ''}"
         f"{_patient_cross_site_rna(row) + '。' if _patient_cross_site_rna(row) else ''}"
@@ -4149,32 +4256,34 @@ def _patient_event_evidence_and_next_step(
 _PATIENT_TRACK_EVIDENCE_NOTES = {
     "SNV": (
         "适用：肿瘤/正常DNA位点深度与VAF、RNA alt reads/VAF、MT/WT突变特异性、"
-        "HLA呈递、HLA-LOH/APPM、CCF与正常背景安全性。"
+        "HLA呈递、HLA-LOH/APPM与自身相似性/正常组织风险筛查。"
         "通常不适用：融合/剪接junction reads、PSI和异常连接ORF。"
     ),
     "InDel": (
         "适用：DNA深度/VAF、局部重比对与左对齐、RNA突变转录本支持、"
-        "阅读框/新生尾部、NMD、HLA呈递、HLA-LOH/APPM、CCF和安全性。"
+        "阅读框/新生尾部、NMD、HLA呈递、HLA-LOH/APPM和自身相似性/正常组织风险筛查。"
         "通常不适用：异常junction/PSI；除非该InDel本身导致剪接改变。"
     ),
     "Fusion": (
         "适用：精确融合断点、junction/split-read支持、方向与阅读框、跨断点新序列、"
-        "正常read-through背景、HLA呈递、HLA-LOH/APPM和安全性。"
-        "安全性必须按精确跨断点肽查询正常蛋白组、转录组、junction库和ligandome；"
+        "正常read-through背景、HLA呈递、HLA-LOH/APPM和自身相似性/正常组织风险筛查。"
+        "数据库风险筛查必须按精确跨断点肽查询正常蛋白组、转录组、junction库和ligandome；"
         "融合伙伴基因的正常TPM只作背景，不直接判定跨断点肽高风险。"
-        "不适用：普通点突变式DNA VAF和传统MT/WT配对；RNA-only融合不应把缺失DNA CCF解释为0。"
+        "候选必须建立transcript、精确断点、翻译起始位点、阅读框、ORF及肽段位置的完整回链；"
+        "ORF未建立时仅进入探索池，最高为R3，不与ORF已确认候选同层。"
+        "不适用：普通点突变式DNA VAF和传统MT/WT配对。"
         "若有独立DNA-SV支持，在候选行中单独展示。"
     ),
     "Splice": (
         "适用：精确异常junction、unique reads/PSI、转录本假设与ORF、跨连接新序列、"
-        "正常异构体/junction背景、HLA呈递、HLA-LOH/APPM和安全性。"
-        "安全性必须按精确跨junction肽和正常异构体评估；基因整体正常TPM不能代替连接特异性评估。"
-        "不适用：普通点突变式DNA VAF、传统MT/WT配对和DNA CCF；"
+        "正常异构体/junction背景、HLA呈递、HLA-LOH/APPM和自身相似性/正常组织风险筛查。"
+        "数据库风险筛查必须按精确跨junction肽和正常异构体评估；基因整体正常TPM不能代替连接特异性评估。"
+        "不适用：普通点突变式DNA VAF和传统MT/WT配对；"
         "应改用正常连接或正常异构体肽作为对照。"
     ),
     "DNA SV": (
         "适用：DNA断点、split reads/discordant pairs、重构转录本和ORF、RNA正交支持、"
-        "HLA呈递、HLA-LOH/APPM、CCF和安全性。"
+        "HLA呈递、HLA-LOH/APPM和自身相似性/正常组织风险筛查。"
         "不适用：普通SNV式MT/WT规则；应使用断点前后的正常结构对照。"
     ),
 }
@@ -4262,13 +4371,13 @@ def _patient_safety_gap(row: Mapping[str, Any]) -> str:
                 unit = f" {hspc_unit}" if hspc_unit else ""
                 label = f"HSPC正常造血参考已查询但覆盖/映射不完整，最高 {hspc_tpm}{unit}"
             else:
-                label = _PATIENT_SAFETY_LAYER_LABELS.get(key, f"{key}安全参考层已接入但该候选未匹配到可判定记录")
+                label = _PATIENT_SAFETY_LAYER_LABELS.get(key, f"{key}数据库风险参考层已接入但该候选未匹配到可判定记录")
             if label not in missing:
                 missing.append(label)
         if not missing:
             if junction_track:
                 return (
-                    "连接事件安全性需按精确新生序列复核；"
+                    "连接事件的自身相似性与正常组织风险需按精确新生序列复核；"
                     "伙伴基因正常组织/HSPC表达仅作背景，不直接判定该连接肽高风险"
                 )
             observed: list[str] = []
@@ -4278,8 +4387,8 @@ def _patient_safety_gap(row: Mapping[str, Any]) -> str:
                 unit = f" {hspc_unit}" if hspc_unit else ""
                 observed.append(f"HSPC最高 {hspc_tpm}{unit}")
             if observed:
-                return "安全参考已查询：" + "、".join(observed)
-        return "安全性缺口：" + "、".join(missing or ["未记录可判定的安全参考层状态"])
+                return "正常组织风险参考已查询：" + "、".join(observed)
+        return "数据库风险筛查缺口：" + "、".join(missing or ["未记录可判定的数据库风险参考层状态"])
 
     if safety not in {"SAFETY_REVIEW", "SAFETY_HIGH_RISK", "REVIEW", "CAUTION"}:
         return ""
@@ -4323,7 +4432,7 @@ def _patient_safety_gap(row: Mapping[str, Any]) -> str:
             }[key]) or "").strip().upper() not in {"ASSESSED", "PASS", "NEGATIVE", "NOT_FOUND"}
         ]
         return (
-            "连接事件安全性需按精确新生序列复核；伙伴基因正常组织/HSPC表达仅作背景，不直接判定该连接肽高风险"
+            "连接事件的自身相似性与正常组织风险需按精确新生序列复核；伙伴基因正常组织/HSPC表达仅作背景，不直接判定该连接肽高风险"
             + ("；" + "、".join(missing_exact) if missing_exact else "")
         )
     if not review_reasons:
@@ -4335,7 +4444,9 @@ def _patient_safety_gap(row: Mapping[str, Any]) -> str:
             review_reasons.append(f"正常组织最高 {normal_tpm} TPM（{normal_tissue}）")
         if hspc_tpm is not None:
             review_reasons.append(f"HSPC最高 {hspc_tpm}" + (f" {hspc_unit}" if hspc_unit else ""))
-    return "安全性需复核：" + "、".join(review_reasons or ["已触发安全审阅规则，具体原因见peptide_safety.tsv"])
+    return "自身相似性与正常组织风险需复核：" + "、".join(
+        review_reasons or ["已触发数据库风险审阅规则，具体原因见peptide_safety.tsv"]
+    )
 
 
 def _patient_key_gaps(row: Mapping[str, Any], bundle: ReportBundle) -> list[str]:
@@ -4346,7 +4457,7 @@ def _patient_key_gaps(row: Mapping[str, Any], bundle: ReportBundle) -> list[str]
         "HARD_RESTRICTING_HLA_LOST": "限制性HLA已确认丢失",
         "HARD_MATCHED_NORMAL_SUPPORT": "配对正常样本中检测到变异支持",
         "HARD_NON_MUTANT_SEQUENCE": "候选肽不包含突变或新生连接序列",
-        "HARD_SAFETY_REJECT": "安全性评估触发明确拒绝条件",
+        "HARD_SAFETY_REJECT": "自身相似性或正常组织背景筛查发现明确排除证据",
         "HARD_EVENT_ARTIFACT": "事件被判定为技术伪影风险",
         "HARD_EVENT_OR_ORF_INVALID": "事件或ORF无效，不能支持该候选肽来源",
     }
@@ -4359,11 +4470,13 @@ def _patient_key_gaps(row: Mapping[str, Any], bundle: ReportBundle) -> list[str]
     if hard_codes:
         labels = [hard_failure_labels.get(code, code.replace("_", " ")) for code in hard_codes]
         gaps.append("阻断原因：" + "、".join(labels))
-    # RNA-only fusion/splice events do not have a defensible DNA CCF by
-    # default.  Treat that as not applicable rather than as a negative result
-    # or a universal candidate defect.
-    if _patient_track(row) not in {"Fusion", "Splice"} and not _patient_ccf_assessment(row, bundle)[0]:
-        gaps.append("CCF未形成可靠估计")
+    if _patient_track(row) == "Fusion" and str(row.get("fusion_candidate_pool") or "").upper() == "EXPLORATION_ORF_REQUIRED":
+        gaps.append("融合转录本、翻译起始位点、阅读框、ORF及肽段在ORF中的位置尚未形成完整回链；当前仅属探索池")
+    if _patient_track(row) == "Splice":
+        formal = str(row.get("splice_formal_gate_pass") or "").lower() in {"yes", "true", "1"}
+        pool = str(row.get("splice_candidate_pool") or "").upper()
+        if not formal and pool != "FORMAL_SPLICE_CANDIDATE":
+            gaps.append("异常剪接前置生物学门控尚未全部通过；当前仅属探索池，HLA预测不计为正式通过")
     hla_gap = _patient_restricting_hla_gap(row, bundle)
     if hla_gap:
         gaps.append(hla_gap)
@@ -4638,7 +4751,7 @@ def _patient_purity_consensus(bundle: ReportBundle) -> tuple[str, str]:
 
 
 def _patient_disease_background(bundle: ReportBundle) -> tuple[str, str]:
-    """Resolve clinical disease context without inferring it from sample paths."""
+    """Resolve structured clinical diagnosis without inferring it from analysis profiles."""
     provenance = bundle.provenance
     clinical_keys = ("disease", "diagnosis", "disease_name", "cancer_type", "tumor_type")
 
@@ -4660,14 +4773,20 @@ def _patient_disease_background(bundle: ReportBundle) -> tuple[str, str]:
             if value:
                 return value, f"来源：结构化临床背景 {container_key}.{key}"
 
-    for key in clinical_keys:
-        value = meaningful(bundle.profile.get(key))
-        if value:
-            return value, f"来源：疾病/分析 profile 字段 {key}"
+    return "未提供", "未提供结构化临床诊断；分析配置和分子知识库关联不会代替临床诊断"
+
+
+def _patient_analysis_context(bundle: ReportBundle) -> tuple[str, str]:
+    """Describe the active computational profile separately from clinical diagnosis."""
+    provenance = bundle.provenance
+
+    def meaningful(value: Any) -> str:
+        text = str(value or "").strip()
+        return "" if text.lower() in {"", "none", "na", "n/a", "unknown", "unassessed", "default"} else text
 
     profile_name = meaningful(bundle.profile.get("_profile_name") or provenance.get("profile"))
     if profile_name and profile_name.lower() not in {"evidence_consensus"}:
-        return f"分析配置：{Path(profile_name).stem}", "未提供结构化临床诊断；回退采用非默认疾病/分析 profile"
+        return Path(profile_name).stem, "计算分析配置；不代表临床诊断"
 
     rules_name = meaningful(provenance.get("rules_name"))
     if not rules_name:
@@ -4677,19 +4796,23 @@ def _patient_disease_background(bundle: ReportBundle) -> tuple[str, str]:
         elif rules:
             rules_name = meaningful(rules)
     if rules_name:
-        return f"分析配置：{Path(rules_name).stem}", "未提供结构化临床诊断；回退采用排序/分析配置"
+        return Path(rules_name).stem, "排序/分析规则配置；不代表临床诊断"
 
-    return "未记录", "未提供结构化临床背景、非默认分析 profile 或排序配置"
+    return "未记录", "未记录非默认分析profile或排序配置"
 
 
 def _patient_qc_rows(bundle: ReportBundle) -> list[dict[str, str]]:
     provenance = bundle.provenance
     purity_result, purity_basis = _patient_purity_consensus(bundle)
-    disease_result, disease_basis = _patient_disease_background(bundle)
+    diagnosis_result, diagnosis_basis = _patient_disease_background(bundle)
+    analysis_result, analysis_basis = _patient_analysis_context(bundle)
+    anchor_result, anchor_basis = _patient_molecular_anchor_summary(bundle)
     rows = [
-        {"项目": "疾病/分析背景", "结果": disease_result, "解释": disease_basis},
+        {"项目": "结构化临床诊断", "结果": diagnosis_result, "解释": diagnosis_basis},
+        {"项目": "分析配置", "结果": analysis_result, "解释": analysis_basis},
+        {"项目": "分子知识库锚定", "结果": anchor_result, "解释": anchor_basis},
         {"项目": "肿瘤/正常配对", "结果": str(provenance.get("pairing_status") or "未评估"), "解释": "区分已使用配对输入与已完成指纹确认"},
-        {"项目": "肿瘤纯度/倍性", "结果": purity_result, "解释": "用于CNV、CCF和LOH解释；工具冲突必须保留"},
+        {"项目": "肿瘤纯度/倍性", "结果": purity_result, "解释": "用于CNV和LOH解释；工具冲突必须保留"},
         {"项目": "肿瘤DNA深度", "结果": str(provenance.get("tumor_dna_depth") or "未评估"), "解释": "默认汇总去重事件位点有效深度；低深度会降低检出能力"},
         {"项目": "正常DNA深度", "结果": str(provenance.get("normal_dna_depth") or "未评估"), "解释": "优先汇总候选位点normal_depth；缺失时从配对VCF正常样本DP/AD回填，再回退到normal DNA BAM覆盖估算"},
         {"项目": "RNA质量/覆盖", "结果": str(provenance.get("rna_qc_status") or "未评估"), "解释": "区分RNA支持、充分覆盖下未检出和表达层证据"},
@@ -5114,6 +5237,7 @@ def make_patient_report(
     screening_rows = [
         {"口径": "独立事件", "数量": str(independent_event_count), "说明": "来自ranked_events.evidence_consensus.tsv，按事件去重"},
         {"口径": "Peptide-HLA组合", "数量": str(peptide_hla_count), "说明": "同一事件可产生多个重叠肽段和多个HLA组合；此处按唯一肽段序列+标准化HLA等位基因统计，重复证据行不重复计数"},
+        {"口径": "技术审阅展示组合", "数量": str(len(top)), "说明": "报告后文实际展示的去重Peptide-HLA组合数；不是独立事件数，也不是已确认新抗原数"},
     ]
     out.append("<h3>筛选规模</h3>" + _table(screening_rows, ["口径", "数量", "说明"]))
     event_grade_metadata = {
@@ -5137,6 +5261,7 @@ def make_patient_report(
     out.append(_table(event_grade_rows, ["事件等级", "事件数", "含义", "下一步"]))
     focus_count = len(top)
     r1_r2_count = event_grade_counts.get("R1", 0) + event_grade_counts.get("R2", 0)
+    r3_review_count = event_grade_counts.get("R3-REVIEW", 0)
     anchor_labels = list(dict.fromkeys(
         str(row.get("gene") or row.get("event_name") or row.get("event_id") or "").strip()
         for row in top if _disease_anchor(row, bundle)
@@ -5146,9 +5271,12 @@ def make_patient_report(
         track = _patient_track(row)
         focus_track_counts[track] = focus_track_counts.get(track, 0) + 1
     if r1_r2_count:
-        grade_conclusion = f"目前有{r1_r2_count}个独立事件达到R1或R2计算证据等级，但仍须完成对应实验验证后才能推进"
+        grade_conclusion = (
+            f"当前有{r1_r2_count}个独立事件达到R1或R2计算证据等级；"
+            "这些事件仍需实验验证，不能解释为已确认新抗原"
+        )
     else:
-        grade_conclusion = "目前未获得可直接进入首批实验的R1或R2候选"
+        grade_conclusion = "当前没有任何独立事件达到R1或R2计算证据等级"
     priority_parts: list[str] = []
     if anchor_labels:
         priority_parts.append("疾病相关锚定事件" + "、".join(anchor_labels[:3]) + "相关候选")
@@ -5158,24 +5286,37 @@ def make_patient_report(
             continue
         priority_parts.append(f"{count}个{label}候选")
     priority_text = "、".join(priority_parts)
-    review_conclusion = (
-        f"{focus_count}个候选进入重点人工复核"
-        + (f"，其中{priority_text}值得优先补证" if priority_text else "")
-        + "。"
+    r3_conclusion = (
+        f"{r3_review_count}个独立事件处于R3-REVIEW状态，需要进一步人工复核。"
+        if r3_review_count
+        else "当前没有独立事件处于R3-REVIEW状态。"
     )
+    if focus_count:
+        review_conclusion = (
+            f"为方便技术审阅，后文展示{focus_count}个去重的Peptide–HLA组合；"
+            f"这{focus_count}个展示组合不是{focus_count}个独立候选事件，也不是"
+            f"{focus_count}个已经确认的新抗原。"
+        )
+        if priority_text:
+            review_conclusion += f"该技术审阅清单覆盖{priority_text}。"
+    else:
+        review_conclusion = "本报告未展示Peptide–HLA技术审阅组合。"
     out.append(
         "<div class='info'><b>首页结论：</b>"
-        f"本次分析共评估{independent_event_count}个独立候选事件，产生{peptide_hla_count}个肽段–HLA预测组合。"
-        "经事件真实性、异常转录本/RNA表达、HLA呈递、突变特异性和安全性初筛，"
-        f"{grade_conclusion}。{review_conclusion}"
+        f"本次分析共发现{independent_event_count}个独立候选事件，并产生"
+        f"{peptide_hla_count}个肽段–HLA预测组合。"
+        f"{grade_conclusion}。{r3_conclusion}{review_conclusion}"
         "所有结果均为研究性计算预测，尚未证明相关肽段在肿瘤细胞表面真实呈递或能够诱导T细胞反应。</div>"
     )
+    for anchor_callout in _patient_molecular_anchor_callouts(bundle):
+        out.append(anchor_callout)
     if bundle.disease_knowledge.get("anchors"):
         out.append(
-            "<p class='small'>已加载疾病知识配置：命中的锚定事件优先展示，"
-            "但不会绕过事件真实性、精确断点、HLA、安全性或实验验证门槛，也不自动提升R等级。</p>"
+            "<p class='small'>已加载分子疾病知识配置：命中的锚定事件优先展示。"
+            "该知识库关联与结构化临床诊断分别记录；"
+            "但不会绕过事件真实性、精确断点、HLA、自身相似性/正常组织风险筛查或实验验证门槛，也不自动提升R等级。</p>"
         )
-    out.append(f"<p>候选选择同时考虑事件真实性、RNA支持、HLA呈递、MT/WT突变特异性、克隆性、限制性HLA状态、APPM和安全性；缺失证据统一视为未评估，不作为阴性结论。另有{len(paused_representatives)}个事件代表候选因当前不推进或完整性门槛未通过，仅保留在技术审阅池。</p></div>")
+    out.append(f"<p>候选选择同时考虑事件真实性、RNA支持、HLA呈递、MT/WT突变特异性、限制性HLA状态、APPM，以及自身相似性与正常组织风险筛查；缺失证据统一视为未评估，不作为阴性结论。另有{len(paused_representatives)}个事件代表候选因当前不推进或完整性门槛未通过，仅保留在技术审阅池。</p></div>")
 
     out.append("<div class='section'><h2>2. 患者样本与测序数据</h2>")
     out.append("<p>本节列出本次报告实际声明使用的患者数据，以及由这些输入得到的样本配对、测序质量、纯度和参考版本评估。未提供的项目保持“未评估”，不会自动写成正常。</p>")
@@ -5187,19 +5328,12 @@ def make_patient_report(
         out.append("<div class='warn'><b>患者数据清单未提供：</b>请通过 --patient-inputs 或 provenance.json 的 input_files 字段提供文件目录或文件名。</div>")
     out.append("<p class='small'>以下评估来自结构化运行清单和工具结果；‘未评估’表示证据缺失，不表示正常。</p>")
     out.append(_table(_patient_qc_rows(bundle), ["项目", "结果", "解释"]))
-    out.append("<p class='small'>以下并列展示各纯度工具的估算。共识值用于CNV、CCF和LOH解释；明显冲突时保留全部结果及低置信度说明，不静默选择FACETS。</p>")
+    out.append("<p class='small'>以下并列展示各纯度工具的估算。共识值用于CNV和LOH解释；明显冲突时保留全部结果及低置信度说明，不静默选择FACETS。</p>")
     out.append(_table(_patient_purity_rows(bundle), ["工具/模式", "纯度", "倍性", "QC/状态", "交叉验证说明"]))
-    ccf_coverage_rows = _patient_ccf_coverage_rows(bundle)
-    if ccf_coverage_rows:
-        out.append("<h3>CCF覆盖度与缺失影响</h3>")
-        out.append(
-            "<p class='small'>CCF按独立事件和事件类型统计。RNA-only融合/剪接不把RNA junction reads伪装成DNA CCF；"
-            "DNA来源事件缺失CCF时，不能判断候选覆盖的肿瘤细胞比例，也不能作为克隆性正向证据。</p>"
-        )
-        out.append(_table(ccf_coverage_rows, [
-            "事件类型", "独立事件", "可靠CCF", "低置信数值", "缺失/未解析",
-            "RNA-only不适用", "可评估事件覆盖率", "解释与影响",
-        ]))
+    out.append(
+        "<div class='warn'><b>克隆性证据边界：</b>"
+        "多数候选目前尚不能可靠判断其是否存在于大部分肿瘤细胞中，因此克隆性仍是主要证据缺口之一。</div>"
+    )
     out.append("</div>")
 
     out.append("<div class='section'><h2>3. HLA分型与抗原呈递条件</h2>")
@@ -5233,7 +5367,8 @@ def make_patient_report(
         out.append(
             "<p class='small'>漏斗按独立剪接事件统计，而不是Peptide-HLA行数。缺字段不会被当作通过；"
             "“阶段后可能剩余”给出明确通过数到包含未评估事件的上限。unique junction reads、总覆盖和PSI分别读取，"
-            "不会用基因TPM或caller汇总reads互相替代。</p>"
+            "不会用基因TPM或caller汇总reads互相替代。只有完成全部前置生物学门控的事件，HLA呈递结果才计入正式候选；"
+            "探索池中的预测结果不表述为通过呈递门槛。</p>"
         )
         out.append(_table(splice_funnel_rows, [
             "筛选阶段", "进入事件", "已评估", "明确通过", "明确未通过", "未评估",
@@ -5411,7 +5546,7 @@ def make_patient_report(
     out.append("</div>")
 
     out.append("<div class='section'><h2>8. 局限性与总体结论</h2><ul>")
-    out.append("<li>DNA/RNA覆盖不足时的未检出属于低检出能力或未评估，不是阴性。</li><li>计算呈递不等于体内真实呈递，体内呈递也不等于T细胞能够识别。</li><li>正常表达、HSPC、正常蛋白组、正常配体组和正常剪接证据不完整时，安全性必须标记为证据部分完整。</li><li>患者版不输出用药建议、疗效承诺或已确认新抗原结论。</li></ul>")
+    out.append("<li>DNA/RNA覆盖不足时的未检出属于低检出能力或未评估，不是阴性。</li><li>计算呈递不等于体内真实呈递，体内呈递也不等于T细胞能够识别。</li><li>正常表达、HSPC、正常蛋白组、正常配体组和正常剪接证据不完整时，自身相似性与正常组织风险筛查必须标记为证据部分完整。</li><li>数据库筛查未发现同序列排除证据，不等于已经完成实验性脱靶、TCR交叉反应或临床安全性验证。</li><li>患者版不输出用药建议、疗效承诺或已确认新抗原结论。</li></ul>")
     out.append("<p><b>总体结论：</b>本次结果提供了可追溯的研究候选和分层验证顺序。应优先围绕事件真实性、RNA支持、突变肽与正常肽特异性、限制性HLA状态、APPM和正常背景补证，再决定首批实验集合。</p></div>")
 
     grade_rows = [{"等级": grade, "定义": value[0], "核心要求/处理": value[1]} for grade, value in R_GRADE_PATIENT.items()]
@@ -5421,7 +5556,6 @@ def make_patient_report(
         {"术语": "APPM", "通俗解释": "抗原从蛋白被切割、运输到HLA展示的一整套加工呈递机制。"},
         {"术语": "LOH", "通俗解释": "某个HLA等位基因在肿瘤中丢失，可能使受它限制的候选无法呈递。"},
         {"术语": "MT/WT", "通俗解释": "突变肽与正常肽成对比较，用于判断候选是否真正具有突变特异性。"},
-        {"术语": "CCF", "通俗解释": "估计携带该事件的肿瘤细胞比例；低可信结果不能当作精确比例。"},
         {"术语": "RNA alt reads / RNA VAF", "通俗解释": "直接支持突变转录本的RNA reads及其比例，比仅有gene TPM更接近突变表达证据。"},
         {"术语": "junction reads", "通俗解释": "跨越融合或异常剪接连接点的reads，必须精确对应同一junction。"},
         {"术语": "来源链 C1–C4", "通俗解释": "评价事件到转录本、ORF和肽段是否可追溯；与最终R1–R4推荐等级不同。"},
@@ -5525,7 +5659,8 @@ def make_technical_report(path: str | Path, bundle: ReportBundle) -> None:
         out.append(
             "<div class='warn'><b>Research-only parallel analysis:</b> "
             "The patient and technical reports use the evidence-consensus ranking as the primary final ranking. "
-            "The legacy weighted ranking is preserved for audit and comparison.</div>"
+            "The evidence-consensus ranking has not been experimentally calibrated and remains research-only. "
+            "The legacy weighted ranking is preserved only for algorithm comparison and candidate review, audit, and reproducibility.</div>"
         )
         metadata_rows = [
             {"field": "primary patient-report ranking", "value": parallel_rankings.get("evidence_consensus", "ranked_peptides.evidence_consensus.tsv")},

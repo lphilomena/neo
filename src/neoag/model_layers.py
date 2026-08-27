@@ -266,7 +266,8 @@ def rna_evidence_metrics(event: Mapping[str, Any]) -> dict[str, str]:
             "rna_evidence_score": f"{clamp(score):.4f}",
         }
 
-    assessed = depth > 0 or bool(depth_raw) or bool(_norm(event.get("rna_vaf_source")))
+    evaluable_depth = to_float(event.get("rna_min_evaluable_depth"), 10.0)
+    assessed = depth > 0 or bool(_norm(event.get("rna_vaf_source")))
     alt_score = clamp(alt / 5.0)
     vaf_score = clamp(vaf / 0.10)
     score = 0.65 * alt_score + 0.35 * vaf_score
@@ -275,7 +276,7 @@ def rna_evidence_metrics(event: Mapping[str, Any]) -> dict[str, str]:
         completeness = "COMPLETE"
     elif assessed:
         status = "RNA_ALT_NOT_DETECTED"
-        completeness = "COMPLETE"
+        completeness = "COMPLETE" if depth >= evaluable_depth else "PARTIAL"
     else:
         status = "UNASSESSED"
         completeness = "UNASSESSED"

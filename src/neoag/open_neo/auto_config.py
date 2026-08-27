@@ -109,6 +109,8 @@ REFERENCE_ENV_PATHS = {
     "snaf_db": ("NEOAG_SNAF_DB", "SNAF_DB"),
     "snaf_python": ("SNAF_PYTHON",),
     "splicemutr_workflow": ("SPLICEMUTR_WORKFLOW",),
+    "splicemutr_config": ("SPLICEMUTR_CONFIG",),
+    "splicemutr_samples": ("SPLICEMUTR_SAMPLES",),
     "ascat_loci": ("ASCAT_LOCI",),
     "ascat_alleles": ("ASCAT_ALLELES",),
     "normal_proteome": ("NEOAG_NORMAL_PROTEOME",),

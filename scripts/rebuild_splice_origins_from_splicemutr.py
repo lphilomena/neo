@@ -26,6 +26,9 @@ from neoag.schemas import PEPTIDE_FIELDS
 from neoag.utils import write_tsv
 
 
+NO_NORMAL_COHORT = "UNASSESSED_NO_COMPATIBLE_NORMAL_RNA_COHORT"
+
+
 def _int(value: str) -> int | None:
     try:
         return int(float(str(value).strip()))
@@ -175,8 +178,18 @@ def main() -> int:
                         "sample_id": args.sample_id, "gene": gene, "peptide_sequence": peptide,
                         "peptide_length": str(len(peptide)), "protein_start": str(pstart),
                         "protein_end": str(pend), "crosses_junction": "true", "junction_ids": junction,
+                        "required_junction_ids": junction,
                         "junction_offset_in_peptide": junction_offset,
                         "contains_novel_aa": "false" if normal_path else "true",
+                        "structural_novelty_status": (
+                            "NORMAL_TRANSCRIPT_SEQUENCE" if normal_path
+                            else "ALTERED_JUNCTION_SPANNING_SEQUENCE"
+                        ),
+                        "tumor_specificity_status": (
+                            "NOT_TUMOR_SPECIFIC_NORMAL_TRANSCRIPT_PATH" if normal_path
+                            else NO_NORMAL_COHORT
+                        ),
+                        "cohort_analysis_status": NO_NORMAL_COHORT,
                         "novel_aa_positions": "" if normal_path else f"{pstart}-{pend}",
                         "wildtype_counterpart_status": "SAME_SEQUENCE_IN_NORMAL_TRANSCRIPT" if normal_path else "UNRESOLVED",
                         "wildtype_peptide": peptide if normal_path else "", "reference_proteome_match": "UNASSESSED",
@@ -216,11 +229,21 @@ def main() -> int:
                     "orf_id": origin["orf_id"], "origin_peptide_id": origin["origin_peptide_id"],
                     "junction_ids": junction, "crosses_junction": "yes",
                     "contains_novel_aa": "yes" if origin["contains_novel_aa"] == "true" else "no",
+                    "structural_novelty_status": origin["structural_novelty_status"],
+                    "tumor_specificity_status": origin["tumor_specificity_status"],
+                    "cohort_analysis_status": origin["cohort_analysis_status"],
                     "wildtype_peptide": origin["wildtype_peptide"], "orf_evidence_grade": "O1",
                 })
                 if origin["contains_novel_aa"] == "true":
-                    row["mutant_specificity_status"] = "MT_SPECIFIC"
-                    row["mutant_specificity_reason"] = "Exact junction-spanning peptide from a changed SpliceMutr translation path."
+                    row["mutant_specificity_status"] = "UNASSESSED"
+                    row["mutant_specificity_gate_status"] = "REVIEW_REQUIRED"
+                    row["mutant_specificity_reason"] = (
+                        "The peptide is structurally altered and crosses the exact SpliceMutr junction, "
+                        "but tumor specificity is unassessed without a compatible normal RNA cohort."
+                    )
+                    row["mutant_specificity_priority_cap"] = "R3"
+                    row["safety_priority_cap"] = "R3"
+                    row["normal_junction_assessment_status"] = "NOT_LISTED_CATALOG_COVERAGE_UNASSESSED"
                 else:
                     row["mutant_specificity_status"] = "NON_MUTANT_SEQUENCE"
                     row["mutant_specificity_gate_status"] = "FAIL"
@@ -237,6 +260,10 @@ def main() -> int:
         "formal_candidate_rows": len(formal_candidates),
         "formal_candidate_rows_with_origin": sum(bool(x.get("origin_peptide_id")) for x in formal_candidates),
         "formal_candidate_rows_non_mutant_sequence": sum(x.get("mutant_specificity_status") == "NON_MUTANT_SEQUENCE" for x in formal_candidates),
+        "normal_cohort_status": NO_NORMAL_COHORT,
+        "altered_paths_tumor_specificity_unassessed": sum(
+            x.get("tumor_specificity_status") == NO_NORMAL_COHORT for x in formal_candidates
+        ),
         "matching_policy": "exact canonical junction + unique exact peptide occurrence + junction-spanning boundary",
     }
     (args.outdir / "rebuild_summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")

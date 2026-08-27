@@ -143,6 +143,8 @@ def main() -> int:
     ap.add_argument("--reference-fasta")
     ap.add_argument("--vep-cache", help="VEP cache root containing homo_sapiens/<version>_GRCh38")
     ap.add_argument("--hla-file"); ap.add_argument("--optitype"); ap.add_argument("--spechla-typing"); ap.add_argument("--hla-la"); ap.add_argument("--somatic-vcf")
+    ap.add_argument("--tumor-sample-name", default="", help="Tumor sample column in a multi-sample somatic VCF")
+    ap.add_argument("--normal-sample-name", default="", help="Matched-normal sample column in a multi-sample somatic VCF")
     ap.add_argument("--facets"); ap.add_argument("--sequenza"); ap.add_argument("--purple"); ap.add_argument("--ascat")
     ap.add_argument("--purity"); ap.add_argument("--cnv")
     ap.add_argument("--lohhla", required=True); ap.add_argument("--spechla-loh", required=True); ap.add_argument("--hla-loh")
@@ -180,6 +182,7 @@ def main() -> int:
     ap.add_argument("--prime-evidence", help="Existing normalized PRIME evidence TSV to reuse")
     ap.add_argument("--bigmhc-evidence", help="Existing normalized BigMHC_IM evidence TSV to reuse")
     ap.add_argument("--deepimmuno-evidence", help="Existing normalized DeepImmuno evidence TSV to reuse")
+    ap.add_argument("--netmhcstabpan-evidence", help="Existing normalized NetMHCstabpan evidence TSV to reuse")
     ap.add_argument("--netchop-executable", default="netChop"); ap.add_argument("--netchop-home", default="")
     ap.add_argument(
         "--skip-netmhcstabpan",
@@ -266,9 +269,14 @@ def main() -> int:
     hla_loh = "{outdir}/evidence/hla_loh/hla_loh_consensus.tsv" if generated_hla_loh else require(args.hla_loh, "HLA LOH consensus")
     presentation_predictors = ["netmhcpan", "mhcflurry", "netchop"]
     production_limitations = []
-    if not args.skip_netmhcstabpan:
+    if args.netmhcstabpan_evidence:
+        netmhcstabpan_evidence = require(args.netmhcstabpan_evidence, "NetMHCstabpan evidence")
+        presentation_predictors.insert(2, "netmhcstabpan")
+    elif not args.skip_netmhcstabpan:
+        netmhcstabpan_evidence = ""
         presentation_predictors.insert(2, "netmhcstabpan")
     else:
+        netmhcstabpan_evidence = ""
         production_limitations.append("NETMHCSTABPAN_LOCAL_UNAVAILABLE")
     predictor_toml = "[" + ", ".join(q(tool) for tool in presentation_predictors) + "]"
     lines = ["# Generated from completed upstream tool results.", "[run]", f"sample_id = {q(args.sample_id)}", f"profile = {q(profile)}", f"outdir = {q(Path(args.outdir).resolve())}", f"hla_file = {q(hla)}", "tools_stub = false", "immunogenicity_stub = false", f"presentation_predictors = {predictor_toml}", f"required_presentation_predictors = {predictor_toml}", 'reports = "patient,technical"', f"event_top_n = {args.event_top_n}", f"candidate_top_n = {args.candidate_top_n}", f"netchop_executable = {q(args.netchop_executable)}"]
@@ -465,7 +473,12 @@ def main() -> int:
         reference_env = f"NEOAG_REFERENCE_FASTA={q(reference_fasta)} " if reference_fasta else ""
         vep_cache = discover_vep_cache(reference_fasta, args.normal_junctions, args.vep_cache)
         vep_cache_arg = f" --vep-cache {q(vep_cache)}" if vep_cache and Path(vep_cache).is_dir() else ""
-        command = f"{reference_env}PYTHONPATH={q(root / 'src')} {q(sys.executable)} {q(root / 'scripts/run_candidate_upstream.py')} --mode snv --input {q(require(args.somatic_vcf, 'somatic VCF'))} --hla-file {q(hla)} --sample-id {q(args.sample_id)} --outdir {{outdir}}/branches/snv{vep_cache_arg}"
+        sample_role_args = ""
+        if args.tumor_sample_name:
+            sample_role_args += f" --tumor-sample-name {q(args.tumor_sample_name)}"
+        if args.normal_sample_name:
+            sample_role_args += f" --normal-sample-name {q(args.normal_sample_name)}"
+        command = f"{reference_env}PYTHONPATH={q(root / 'src')} {q(sys.executable)} {q(root / 'scripts/run_candidate_upstream.py')} --mode snv --input {q(require(args.somatic_vcf, 'somatic VCF'))} --hla-file {q(hla)} --sample-id {q(args.sample_id)}{sample_role_args} --outdir {{outdir}}/branches/snv{vep_cache_arg}"
         stage(lines, "snv_indel_candidates", source="SNV_INDEL", command=command, outputs={"raw_events": "{outdir}/branches/snv/parsed/raw_events.tsv", "raw_peptides": "{outdir}/branches/snv/parsed/raw_peptides.tsv"}, depends=hla_dependency)
         candidate_stages.append("snv_indel_candidates")
     if args.easyfuse or args.easyfuse_unfiltered or args.star_fusion or args.arriba or args.fusioncatcher or args.jaffal or args.fusion_caller_root:
@@ -552,6 +565,8 @@ def main() -> int:
     ]
     if rna_vaf:
         lines.append(f"rna_vaf = {q(rna_vaf)}")
+    if netmhcstabpan_evidence:
+        lines.append(f"netmhcstabpan = {q(netmhcstabpan_evidence)}")
     for key in ("prime_evidence", "bigmhc_evidence", "deepimmuno_evidence"):
         value = getattr(args, key)
         if value:

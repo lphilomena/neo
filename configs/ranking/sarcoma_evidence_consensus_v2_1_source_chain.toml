@@ -21,6 +21,7 @@ deepimmuno_supported = 0.50
 [rna]
 snv_min_alt_reads = 3
 snv_min_vaf = 0.02
+snv_min_evaluable_depth = 10
 junction_min_reads = 3
 junction_strong_reads = 10
 

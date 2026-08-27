@@ -49,12 +49,13 @@ _SET_FIELDS = {
     "junction_ids", "required_junction_ids", "reference_junction_ids", "alternative_junction_ids", "affected_exons",
     "transcript_ids", "independent_source_groups", "supporting_entity_ids", "supporting_evidence_ids",
     "limiting_reasons", "independent_evidence_groups", "independent_translation_generators",
-    "independent_peptide_generators",
+    "independent_peptide_generators", "normal_tissues",
 }
 _MAX_FIELDS = {
     "unique_split_reads", "multi_split_reads", "total_split_reads", "max_overhang",
     "junction_reads", "easyquant_junction_reads", "easyquant_spanning_pairs", "junction_score",
     "sample_count", "total_samples", "sample_prevalence", "kmer_prevalence", "uniqueness_rate",
+    "normal_total_junction_reads", "normal_tissue_count",
 }
 _IDENTITY_FIELDS = {
     "genome_build", "chrom", "intron_start_1based", "intron_end_1based", "strand",
@@ -358,7 +359,7 @@ class SpliceLayer:
         outputs.update(self.write_external_queries(out))
         manifest = {
             "schema_version": SPLICE_PROVENANCE_SCHEMA_VERSION,
-            "software_version": "0.5.2-p0", "sample_id": self.sample_id,
+            "software_version": "0.5.3-splicemutr-normal-p0", "sample_id": self.sample_id,
             "genome_build": self.genome_build, "disease_profile": self.disease_profile,
             "evidence_chains": {
                 "RNA_DRIVEN": "exact RNA junction + exact event/peptide provenance; ImmunoPepper and moPepGen are independent generator groups",

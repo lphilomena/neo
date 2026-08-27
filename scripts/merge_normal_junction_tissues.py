@@ -26,21 +26,23 @@ def main() -> None:
                 key = row["junction_id"]
                 item = merged.setdefault(key, {
                     **row, "normal_samples": 0, "normal_reads": 0, "normal_total_reads": 0,
-                    "normal_tissues": 0, "tissues": set(),
+                    "total_samples": 0, "normal_tissue_count": 0, "tissues": set(),
                 })
                 item["normal_samples"] = int(item["normal_samples"]) + int(row["normal_samples"])
                 item["normal_reads"] = max(int(item["normal_reads"]), int(row["normal_reads"]))
                 item["normal_total_reads"] = int(item["normal_total_reads"]) + int(row["normal_total_reads"])
+                item["total_samples"] = int(item["total_samples"]) + int(row.get("total_samples") or 0)
                 tissues = item["tissues"]
                 assert isinstance(tissues, set)
                 tissues.add(row["tissue"])
-                item["normal_tissues"] = len(tissues)
+                item["normal_tissue_count"] = len(tissues)
                 if row.get("annotated") == "1":
                     item["annotated"] = "1"
     fields = [
         "junction_id", "chromosome", "start", "end", "strand", "genome_build", "annotated",
-        "normal_samples", "normal_reads", "normal_total_reads", "normal_tissues", "tissue",
-        "source", "dataset",
+        "normal_samples", "normal_reads", "normal_total_reads", "total_samples",
+        "sample_prevalence", "normal_tissue_count", "tissue", "source", "dataset",
+        "reference_release",
     ]
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with open_text(args.output, "wt") as handle:
@@ -51,9 +53,15 @@ def main() -> None:
             tissues = row.pop("tissues")
             assert isinstance(tissues, set)
             row["tissue"] = ",".join(sorted(tissues))
+            total_samples = int(row.get("total_samples") or 0)
+            row["sample_prevalence"] = (
+                f"{int(row['normal_samples']) / total_samples:.12g}" if total_samples else ""
+            )
             writer.writerow({field: row.get(field, "") for field in fields})
     metadata = {
         "genome_build": "GRCh38", "source": "recount3_GTEx_v8",
+        "dataset": "GTEx_v8", "reference_release": "recount3_GTEx_v8_GRCh38",
+        "denominator_semantics": "sample-tissue records; donors may contribute more than one tissue",
         "input_files": [str(path) for path in args.inputs], "junctions_kept": len(merged),
         "output": str(args.output),
     }

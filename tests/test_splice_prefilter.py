@@ -11,11 +11,12 @@ def splice_row(event_id: str, **updates):
         "hla_allele": "HLA-A*02:01", "junction_resolution_status": "RESOLVED",
         "junction_read_qc_status": "PASS",
         "unique_junction_reads": "5", "junction_total_coverage": "20", "splice_psi": "0.2",
-        "matched_normal_junction_status": "NOT_DETECTED",
-        "normal_cohort_junction_status": "NOT_DETECTED",
+        "matched_normal_junction_status": "NOT_DETECTED", "matched_normal_junction_coverage": "30",
+        "normal_cohort_junction_status": "NOT_DETECTED_ADEQUATE_COVERAGE", "normal_cohort_junction_coverage": "30",
         "annotated_normal_isoform_status": "NOVEL", "splice_orf_status": "IN_FRAME",
         "splice_nmd_status": "NOT_PREDICTED", "crosses_junction": "yes",
-        "reference_proteome_status": "NOT_DETECTED", "rna_junction_reads": "5",
+        "reference_proteome_status": "NOT_DETECTED", "normal_transcriptome_status": "NOT_DETECTED",
+        "rna_junction_reads": "5",
     })
     row.update(updates)
     return row
@@ -38,7 +39,10 @@ def test_splice_prefilter_runs_before_prediction_and_keeps_bounded_review_lane(t
     selected = {row["event_id"]: row for row in read_tsv(path)}
     assert set(selected) == {"V1", "PASS", "REVIEW"}
     assert selected["PASS"]["splice_prefilter_status"] == "PASS"
+    assert selected["PASS"]["splice_candidate_pool"] == "FORMAL_SPLICE_CANDIDATE"
+    assert selected["PASS"]["splice_formal_gate_pass"] == "yes"
     assert selected["REVIEW"]["splice_prefilter_status"] == "REVIEW"
+    assert selected["REVIEW"]["splice_candidate_pool"] == "EXPLORATION_EVIDENCE_INCOMPLETE"
     assert result["raw_splice_events"] == 3
     assert result["selected_events"] == 2
     decisions = {row["event_id"]: row for row in read_tsv(tmp_path / "splice_prefilter_decisions.tsv")}
@@ -49,6 +53,23 @@ def test_splice_prefilter_runs_before_prediction_and_keeps_bounded_review_lane(t
     assert funnel["UNIQUE_JUNCTION_READS"]["failed_events"] == "1"
     assert funnel["UNIQUE_JUNCTION_READS"]["unassessed_events"] == "1"
     assert funnel["SELECTED_FOR_PRESENTATION"]["passed_events"] == "2"
+    assert funnel["FORMAL_GATE_COMPLETE"]["passed_events"] == "1"
+
+
+def test_normal_catalog_nonmembership_is_not_a_formal_negative(tmp_path):
+    path = tmp_path / "raw_peptides.tsv"
+    write_tsv(path, [splice_row(
+        "CATALOG_MISS",
+        normal_cohort_junction_status="NOT_LISTED_IN_NORMAL_CATALOG",
+        normal_cohort_junction_coverage="",
+    )], PEPTIDE_FIELDS)
+    prefilter_splice_peptides(path, {"gates": {}}, tmp_path)
+    selected = read_tsv(path)[0]
+    assert selected["splice_prefilter_status"] == "REVIEW"
+    assert selected["splice_formal_gate_pass"] == "no"
+    decision = read_tsv(tmp_path / "splice_prefilter_decisions.tsv")[0]
+    assert "NORMAL_COHORT_JUNCTION" in decision["unassessed_stages"]
+    assert "presence-only catalog non-membership" in decision["stage_details"]
 
 
 def test_splice_prefilter_rejects_known_normal_isoform_and_unstranded_mapping(tmp_path):

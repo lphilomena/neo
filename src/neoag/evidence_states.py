@@ -78,6 +78,7 @@ def _result(
     hard_fail: bool = False,
     hard_code: str = "",
     conflict: bool = False,
+    reason_code: str = "",
 ) -> dict[str, Any]:
     return {
         "state": state,
@@ -86,7 +87,7 @@ def _result(
         "hard_fail": bool(hard_fail),
         "hard_code": hard_code,
         "conflict": bool(conflict),
-        "reason_code": hard_code or state,
+        "reason_code": hard_code or reason_code or state,
         "reason": reason,
     }
 
@@ -163,6 +164,9 @@ def _assign_reason_code(
     hard_code = str(result.get("hard_code") or "")
     if hard_code:
         result["reason_code"] = hard_code
+        return result
+    explicit_code = str(result.get("reason_code") or "")
+    if explicit_code and explicit_code != str(result.get("state") or ""):
         return result
     state = str(result.get("state") or "UNASSESSED")
     code = STATE_REASON_CODES.get(domain, {}).get(state, f"{domain.upper()}_{state}")
@@ -269,17 +273,24 @@ def derive_rna_support(row: Mapping[str, Any], rules: Mapping[str, Any]) -> dict
         if depth is None or depth <= 0:
             return _result(
                 "RNA_UNASSESSED",
-                0,
-                "RNA alternate allele not detected, but site coverage is unavailable",
+                1,
+                "RNA depth=0 or unavailable; ALT=0 is not interpretable as negative evidence",
                 assessed=False,
+                reason_code="RNA_NO_COVERAGE_UNKNOWN",
             )
         if depth < evaluable_depth:
             return _result(
                 "RNA_LOW_SUPPORT",
                 1,
                 f"RNA alternate allele not detected at low depth {depth:g} < {evaluable_depth:g}",
+                reason_code="RNA_NO_ALT_LOW_COVERAGE",
             )
-        return _result("RNA_NEGATIVE", 0, f"{status}; RNA depth={depth:g}")
+        return _result(
+            "RNA_NEGATIVE",
+            0,
+            f"RNA alternate allele not detected despite evaluable depth {depth:g} >= {evaluable_depth:g}",
+            reason_code="RNA_NO_ALT_ADEQUATE_COVERAGE",
+        )
     if "RNA_JUNCTION_NOT_DETECTED" in status:
         return _result(
             "RNA_UNASSESSED",
@@ -323,17 +334,24 @@ def derive_rna_support(row: Mapping[str, Any], rules: Mapping[str, Any]) -> dict
         if depth is None or depth <= 0:
             return _result(
                 "RNA_UNASSESSED",
-                0,
-                "RNA alt reads=0, but site coverage is unavailable",
+                1,
+                "RNA depth=0 or unavailable; ALT=0 is not interpretable as negative evidence",
                 assessed=False,
+                reason_code="RNA_NO_COVERAGE_UNKNOWN",
             )
         if depth < evaluable_depth:
             return _result(
                 "RNA_LOW_SUPPORT",
                 1,
                 f"RNA alt reads=0 at low depth {depth:g} < {evaluable_depth:g}",
+                reason_code="RNA_NO_ALT_LOW_COVERAGE",
             )
-        return _result("RNA_NEGATIVE", 0, f"RNA alt reads=0 at evaluable depth {depth:g}; VAF={vaf}")
+        return _result(
+            "RNA_NEGATIVE",
+            0,
+            f"RNA alt reads=0 at evaluable depth {depth:g} >= {evaluable_depth:g}; VAF={vaf}",
+            reason_code="RNA_NO_ALT_ADEQUATE_COVERAGE",
+        )
     return _result("RNA_LOW_SUPPORT", 1, f"RNA support below provisional thresholds: reads={alt_reads}; VAF={vaf}")
 
 

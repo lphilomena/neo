@@ -19,6 +19,9 @@ from neoag.utils import read_tsv, write_tsv
 COORD_RE = re.compile(r"^(chr[^:]+):(\d+)-(\d+)\(([+-])\)$")
 TRANSCRIPT_RE = re.compile(r"ENST\d+(?:\.\d+)?")
 VALID_AA = set("ACDEFGHIKLMNPQRSTVWY")
+NORMAL_CATALOG_SEEN = "SEEN_IN_NORMAL_CATALOG"
+NORMAL_CATALOG_NOT_LISTED = "NOT_LISTED_IN_NORMAL_CATALOG"
+NO_NORMAL_COHORT = "UNASSESSED_NO_COMPATIBLE_NORMAL_RNA_COHORT"
 
 
 def fnum(value: object, default: float = 0.0) -> float:
@@ -133,16 +136,17 @@ def score_candidate(row: dict[str, object]) -> float:
     normal_score = max(0.0, 1.0 - min(mean, 1.0))
     mle_score = max(0.0, 1.0 - min(mle, 1.0))
     binding_score = max(0.0, 1.0 - min(rank / 2.0, 1.0))
-    normal_ref_score = 1.0 if row["normal_junction_status"] == "ABSENT_GTEX_V11" else 0.0
     frame_score = 1.0 if row["frame_evidence_status"] == "TRANSCRIPT_EVIDENCE_PRESENT" else 0.0
+    # Catalog non-membership is an exclusion result, not positive evidence of
+    # normal-tissue absence.  Renormalize the remaining evidence weights rather
+    # than rewarding a presence-only catalog lookup.
     return (
-        0.20 * read_score
-        + 0.15 * normal_score
-        + 0.15 * mle_score
-        + 0.20 * binding_score
-        + 0.15 * immuno
-        + 0.10 * normal_ref_score
-        + 0.05 * frame_score
+        (2.0 / 9.0) * read_score
+        + (1.0 / 6.0) * normal_score
+        + (1.0 / 6.0) * mle_score
+        + (2.0 / 9.0) * binding_score
+        + (1.0 / 6.0) * immuno
+        + (1.0 / 18.0) * frame_score
     )
 
 
@@ -165,6 +169,7 @@ def main() -> None:
     parser.add_argument("--min-immunogenicity", type=float, default=0.5)
     parser.add_argument("--max-events", type=int, default=500)
     parser.add_argument("--max-pairs-per-event", type=int, default=2)
+    parser.add_argument("--normal-catalog-label", default="recount3_GTEx_v8_GRCh38")
     args = parser.parse_args()
 
     splice_dir = args.outdir / "splice_snaf"
@@ -198,9 +203,9 @@ def main() -> None:
         if not coord_info:
             normal_status = "UNMAPPED_COORDINATE"
         elif normal_key in normal_keys:
-            normal_status = "SEEN_GTEX_V11"
+            normal_status = NORMAL_CATALOG_SEEN
         else:
-            normal_status = "ABSENT_GTEX_V11"
+            normal_status = NORMAL_CATALOG_NOT_LISTED
         evidence_text = str(row.get("evidences") or "").strip()
         frame_status = (
             "TRANSCRIPT_EVIDENCE_PRESENT"
@@ -242,7 +247,7 @@ def main() -> None:
             reasons.append("BINDING_RANK_WEAK")
         if fnum(row.get("immunogenicity")) < args.min_immunogenicity:
             reasons.append("IMMUNOGENICITY_LOW")
-        if normal_status != "ABSENT_GTEX_V11":
+        if normal_status != NORMAL_CATALOG_NOT_LISTED:
             reasons.append(normal_status)
         if frame_status != "TRANSCRIPT_EVIDENCE_PRESENT":
             reasons.append("FRAME_UNRESOLVED")
@@ -331,7 +336,7 @@ def main() -> None:
             "mutation_source": "SNAF",
             "peptide_consequence": "splice_junction",
             "evidence_scope": "RNA_SPLICE",
-            "priority_cap": "C_CAUTION",
+            "priority_cap": "R3",
             "gene": str(representative["gene"]),
             "event_name": str(representative["junction_coord_normalized"]),
             "chrom": str(coord.get("chrom", "")),
@@ -350,9 +355,15 @@ def main() -> None:
             "transcript_expression_tpm": str(representative["transcript_expression_tpm"]),
             "expression_evidence_status": str(representative["expression_evidence_status"]),
             "rna_support_status": "RNA_JUNCTION_SUPPORTED",
-            "rna_evidence_completeness": "COMPLETE",
+            "rna_evidence_completeness": "PARTIAL_NO_COMPATIBLE_NORMAL_RNA_COHORT",
             "rna_evidence_score": "1.0000",
             "tumor_specificity": f"{tumor_specificity:.4f}",
+            "tumor_specificity_status": NO_NORMAL_COHORT,
+            "cohort_analysis_status": NO_NORMAL_COHORT,
+            "normal_junction_assessment_status": "NOT_LISTED_CATALOG_COVERAGE_UNASSESSED",
+            "normal_safety_grade": "N1",
+            "splice_consensus_tier": "R3",
+            "safety_priority_cap": "R3",
             "ccf_status": "RNA_ONLY_UNRESOLVED",
             "ccf_confidence": "unresolved",
             "ccf_warning": "RNA-only splice event; DNA clonality is not estimated",
@@ -377,11 +388,14 @@ def main() -> None:
                 "mutation_source": "SNAF",
                 "peptide_consequence": "splice_junction",
                 "evidence_scope": "RNA_SPLICE",
-                "priority_cap": "C_CAUTION",
+                "priority_cap": "R3",
                 "gene": str(row["gene"]),
                 "peptide": peptide,
                 "crosses_junction": "yes",
                 "contains_novel_aa": "yes",
+                "structural_novelty_status": "ALTERED_JUNCTION_SPANNING_SEQUENCE",
+                "tumor_specificity_status": NO_NORMAL_COHORT,
+                "cohort_analysis_status": NO_NORMAL_COHORT,
                 "rna_junction_reads": str(row["junction_count"]),
                 "rna_junction_source": str(args.snaf_candidates),
                 "rna_frame_status": "translated_frame_with_transcript_evidence",
@@ -389,7 +403,7 @@ def main() -> None:
                 "transcript_expression_tpm": str(row["transcript_expression_tpm"]),
                 "expression_evidence_status": str(row["expression_evidence_status"]),
                 "rna_support_status": "RNA_JUNCTION_SUPPORTED",
-                "rna_evidence_completeness": "COMPLETE",
+                "rna_evidence_completeness": "PARTIAL_NO_COMPATIBLE_NORMAL_RNA_COHORT",
                 "rna_evidence_score": "1.0000",
                 "hla_allele": hla,
                 "mhc_class": "I",
@@ -407,8 +421,10 @@ def main() -> None:
                 "safety_status": "SAFETY_PARTIAL",
                 "safety_reason": "normal-junction and peptide safety review required",
                 "review_required": "yes",
-                "normal_junction_assessment_status": str(row["normal_junction_status"]),
-                "safety_priority_cap": "C_CAUTION",
+                "normal_junction_assessment_status": "NOT_LISTED_CATALOG_COVERAGE_UNASSESSED",
+                "safety_priority_cap": "R3",
+                "normal_safety_grade": "N1",
+                "splice_consensus_tier": "R3",
             })
             peptide_rows.append(peptide_row)
             junction = empty_row(RNA_JUNCTION_EVIDENCE_FIELDS)
@@ -470,7 +486,10 @@ def main() -> None:
             "max_binding_rank": args.max_binding_rank,
             "min_immunogenicity": args.min_immunogenicity,
             "frame_transcript_evidence_required": True,
-            "normal_gtex_v11_absence_required": True,
+            "normal_catalog_nonmembership_required_for_screening": True,
+            "normal_catalog_nonmembership_is_positive_evidence": False,
+            "normal_catalog_label": args.normal_catalog_label,
+            "normal_cohort_status": NO_NORMAL_COHORT,
             "max_events": args.max_events,
             "max_pairs_per_event": args.max_pairs_per_event,
         },

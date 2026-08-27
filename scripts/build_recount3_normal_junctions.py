@@ -14,7 +14,8 @@ from pathlib import Path
 FIELDS = [
     "junction_id", "chromosome", "start", "end", "strand", "genome_build",
     "annotated", "normal_samples", "normal_reads", "normal_total_reads",
-    "tissue", "source", "dataset",
+    "total_samples", "sample_prevalence", "normal_tissue_count", "tissue",
+    "source", "dataset", "reference_release",
 ]
 
 
@@ -84,8 +85,11 @@ def convert(rr: Path, mm: Path, output: Path, tissue: str, min_reads: int, min_s
                 "chromosome": chrom, "start": start, "end": end, "strand": strand,
                 "genome_build": "GRCh38", "annotated": row.get("annotated", ""),
                 "normal_samples": sample_count[idx], "normal_reads": max_reads[idx],
-                "normal_total_reads": total_reads[idx], "tissue": tissue,
+                "normal_total_reads": total_reads[idx], "total_samples": matrix_samples,
+                "sample_prevalence": f"{sample_count[idx] / matrix_samples:.12g}",
+                "normal_tissue_count": 1, "tissue": tissue,
                 "source": "recount3_GTEx_v8", "dataset": "GTEx_v8",
+                "reference_release": "recount3_GTEx_v8_GRCh38",
             })
             kept += 1
     if seen != len(max_reads):

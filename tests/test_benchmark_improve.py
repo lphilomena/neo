@@ -46,6 +46,28 @@ def test_parse_netmhcstabpan_fixture():
     assert rows[0]["netmhcstabpan_rank"]
 
 
+def test_parse_normalized_netmhcstabpan_evidence(tmp_path):
+    evidence = tmp_path / "netmhcstabpan_evidence.tsv"
+    evidence.write_text(
+        "sample_id\tpeptide\thla_allele\tpeptide_hla_key\t"
+        "netmhcstabpan_score\tnetmhcstabpan_rank\n"
+        "S1\tSLYNTVATL\tHLA-A*02:01\tSLYNTVATL_HLA_A_02_01\t0.73\t1.2\n",
+        encoding="utf-8",
+    )
+
+    rows = parse_netmhcstabpan(evidence)
+
+    assert rows == [{
+        "sample_id": "S1",
+        "peptide": "SLYNTVATL",
+        "hla_allele": "HLA-A*02:01",
+        "peptide_hla_key": "SLYNTVATL_HLA_A_02_01",
+        "netmhcstabpan_score": "0.73",
+        "netmhcstabpan_rank": "1.2",
+        "source_file": str(evidence),
+    }]
+
+
 def test_seed_tools_cache(tmp_path):
     cache = tmp_path / "cache" / "tools"
     cache.mkdir(parents=True)

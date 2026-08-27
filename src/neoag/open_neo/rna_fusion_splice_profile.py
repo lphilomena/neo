@@ -119,7 +119,10 @@ def profile_requirements(inputs: dict[str, Any]) -> list[ProfileRequirement]:
     add("reference_proteome", inputs.get("reference_proteome"), required=False, detail="reference proteome exact-match safety check")
     add("snaf_db", inputs.get("snaf_db"), required=True, detail="official SNAF reference root containing Alt91_db and controls")
     add("snaf_workflow", inputs.get("snaf_workflow"), required=False, detail="optional site override; built-in workflow is used when snaf_db is configured")
-    add("splicemutr_workflow", inputs.get("splicemutr_workflow"), required=True, detail="default SpliceMutr workflow")
+    custom_splicemutr = bool(inputs.get("splicemutr_workflow"))
+    add("splicemutr_workflow", inputs.get("splicemutr_workflow"), required=True, detail="NeoAg production SpliceMutr workflow")
+    add("splicemutr_config", inputs.get("splicemutr_config"), required=not custom_splicemutr,
+        detail="required cohort/normal-control configuration for the bundled workflow")
     return rows
 
 
@@ -415,9 +418,28 @@ def generate_rna_fusion_splice_manifest(
            outputs={"candidate_table": "{outdir}/branches/splice/snaf/snaf_candidates.tsv"},
            depends_on=["junction_extraction", "rna_expression"])
 
-    splicemutr_workflow = str(inputs.get("splicemutr_workflow") or os.environ.get("SPLICEMUTR_WORKFLOW") or "")
+    bundled_splicemutr = root / "workflows" / "splicemutr" / "SpliceMutr.smk"
+    splicemutr_config = str(inputs.get("splicemutr_config") or os.environ.get("SPLICEMUTR_CONFIG") or "")
+    splicemutr_samples = str(inputs.get("splicemutr_samples") or os.environ.get("SPLICEMUTR_SAMPLES") or "")
+    splicemutr_workflow = str(
+        inputs.get("splicemutr_workflow") or os.environ.get("SPLICEMUTR_WORKFLOW")
+        or (bundled_splicemutr if splicemutr_config else "")
+    )
     splicemutr_command = ""
-    if splicemutr_workflow:
+    if splicemutr_workflow and splicemutr_config:
+        samples_override = f" --config sample_sheet={_q(splicemutr_samples)}" if splicemutr_samples else ""
+        splicemutr_command = (
+            f"NEOAG_SPLICEMUTR_OUTDIR={{outdir}}/branches/splice/splicemutr "
+            f"NEOAG_SPLICEMUTR_BAM={{outdir}}/rna/star/Aligned.sortedByCoord.out.bam "
+            f"NEOAG_SPLICEMUTR_JUNCTIONS={{outdir}}/branches/splice/regtools_junctions.tsv "
+            f"splicemutr-neoag workflow {_q(splicemutr_workflow)} --cores {threads} "
+            f"--configfile {_q(splicemutr_config)} --config "
+            f"output_dir={{outdir}}/branches/splice/splicemutr target_sample_id={_q(sample_id)}"
+            f"{samples_override} && "
+            f"test -s {{outdir}}/branches/splice/splicemutr/splicemutr_candidates.tsv"
+        )
+    elif splicemutr_workflow:
+        # Backward-compatible site workflows may carry their own configfile.
         splicemutr_command = (
             f"NEOAG_SPLICEMUTR_OUTDIR={{outdir}}/branches/splice/splicemutr "
             f"NEOAG_SPLICEMUTR_BAM={{outdir}}/rna/star/Aligned.sortedByCoord.out.bam "

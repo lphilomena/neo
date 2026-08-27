@@ -64,8 +64,10 @@ def main() -> None:
         "snaf_ccf_wrong_status": sum(
             row.get("ccf_status") != "RNA_ONLY_UNRESOLVED" for row in snaf_peptides
         ),
-        "selected_gtex_seen": sum(
-            row.get("normal_junction_status") != "ABSENT_GTEX_V11" for row in selected
+        "selected_normal_catalog_seen": sum(
+            row.get("normal_junction_status") not in {
+                "NOT_LISTED_IN_NORMAL_CATALOG", "ABSENT_GTEX_V11"
+            } for row in selected
         ),
         "snaf_missing_junction_reads": sum(
             not (row.get("rna_junction_reads", "") or "").strip() for row in snaf_peptides

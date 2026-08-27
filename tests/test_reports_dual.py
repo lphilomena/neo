@@ -3,7 +3,7 @@ import gzip
 import json
 from pathlib import Path
 
-from neoag.reports_dual import ReportBundle, _apply_patient_gene_expression, _augment_runtime_tool_provenance, _find_bam_input, _patient_conflict_summary, _patient_disease_background, _patient_dna_evidence, _patient_event_grade_counts, _patient_event_representatives, _patient_evidence_audit_rows, _patient_evidence_summary, _patient_event_change, _patient_expression_tpm_map, _patient_fusion_artifact_review, _patient_fusion_boundary_evidence, _patient_hla_loh_consensus, _patient_key_gaps, _patient_limitation, _patient_manual_review_rows, _patient_metric, _patient_presentation_metric, _patient_presentation_quantitative_row, _patient_rna_measurements, _patient_rna_metric, _patient_safety_dimensions, _patient_safety_gap, _patient_tool_rows, _patient_track, _patient_validation, _replace_gene_ids, load_report_bundle, make_dual_reports, make_patient_report, make_technical_report
+from neoag.reports_dual import ReportBundle, _apply_patient_gene_expression, _augment_runtime_tool_provenance, _find_bam_input, _patient_analysis_context, _patient_conflict_summary, _patient_disease_background, _patient_dna_evidence, _patient_dna_rna_interpretation, _patient_event_grade_counts, _patient_event_representatives, _patient_evidence_audit_rows, _patient_evidence_summary, _patient_event_change, _patient_expression_tpm_map, _patient_fusion_artifact_review, _patient_fusion_boundary_evidence, _patient_hla_loh_consensus, _patient_key_gaps, _patient_limitation, _patient_manual_review_rows, _patient_metric, _patient_presentation_metric, _patient_presentation_quantitative_row, _patient_rna_measurements, _patient_rna_metric, _patient_safety_dimensions, _patient_safety_gap, _patient_tool_rows, _patient_track, _patient_validation, _replace_gene_ids, load_report_bundle, make_dual_reports, make_patient_report, make_technical_report
 from neoag.reports_dual import _patient_ccf_coverage_rows, _patient_splice_funnel_rows
 from neoag.utils import write_tsv
 
@@ -107,7 +107,10 @@ def test_splice_funnel_and_ccf_coverage_are_event_level_and_explicit():
     funnel = _patient_splice_funnel_rows(bundle)
     assert funnel[0]["筛选阶段"] == "unique junction reads门槛"
     assert funnel[0]["阶段后可能剩余"] == "4-8"
-    assert funnel[-1]["筛选阶段"] == "通过HLA呈递门槛"
+    assert funnel[-1]["筛选阶段"] == "探索性HLA预测（不计为正式通过）"
+    assert funnel[-2]["筛选阶段"] == "正式前置门控后的HLA呈递支持"
+    assert funnel[-2]["进入事件"] == "0"
+    assert funnel[-1]["明确通过"] == "0"
     ccf = {row["事件类型"]: row for row in _patient_ccf_coverage_rows(bundle)}
     assert ccf["Splice"]["RNA-only不适用"] == "1"
     assert ccf["SNV"]["缺失/未解析"] == "1"
@@ -120,6 +123,16 @@ def test_splice_rna_measurements_do_not_substitute_tpm_for_psi_or_unique_reads()
     assert "unique junction reads未记录" in text
     assert "junction总覆盖未记录" in text
     assert "PSI未记录（不能用基因TPM替代）" in text
+
+
+def test_splice_exact_support_reads_are_not_mislabeled_as_unique_reads():
+    text = _patient_rna_measurements({
+        "event_type": "Splice", "rna_junction_reads": "182",
+        "junction_match_status": "EXACT", "junction_match_method": "bam_recount",
+    })
+    assert "精确junction支持reads 182" in text
+    assert "unique junction reads 182" not in text
+    assert "unique junction reads未记录" in text
 
 
 def test_patient_top_candidates_include_non_r4_technical_review_rows(tmp_path):
@@ -253,7 +266,7 @@ def test_patient_validation_translates_safety_recommendation():
         "recommended_use": "Safety-focused validation before efficacy assay",
     }
     text = _patient_validation(row, {})
-    assert text == "先完成针对性的正常组织与脱靶安全性复核，再考虑有效性实验"
+    assert text == "先完成正常组织数据库复核及实验性脱靶/交叉反应验证，再考虑有效性实验"
     assert "Safety-focused" not in text
 
 
@@ -325,6 +338,18 @@ def test_patient_summary_separates_event_and_peptide_hla_counts(tmp_path):
     assert "同一事件可产生多个重叠肽段和多个HLA组合" in text
     assert "<td>R3-GAP</td><td>1</td>" in text
     assert "<td>R3-REVIEW</td><td>1</td>" in text
+    assert "1个独立事件处于R3-REVIEW状态" in text
+
+
+def test_patient_rna_interpretation_distinguishes_zero_low_and_adequate_coverage():
+    base = {"event_type": "SNV", "tumor_alt_count": "20", "rna_alt_reads": "0"}
+    no_coverage = _patient_dna_rna_interpretation({**base, "rna_depth": "0"})
+    low_coverage = _patient_dna_rna_interpretation({**base, "rna_depth": "2"})
+    adequate_negative = _patient_dna_rna_interpretation({**base, "rna_depth": "1471"})
+    assert "无有效覆盖" in no_coverage and "不能作为阴性证据" in no_coverage
+    assert "覆盖仅2" in low_coverage and "证据不足" in low_coverage
+    assert "充分覆盖（1471" in adequate_negative
+    assert "显著负证据并限制候选等级" in adequate_negative
 
 
 def test_patient_home_conclusion_is_direct_and_derived_from_current_results(tmp_path):
@@ -344,10 +369,13 @@ def test_patient_home_conclusion_is_direct_and_derived_from_current_results(tmp_
     make_patient_report(out, bundle, candidate_top_n=5)
     text = out.read_text(encoding="utf-8")
     assert "首页结论" in text
-    assert "本次分析共评估3个独立候选事件，产生3个肽段–HLA预测组合" in text
-    assert "目前未获得可直接进入首批实验的R1或R2候选" in text
-    assert "3个候选进入重点人工复核" in text
-    assert "疾病相关锚定事件GENEA::GENEB相关候选" in text
+    assert "本次分析共发现3个独立候选事件，并产生3个肽段–HLA预测组合" in text
+    assert "当前没有任何独立事件达到R1或R2计算证据等级" in text
+    assert "1个独立事件处于R3-REVIEW状态" in text
+    assert "为方便技术审阅，后文展示3个去重的Peptide–HLA组合" in text
+    assert "这3个展示组合不是3个独立候选事件，也不是3个已经确认的新抗原" in text
+    assert "<td>技术审阅展示组合</td><td>3</td>" in text
+    assert "技术审阅清单覆盖疾病相关锚定事件GENEA::GENEB相关候选" in text
     assert "2个SNV候选" in text
     assert "尚未证明相关肽段在肿瘤细胞表面真实呈递或能够诱导T细胞反应" in text
     assert "本次重点审阅：" not in text
@@ -504,20 +532,24 @@ def test_patient_disease_background_prefers_structured_clinical_context():
     assert "clinical_context.diagnosis" in basis
 
 
-def test_patient_disease_background_uses_nondefault_profile_then_rules():
+def test_patient_disease_background_does_not_treat_profile_or_rules_as_diagnosis():
     profile_bundle = ReportBundle(
         profile={"_profile_name": "/profiles/sarcoma_rna_supported.toml"},
         events=[], peptides=[], provenance={"profile": "default", "rules_name": "fallback_rules"},
     )
-    assert _patient_disease_background(profile_bundle)[0] == "分析配置：sarcoma_rna_supported"
+    result, basis = _patient_disease_background(profile_bundle)
+    assert result == "未提供"
+    assert "分析配置和分子知识库关联不会代替临床诊断" in basis
+    assert _patient_analysis_context(profile_bundle)[0] == "sarcoma_rna_supported"
 
     rules_bundle = ReportBundle(
         profile={"_profile_name": "default"}, events=[], peptides=[],
         provenance={"profile": "default", "rules": {"path": "/rules/sarcoma_consensus.toml"}},
     )
-    result, basis = _patient_disease_background(rules_bundle)
-    assert result == "分析配置：sarcoma_consensus"
-    assert "排序/分析配置" in basis
+    assert _patient_disease_background(rules_bundle)[0] == "未提供"
+    result, basis = _patient_analysis_context(rules_bundle)
+    assert result == "sarcoma_consensus"
+    assert "不代表临床诊断" in basis
 
 
 def test_patient_disease_background_does_not_guess_from_paths():
@@ -525,7 +557,7 @@ def test_patient_disease_background_does_not_guess_from_paths():
         profile={"_profile_name": "default"}, events=[], peptides=[],
         provenance={"input_files": {"tumor_bam": "/data/dsrct/patient/tumor.bam"}},
     )
-    assert _patient_disease_background(bundle)[0] == "未记录"
+    assert _patient_disease_background(bundle)[0] == "未提供"
 
 
 def test_patient_manual_review_keeps_configured_key_fusion_with_junction_guidance():
@@ -842,8 +874,13 @@ def test_patient_evidence_summary_includes_all_major_dimensions():
         "safety_state": "SAFETY_PARTIAL",
         "source_chain_confidence_tier": "C2",
     })
-    for label in ("事件=", "RNA=", "呈递=", "MT/WT=", "克隆性=", "限制性HLA=", "APPM=", "安全性=", "来源链="):
+    for label in (
+        "事件=", "RNA=", "呈递=", "MT/WT=", "限制性HLA=", "APPM=",
+        "自身相似性/正常组织风险=", "来源链=",
+    ):
         assert label in summary
+    assert "克隆性=" not in summary
+    assert "CCF=" not in summary
 
 
 def test_candidate_hla_and_appm_use_separate_sample_level_sources():
@@ -883,16 +920,15 @@ def test_patient_report_does_not_present_mhc_i_intact_as_confirmed_function(tmp_
     assert "不表示HLA-I呈递功能已被实验确认完整" in text
 
 
-def test_patient_ccf_does_not_render_supported_without_reliable_estimate():
+def test_patient_candidate_text_hides_ccf_details_regardless_of_confidence():
     bundle = _bundle()
     bundle.purity_consensus = {"status": "LOW_PURITY_REVIEW"}
     row = {**bundle.peptides[0], "clonality_state": "SUPPORTED", "ccf_estimate": "UNASSESSED", "ccf_confidence_state": "UNSPECIFIED"}
     summary = _patient_evidence_summary(row, bundle)
     limitation = _patient_limitation(row, bundle)
-    assert "克隆性=未形成可靠估计" in summary
-    assert "样本纯度低且缺少可用CCF结果" in limitation
-    assert "不作为阴性，也不作为正向加分" in limitation
-    assert "克隆性=SUPPORTED" not in summary
+    assert "克隆性" not in summary
+    assert "CCF" not in summary
+    assert "CCF" not in limitation
 
 
 def test_patient_candidate_tables_exclude_incomplete_and_do_not_advance_rows(tmp_path):
@@ -930,7 +966,7 @@ def test_patient_status_codes_are_translated_to_fixed_chinese():
     text = _patient_evidence_summary(row, bundle)
     for translated in (
         "事件获得部分支持", "RNA中检测到直接支持", "两个核心工具呈递预测一致且较强",
-        "正常组织安全性仅部分评估（具体缺口见候选说明）", "候选来源链基本合理，但关键环节尚未闭合",
+        "自身相似性与正常组织风险筛查仅部分完成（具体缺口见候选说明）", "候选来源链基本合理，但关键环节尚未闭合",
     ):
         assert translated in text
     for code in ("EVENT_PARTIAL", "RNA_CONFIRMED", "PRESENTATION_CONSISTENT_STRONG", "SAFETY_PARTIAL", "C3"):
@@ -1109,7 +1145,7 @@ def test_patient_key_gaps_describes_safety_review_signals():
     }
     gaps = _patient_key_gaps(row, _bundle())
     text = "；".join(gaps)
-    assert "连接事件安全性需按精确新生序列复核" in text
+    assert "连接事件的自身相似性与正常组织风险需按精确新生序列复核" in text
     assert "伙伴基因正常组织/HSPC表达仅作背景" in text
     assert "201.5590 TPM" not in text
     assert "160.7000 HPA_nCPM" not in text
@@ -1360,17 +1396,33 @@ def test_patient_report_contains_evidence_source_audit(tmp_path):
     assert "NetMHCstabpan" in text
 
 
-def test_patient_ccf_audit_separates_reliable_low_confidence_and_unresolved():
+def test_patient_evidence_audit_hides_candidate_level_ccf():
     rows = [
         {"ccf_estimate": "0.82", "ccf_confidence_state": "CCF_HIGH_CONFIDENCE"},
         {"ccf_estimate": "0.21", "ccf_confidence_state": "CCF_LOW_CONFIDENCE"},
         {"ccf_estimate": "", "ccf_status": "RNA_ONLY_UNRESOLVED"},
     ]
-    ccf_row = next(row for row in _patient_evidence_audit_rows(rows) if row["证据维度"] == "克隆性/CCF")
-    assert ccf_row["可作为当前分层证据"] == "1（可靠估计）"
-    assert "已计算但低置信 1" in ccf_row["尚不能作为可靠证据"]
-    assert "未形成数值或不适用 1" in ccf_row["尚不能作为可靠证据"]
-    assert "不作为正向加分或阴性结论" in ccf_row["判定口径"]
+    assert all(row["证据维度"] != "克隆性/CCF" for row in _patient_evidence_audit_rows(rows))
+
+
+def test_patient_report_uses_single_sample_level_clonality_boundary(tmp_path):
+    bundle = _bundle()
+    bundle.events = [
+        {"event_id": "E1", "event_type": "SNV", "ccf_estimate": "0.82", "ccf_confidence_state": "CCF_HIGH_CONFIDENCE"},
+        {"event_id": "E2", "event_type": "SNV", "ccf_estimate": "0.21", "ccf_confidence_state": "CCF_LOW_CONFIDENCE"},
+    ]
+    bundle.peptides[0].update({
+        "ccf_estimate": "0.82", "ccf_ci_low": "0.61", "ccf_ci_high": "0.97",
+        "ccf_confidence_state": "CCF_HIGH_CONFIDENCE", "total_cn": "3",
+    })
+    out = tmp_path / "patient_clonality_boundary.html"
+    make_patient_report(out, bundle)
+    text = out.read_text(encoding="utf-8")
+    boundary = "多数候选目前尚不能可靠判断其是否存在于大部分肿瘤细胞中，因此克隆性仍是主要证据缺口之一。"
+    assert text.count(boundary) == 1
+    assert "CCF覆盖度与缺失影响" not in text
+    assert "CCF=0.82" not in text
+    assert "95%区间 0.61-0.97" not in text
 
 
 def test_patient_evidence_audit_counts_later_tool_field_after_unassessed_placeholder():
@@ -1759,7 +1811,8 @@ def test_presentation_quantitative_row_exposes_raw_values_and_allele_uncertainty
         "netmhcpan_wt_ic50": "810", "mhcflurry_mt_affinity_percentile": "0.8",
         "mhcflurry_wt_affinity_percentile": "4.2", "mhcflurry_mt_presentation_score": "0.91",
         "mhcflurry_wt_presentation_score": "0.12", "netmhcstabpan_rank": "0.6",
-        "netmhcstabpan_score": "1.9", "prime_score": "0.72",
+        "netmhcstabpan_score": "1.9", "netmhcstabpan_wt_rank": "3.1",
+        "netmhcstabpan_wt_score": "0.4", "wildtype_peptide": "SLYATVATL", "prime_score": "0.72",
         "bigmhc_im_score": "0.81", "deepimmuno_score": "0.66",
         "mutation_position_role": "PUTATIVE_TCR_FACING",
         "wt_self_reactivity_risk_status": "WT_LOW_PREDICTED_BINDING",
@@ -1768,6 +1821,8 @@ def test_presentation_quantitative_row_exposes_raw_values_and_allele_uncertainty
     assert "IC50 MT=48 nM, WT=810 nM" in result["NetMHCpan原始值"]
     assert "EL WT/MT=10" in result["MT/WT定量比较"]
     assert "presentation score MT=0.91, WT=0.12" in result["MHCflurry原始值"]
+    assert "NetMHCstabpan rank=0.6%" in result["稳定性"]
+    assert "WT rank=3.1%" in result["稳定性"]
     assert "PRIME MT=0.72" in result["免疫原性辅助模型"]
     assert "训练覆盖/外推状态未记录" in result["HLA模型覆盖"]
     assert result["肽长/变异位置"] == "9 aa；位置=4"
@@ -1785,6 +1840,15 @@ def test_presentation_quantitative_row_flags_strong_wt_binding_without_precomput
     }, 1)
     assert "WT仍预测为强结合" in result["WT自身反应/耐受风险"]
     assert "序列位置推断" in result["突变位置结构解释"]
+
+
+def test_fusion_stability_does_not_render_missing_wt_as_percentage():
+    result = _patient_presentation_quantitative_row({
+        "event_type": "Fusion", "peptide": "DLDLGEKPY", "hla_allele": "HLA-A*01:01",
+        "netmhcstabpan_rank": "0.8", "netmhcstabpan_score": "1.2",
+    }, 1)
+    assert "WT rank=未提供%" not in result["稳定性"]
+    assert "传统点突变式WT稳定性不适用" in result["稳定性"]
 
 
 def test_fusion_safety_dimensions_separate_direct_evidence_from_partner_expression():
@@ -1807,7 +1871,23 @@ def test_fusion_safety_dimensions_separate_direct_evidence_from_partner_expressi
     assert "相似肽交叉反应风险=未评估" in text
     assert "Brain Cerebellar Hemisphere最高 201.5590 TPM（伙伴基因辅助背景，不代表跨连接肽存在）" in text
     assert "160.7000 nCPM（伙伴基因辅助背景）" in text
-    assert "直接安全证据不完整，暂不能定论（直接证据完整度 75%）" in text
+    assert "数据库风险筛查证据不完整，暂不能评价实验性脱靶或交叉反应风险（直接证据完整度 75%）" in text
+
+
+def test_patient_risk_screen_wording_does_not_claim_clinical_safety():
+    text = _patient_safety_dimensions({
+        "event_type": "SNV",
+        "normal_proteome_exact_match_status": "NOT_DETECTED",
+        "normal_transcript_junction_match_status": "NOT_DETECTED",
+        "normal_immunopeptidome_match_status": "NOT_DETECTED",
+        "similar_peptide_cross_reactivity_status": "LOW_RISK",
+        "final_safety_conclusion": "NO_DIRECT_SAFETY_SIGNAL_DETECTED",
+        "safety_evidence_completeness": "1.0",
+    })
+    assert "数据库风险筛查结论=当前数据库筛查未发现明确的同序列排除证据" in text
+    assert "尚未完成实验性脱靶和交叉反应验证" in text
+    assert "未见直接安全信号" not in text
+    assert "已证明安全" not in text
 
 
 def test_generic_fusion_artifact_review_flags_same_gene_and_complex_labels():
@@ -1890,6 +1970,12 @@ def test_disease_knowledge_prioritizes_display_without_changing_r_grade(tmp_path
         "anchors": [{
             "event": "EWSR1::WT1", "aliases": ["EWSR1--WT1"],
             "label": "DSRCT disease anchor",
+            "molecular_significance": "EWSR1::WT1是DSRCT的关键分子特征和核心致病机制事件",
+            "patient_interpretation": (
+                "检测到EWSR1::WT1融合。该融合是DSRCT的关键分子特征；"
+                "如本事件经独立方法确认，应结合病理及临床资料进行诊断整合。"
+                "本报告本身不替代病理诊断。"
+            ),
             "public_neoantigens": [{
                 "sequence": "SSYGQQSEK", "hla_prefixes": ["HLA-A*11"],
                 "evidence": "HLA-IP/MS",
@@ -1902,6 +1988,11 @@ def test_disease_knowledge_prioritizes_display_without_changing_r_grade(tmp_path
     section = text.split("当前展示2个去重候选组合", 1)[1].split("</table>", 1)[0]
     assert section.index("EWSR1::WT1") < section.index("PPP1R9B::PPP1R9B")
     assert "仅优先展示，不自动提升R等级" in text
+    assert "核心分子发现：EWSR1::WT1" in text
+    assert "如本事件经独立方法确认，应结合病理及临床资料进行诊断整合" in text
+    assert "本报告本身不替代病理诊断" in text
+    assert "结构化临床诊断" in text
+    assert "分子知识库锚定" in text
     assert "<td>R3-" in section
     assert "<td>R1</td>" not in section
     assert "<td>R2</td>" not in section

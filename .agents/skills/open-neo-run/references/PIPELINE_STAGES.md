@@ -15,6 +15,11 @@ existing modules and fine-grained Skills.
    resume regenerates the same capability-aware manifest and reuses only
    signature-matching completed stages.
 7. Candidate normalization for VCF, fusion, splice, SV or peptide entries.
+   Fusion candidates pass an explicit ORF gate: exact transcript and breakpoints,
+   translation start, frame, translated ORF, peptide-in-ORF placement and NMD
+   assessment. Candidates without this chain remain traceable in
+   `EXPLORATION_ORF_REQUIRED`, are capped at R3 and never compete in the same
+   layer as `ORF_SUPPORTED` fusion peptides.
 8. Presentation, expression, RNA, HLA/APPM, CCF and safety evidence assembly.
    Core predictor reuse is schema- and key-validated. A supplied NetMHCpan or
    MHCflurry table that maps to fewer than the minimum candidate peptide-HLA

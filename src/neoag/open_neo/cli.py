@@ -189,6 +189,8 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--snaf-python")
     run.add_argument("--altanalyze-image")
     run.add_argument("--splicemutr-workflow")
+    run.add_argument("--splicemutr-config")
+    run.add_argument("--splicemutr-samples")
     run.add_argument("--rna-threads", type=int, default=16)
     run.add_argument("--case-root")
     run.add_argument("--asset-root")

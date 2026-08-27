@@ -36,6 +36,23 @@ def _is_true(value: str | bool) -> bool:
     return str(value).strip().casefold() in {"1", "true", "yes", "y"}
 
 
+def _catalog_int(row: dict[str, str], *keys: str, default: int = 0) -> int:
+    """Read an integer from a normal-catalog row without conflating metrics."""
+    for key in keys:
+        value = row.get(key, "")
+        if str(value).strip():
+            return as_int(value, default)
+    return default
+
+
+def _catalog_float(row: dict[str, str], *keys: str) -> str:
+    for key in keys:
+        value = row.get(key, "")
+        if str(value).strip():
+            return as_float_text(value)
+    return ""
+
+
 def _assessment_status(
     *,
     detection: str,
@@ -68,8 +85,8 @@ def parse_normal_junctions(
     sample_id: str,
     genome_build: str = "GRCh38",
     coordinate_system: str = "auto",
-    source_name: str = "NormalPanel",
-    source_type: str = "PROTOCOL_MATCHED_NORMAL_PANEL",
+    source_name: str = "NormalJunctionCatalog",
+    source_type: str = "EXTERNAL_NORMAL_JUNCTION_CATALOG",
     tissue: str = "",
     critical_tissue: bool = False,
     strict: bool = False,
@@ -104,7 +121,36 @@ def parse_normal_junctions(
         if allowed_junction_ids is not None and jid not in allowed_junction_ids:
             continue
         retained += 1
-        detected = record.total_split_reads > 0
+        # recount3/GTEx catalog rows use normal_reads for the maximum observed
+        # count and normal_total_reads for the cohort sum.  These are not
+        # synonyms and must not be silently replaced by zero merely because a
+        # generic caller adapter does not know the catalog schema.
+        raw = record.row
+        junction_reads = _catalog_int(
+            raw, "normal_reads", "normal_max_reads", "junction_reads",
+            "unique_split_reads", "total_split_reads", "reads",
+            default=record.total_split_reads,
+        )
+        total_junction_reads = _catalog_int(
+            raw, "normal_total_reads", "normal_total_junction_reads",
+            "total_junction_reads", default=junction_reads,
+        )
+        sample_count = _catalog_int(
+            raw, "normal_samples", "sample_count", "positive_samples", default=0,
+        )
+        total_samples = _catalog_int(
+            raw, "total_samples", "normal_total_samples", "cohort_samples", default=0,
+        )
+        sample_prevalence = _catalog_float(raw, "sample_prevalence", "prevalence")
+        if not sample_prevalence and sample_count > 0 and total_samples > 0:
+            sample_prevalence = f"{sample_count / total_samples:.12g}"
+        normal_tissues = get(raw, "tissues", "tissue", "normal_tissue_names")
+        normal_tissue_count = _catalog_int(
+            raw, "normal_tissue_count", "normal_tissues_count", "normal_tissues", default=0,
+        )
+        if not normal_tissue_count and normal_tissues:
+            normal_tissue_count = len({x.strip() for x in normal_tissues.split(",") if x.strip()})
+        detected = junction_reads > 0 or sample_count > 0 or total_junction_reads > 0
         detection = "DETECTED" if detected else "NOT_DETECTED"
         coverage = "LOCUS_COVERAGE_UNASSESSED"
         assessment, reason = _assessment_status(
@@ -114,11 +160,20 @@ def parse_normal_junctions(
         rows.append({
             "normal_background_id": background_id, "splice_event_id": "", "junction_id": jid,
             "origin_peptide_id": "", "sample_id": sample_id, "normal_source": source_name,
-            "normal_source_type": source_type, "normal_tissue": tissue,
+            "normal_source_type": source_type,
+            "normal_tissue": tissue or get(raw, "tissue", "normal_tissue"),
             "critical_tissue": "true" if critical_tissue else "false",
             "detection_status": detection,
             "coverage_status": coverage,
-            "junction_reads": str(record.total_split_reads), "sample_prevalence": "",
+            "junction_reads": str(junction_reads),
+            "normal_total_junction_reads": str(total_junction_reads),
+            "sample_count": str(sample_count),
+            "total_samples": str(total_samples) if total_samples else "",
+            "sample_prevalence": sample_prevalence,
+            "normal_tissue_count": str(normal_tissue_count) if normal_tissue_count else "",
+            "normal_tissues": normal_tissues,
+            "source_dataset": get(raw, "dataset", "source_dataset"),
+            "reference_release": get(raw, "reference_release", "release", "dataset"),
             "kmer_prevalence": "", "assessment_status": assessment,
             "assessment_reason": reason,
             "source_file": str(p), "source_record_id": record.source_record_id,
@@ -129,7 +184,7 @@ def parse_normal_junctions(
             "evidence_group": "NORMAL_BACKGROUND", "evidence_type": "NORMAL_JUNCTION_DETECTION",
             "source_tool": source_name, "source_tool_version": "UNASSESSED", "source_file": str(p),
             "source_row_number": str(record.source_row_number), "source_record_id": record.source_record_id,
-            "provided_value": str(record.total_split_reads), "verified_value": str(record.total_split_reads),
+            "provided_value": str(total_junction_reads), "verified_value": str(junction_reads),
             "resolution_status": "RESOLVED_EXACT", "resolution_reason": rows[-1]["assessment_reason"],
             "raw_payload_sha256": record.record_sha256,
         })
@@ -192,8 +247,15 @@ def parse_normal_coverage(
             "normal_tissue": get(row, "normal_tissue", "tissue"),
             "critical_tissue": critical,
             "detection_status": detection, "coverage_status": coverage,
-            "junction_reads": str(as_int(get(row, "junction_reads", "reads"), 0)),
+            "junction_reads": str(as_int(get(row, "junction_reads", "normal_reads", "reads"), 0)),
+            "normal_total_junction_reads": str(as_int(get(row, "normal_total_junction_reads", "normal_total_reads"), 0)),
+            "sample_count": str(as_int(get(row, "sample_count", "normal_samples"), 0)),
+            "total_samples": str(as_int(get(row, "total_samples", "normal_total_samples"), 0)),
             "sample_prevalence": as_float_text(get(row, "sample_prevalence", "prevalence")),
+            "normal_tissue_count": str(as_int(get(row, "normal_tissue_count", "normal_tissues_count"), 0)),
+            "normal_tissues": get(row, "tissues", "normal_tissue", "tissue", "normal_tissue_names"),
+            "source_dataset": get(row, "source_dataset", "dataset"),
+            "reference_release": get(row, "reference_release", "release", "dataset"),
             "kmer_prevalence": as_float_text(get(row, "kmer_prevalence")),
             "assessment_status": assessment, "assessment_reason": reason,
             "source_file": str(p), "source_record_id": rid, "evidence_conflict_status": "NONE",

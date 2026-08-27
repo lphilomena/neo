@@ -101,6 +101,7 @@ PARETO_DERIVED_FIELDS = [
     "junction_authenticity_grade",
     "junction_reads_grade",
     "frame_evidence_grade",
+    "fusion_orf_gate_grade",
     "normal_junction_safety_grade",
 ]
 SOURCE_CHAIN_DIMENSION = "source_chain_confidence_grade"
@@ -116,6 +117,7 @@ PARETO_DIMENSIONS_BY_TRACK = {
     ],
     "FUSION": [
         "junction_authenticity_grade", "junction_reads_grade", "frame_evidence_grade",
+        "fusion_orf_gate_grade",
         "presentation_consensus_grade", "normal_junction_safety_grade", "hla_appm_grade",
         "evidence_completeness_grade",
     ],
@@ -178,6 +180,7 @@ CONSENSUS_FIELDS = (
     "source_chain_low_power_count", "source_chain_negative_count", "source_chain_conflict_count",
     "source_chain_not_applicable_count", "source_chain_requirement_statuses",
     "source_chain_requirement_details", "source_chain_integration_mode",
+    "fusion_orf_gate_status", "fusion_candidate_pool", "fusion_orf_gate_reason_code",
 )
 CONFLICT_FIELDS = (
     "peptide_id", "event_id", "gene", "evidence_track", "layer", "state",
@@ -347,7 +350,47 @@ def _pareto_derived_grades(
         "junction_authenticity_grade": junction_authenticity,
         "junction_reads_grade": junction_grade,
         "frame_evidence_grade": frame_grade,
+        "fusion_orf_gate_grade": 0,
         "normal_junction_safety_grade": normal_junction_grade,
+    }
+
+
+def _fusion_orf_gate(
+    biological_track: str,
+    source_chain_result: Any,
+) -> dict[str, str]:
+    if biological_track != "FUSION":
+        return {
+            "fusion_orf_gate_status": "NOT_APPLICABLE",
+            "fusion_candidate_pool": "NOT_APPLICABLE",
+            "fusion_orf_gate_reason_code": "FUSION_ORF_NOT_APPLICABLE",
+            "fusion_orf_gate_grade": "0",
+        }
+    requirement = next(
+        (item for item in source_chain_result.requirements if item.name == "fusion_transcript_orf"),
+        None,
+    )
+    status = str(getattr(requirement, "status", "UNASSESSED"))
+    reason_code = str(getattr(requirement, "reason_code", "SC_FUSION_ORF_UNASSESSED"))
+    if status == "SUPPORTED":
+        return {
+            "fusion_orf_gate_status": "FUSION_ORF_ESTABLISHED",
+            "fusion_candidate_pool": "ORF_SUPPORTED",
+            "fusion_orf_gate_reason_code": reason_code,
+            "fusion_orf_gate_grade": "3",
+        }
+    if status in {"NEGATIVE", "CONFLICT"}:
+        return {
+            "fusion_orf_gate_status": "FUSION_ORF_INVALID_OR_CONFLICT",
+            "fusion_candidate_pool": "REJECTED_ORF_INVALID",
+            "fusion_orf_gate_reason_code": reason_code,
+            "fusion_orf_gate_grade": "0",
+        }
+    return {
+        "fusion_orf_gate_status": "FUSION_ORF_UNESTABLISHED",
+        "fusion_candidate_pool": "EXPLORATION_ORF_REQUIRED",
+        "fusion_orf_gate_reason_code": reason_code,
+        "fusion_orf_gate_grade": "1",
     }
 
 
@@ -479,8 +522,13 @@ def _next_steps(
     if grade == "R4":
         return "DO_NOT_ADVANCE", "retain only for audit or mechanism-driven manual review; do not advance automatically"
     steps: list[str] = []
-    if states["rna_support"]["state"] != "RNA_CONFIRMED":
-        steps.extend(["targeted RNA", "IGV", "RT-PCR/Sanger"])
+    rna_state = states["rna_support"]["state"]
+    if rna_state == "RNA_NEGATIVE":
+        steps.extend(["deprioritize pending independent RNA confirmation", "targeted RNA or orthogonal RNA assay"])
+    elif rna_state == "RNA_LOW_SUPPORT":
+        steps.extend(["increase RNA site coverage", "targeted RNA"])
+    elif rna_state in {"RNA_UNASSESSED", "GENE_EXPRESSION_ONLY"}:
+        steps.extend(["obtain evaluable RNA site coverage", "targeted RNA", "IGV"])
     if event_track(source) == "FUSION" and not states["clonality"]["assessed"]:
         steps.extend(["RT-PCR/Sanger", "second fusion caller", "orthogonal breakpoint review"])
     if states["presentation_consensus"]["state"] in {"PRESENTATION_SINGLE_TOOL", "PRESENTATION_DISCORDANT", "PRESENTATION_UNASSESSED"}:
@@ -519,6 +567,20 @@ def _derived_grade_caps(
     source_chain_tier: str = "",
 ) -> list[tuple[str, str]]:
     caps: list[tuple[str, str]] = []
+    if track == "FUSION":
+        pool = str(source.get("fusion_candidate_pool", "")).upper()
+        if pool == "EXPLORATION_ORF_REQUIRED":
+            caps.append(("R3", "CAP_FUSION_ORF_UNESTABLISHED"))
+        elif pool == "REJECTED_ORF_INVALID":
+            caps.append(("R4", "CAP_FUSION_ORF_INVALID"))
+    if track == "SPLICE":
+        prefilter = str(source.get("splice_prefilter_status", "")).upper()
+        formal_pass = str(source.get("splice_formal_gate_pass", "")).lower() in {"yes", "true", "1"}
+        pool = str(source.get("splice_candidate_pool", "")).upper()
+        if prefilter == "REJECT" or pool == "REJECTED_SPLICE_CANDIDATE":
+            caps.append(("R4", "CAP_SPLICE_FORMAL_GATE_FAILED"))
+        elif not formal_pass and pool != "FORMAL_SPLICE_CANDIDATE":
+            caps.append(("R3", "CAP_SPLICE_FORMAL_GATE_INCOMPLETE"))
     mutation_source = str(source.get("mutation_source", "")).upper()
     ccf_resolution = str(source.get("ccf_resolution", "")).upper()
     # RNA-only origin is not itself weak evidence. A fusion with a complete C1/C2
@@ -578,8 +640,16 @@ def _derived_grade_caps(
         caps.append(("R3", "CAP_SOURCE_UNREPRODUCED"))
     if states["event_authenticity"]["state"] == "EVENT_SAMPLE_SPECIFIC":
         caps.append(("R3", "CAP_EVENT_SAMPLE_SPECIFIC"))
-    if states["rna_support"]["state"] in {"RNA_NEGATIVE", "GENE_EXPRESSION_ONLY"}:
-        caps.append(("R3", f"CAP_{states['rna_support']['state']}"))
+    rna_state = states["rna_support"]["state"]
+    rna_reason = str(states["rna_support"].get("reason_code") or "")
+    if rna_state == "RNA_NEGATIVE":
+        caps.append(("R3", "CAP_RNA_NEGATIVE_ADEQUATE_COVERAGE" if rna_reason == "RNA_NO_ALT_ADEQUATE_COVERAGE" else "CAP_RNA_NEGATIVE"))
+    elif rna_state == "RNA_LOW_SUPPORT":
+        caps.append(("R3", "CAP_RNA_LOW_COVERAGE"))
+    elif rna_state == "RNA_UNASSESSED":
+        caps.append(("R3", "CAP_RNA_NO_COVERAGE"))
+    elif rna_state == "GENE_EXPRESSION_ONLY":
+        caps.append(("R3", "CAP_GENE_EXPRESSION_ONLY"))
     return caps
 
 
@@ -631,6 +701,7 @@ def _normalized_row(
     row.update({key: str(value) for key, value in _pareto_derived_grades(
         source, states, biological_track, rules,
     ).items()})
+    row.update(_fusion_orf_gate(biological_track, source_chain_result))
     netmhcpan_rank = _first_number(
         source, "netmhcpan_mt_rank_el", "netmhcpan_el_rank", "el_rank", "binding_rank",
     )
@@ -644,7 +715,7 @@ def _normalized_row(
     cap = _strictest_cap(source)
     uncapped = _uncapped_grade(source, states, biological_track)
     derived_caps = _derived_grade_caps(
-        source,
+        row,
         states,
         biological_track,
         source_chain_result.tier
@@ -656,6 +727,12 @@ def _normalized_row(
     grade_cap = max((value for value, _ in derived_caps), key=lambda value: GRADE_ORDER[value], default="R1")
     grade = _constrained_grade(uncapped, next((name for name, value in CAP_TO_GRADE.items() if value == grade_cap), ""), bool(hard))
     action, next_steps = _next_steps(grade, source, states)
+    if row.get("fusion_candidate_pool") == "EXPLORATION_ORF_REQUIRED":
+        action = "FUSION_ORF_RECONSTRUCTION_FIRST"
+        next_steps = "; ".join(filter(None, [
+            next_steps,
+            "establish exact fusion transcript and breakpoints; confirm translation start and frame; reconstruct ORF; verify peptide placement in ORF; assess NMD",
+        ]))
     source_chain_steps = []
     if source_chain_result.tier == "C3":
         if source_chain_result.missing_requirements:
@@ -744,6 +821,8 @@ def _normalized_row(
         "source_chain_low_power_requirements", "source_chain_negative_requirements",
         "source_chain_conflict_requirements", "source_chain_not_applicable_requirements",
         "source_chain_requirement_statuses", "source_chain_requirement_details", "source_chain_integration_mode",
+        "fusion_orf_gate_status", "fusion_candidate_pool", "fusion_orf_gate_reason_code",
+        "fusion_orf_gate_grade",
         "hard_failure", "hard_failure_codes", "hard_failure_reasons", "legacy_priority_cap", "consensus_priority_cap",
         "evidence_grade_cap", "evidence_grade_cap_reasons",
         "manual_review_required", "manual_review_reason", "evidence_grade_uncapped",
@@ -844,6 +923,7 @@ def _build_evidence_rank_key(row: Mapping[str, Any]) -> str:
         str(row.get("evidence_grade", "R4")),
         str(row.get("evidence_track", "OTHER")),
         f"F{int(_number(row.get('pareto_front')) or 999999)}",
+        f"FUSION_ORF_POOL={row.get('fusion_candidate_pool', 'NOT_APPLICABLE')}",
         f"SOURCE_CHAIN={row.get('source_chain_confidence_tier', 'C3')}",
         f"{row.get('safety_state', 'UNASSESSED')}_COMPLETENESS_{int(_number(row.get('safety_completeness_grade')))}",
         str(row.get("event_authenticity_state", "EVENT_UNASSESSED")),
@@ -867,6 +947,7 @@ def _rank_key(row: Mapping[str, Any], rules: Mapping[str, Any]) -> tuple[Any, ..
         GRADE_ORDER.get(str(row.get("evidence_grade", "R4")), 4),
         str(row.get("evidence_track", "")),
         int(_number(row.get("pareto_front")) or 999999),
+        -int(_number(row.get("fusion_orf_gate_grade"))),
         -int(_number(row.get("source_chain_confidence_grade"))) if bool(_source_chain_config(rules).get("include_in_tiebreak", False)) else 0,
         -int(_number(row.get("safety_completeness_grade"))),
         -int(_number(row.get("event_authenticity_grade"))),
@@ -901,6 +982,7 @@ def _representative_fields(row: Mapping[str, Any], index: int) -> dict[str, str]
         f"{prefix}evidence_grade": _row_text(row, "evidence_grade"),
         f"{prefix}source_chain_confidence_tier": _row_text(row, "source_chain_confidence_tier"),
         f"{prefix}source_chain_confidence_label": _row_text(row, "source_chain_confidence_label"),
+        f"{prefix}fusion_candidate_pool": _row_text(row, "fusion_candidate_pool"),
         f"{prefix}pareto_front": _row_text(row, "pareto_front"),
         f"{prefix}redundancy_group": _row_text(row, "redundancy_group", "peptide_redundancy_group", "overlap_group"),
         f"{prefix}evidence_rank_key": _row_text(row, "evidence_rank_key"),
@@ -935,6 +1017,10 @@ _EVENT_REPRESENTATIVE_EVIDENCE_FIELDS = (
     "rna_ref_reads",
     "rna_alt_reads",
     "rna_vaf",
+    "rna_support_state",
+    "rna_support_grade",
+    "rna_support_reason_code",
+    "rna_support_reason",
     "rna_junction_reads",
     "junction_reads",
     "provided_rna_junction_reads",
@@ -947,6 +1033,16 @@ _EVENT_REPRESENTATIVE_EVIDENCE_FIELDS = (
     "junction_source",
     "strict_cross_validated",
     "splicemutr_structure_exact",
+    "fusion_orf_gate_status",
+    "fusion_candidate_pool",
+    "fusion_orf_gate_reason_code",
+    "fusion_orf_gate_grade",
+    "transcript_hypothesis_id",
+    "fusion_transcript_id",
+    "orf_id",
+    "fusion_protein_sequence",
+    "start_codon_status",
+    "nmd_risk_status",
 )
 
 
@@ -1014,6 +1110,9 @@ def _event_output(peptides: list[dict[str, str]], deduplicate: bool) -> list[dic
             "source_chain_missing_requirements": _row_text(best, "source_chain_missing_requirements"),
             "source_chain_hard_failure": _row_text(best, "source_chain_hard_failure"),
             "source_chain_hard_failure_codes": _row_text(best, "source_chain_hard_failure_codes"),
+            "fusion_orf_gate_status": _row_text(best, "fusion_orf_gate_status"),
+            "fusion_candidate_pool": _row_text(best, "fusion_candidate_pool"),
+            "fusion_orf_gate_reason_code": _row_text(best, "fusion_orf_gate_reason_code"),
             "best_pareto_front": best["pareto_front"],
             "best_evidence_rank_key": best["evidence_rank_key"],
             "peptide_count": str(len(group)),

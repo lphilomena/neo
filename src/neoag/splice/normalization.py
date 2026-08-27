@@ -49,6 +49,9 @@ from .registry import (
 from .gtf_annotation import resolve_gtf_junction_strands
 
 
+NO_NORMAL_COHORT = "UNASSESSED_NO_COMPATIBLE_NORMAL_RNA_COHORT"
+
+
 @dataclass(frozen=True)
 class SpliceSource:
     tool: str
@@ -221,15 +224,17 @@ def _normal_status(
         return "DETECTED"
     if normal_resolvable_rows > 0:
         # A panel-level absence is not proof of adequate locus coverage.
-        return "NOT_DETECTED_COVERAGE_UNASSESSED"
+        return "NOT_LISTED_IN_NORMAL_CATALOG"
     return "UNASSESSED"
 
 
 def _normal_specificity(status: str) -> str:
     if status == "DETECTED":
         return "0.1"
-    if status == "NOT_DETECTED_COVERAGE_UNASSESSED":
-        return "0.6"
+    if status == "NOT_LISTED_IN_NORMAL_CATALOG":
+        # Presence-only catalog non-membership is neutral, not positive
+        # tumor-specificity evidence.
+        return "0.5"
     return "0.5"
 
 
@@ -303,6 +308,7 @@ def _event_source_row(
     registry: JunctionRegistry,
     primary_tools: set[str],
     normal_status: str,
+    normal_cohort_status: str,
 ) -> dict[str, str]:
     record = item.record
     junction = item.resolution.junction
@@ -340,6 +346,16 @@ def _event_source_row(
         "clonality": "0.5",
         "persistence": "0.5",
         "tumor_specificity": _normal_specificity(normal_status),
+        "tumor_specificity_status": normal_cohort_status,
+        "cohort_analysis_status": normal_cohort_status,
+        "normal_junction_assessment_status": (
+            "NOT_LISTED_CATALOG_COVERAGE_UNASSESSED"
+            if normal_status == "NOT_LISTED_IN_NORMAL_CATALOG" else normal_status
+        ),
+        "normal_safety_grade": "N1",
+        "splice_consensus_tier": "R3",
+        "priority_cap": "R3",
+        "safety_priority_cap": "R3",
         "source": f"splice_source:{record.source_tool}",
         **_junction_fields(item),
         **_support_fields(item, registry, primary_tools),
@@ -365,6 +381,7 @@ def _peptide_source_row(
     registry: JunctionRegistry,
     primary_tools: set[str],
     event: dict[str, str],
+    normal_cohort_status: str,
 ) -> tuple[dict[str, str] | None, dict[str, str] | None, dict[str, str] | None]:
     metadata = peptide_metadata(item.record)
     peptide = metadata["peptide"].strip().upper()
@@ -397,6 +414,17 @@ def _peptide_source_row(
             ["contains_novel_aa", "Contains Novel AA"],
             "",
         ),
+        "structural_novelty_status": (
+            "ALTERED_JUNCTION_SPANNING_SEQUENCE"
+            if str(metadata["crosses_junction"]).strip().lower() in {"1", "true", "yes", "y", "pass"}
+            else "UNASSESSED"
+        ),
+        "tumor_specificity_status": normal_cohort_status,
+        "cohort_analysis_status": normal_cohort_status,
+        "priority_cap": "R3",
+        "safety_priority_cap": "R3",
+        "normal_safety_grade": "N1",
+        "splice_consensus_tier": "R3",
         "hla_allele": hla,
         "mhc_class": _mhc_class(hla),
         "source_tool": item.record.source_tool,
@@ -433,6 +461,20 @@ def _peptide_source_row(
         row["rna_junction_source"] = ""
 
     enriched = enrich_peptide_layers(row, event)
+    if normal_cohort_status == NO_NORMAL_COHORT:
+        enriched.update({
+            "mutant_specificity_status": "UNASSESSED",
+            "mutant_specificity_gate_status": "REVIEW_REQUIRED",
+            "mutant_specificity_reason": (
+                "Structural splice novelty does not establish tumor specificity without a "
+                "compatible normal RNA cohort."
+            ),
+            "mutant_specificity_priority_cap": "R3",
+            "priority_cap": "R3",
+            "safety_priority_cap": "R3",
+            "normal_safety_grade": "N1",
+            "splice_consensus_tier": "R3",
+        })
     match_like = type(
         "JunctionMatch",
         (),
@@ -697,6 +739,7 @@ def normalize_splice_sources(
     """Normalize splice sources and emit canonical entities plus full provenance."""
 
     out = Path(outdir)
+    normal_cohort_status = NO_NORMAL_COHORT
     out.mkdir(parents=True, exist_ok=True)
     primary_path = Path(junctions)
     if not primary_path.is_file():
@@ -862,6 +905,7 @@ def normalize_splice_sources(
                 registry=registry,
                 primary_tools=primary_tools,
                 normal_status=status,
+                normal_cohort_status=normal_cohort_status,
             )
         )
 
@@ -883,6 +927,7 @@ def normalize_splice_sources(
             registry=registry,
             primary_tools=primary_tools,
             event=event_by_id[item.event_id],
+            normal_cohort_status=normal_cohort_status,
         )
         if peptide is not None:
             peptide_source_rows.append(peptide)
@@ -1050,6 +1095,7 @@ def normalize_splice_sources(
         {"metric": "normal_resolvable_rows", "value": str(normal_resolvable_rows)},
         {"metric": "normal_exact_tumor_junction_hits", "value": str(len(normal_detected))},
         {"metric": "normal_scan_mode", "value": normal_scan_mode},
+        {"metric": "normal_cohort_status", "value": normal_cohort_status},
         {
             "metric": "normal_background_records_materialized",
             "value": str(sum(item.role == "normal_background" for item in normalized)),
@@ -1135,7 +1181,7 @@ def normalize_splice_sources(
         paths["provenance_manifest"],
         {
             "schema_version": CANONICAL_JUNCTION_SCHEMA_VERSION,
-            "software_version": "0.4.4",
+            "software_version": "0.5.3-splicemutr-normal-p0",
             "sample_id": sample_id,
             "profile_name": profile_name,
             "genome_build": genome_build,
@@ -1152,7 +1198,10 @@ def normalize_splice_sources(
             "evidence_policy": {
                 "verified_rna_junction_reads": "primary exact canonical junction only",
                 "caller_provided_unverified_reads": "provided_rna_junction_reads only",
-                "normal_panel_absence": "NOT_DETECTED_COVERAGE_UNASSESSED unless per-locus coverage is supplied",
+                "normal_catalog_nonmembership": "NOT_LISTED_IN_NORMAL_CATALOG; neutral evidence",
+                "normal_negative": "requires explicit adequate per-locus coverage",
+                "normal_cohort_status": normal_cohort_status,
+                "missing_normal_cohort_cap": "normal=N1; final=R3",
             },
             "junction_strand_annotation": {
                 "gtf": str(annotation_gtf or ""),

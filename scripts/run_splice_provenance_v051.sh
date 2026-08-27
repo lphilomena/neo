@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# NeoAg v0.5.2-p0 production driver: RNA-driven, DNA-causal and normal-background chains.
+# NeoAg v0.5.3 SpliceMutr-normal P0 driver: RNA-driven, DNA-causal and coverage-aware normal chains.
 set -euo pipefail
 
 usage() {

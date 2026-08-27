@@ -17,7 +17,7 @@ def parse_netmhcstabpan(path: str | Path, sample_id: str = "") -> list[dict[str,
             continue
         parts = split_ws_or_tab(line)
         low = [x.lower() for x in parts]
-        if "peptide" in low and any(x in low for x in ["hla", "allele"]):
+        if "peptide" in low and any(x in low for x in ["hla", "allele", "hla_allele"]):
             header = parts
             continue
         if header:
@@ -39,7 +39,13 @@ def parse_netmhcstabpan(path: str | Path, sample_id: str = "") -> list[dict[str,
         else:
             continue
         peptide = rec.get("Peptide") or rec.get("peptide") or ""
-        allele = rec.get("HLA") or rec.get("allele") or rec.get("Allele") or ""
+        allele = (
+            rec.get("HLA")
+            or rec.get("allele")
+            or rec.get("Allele")
+            or rec.get("hla_allele")
+            or ""
+        )
         if not peptide or not allele:
             continue
         rank = (
@@ -47,11 +53,12 @@ def parse_netmhcstabpan(path: str | Path, sample_id: str = "") -> list[dict[str,
             or rec.get("Percentile_rank")
             or rec.get("%Rank")
             or rec.get("rank")
+            or rec.get("netmhcstabpan_rank")
             or "99"
         )
-        score = rec.get("score") or rec.get("Score") or "0"
+        score = rec.get("score") or rec.get("Score") or rec.get("netmhcstabpan_score") or "0"
         rows.append({
-            "sample_id": sample_id,
+            "sample_id": sample_id or rec.get("sample_id", ""),
             "peptide": peptide,
             "hla_allele": allele,
             "peptide_hla_key": safe_id(f"{peptide}_{allele}"),

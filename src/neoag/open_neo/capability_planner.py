@@ -73,7 +73,7 @@ REFERENCE_ALIASES = {
     "normal_junctions": ("normal_junctions",),
 }
 
-INPUT_REFERENCE_KEYS = set(REFERENCE_ALIASES) | {"normal_readthrough", "snaf_workflow", "snaf_db", "snaf_python", "altanalyze_image", "splicemutr_workflow"}
+INPUT_REFERENCE_KEYS = set(REFERENCE_ALIASES) | {"normal_readthrough", "snaf_workflow", "snaf_db", "snaf_python", "altanalyze_image", "splicemutr_workflow", "splicemutr_config", "splicemutr_samples"}
 RAW_INPUT_KEYS = {
     "tumor_dna_bam", "normal_dna_bam", "tumor_rna_bam",
     "tumor_dna_fastq", "normal_dna_fastq", "tumor_rna_fastq",

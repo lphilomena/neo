@@ -38,7 +38,7 @@ def test_parallel_consensus_is_technical_only(tmp_path: Path) -> None:
     assert "Experimental parallel evidence-consensus ranking" not in patient
     assert "ranked_peptides.evidence_consensus.tsv" not in patient
     assert "Experimental parallel evidence-consensus ranking" in technical
-    assert "does not replace the current primary weighted ranking" in technical
+    assert "use the evidence-consensus ranking as the primary final ranking" in technical
     assert "has not been experimentally calibrated" in technical
     assert "only for algorithm comparison and candidate review" in technical
     assert "ranked_peptides.evidence_consensus.tsv" in technical

@@ -11,7 +11,16 @@
     {
       "event": "EWSR1::WT1",
       "aliases": ["EWSR1--WT1", "EWSR1_WT1"],
-      "label": "DSRCT disease anchor: pathognomonic EWSR1::WT1 driver fusion",
+      "label": "DSRCT关键分子锚定事件：EWSR1::WT1融合",
+      "molecular_significance": "EWSR1::WT1是DSRCT的关键分子特征和核心致病机制事件",
+      "patient_interpretation": "检测到EWSR1::WT1融合。该融合是DSRCT的关键分子特征；如本事件经独立方法确认，应结合病理及临床资料进行诊断整合。本报告本身不替代病理诊断。",
+      "diagnostic_boundary": "分子知识库关联不等同于本报告已经建立结构化临床诊断，也不能替代病理诊断。",
+      "references": [
+        {
+          "name": "NCI Childhood Soft Tissue Sarcoma Treatment (PDQ)",
+          "url": "https://www.cancer.gov/types/soft-tissue-sarcoma/hp/child-soft-tissue-treatment-pdq"
+        }
+      ],
       "review_priority": 1,
       "public_neoantigens": [
         {

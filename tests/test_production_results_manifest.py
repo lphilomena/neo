@@ -83,6 +83,26 @@ def test_generator_and_runner_reuse_immunogenicity_evidence_independently(tmp_pa
     assert (final / "presentation/deepimmuno_evidence.tsv").read_text() == deep.read_text()
 
 
+def test_generator_propagates_paired_vcf_sample_roles(tmp_path):
+    hla = write(tmp_path / "hla.txt", "HLA-A*02:01\n")
+    purity = write(tmp_path / "purity.tsv", "sample_id\tpurity\tploidy\nS1\t0.60\t2.0\n")
+    cnv = write(tmp_path / "cnv.tsv", "chrom\tstart\tend\ttotal_cn\nchr1\t1\t1000\t2\n")
+    lohhla = write(tmp_path / "lohhla.tsv", "hla_allele\tloh_status\nHLA-A*02:01\tretained\n")
+    spechla_loh = write(tmp_path / "spechla_loh.tsv", "hla_allele\tloh_status\nHLA-A*02:01\tretained\n")
+    vcf = write(tmp_path / "somatic.vcf", "##fileformat=VCFv4.2\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tblood\ttumor\n")
+    output = tmp_path / "production.toml"
+    subprocess.run([
+        sys.executable, str(ROOT / "scripts/generate_production_from_results_manifest.py"),
+        "--project-root", str(ROOT), "--sample-id", "S1", "--outdir", str(tmp_path / "run"),
+        "--output", str(output), "--hla-file", str(hla), "--purity", str(purity), "--cnv", str(cnv),
+        "--lohhla", str(lohhla), "--spechla-loh", str(spechla_loh), "--somatic-vcf", str(vcf),
+        "--tumor-sample-name", "tumor", "--normal-sample-name", "blood",
+    ], check=True)
+    command = tomllib.loads(output.read_text(encoding="utf-8"))["stages"]["snv_indel_candidates"]["command"]
+    assert '--tumor-sample-name "tumor"' in command
+    assert '--normal-sample-name "blood"' in command
+
+
 def test_generator_filters_splice_candidates_before_production_scoring(tmp_path):
     hla = write(tmp_path / "hla.txt", "HLA-A*02:01\n")
     facets = write(tmp_path / "facets/facets_purity.txt", "purity\t0.60\n").parent
@@ -294,6 +314,11 @@ def test_generator_unions_existing_fusion_callers_including_jaffal(tmp_path):
     spechla_loh = write(tmp_path / "spechla_loh.tsv", "hla_allele\tloh_status\nHLA-A*02:01\tretained\n")
     jaffal = write(tmp_path / "long-rna/jaffal/output/jaffa_results.csv", "fusion genes,chrom1,base1,chrom2,base2,spanning reads,classification\nEWSR1::WT1,chr22,100,chr11,200,15,HighConfidence\nNOISE::EVENT,chr1,10,chr2,20,2,PotentialTransSplicing\n")
     caller_root = tmp_path / "long-rna"
+    stabpan = write(
+        tmp_path / "netmhcstabpan_evidence.tsv",
+        "sample_id\tpeptide\thla_allele\tnetmhcstabpan_score\tnetmhcstabpan_rank\n"
+        "S1\tAAAAAAAAA\tHLA-A*02:01\t0.8\t0.7\n",
+    )
     output = tmp_path / "production.toml"
     subprocess.run([
         sys.executable, str(ROOT / "scripts/generate_production_from_results_manifest.py"),
@@ -301,8 +326,11 @@ def test_generator_unions_existing_fusion_callers_including_jaffal(tmp_path):
         "--output", str(output), "--hla-file", str(hla), "--purity", str(purity), "--cnv", str(cnv),
         "--lohhla", str(lohhla), "--spechla-loh", str(spechla_loh),
         "--jaffal", str(jaffal), "--fusion-caller-root", str(caller_root),
+        "--skip-netmhcstabpan", "--netmhcstabpan-evidence", str(stabpan),
     ], check=True)
     manifest = tomllib.loads(output.read_text(encoding="utf-8"))
+    assert manifest["evidence"]["netmhcstabpan"] == str(stabpan)
+    assert "NETMHCSTABPAN_LOCAL_UNAVAILABLE" not in manifest["run"].get("production_limitations", [])
     fusion = manifest["stages"]["fusion_candidates"]
     assert "build_fusion_caller_union.py" in fusion["command"]
     assert "--jaffal" in fusion["command"]

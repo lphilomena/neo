@@ -74,6 +74,8 @@ PATH_ALIASES: dict[str, tuple[str, ...]] = {
     "snaf_python": ("snaf_python",),
     "altanalyze_image": ("altanalyze_image",),
     "splicemutr_workflow": ("splicemutr_workflow",),
+    "splicemutr_config": ("splicemutr_config",),
+    "splicemutr_samples": ("splicemutr_samples",),
     "production_manifest": ("production_manifest",),
     "result_dir": ("result_dir", "results"),
     "comprehensive_evidence": ("comprehensive_evidence", "all_tool_results"),

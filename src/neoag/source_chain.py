@@ -811,17 +811,88 @@ def _normal_background_requirement(row: Mapping[str, Any], *, track: str, mandat
 
 
 def _fusion_frame_orf_requirement(row: Mapping[str, Any]) -> RequirementAssessment:
-    fields = _present(row, "frame_status", "rna_frame_status", "bp1_frame", "bp2_frame", "gene5", "gene3", "exon_boundary", "fusion_protein_sequence", "orf_id", "transcript_hypothesis_id", "orientation_status")
+    fields = _present(
+        row,
+        "frame_status", "rna_frame_status", "bp1_frame", "bp2_frame", "gene5", "gene3",
+        "exon_boundary", "breakpoint1", "breakpoint2", "fusion_protein_sequence",
+        "protein_sequence", "translated_sequence", "orf_protein_sequence", "orf_id",
+        "transcript_hypothesis_id", "fusion_transcript_id", "transcript_id",
+        "orientation_status", "start_codon_status", "translation_start_status",
+        "orf_start_status", "nmd_risk_status", "nmd_status", "peptide", "mutant_peptide",
+    )
     text = _text(row, "frame_status", "rna_frame_status", "orientation_status", "orf_status")
+    def first_raw(*names: str) -> str:
+        return next((_raw(row, name) for name in names if _raw(row, name)), "")
+    transcript = first_raw("transcript_hypothesis_id", "fusion_transcript_id", "transcript_id", "ftid")
+    breakpoint1 = first_raw("breakpoint1", "breakpoint_5p", "breakpoint5", "bp1")
+    breakpoint2 = first_raw("breakpoint2", "breakpoint_3p", "breakpoint3", "bp2")
+    protein = first_raw(
+        "fusion_protein_sequence", "orf_protein_sequence", "translated_sequence", "protein_sequence",
+    ).upper().split("*", 1)[0]
+    peptide = first_raw("peptide", "mutant_peptide", "mt_peptide").upper()
+    orf_id = first_raw("orf_id", "fusion_orf_id")
+    start_text = _text(row, "start_codon_status", "translation_start_status", "orf_start_status")
+    nmd_text = _text(row, "nmd_risk_status", "nmd_status", "transcript_decay_status")
+    frame_supported = any(
+        token in text for token in ("IN_FRAME", "IN-FRAME", "INFRAME", "FRAME_CONFIRMED", "VALID")
+    )
+    start_supported = protein.startswith("M") or any(
+        token in start_text for token in ("SUPPORTED", "VALID", "CANONICAL", "IN_FRAME", "CONFIRMED")
+    )
+    nmd_high = any(token in nmd_text for token in ("HIGH_RISK", "NMD_LIKELY", "NMD_TRIGGERED", "DEGRADED"))
+    nmd_assessed = bool(nmd_text) and not any(
+        token in nmd_text for token in ("UNASSESSED", "UNKNOWN", "NOT_AVAILABLE", "MISSING")
+    )
     if any(token in text for token in ("WRONG", "INVALID", "IMPOSSIBLE", "FRAME_ERROR", "ORF_INVALID")):
         return _assessment("fusion_transcript_orf", "5'/3' orientation, exon connection, reading frame and fusion ORF", NEGATIVE, "SC_FUSION_ORF_INVALID", text, fields, fatal_if_negative=True)
     if any(token in text for token in _CONFLICT_TOKENS):
         return _assessment("fusion_transcript_orf", "5'/3' orientation, exon connection, reading frame and fusion ORF", CONFLICT, "SC_FUSION_ORF_CONFLICT", text, fields, fatal_if_conflict=True)
-    if any(token in text for token in ("IN_FRAME", "IN-FRAME", "INFRAME", "FRAME_CONFIRMED", "VALID")) and (_raw(row, "fusion_protein_sequence") or _raw(row, "orf_id") or _raw(row, "transcript_hypothesis_id")):
-        return _assessment("fusion_transcript_orf", "5'/3' orientation, exon connection, reading frame and fusion ORF", SUPPORTED, "SC_FUSION_ORF_RECONSTRUCTED", text, fields, fatal_if_negative=True)
-    if any(token in text for token in ("IN_FRAME", "IN-FRAME", "INFRAME", "FRAME_CONFIRMED")):
-        return _assessment("fusion_transcript_orf", "5'/3' orientation, exon connection, reading frame and fusion ORF", INDETERMINATE_LOW_POWER, "SC_FUSION_FRAME_ONLY_ORF_INCOMPLETE", text, fields, fatal_if_negative=True)
-    return _assessment("fusion_transcript_orf", "5'/3' orientation, exon connection, reading frame and fusion ORF", UNASSESSED, "SC_FUSION_ORF_UNASSESSED", "Fusion orientation/frame/ORF incomplete", fields, fatal_if_negative=True)
+    if protein and peptide and peptide not in protein:
+        return _assessment(
+            "fusion_transcript_orf", "5'/3' orientation, exon connection, translation start, reading frame, fusion ORF and peptide placement",
+            NEGATIVE, "SC_FUSION_PEPTIDE_NOT_IN_ORF",
+            "Reported peptide is absent from the reconstructed fusion ORF", fields,
+            fatal_if_negative=True,
+        )
+    complete = bool(
+        transcript and breakpoint1 and breakpoint2 and frame_supported and orf_id and protein
+        and peptide and peptide in protein and start_supported and nmd_assessed and not nmd_high
+    )
+    if complete:
+        return _assessment(
+            "fusion_transcript_orf", "5'/3' orientation, exon connection, translation start, reading frame, fusion ORF and peptide placement",
+            SUPPORTED, "SC_FUSION_ORF_PEPTIDE_CHAIN_RECONSTRUCTED",
+            f"transcript={transcript}; ORF={orf_id}; peptide_in_orf=yes; start_supported=yes; NMD={nmd_text}",
+            fields, fatal_if_negative=True,
+        )
+    if nmd_high:
+        return _assessment(
+            "fusion_transcript_orf", "5'/3' orientation, exon connection, translation start, reading frame, fusion ORF and peptide placement",
+            INDETERMINATE_LOW_POWER, "SC_FUSION_ORF_NMD_HIGH_RISK",
+            f"Fusion ORF may be degraded by NMD: {nmd_text}", fields, fatal_if_negative=True,
+        )
+    partial = any((transcript, breakpoint1, breakpoint2, frame_supported, orf_id, protein, peptide))
+    if partial:
+        missing = []
+        for present, label in (
+            (transcript, "transcript"), (breakpoint1 and breakpoint2, "exact_breakpoints"),
+            (frame_supported, "frame"), (orf_id, "orf_id"), (protein, "translated_orf"),
+            (peptide and protein and peptide in protein, "peptide_in_orf"),
+            (start_supported, "translation_start"), (nmd_assessed, "nmd_assessment"),
+        ):
+            if not present:
+                missing.append(label)
+        return _assessment(
+            "fusion_transcript_orf", "5'/3' orientation, exon connection, translation start, reading frame, fusion ORF and peptide placement",
+            INDETERMINATE_LOW_POWER, "SC_FUSION_ORF_CHAIN_INCOMPLETE",
+            "Missing or unresolved: " + ",".join(missing), fields, fatal_if_negative=True,
+        )
+    return _assessment(
+        "fusion_transcript_orf", "5'/3' orientation, exon connection, translation start, reading frame, fusion ORF and peptide placement",
+        UNASSESSED, "SC_FUSION_ORF_UNASSESSED",
+        "Fusion transcript, translation start, frame, ORF and peptide placement are unavailable",
+        fields, fatal_if_negative=True,
+    )
 
 
 def _fusion_requirements(row: Mapping[str, Any], rules: Mapping[str, Any]) -> list[RequirementAssessment]:

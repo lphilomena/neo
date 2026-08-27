@@ -9,7 +9,7 @@ PORTABLE_ENVS="${NEOAG_CONDA_ENVS_PATH:-${CONDA_ENVS_PATH:-}}"
 [[ -z "$PORTABLE_ENVS" ]] || export CONDA_ENVS_PATH="$PORTABLE_ENVS"
 ENV_NAME="${NEOAG_SPLICEMUTR_ENV:-neoag-splicemutr}"
 REF="${NEOAG_SPLICEMUTR_REF:-ac0d17005cb37810bc1e6c9a50d7707f8bd3ae66}"
-PACKAGE_URL="${NEOAG_SPLICEMUTR_PACKAGE_URL:-https://codeload.github.com/FertigLab/splicemutr/tar.gz/${REF}}"
+PACKAGE_URL="${NEOAG_SPLICEMUTR_PACKAGE_URL:-https://github.com/FertigLab/splicemutr/archive/${REF}.tar.gz}"
 ARCHIVE="${NEOAG_SPLICEMUTR_ARCHIVE:-${TOOLS_ROOT}/sources/SpliceMutr-${REF}.tar.gz}"
 GENOMEINFO_ARCHIVE="${NEOAG_GENOMEINFODBDATA_ARCHIVE:-${TOOLS_ROOT}/sources/GenomeInfoDbData_1.2.11.tar.gz}"
 GENOMEINFO_URL="${NEOAG_GENOMEINFODBDATA_URL:-https://bioconductor.statistik.tu-dortmund.de/packages/3.18/data/annotation/src/contrib/GenomeInfoDbData_1.2.11.tar.gz}"
@@ -203,7 +203,7 @@ for assignment in \
   "NEOAG_SPLICEMUTR_ENV=${ENV_NAME}" \
   "NEOAG_SPLICEMUTR_HOME=${HOME_DIR}" \
   "NEOAG_SPLICEMUTR_BIN=${BIN_DIR}/splicemutr-neoag" \
-  "SPLICEMUTR_WORKFLOW=${HOME_DIR}/simulation/running_splicemutr/run_splicemutr.smk"; do
+  "SPLICEMUTR_WORKFLOW=${ROOT}/workflows/splicemutr/SpliceMutr.smk"; do
   key="${assignment%%=*}"; value="${assignment#*=}"
   if grep -q "^export ${key}=" "${TOOLS_ENV}" 2>/dev/null; then
     sed -i "s|^export ${key}=.*|export ${key}=\"${value}\"|" "${TOOLS_ENV}"

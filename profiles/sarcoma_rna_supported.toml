@@ -98,13 +98,14 @@ failure_multiplier = 0.10
 
 [immunogenicity]
 enabled = true
-sources = ["prime", "bigmhc_im"]
+sources = ["prime", "bigmhc_im", "deepimmuno"]
 composite = "mean"
-use_iedb_fallback = false
+use_iedb_fallback = true
 
 [immunogenicity.weights]
-prime = 0.5
-bigmhc_im = 0.5
+prime = 0.35
+bigmhc_im = 0.35
+deepimmuno = 0.30
 
 [immune_escape]
 therapy_context = "vaccine"

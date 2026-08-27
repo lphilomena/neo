@@ -232,7 +232,12 @@ fi
 export NEOAG_LICENSED_ROOT="${NEOAG_LICENSED_ROOT:-${NEOAG_PROJECT_ROOT}/licensed_tools}"
 export NETCHOP_HOME="${NETCHOP_HOME:-${NEOAG_LICENSED_ROOT}/netchop/netchop-3.1}"
 export NETCHOP="${NETCHOP:-${NETCHOP_HOME}/Linux_x86_64}"
-export NETCHOP_BIN="${NETCHOP_BIN:-${NEOAG_TOOLS_ROOT}/bin/netChop}"
+export NETCHOP_BIN="${NETCHOP_BIN:-${NEOAG_NETCHOP_BIN:-${NEOAG_TOOLS_ROOT}/bin/netChop}}"
+if [[ -d "${NETCHOP}/bin" ]]; then
+  export PATH="${NETCHOP}/bin:${PATH}"
+elif [[ -d "${NEOAG_TOOLS_ROOT}/bin" ]]; then
+  export PATH="${NEOAG_TOOLS_ROOT}/bin:${PATH}"
+fi
 
 export NEOAG_SPLICEMUTR_ENV="${NEOAG_SPLICEMUTR_ENV:-neoag-splicemutr}"
 export NEOAG_SPLICEMUTR_HOME="${NEOAG_SPLICEMUTR_HOME:-${NEOAG_TOOLS_ROOT}/tools/SpliceMutr}"

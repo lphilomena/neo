@@ -1,0 +1,20 @@
+{
+  "release": "0.5.3-splicemutr-normal-p0",
+  "base_release": "0.5.2-p0",
+  "scope": "SpliceMutr/SNAF first-layer normal RNA handling without a compatible normal cohort",
+  "schema": "resources/splice_provenance_v053_splicemutr_normal_p0.schema.json",
+  "documentation": "docs/SPLICEMUTR_NORMAL_P0_FIXES.md",
+  "migration_script": "scripts/migrate_splicemutr_normal_p0.py",
+  "source_patch": "PATCH_FROM_NEOAG_SPLICE_P0_0.5.2.diff",
+  "regression_test": "tests/test_splicemutr_normal_p0_unittest.py",
+  "invariants": {
+    "exact_canonical_junction_only": true,
+    "catalog_nonmembership_is_positive_evidence": false,
+    "adequate_coverage_required_for_normal_negative": true,
+    "structural_novelty_separate_from_tumor_specificity": true,
+    "missing_compatible_normal_cohort_status": "UNASSESSED_NO_COMPATIBLE_NORMAL_RNA_COHORT",
+    "maximum_normal_safety_grade_without_cohort": "N1",
+    "maximum_final_tier_without_cohort": "R3",
+    "normal_junction_reference_release": "recount3_GTEx_v8_GRCh38"
+  }
+}

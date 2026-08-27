@@ -45,10 +45,38 @@ bash scripts/verify_snaf_splicemutr_assets.sh
 
 ## SpliceMutr
 
-SpliceMutr is cohort-oriented. A site-reviewed Snakemake workflow must be
-provided through `--splicemutr-workflow`; it must consume the BAM and junction
-paths exported by the wrapper and write `splicemutr_candidates.tsv` to
-`NEOAG_SPLICEMUTR_OUTDIR`.
+The release includes a production cohort workflow at
+`workflows/splicemutr/SpliceMutr.smk`. It runs STAR-junction conversion,
+LeafCutter differential intron usage, official SpliceMutr transcript/ORF
+reconstruction and exports `splicemutr_candidates.tsv` for NeoAg.
+
+Copy and edit both templates before execution:
+
+```text
+configs/workflows/splicemutr.cohort.example.yaml
+configs/workflows/splicemutr.samples.example.tsv
+```
+
+The sample sheet requires `sample_id`, `role` (`normal` or `tumor`) and the
+matching STAR `SJ.out.tab`. Normal samples are always written first as the
+LeafCutter reference group. Production defaults require at least two normal
+samples and one tumor sample; `allow_low_power: true` is available for method
+development but is marked `LOW_POWER` and must not be called cross-validated.
+
+Run directly:
+
+```bash
+splicemutr-neoag workflow workflows/splicemutr/SpliceMutr.smk \
+  --configfile configs/workflows/splicemutr.cohort.yaml --cores 16
+```
+
+Or through Skill2:
+
+```bash
+open-neo run ... \
+  --splicemutr-config configs/workflows/splicemutr.cohort.yaml \
+  --splicemutr-samples configs/workflows/splicemutr.samples.tsv
+```
 
 Do not label a single tumor sample as cross-validated SpliceMutr evidence.
 Without a compatible cohort or normal-control junction matrix, the branch is
@@ -67,11 +95,40 @@ open-neo run \
   --snaf-db "$OPEN_NEO_REFERENCE_ROOT/data/snaf/reference/data" \
   --snaf-python "$OPEN_NEO_WORK_ROOT/envs/neoag-snaf/bin/python" \
   --altanalyze-image neoag-altanalyze:snaf \
-  --normal-junctions "$OPEN_NEO_REFERENCE_ROOT/data/normal/junctions/normal_junctions.gtex_v11_combined.tsv" \
+  --normal-junctions "$OPEN_NEO_REFERENCE_ROOT/data/normal/junctions/normal_junctions.recount3_gtex_v8_grch38.tsv" \
   --mode execute --approved --outdir results/CASE001
 ```
 
-For a licensed or locally reviewed SpliceMutr deployment, add:
+The junction catalog above is a recount3 re-quantification of GTEx v8 RNA-seq,
+not the separately versioned GTEx v11 expression reference. Its filename,
+metadata and run manifest must retain `recount3_GTEx_v8_GRCh38`. Catalog
+non-membership is reported as `NOT_LISTED_IN_NORMAL_CATALOG`; it is never
+treated as an adequate-coverage negative or as proof of tumor specificity.
+
+When no compatible normal RNA cohort is available, structural novelty and
+tumor specificity remain separate. An altered junction-spanning sequence may
+be retained for discovery, but its tumor-specificity state is
+`UNASSESSED_NO_COMPATIBLE_NORMAL_RNA_COHORT`, normal safety is at most N1 and
+the final evidence grade is capped at R3.
+
+## Formal Splice gate
+
+Formal candidates must pass the ordered biological funnel before HLA
+presentation is interpreted as candidate support:
+
+```text
+exact junction -> unique reads -> total junction coverage -> PSI ->
+coverage-qualified matched normal -> coverage-aware normal cohort ->
+annotated normal isoform exclusion -> ORF/frame -> NMD ->
+junction-spanning peptide -> normal proteome/transcriptome -> HLA presentation
+```
+
+`FORMAL_SPLICE_CANDIDATE` is reserved for events that pass every prerequisite.
+Rows with missing fields remain in `EXPLORATION_EVIDENCE_INCOMPLETE`; optional
+HLA predictions may be retained for technical review, but are capped at R3 and
+are not counted as formal presentation passes in patient reports.
+
+To override the bundled workflow with a reviewed site-specific implementation, add:
 
 ```bash
   --splicemutr-workflow configs/workflows/splicemutr.site.smk

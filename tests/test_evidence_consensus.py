@@ -21,6 +21,7 @@ from neoag.evidence_states import (
     evidence_state,
 )
 from neoag.pareto import nondominated_fronts
+from neoag.model_layers import rna_evidence_metrics
 from neoag.utils import read_tsv, write_tsv
 
 
@@ -695,6 +696,41 @@ def test_rna_reuses_existing_status_and_gene_tpm_is_not_mutant_support():
     assert state["grade"] == 1
 
 
+def test_rna_zero_alt_states_preserve_coverage_power_and_reason_codes():
+    rules = load_consensus_rules()
+    no_coverage = derive_rna_support(
+        {"event_type": "SNV", "rna_alt_reads": "0", "rna_depth": "0"}, rules
+    )
+    low_coverage = derive_rna_support(
+        {"event_type": "SNV", "rna_alt_reads": "0", "rna_depth": "2"}, rules
+    )
+    adequate_negative = derive_rna_support(
+        {"event_type": "SNV", "rna_alt_reads": "0", "rna_depth": "1471"}, rules
+    )
+    assert (no_coverage["state"], no_coverage["reason_code"], no_coverage["assessed"]) == (
+        "RNA_UNASSESSED", "RNA_NO_COVERAGE_UNKNOWN", False,
+    )
+    assert (low_coverage["state"], low_coverage["reason_code"]) == (
+        "RNA_LOW_SUPPORT", "RNA_NO_ALT_LOW_COVERAGE",
+    )
+    assert (adequate_negative["state"], adequate_negative["reason_code"]) == (
+        "RNA_NEGATIVE", "RNA_NO_ALT_ADEQUATE_COVERAGE",
+    )
+    assert adequate_negative["grade"] < no_coverage["grade"]
+
+
+def test_model_layer_does_not_mark_zero_depth_as_complete_negative():
+    no_coverage = rna_evidence_metrics({"mutation_source": "SNV", "rna_depth": "0", "rna_alt_reads": "0"})
+    low_coverage = rna_evidence_metrics({"mutation_source": "SNV", "rna_depth": "2", "rna_alt_reads": "0"})
+    adequate = rna_evidence_metrics({"mutation_source": "SNV", "rna_depth": "147", "rna_alt_reads": "0"})
+    assert no_coverage["rna_support_status"] == "UNASSESSED"
+    assert no_coverage["rna_evidence_completeness"] == "UNASSESSED"
+    assert low_coverage["rna_support_status"] == "RNA_ALT_NOT_DETECTED"
+    assert low_coverage["rna_evidence_completeness"] == "PARTIAL"
+    assert adequate["rna_support_status"] == "RNA_ALT_NOT_DETECTED"
+    assert adequate["rna_evidence_completeness"] == "COMPLETE"
+
+
 def test_presentation_uses_core_groups_without_double_counting_immunogenicity_models():
     rules = load_consensus_rules()
     consistent = derive_presentation_consensus({
@@ -811,7 +847,7 @@ def test_r4_and_manual_review_do_not_upgrade_driver_event(tmp_path: Path):
     assert row["consensus_action"] == "DO_NOT_ADVANCE"
 
 
-def test_clear_novel_junction_can_satisfy_specificity_without_dna_ccf(tmp_path: Path):
+def test_clear_novel_junction_without_formal_splice_gate_is_capped_r3(tmp_path: Path):
     candidate = complete_row("P_NOVEL")
     candidate.update({
         "event_type": "Splice",
@@ -826,7 +862,30 @@ def test_clear_novel_junction_can_satisfy_specificity_without_dna_ccf(tmp_path: 
         "l3_clonality_score": "NA",
     })
     row = _rank_one(tmp_path, candidate)
+    assert row["evidence_grade"] == "R3"
+    assert "CAP_SPLICE_FORMAL_GATE_INCOMPLETE" in row["evidence_grade_cap_reasons"]
+
+
+def test_clear_novel_junction_with_formal_splice_gate_can_reach_r1(tmp_path: Path):
+    candidate = complete_row("P_NOVEL_FORMAL")
+    candidate.update({
+        "event_type": "Splice",
+        "crosses_junction": "true",
+        "contains_novel_aa": "true",
+        "mutant_specificity_status": "UNASSESSED",
+        "mutant_specificity_gate_status": "UNASSESSED",
+        "rna_support_status": "RNA_JUNCTION_SUPPORTED",
+        "rna_junction_reads": "20",
+        "normal_junction_assessment_status": "NOT_DETECTED_ADEQUATE_COVERAGE",
+        "ccf_status": "RNA_ONLY_UNRESOLVED",
+        "l3_clonality_score": "NA",
+        "splice_prefilter_status": "PASS",
+        "splice_candidate_pool": "FORMAL_SPLICE_CANDIDATE",
+        "splice_formal_gate_pass": "yes",
+    })
+    row = _rank_one(tmp_path, candidate)
     assert row["evidence_grade"] == "R1"
+    assert "CAP_SPLICE_FORMAL_GATE_INCOMPLETE" not in row["evidence_grade_cap_reasons"]
 
 
 def test_frameshift_without_matched_wt_is_assessed_as_novel_sequence():

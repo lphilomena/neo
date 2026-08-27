@@ -8,7 +8,7 @@ v0.5.1 adds three independently auditable evidence chains:
 """
 from __future__ import annotations
 
-SPLICE_PROVENANCE_SCHEMA_VERSION = "0.5.2-p0"
+SPLICE_PROVENANCE_SCHEMA_VERSION = "0.5.3-splicemutr-normal-p0"
 
 JUNCTION_FIELDS = [
     "junction_id", "sample_id", "genome_build", "chrom",
@@ -69,7 +69,8 @@ PEPTIDE_ORIGIN_FIELDS = [
     "origin_peptide_id", "peptide_id", "orf_id", "transcript_hypothesis_id", "splice_event_id",
     "sample_id", "gene", "peptide_sequence", "peptide_length", "protein_start", "protein_end",
     "crosses_junction", "junction_ids", "required_junction_ids",
-    "junction_offset_in_peptide", "contains_novel_aa",
+    "junction_offset_in_peptide", "contains_novel_aa", "structural_novelty_status",
+    "tumor_specificity_status", "cohort_analysis_status",
     "novel_aa_positions", "wildtype_counterpart_status", "wildtype_peptide",
     "reference_proteome_match", "generator_group", "source_generator", "source_generator_version",
     "source_file", "source_record_id", "origin_status", "evidence_conflict_status",
@@ -143,7 +144,9 @@ NORMAL_BACKGROUND_FIELDS = [
     "normal_background_id", "splice_event_id", "junction_id", "origin_peptide_id", "query_id",
     "sample_id", "normal_source", "normal_source_type", "normal_tissue", "critical_tissue",
     "developmental_stage", "study_id", "detection_status", "coverage_status",
-    "junction_reads", "sample_count", "total_samples", "sample_prevalence",
+    "junction_reads", "normal_total_junction_reads", "sample_count", "total_samples",
+    "sample_prevalence", "normal_tissue_count", "normal_tissues",
+    "source_dataset", "reference_release",
     "kmer_prevalence", "uniqueness_rate", "assessment_status", "assessment_reason",
     "source_file", "source_record_id", "evidence_conflict_status",
 ]

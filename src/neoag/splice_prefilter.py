@@ -58,6 +58,37 @@ def _minimum(rows: list[Mapping[str, Any]], fields: tuple[str, ...], threshold: 
     return value >= threshold, f"{label}={value:g}; threshold={threshold:g}"
 
 
+def _normal_absence_with_coverage(
+    rows: list[Mapping[str, Any]],
+    status_fields: tuple[str, ...],
+    coverage_fields: tuple[str, ...],
+    threshold: float,
+    label: str,
+) -> Decision:
+    status = _text(rows, *status_fields)
+    coverage = _number(rows, *coverage_fields)
+    upper = status.upper()
+    detected = any(token in upper for token in (
+        "SEEN_IN_NORMAL_CATALOG", "DETECTED_BROAD_NORMAL", "DETECTED_CRITICAL_TISSUE",
+        "DETECTED_MATCHED_NORMAL", "SUPPORTED_IN_NORMAL", "EXACT_MATCH", "PRESENT", "POSITIVE",
+    )) and "NOT_DETECTED" not in upper
+    if detected:
+        return False, f"{label}={status}; normal_coverage={coverage}"
+    adequate = any(token in upper for token in (
+        "NOT_DETECTED_ADEQUATE_COVERAGE", "ADEQUATE_COVERAGE_NEGATIVE", "EXCLUDED_WITH_ADEQUATE_COVERAGE",
+    ))
+    absent = any(token in upper for token in ("NOT_DETECTED", "ABSENT", "NEGATIVE", "NOT_FOUND"))
+    if adequate or (absent and coverage is not None and coverage >= threshold):
+        return True, f"{label}={status}; normal_coverage={coverage}; threshold={threshold:g}"
+    if "NOT_LISTED_IN_NORMAL_CATALOG" in upper:
+        return None, f"{label}=NOT_LISTED_IN_NORMAL_CATALOG; presence-only catalog non-membership is not a coverage-qualified negative"
+    if absent:
+        return None, f"{label}={status}; normal_coverage_unassessed"
+    if status:
+        return None, f"{label}={status}; normal_coverage={coverage}"
+    return None, f"{label}_not_recorded"
+
+
 def _is_splice(row: Mapping[str, Any]) -> bool:
     event_type = str(row.get("event_type", "") or "").strip().lower()
     consequence = str(row.get("peptide_consequence", "") or "").strip().lower()
@@ -75,6 +106,7 @@ def _stage_definitions(profile: Mapping[str, Any]) -> list[tuple[str, str, Calla
     min_unique = float(gates.get("min_splice_unique_reads", gates.get("min_rna_junction_reads", 3)))
     min_total = float(gates.get("min_splice_total_coverage", min_unique))
     min_psi = float(gates.get("min_splice_psi", 0.05))
+    min_normal_coverage = float(gates.get("min_splice_normal_coverage", 10))
     return [
         (
             "ALIGNMENT_COORDINATE_QC",
@@ -113,22 +145,24 @@ def _stage_definitions(profile: Mapping[str, Any]) -> list[tuple[str, str, Calla
         ),
         (
             "MATCHED_NORMAL_JUNCTION",
-            "junction absent from matched/adjacent normal sample",
-            lambda rows: _status(
+            f"junction absent from matched/adjacent normal sample with coverage >= {min_normal_coverage:g}",
+            lambda rows: _normal_absence_with_coverage(
                 rows,
                 ("matched_normal_junction_status", "patient_normal_junction_status"),
-                pass_tokens={"NOT_DETECTED", "ABSENT", "PASS", "NEGATIVE"},
-                fail_tokens={"DETECTED", "PRESENT", "POSITIVE", "FAIL"},
+                ("matched_normal_junction_coverage", "matched_normal_depth", "normal_junction_depth"),
+                min_normal_coverage,
+                "matched_normal_junction",
             ),
         ),
         (
             "NORMAL_COHORT_JUNCTION",
-            "junction absent from configured GTEx/normal-tissue junction reference",
-            lambda rows: _status(
+            "junction absent from a coverage-aware normal cohort; catalog non-membership alone is unassessed",
+            lambda rows: _normal_absence_with_coverage(
                 rows,
                 ("normal_cohort_junction_status", "normal_junction_assessment_status", "normal_junction_status"),
-                pass_tokens={"NOT_DETECTED", "ABSENT", "PASS", "NEGATIVE"},
-                fail_tokens={"SEEN", "DETECTED", "PRESENT", "POSITIVE", "FAIL", "EXACT_MATCH"},
+                ("normal_cohort_junction_coverage", "normal_junction_coverage", "normal_junction_depth"),
+                min_normal_coverage,
+                "normal_cohort_junction",
             ),
         ),
         (
@@ -177,6 +211,16 @@ def _stage_definitions(profile: Mapping[str, Any]) -> list[tuple[str, str, Calla
             lambda rows: _status(
                 rows,
                 ("normal_proteome_exact_match_status", "reference_proteome_status", "reference_proteome_exact_match"),
+                pass_tokens={"NOT_DETECTED", "NOT_FOUND", "ABSENT", "PASS", "FALSE", "NO"},
+                fail_tokens={"DETECTED", "EXACT_MATCH", "FOUND", "FAIL", "TRUE", "YES"},
+            ),
+        ),
+        (
+            "NORMAL_TRANSCRIPTOME_EXCLUSION",
+            "full junction peptide/transcript not detected in the configured normal transcriptome",
+            lambda rows: _status(
+                rows,
+                ("normal_transcriptome_exact_match_status", "normal_transcriptome_status"),
                 pass_tokens={"NOT_DETECTED", "NOT_FOUND", "ABSENT", "PASS", "FALSE", "NO"},
                 fail_tokens={"DETECTED", "EXACT_MATCH", "FOUND", "FAIL", "TRUE", "YES"},
             ),
@@ -247,6 +291,12 @@ def prefilter_splice_peptides(
         decisions.append({
             "event_id": event_id,
             "prefilter_status": status,
+            "splice_candidate_pool": (
+                "FORMAL_SPLICE_CANDIDATE" if status == "PASS"
+                else "REJECTED_SPLICE_CANDIDATE" if status == "REJECT"
+                else "EXPLORATION_EVIDENCE_INCOMPLETE"
+            ),
+            "splice_formal_gate_pass": "yes" if status == "PASS" else "no",
             "failed_stages": ";".join(failures),
             "unassessed_stages": ";".join(missing),
             "stage_details": ";".join(details),
@@ -269,6 +319,12 @@ def prefilter_splice_peptides(
         for row in grouped.get(event_id, [])[:max_pairs]:
             enriched = dict(row)
             enriched["splice_prefilter_status"] = status_by_event[event_id]
+            enriched["splice_candidate_pool"] = (
+                "FORMAL_SPLICE_CANDIDATE"
+                if status_by_event[event_id] == "PASS"
+                else "EXPLORATION_EVIDENCE_INCOMPLETE"
+            )
+            enriched["splice_formal_gate_pass"] = "yes" if status_by_event[event_id] == "PASS" else "no"
             selected_splice.append(enriched)
     write_tsv(raw_path, non_splice + selected_splice, PEPTIDE_FIELDS)
 
@@ -300,6 +356,16 @@ def prefilter_splice_peptides(
         })
         active = passed | unassessed
     funnel_rows.append({
+        "stage": "FORMAL_GATE_COMPLETE",
+        "entered_events": str(len(event_order)),
+        "assessed_events": str(len(pass_events) + sum(status_by_event[event_id] == "REJECT" for event_id in event_order)),
+        "passed_events": str(len(pass_events)),
+        "failed_events": str(sum(status_by_event[event_id] == "REJECT" for event_id in event_order)),
+        "unassessed_events": str(sum(status_by_event[event_id] == "REVIEW" for event_id in event_order)),
+        "possible_remaining_range": str(len(pass_events)),
+        "criterion": "all upstream biological gates passed; REVIEW events remain exploration-only and are not formal HLA-presentation passes",
+    })
+    funnel_rows.append({
         "stage": "SELECTED_FOR_PRESENTATION",
         "entered_events": str(len(active)),
         "assessed_events": str(len(pass_events) + len(review_events)),
@@ -307,12 +373,15 @@ def prefilter_splice_peptides(
         "failed_events": str(max(0, len(active) - len(selected_events))),
         "unassessed_events": "0",
         "possible_remaining_range": str(len(selected_events)),
-        "criterion": f"all PASS plus top {review_cap} REVIEW events; at most {max_pairs} peptide-HLA rows per event",
+        "criterion": f"all formal PASS plus top {review_cap} REVIEW events for exploratory prediction only; at most {max_pairs} peptide-HLA rows per event",
     })
     funnel_path = output_dir / "splice_prefilter_funnel.tsv"
     decision_path = output_dir / "splice_prefilter_decisions.tsv"
     write_tsv(funnel_path, funnel_rows, list(funnel_rows[0]))
-    write_tsv(decision_path, decisions, ["event_id", "prefilter_status", "failed_stages", "unassessed_stages", "stage_details"])
+    write_tsv(decision_path, decisions, [
+        "event_id", "prefilter_status", "splice_candidate_pool", "splice_formal_gate_pass",
+        "failed_stages", "unassessed_stages", "stage_details",
+    ])
     return {
         "raw_splice_events": len(event_order),
         "pass_events": len(pass_events),

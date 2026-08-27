@@ -1,0 +1,4 @@
+sample_id	role	star_sj
+NORMAL001	normal	/data/normal001/SJ.out.tab
+NORMAL002	normal	/data/normal002/SJ.out.tab
+TUMOR001	tumor	/data/tumor001/SJ.out.tab

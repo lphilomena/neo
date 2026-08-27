@@ -109,6 +109,8 @@ def _base_peptide(pid: str, track: str) -> dict[str, str]:
             "fusion_protein_sequence": "MABCDEFGHIK",
             "orf_id": "FUSION_ORF1",
             "transcript_hypothesis_id": "FT1",
+            "start_codon_status": "CANONICAL_START_SUPPORTED",
+            "nmd_risk_status": "ASSESSED_LOW_RISK",
             "crosses_junction": "true",
             "contains_novel_aa": "true",
             "junction_position_in_peptide_1based": "4",
@@ -241,6 +243,18 @@ def test_fusion_complete_computational_chain_without_orthogonal_is_c2():
     assert result.track == "FUSION"
     assert result.tier == "C2"
     assert result.orthogonal_status == UNASSESSED
+
+
+def test_fusion_cross_junction_peptide_without_orf_stays_incomplete():
+    row = _base_peptide("P7_no_orf", "FUSION")
+    row["fusion_protein_sequence"] = ""
+    row["orf_id"] = ""
+    row["start_codon_status"] = ""
+    result = derive_source_chain_confidence(row, {})
+    requirement = _requirements_by_name(result)["fusion_transcript_orf"]
+    assert result.tier == "C3"
+    assert requirement.status == INDETERMINATE_LOW_POWER
+    assert requirement.reason_code == "SC_FUSION_ORF_CHAIN_INCOMPLETE"
 
 
 def test_fusion_label_without_residue_boundary_mapping_is_not_supported():
@@ -400,8 +414,33 @@ def test_integrated_complete_rna_only_fusion_is_not_automatically_capped_r3(tmp_
     result = build_evidence_consensus(source, tmp_path / "fusion_integrated", rules)
     row = read_tsv(result["ranked_peptides"])[0]
     assert row["source_chain_confidence_tier"] == "C2"
+    assert row["fusion_candidate_pool"] == "ORF_SUPPORTED"
+    assert row["fusion_orf_gate_grade"] == "3"
     assert "CAP_RNA_ONLY_FUSION" not in row["evidence_grade_cap_reasons"]
     assert row["evidence_grade"] in {"R1", "R2"}
+
+
+def test_integrated_fusion_without_orf_is_exploration_only(tmp_path: Path):
+    source = tmp_path / "fusion_no_orf.tsv"
+    candidate = _base_peptide("P_FUSION_NO_ORF", "FUSION")
+    candidate.update({
+        "fusion_protein_sequence": "",
+        "orf_id": "",
+        "start_codon_status": "",
+        "nmd_risk_status": "",
+    })
+    write_tsv(source, [candidate])
+    rules = load_consensus_rules(
+        Path(__file__).parents[1] / "configs/ranking/sarcoma_evidence_consensus_v3_source_chain.toml"
+    )
+    result = build_evidence_consensus(source, tmp_path / "fusion_no_orf_integrated", rules)
+    row = read_tsv(result["ranked_peptides"])[0]
+    assert row["fusion_candidate_pool"] == "EXPLORATION_ORF_REQUIRED"
+    assert row["fusion_orf_gate_status"] == "FUSION_ORF_UNESTABLISHED"
+    assert row["fusion_orf_gate_grade"] == "1"
+    assert row["evidence_grade"] in {"R3", "R4"}
+    assert "CAP_FUSION_ORF_UNESTABLISHED" in row["evidence_grade_cap_reasons"]
+    assert row["consensus_action"] == "FUSION_ORF_RECONSTRUCTION_FIRST"
 
 
 def test_source_chain_cli_table_builder_writes_long_audit(tmp_path: Path):
