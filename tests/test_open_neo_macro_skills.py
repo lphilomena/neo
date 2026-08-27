@@ -32,7 +32,7 @@ from neoag.open_neo.cli import build_parser
 from neoag.open_neo.review import _event_kind, _merge_review_context, build_review_rows, run_review, select_first_batch
 from neoag.open_neo.routing import inspect_manifest
 from neoag.open_neo.run import run_open_neo
-from neoag.open_neo.public_assets import _extract_split_archive, sync_public_assets
+from neoag.open_neo.public_assets import _download, _extract_split_archive, sync_public_assets
 from neoag.controlled_execution.pipeline_runner import _manifest_file_hashes
 from neoag.open_neo.state import RunLayout, load_run_state, resume_step_decision
 from neoag.open_neo.rna_preprocessing import prepare_rna_evidence
@@ -106,6 +106,38 @@ def test_public_asset_split_archive_extracts_safely(tmp_path: Path):
     destination = tmp_path / "data"
     _extract_split_archive(parts, destination)
     assert (destination / "ref/example.txt").read_text(encoding="utf-8") == "open-neo\n"
+
+
+def test_public_asset_download_uses_official_hf_cli_and_local_cache(
+    tmp_path: Path, monkeypatch,
+):
+    fake_hf = tmp_path / "bin/hf"
+    fake_hf.parent.mkdir()
+    fake_hf.write_text("#!/bin/sh\n", encoding="utf-8")
+    fake_hf.chmod(0o755)
+    calls: list[list[str]] = []
+
+    def fake_run(command, **kwargs):
+        calls.append(command)
+        local_dir = Path(command[command.index("--local-dir") + 1])
+        remote_path = command[3]
+        output = local_dir / remote_path
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_bytes(b"asset-data")
+        return subprocess.CompletedProcess(command, 0, stdout=f"{output}\n", stderr="")
+
+    monkeypatch.setattr("neoag.open_neo.public_assets.shutil.which", lambda name: str(fake_hf) if name == "hf" else None)
+    monkeypatch.setattr("neoag.open_neo.public_assets.subprocess.run", fake_run)
+    destination = tmp_path / "cache/archive.part-000"
+    action = _download(
+        "open-neo/open-neo-public-assets", "main", "archive.part-000", destination,
+        expected_size=len(b"asset-data"),
+    )
+    assert action == "DOWNLOADED"
+    assert destination.read_bytes() == b"asset-data"
+    assert calls[0][1:4] == ["download", "open-neo/open-neo-public-assets", "archive.part-000"]
+    assert "--repo-type" in calls[0]
+    assert "--local-dir" in calls[0]
 
 
 def test_run_state_requires_matching_output_signature_for_reuse(tmp_path: Path):

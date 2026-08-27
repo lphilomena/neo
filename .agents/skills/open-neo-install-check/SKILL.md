@@ -67,7 +67,11 @@ failure. The immunogenicity source downloader can additionally fall back to
 For public fixed-asset synchronization, Skill1 defaults to the public Hugging
 Face Dataset `open-neo/open-neo-public-assets` when no explicit site asset source
 is supplied. Approved `install`, `repair`, and `resume` runs with
-`--allow-download` download the split archive with retry/resume support, verify
+`--allow-download` use the official `hf download` CLI and its local cache for
+robust multi-hour downloads and cross-process resume. They never use `curl` for
+the large Dataset archive. Skill1 installs `huggingface-hub` as a core runtime
+dependency; if `hf` is unavailable, stop with an actionable prerequisite error
+instead of restarting a partial large download through another client. Runs verify
 every published SHA-256, stream-extract it under the selected reference root,
 and synchronize the separately published RSEM and SpliceMutr BSgenome additions.
 A repository-commit marker makes resume idempotent; complete files and an already
@@ -75,6 +79,11 @@ verified extraction are skipped. Override the mirror with
 `--public-asset-repo`, revision with `--public-asset-revision`, locations with
 `--public-asset-root`/`--public-asset-cache`, or disable this fallback with
 `--no-sync-public-assets`.
+
+Do not delete the Hugging Face local cache after an interrupted run. Re-run the
+same Skill mode with the same `--public-asset-cache`; `hf download` validates
+cached chunks and continues rather than restarting from zero. The deployment
+marker records `download_method=hf download` for auditability.
 
 An explicit site source still takes precedence. Set `--asset-source-root
 /mounted/assets` for a local/mounted tree, or set both `--asset-source-host

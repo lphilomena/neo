@@ -105,13 +105,16 @@ declared complete outputs.
 Skill2 defaults to `open-neo/open-neo-public-assets` for redistributable fixed
 assets. In `plan`/`dry-run` it only records whether the local Dataset marker is
 ready. In an approved `execute`/`resume` (inside the Gateway for raw heavy runs)
-it resumes missing downloads, verifies archive checksums, extracts only when the
+it uses the official `hf download` CLI with a persistent local cache, resumes
+missing chunks across interrupted runs, verifies archive checksums, extracts only when the
 published archive identity changed, and then reuses the local tree. Select the
 deployment location with `--public-asset-root` or
 `OPEN_NEO_PUBLIC_ASSET_ROOT`; `--asset-root` and
 `OPEN_NEO_REFERENCE_ROOT` are accepted as existing deployment locations. Use
 `--public-asset-cache` for the resumable archive cache and
 `--no-sync-public-assets` to require a pre-provisioned tree.
+Large Dataset assets must not fall back to `curl`; a missing `hf` command is a
+prerequisite error that should be repaired by Skill1 before resuming Skill2.
 
 The Dataset excludes licensed HLA/LOH/presentation/predictor assets. Skill2
 continues to resolve those from the machine-local licensed/tool configuration

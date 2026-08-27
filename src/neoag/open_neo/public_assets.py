@@ -3,8 +3,10 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import os
 import shutil
 import subprocess
+import sys
 import tarfile
 import urllib.parse
 import urllib.request
@@ -64,11 +66,6 @@ class _MultipartReader(io.RawIOBase):
         super().close()
 
 
-def _repo_url(repo_id: str, revision: str, path: str) -> str:
-    encoded_path = "/".join(urllib.parse.quote(part, safe="") for part in path.split("/"))
-    return f"https://huggingface.co/datasets/{repo_id}/resolve/{revision}/{encoded_path}"
-
-
 def _api_json(url: str) -> Any:
     request = urllib.request.Request(url, headers={"User-Agent": "open-neo-public-assets/1"})
     try:
@@ -98,6 +95,31 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _resolve_hf_cli() -> tuple[str, str]:
+    """Return the official Hugging Face download CLI and its command name."""
+    candidates = (
+        (shutil.which("hf"), "hf"),
+        (str(Path(sys.executable).resolve().parent / "hf"), "hf"),
+        (shutil.which("huggingface-cli"), "huggingface-cli"),
+        (str(Path(sys.executable).resolve().parent / "huggingface-cli"), "huggingface-cli"),
+    )
+    for candidate, command_name in candidates:
+        if candidate and Path(candidate).is_file() and os.access(candidate, os.X_OK):
+            return candidate, command_name
+    raise PublicAssetSyncError(
+        "Official Hugging Face CLI is required for public asset downloads. "
+        "Install it with `python -m pip install -U huggingface_hub`, then resume; "
+        "Open-Neo does not fall back to curl for large Dataset assets."
+    )
+
+
+def _hf_local_dir(destination: Path, remote_path: str) -> Path:
+    remote_parts = PurePosixPath(remote_path).parts
+    if remote_parts and tuple(destination.parts[-len(remote_parts):]) == remote_parts:
+        return destination.parents[len(remote_parts) - 1]
+    return destination.parent / ".hf-download"
+
+
 def _download(
     repo_id: str,
     revision: str,
@@ -114,20 +136,37 @@ def _download(
         if size_ok and hash_ok:
             return "REUSED"
         destination.unlink()
-    curl = shutil.which("curl")
-    if not curl:
-        raise PublicAssetSyncError("curl is required for resumable public asset downloads")
-    partial = destination.with_name(destination.name + ".partial")
+    hf_cli, command_name = _resolve_hf_cli()
+    local_dir = _hf_local_dir(destination, remote_path)
+    local_dir.mkdir(parents=True, exist_ok=True)
     command = [
-        curl, "-fL", "--retry", "8", "--retry-delay", "5", "--connect-timeout", "30",
-        "-C", "-", "-o", str(partial), _repo_url(repo_id, revision, remote_path),
+        hf_cli, "download", repo_id, remote_path,
+        "--repo-type", "dataset", "--revision", revision, "--local-dir", str(local_dir),
     ]
-    proc = subprocess.run(command, text=True, capture_output=True, check=False)
+    env = os.environ.copy()
+    env.setdefault("HF_HUB_DOWNLOAD_TIMEOUT", "600")
+    env.setdefault("HF_HUB_ETAG_TIMEOUT", "60")
+    proc = subprocess.run(command, text=True, capture_output=True, check=False, env=env)
     if proc.returncode != 0:
         raise PublicAssetSyncError(
-            f"Download failed for {remote_path}: {(proc.stderr or proc.stdout).strip()[-1200:]}"
+            f"{command_name} download failed for {remote_path}; resume the same command to reuse "
+            f"the Hugging Face cache: {(proc.stderr or proc.stdout).strip()[-1200:]}"
         )
-    partial.replace(destination)
+    downloaded_path = local_dir.joinpath(*PurePosixPath(remote_path).parts)
+    if not downloaded_path.is_file():
+        output_paths = [Path(line.strip()) for line in proc.stdout.splitlines() if line.strip()]
+        downloaded_path = next((path for path in reversed(output_paths) if path.is_file()), downloaded_path)
+    if not downloaded_path.is_file():
+        raise PublicAssetSyncError(
+            f"{command_name} reported success but did not create {remote_path} under {local_dir}"
+        )
+    if downloaded_path.resolve() != destination.resolve():
+        temporary = destination.with_name(destination.name + ".hf-complete")
+        shutil.copy2(downloaded_path, temporary)
+        temporary.replace(destination)
+    legacy_partial = destination.with_name(destination.name + ".partial")
+    if legacy_partial.is_file():
+        legacy_partial.unlink()
     if expected_size and destination.stat().st_size != expected_size:
         raise PublicAssetSyncError(
             f"Size mismatch for {remote_path}: {destination.stat().st_size} != {expected_size}"
@@ -269,6 +308,7 @@ def sync_public_assets(
         "asset_root": str(root),
         "cache_dir": str(cache),
         "restricted_assets_included": False,
+        "download_method": "hf download",
         "updated_at": now_iso(),
     }
     write_json(marker, payload)
