@@ -741,8 +741,14 @@ GEN_ARGS+=(--samtools-executable "$SAMTOOLS_EXECUTABLE" --rna-threads "$RNA_THRE
 echo "[INFO] generate manifest: $OUTDIR/manifest/production.results.toml"
 "$PY" scripts/generate_production_from_results_manifest.py "${GEN_ARGS[@]}"
 
-[[ -n "$ASSET" ]] && export NEOAG_TOOLS_ROOT="$ASSET"
-[[ -n "$PRED_DEPS" ]] && export NEOAG_TOOL_QUARANTINE="$PRED_DEPS"
+if [[ -n "$ASSET" ]]; then
+  export NEOAG_TOOLS_ROOT="$ASSET"
+  export NEOAG_ASSET_ROOT="$ASSET"
+fi
+if [[ -n "$PRED_DEPS" ]]; then
+  export NEOAG_TOOL_QUARANTINE="$PRED_DEPS"
+  export NEOAG_PREDICTOR_DEPS="$PRED_DEPS"
+fi
 if [[ -n "$ASSET" ]]; then
   export NEOAG_VEP_CACHE="${VEP_CACHE:-$ASSET/data/vep}"
   export NEOAG_VEP_PLUGINS="${VEP_PLUGINS:-$ASSET/work/vep_plugins}"

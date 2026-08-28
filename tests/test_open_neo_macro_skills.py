@@ -1795,3 +1795,16 @@ def test_macro_skills_run_through_skill_runner(tmp_path: Path):
     })
     assert result["status"] == "PASS"
     assert result["algorithm_owner"] == "src/neoag/evidence_consensus.py"
+
+
+def test_shared_predictor_roots_are_forwarded_and_discovered():
+    root = Path(__file__).resolve().parents[1]
+    production_script = (root / "scripts/run_production_case.sh").read_text(encoding="utf-8")
+    tools_env = (root / "conf/tools.env.sh").read_text(encoding="utf-8")
+
+    assert 'export NEOAG_ASSET_ROOT="$ASSET"' in production_script
+    assert 'export NEOAG_PREDICTOR_DEPS="$PRED_DEPS"' in production_script
+    assert '${NEOAG_PREDICTOR_DEPS}/bigmhc' in tools_env
+    assert '${NEOAG_PREDICTOR_DEPS}/DeepImmuno' in tools_env
+    assert '${NEOAG_ASSET_ROOT}/data/predictors/bigmhc' in tools_env
+    assert '${NEOAG_ASSET_ROOT}/data/predictors/DeepImmuno' in tools_env

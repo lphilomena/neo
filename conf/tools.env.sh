@@ -70,10 +70,20 @@ export SEQUENZA_GC_WIG="${SEQUENZA_GC_WIG:-${NEOAG_TOOLS_ROOT}/data/sequenza/ref
 # Ensembl GRCh38 reference proteome (optional; set in conf/tools.env.local.sh)
 export NEOAG_NORMAL_PROTEOME_FASTA="${NEOAG_NORMAL_PROTEOME_FASTA:-}"
 
-# DeepImmuno-CNN (optional immunogenicity; 9/10-mer peptide–HLA pairs)
-export DEEPIMMUNO_DIR="${NEOAG_TOOLS_ROOT}/tools/DeepImmuno"
-
 NEOAG_TOOL_QUARANTINE="${NEOAG_TOOL_QUARANTINE:-}"
+NEOAG_PREDICTOR_DEPS="${NEOAG_PREDICTOR_DEPS:-${NEOAG_TOOL_QUARANTINE}}"
+
+# DeepImmuno-CNN (optional immunogenicity; 9/10-mer peptide–HLA pairs).
+# Prefer a deployed tool, then a shared predictor tree supplied by Skill 1/2.
+export DEEPIMMUNO_DIR="${DEEPIMMUNO_DIR:-${NEOAG_TOOLS_ROOT}/tools/DeepImmuno}"
+for _neoag_deepimmuno_candidate in \
+  "${NEOAG_PREDICTOR_DEPS:+${NEOAG_PREDICTOR_DEPS}/DeepImmuno}" \
+  "${NEOAG_ASSET_ROOT:+${NEOAG_ASSET_ROOT}/data/predictors/DeepImmuno}"; do
+  if [[ ! -f "${DEEPIMMUNO_DIR}/deepimmuno-cnn.py" && -n "${_neoag_deepimmuno_candidate}" && -f "${_neoag_deepimmuno_candidate}/deepimmuno-cnn.py" ]]; then
+    export DEEPIMMUNO_DIR="${_neoag_deepimmuno_candidate}"
+  fi
+done
+unset _neoag_deepimmuno_candidate
 
 # BigMHC_IM (repo ~5GB incl. models under models/bat*/im/)
 export BIGMHC_DIR="${NEOAG_TOOLS_ROOT}/tools/bigmhc"
@@ -87,9 +97,14 @@ if [[ ! -x "${BIGMHC_PYTHON}" ]]; then
     export BIGMHC_PYTHON="${HOME}/miniforge3/envs/neoag-tools/bin/python"
   fi
 fi
-if [[ ! -f "${BIGMHC_DIR}/src/predict.py" && -n "${NEOAG_TOOL_QUARANTINE}" && -f "${NEOAG_TOOL_QUARANTINE}/bigmhc/src/predict.py" ]]; then
-  export BIGMHC_DIR="${NEOAG_TOOL_QUARANTINE}/bigmhc"
-fi
+for _neoag_bigmhc_candidate in \
+  "${NEOAG_PREDICTOR_DEPS:+${NEOAG_PREDICTOR_DEPS}/bigmhc}" \
+  "${NEOAG_ASSET_ROOT:+${NEOAG_ASSET_ROOT}/data/predictors/bigmhc}"; do
+  if [[ ! -f "${BIGMHC_DIR}/src/predict.py" && -n "${_neoag_bigmhc_candidate}" && -f "${_neoag_bigmhc_candidate}/src/predict.py" ]]; then
+    export BIGMHC_DIR="${_neoag_bigmhc_candidate}"
+  fi
+done
+unset _neoag_bigmhc_candidate
 
 # PRIME + MixMHCpred (immunogenicity)
 export PRIME_HOME="${NEOAG_TOOLS_ROOT}/tools/prime"
