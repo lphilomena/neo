@@ -65,10 +65,11 @@ def load_star(path: Path):
     return records, donor_totals, acceptor_totals
 
 
-def load_crossvalidated_keys(path: Path) -> set[str]:
+def load_crossvalidated_keys(path: Path) -> tuple[set[str], set[str]]:
     with path.open(encoding="utf-8", errors="replace", newline="") as handle:
         reader = csv.DictReader(handle, delimiter="\t")
-        validated: set[str] = set()
+        snaf: set[str] = set()
+        splicemutr: set[str] = set()
         for row in reader:
             tools = {
                 item.strip().lower()
@@ -76,15 +77,31 @@ def load_crossvalidated_keys(path: Path) -> set[str]:
                 if item.strip()
             }
             status = str(row.get("status") or row.get("evidence_status") or "").upper()
-            if tools and not {"snaf", "splicemutr"}.issubset(tools):
-                continue
             if status and not any(token in status for token in ("CONFIRMED", "COMPLETED", "PASS", "SUPPORTED")):
                 continue
             for field in ("uid", "event_id", "canonical_junction_id", "source_junction_id"):
                 value = str(row.get(field) or "").strip()
                 if value:
-                    validated.add(value)
-        return validated
+                    if "snaf" in tools:
+                        snaf.add(value)
+                    if "splicemutr" in tools:
+                        splicemutr.add(value)
+        return snaf, splicemutr
+
+
+def splicemutr_origin_events(rows: list[dict[str, str]]) -> set[str]:
+    """Events with an exact peptide -> SpliceMutr translated-origin backlink."""
+    result: set[str] = set()
+    for row in rows:
+        source = ";".join(
+            str(row.get(field) or "")
+            for field in ("source_tool", "source_tools", "source_generator", "source_records")
+        ).lower()
+        if str(row.get("origin_peptide_id") or "").strip() or "splicemutr" in source:
+            event_id = str(row.get("event_id") or "").strip()
+            if event_id:
+                result.add(event_id)
+    return result
 
 
 def bam_contigs(samtools: str, bam_path: Path) -> dict[str, str]:
@@ -202,7 +219,8 @@ def main() -> int:
     events, event_fields = read_rows(Path(args.events))
     peptides, peptide_fields = read_rows(Path(args.peptides))
     star, donor_totals, acceptor_totals = load_star(Path(args.star_sj))
-    validated = load_crossvalidated_keys(Path(validation_source))
+    snaf_validated, splicemutr_validated = load_crossvalidated_keys(Path(validation_source))
+    splicemutr_validated.update(splicemutr_origin_events(peptides))
     normal_db = sqlite3.connect(args.normal_junction_sqlite) if args.normal_junction_sqlite else None
     matched_normal_star = matched_normal_donors = matched_normal_acceptors = None
     if args.matched_normal_star_sj:
@@ -297,7 +315,11 @@ def main() -> int:
             total_reads = unique_reads + multi_reads
             denominator = max(donor_totals[(chrom, start, strand)], acceptor_totals[(chrom, end, strand)], unique_reads)
             psi = unique_reads / denominator if denominator else 0.0
-            caller_ok = any(value in validated for value in (uid, event_id, canonical, normal_id))
+            aliases = (uid, event_id, canonical, normal_id)
+            caller_ok = (
+                any(value in snaf_validated for value in aliases)
+                and any(value in splicemutr_validated for value in aliases)
+            )
             unique_starts = int(bam_row.get("unique_fragment_starts") or 0)
             overhang = max(star_row["star_max_overhang"], int(bam_row.get("bam_max_overhang") or 0))
             median_mapq = float(bam_row.get("median_mapq") or 0)
