@@ -281,19 +281,39 @@ def main() -> int:
         uid = event_id.split("|", 1)[1] if "|" in event_id else event_id
         canonical = f"SJ|{args.genome_build}|chr{chrom}|{start}|{end}|{strand}"
         normal_id = f"chr{chrom}:{start}-{end}:{strand}"
-        normal_hit = bool(
-            normal_db
-            and normal_db.execute("select 1 from junction_ids where junction_id=? limit 1", (normal_id,)).fetchone()
+        normal_record = None
+        normal_has_frequency = False
+        if normal_db:
+            columns = {item[1] for item in normal_db.execute("pragma table_info(junction_ids)")}
+            normal_has_frequency = "normal_samples" in columns
+            if normal_has_frequency:
+                normal_record = normal_db.execute(
+                    "select normal_samples,normal_reads,normal_total_reads,normal_tissues,tissue,source,dataset "
+                    "from junction_ids where junction_id=? limit 1", (normal_id,),
+                ).fetchone()
+            else:
+                normal_record = normal_db.execute(
+                    "select 1 from junction_ids where junction_id=? limit 1", (normal_id,)
+                ).fetchone()
+        normal_hit = bool(normal_record)
+        normal_samples = int(normal_record[0] or 0) if normal_record and normal_has_frequency else 0
+        normal_reads = int(normal_record[1] or 0) if normal_record and normal_has_frequency else 0
+        normal_tissues = int(normal_record[3] or 0) if normal_record and normal_has_frequency else 0
+        normal_status = (
+            "DETECTED_BROAD_NORMAL" if normal_hit and normal_has_frequency and (normal_samples >= 2 or normal_tissues >= 2)
+            else "LOW_LEVEL_NONCRITICAL_NORMAL" if normal_hit and normal_has_frequency
+            else "DETECTED_NORMAL_CATALOG_FREQUENCY_UNAVAILABLE" if normal_hit
+            else "NOT_LISTED_IN_NORMAL_CATALOG" if normal_db
+            else "UNASSESSED_NO_NORMAL_COHORT"
         )
         metrics.update({
             "junction_chrom": f"chr{chrom}", "junction_start": str(start), "junction_end": str(end),
             "junction_strand": strand, "canonical_junction_id": canonical, "source_junction_id": normal_id,
             "junction_coordinate_system": "STAR_SJ_1BASED_INTRON_INCLUSIVE",
-            "normal_cohort_junction_status": (
-                "DETECTED_BROAD_NORMAL" if normal_hit
-                else "NOT_LISTED_IN_NORMAL_CATALOG" if normal_db
-                else "UNASSESSED_NO_NORMAL_COHORT"
-            ),
+            "normal_cohort_junction_status": normal_status,
+            "normal_cohort_normal_samples": str(normal_samples) if normal_has_frequency and normal_hit else "",
+            "normal_cohort_normal_reads": str(normal_reads) if normal_has_frequency and normal_hit else "",
+            "normal_cohort_normal_tissues": str(normal_tissues) if normal_has_frequency and normal_hit else "",
             "normal_junction_assessment_status": (
                 "DETECTED" if normal_hit else "UNASSESSED_COVERAGE" if normal_db else "UNASSESSED"
             ),

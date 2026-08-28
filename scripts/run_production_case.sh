@@ -443,13 +443,18 @@ add_file_if() {
 ensure_normal_junction_index() {
   local normal_junctions="$1"
   local index_path="${normal_junctions}.sqlite"
-  if [[ ! -s "$normal_junctions" || -s "$index_path" ]]; then
+  if [[ ! -s "$normal_junctions" ]]; then
+    return 0
+  fi
+  if [[ -s "$index_path" ]] && PYTHONPATH="$PROJECT_ROOT/src" "$PY" scripts/build_normal_junction_index.py \
+      --input "$normal_junctions" --output "$index_path" --check; then
     return 0
   fi
   echo "[INFO] build normal junction sqlite index: $index_path"
   PYTHONPATH="$PROJECT_ROOT/src" "$PY" scripts/build_normal_junction_index.py \
     --input "$normal_junctions" \
-    --output "$index_path"
+    --output "$index_path" \
+    --force
 }
 
 latest_matching_file() {
