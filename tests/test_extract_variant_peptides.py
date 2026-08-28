@@ -1,7 +1,7 @@
 from pathlib import Path
 import csv
 
-from neoag_v03.vep.extract_peptides import (
+from neoag.vep.extract_peptides import (
     MULTI_AA_COMPLEX,
     MULTI_AA_FRAMESHIFT,
     MULTI_AA_INFRAME,
@@ -14,7 +14,9 @@ from neoag_v03.vep.extract_peptides import (
     classify_multi_aa_flag,
     extract_variant_peptides_from_vcf,
     parse_peptide_lengths,
+    resolve_mhc1_peptide_lengths,
     peptide_in_normal_proteome,
+    pick_csq_transcript,
     sliding_full_mutant_mode,
     sliding_variant_peptides,
 )
@@ -48,6 +50,38 @@ def test_build_mutant_protein_missense():
     assert a0 == 3 and a1 == 3
 
 
+def test_build_mutant_protein_missense_without_plugin_context():
+    mut, a0, a1 = build_mutant_protein(
+        "missense_variant",
+        "",
+        protein_position_raw="10",
+        amino_acids="K/N",
+        frameshift_sequence="",
+    )
+    assert mut
+    assert "N" in mut
+    assert a0 == 21 and a1 == 21
+
+
+def test_pick_csq_transcript_accepts_amino_acids_without_plugin_context():
+    idx = {
+        "Consequence": 0,
+        "WildtypeProtein": 1,
+        "FrameshiftSequence": 2,
+        "Amino_acids": 3,
+        "CANONICAL": 4,
+        "MANE_SELECT": 5,
+        "BIOTYPE": 6,
+        "TSL": 7,
+    }
+    picked = pick_csq_transcript(
+        [["missense_variant", "", "", "K/N", "YES", "", "protein_coding", "1"]],
+        idx,
+    )
+    assert picked is not None
+    assert picked[3] == "K/N"
+
+
 def test_build_mutant_protein_multi_aa_substitution():
     wt = "ACDEFGHIKLMN"
     mut, a0, a1 = build_mutant_protein(
@@ -75,7 +109,7 @@ def test_parse_vaf_from_format():
 
 
 def test_parse_allele_metrics_from_format():
-    from neoag_v03.vep.extract_peptides import _parse_allele_metrics_from_format
+    from neoag.vep.extract_peptides import _parse_allele_metrics_from_format
 
     vaf, depth, alt = _parse_allele_metrics_from_format("GT:AD:AF:DP", "0/1:20,5:0.25:25")
     assert vaf == "0.2500"
@@ -215,8 +249,14 @@ def test_parse_peptide_lengths_range():
     assert parse_peptide_lengths("9,11") == (9, 11)
 
 
+def test_high_recall_12mer_is_opt_in_and_explicit_lengths_win():
+    assert resolve_mhc1_peptide_lengths() == (8, 9, 10, 11)
+    assert resolve_mhc1_peptide_lengths(high_recall_12mer=True) == (8, 9, 10, 11, 12)
+    assert resolve_mhc1_peptide_lengths("9,10", high_recall_12mer=True) == (9, 10)
+
+
 def test_open_text_maybe_gz_plain_vcf_with_gz_suffix(tmp_path):
-    from neoag_v03.utils import is_gzip_file, open_text_maybe_gz
+    from neoag.utils import is_gzip_file, open_text_maybe_gz
 
     plain = tmp_path / "annot.vcf.gz"
     plain.write_text("##fileformat=VCFv4.2\n", encoding="utf-8")

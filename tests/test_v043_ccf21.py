@@ -1,8 +1,9 @@
+import json
 from pathlib import Path
 
-from neoag_v03.ccf_v2 import build_ccf_2
-from neoag_v03.config import load_profile
-from neoag_v03.utils import read_tsv, write_tsv
+from neoag.ccf_v2 import build_ccf_2
+from neoag.config import load_profile
+from neoag.utils import read_tsv, write_tsv
 
 
 def test_ccf21_writes_input_qc_and_confidence_fields(tmp_path):
@@ -44,11 +45,138 @@ def test_ccf21_rna_only_and_wes_sv_are_not_overconfident(tmp_path):
     rows = build_ccf_2(events, purity, cnv, load_profile("default"), tmp_path / "ccf.tsv")
     by_id = {r["event_id"]: r for r in rows}
     assert by_id["R1"]["ccf_method"] == "RNA_ONLY_UNRESOLVED"
-    assert by_id["R1"]["clonality_status"] == "unresolved"
+    assert by_id["R1"]["clonality_status"] == "RNA_ONLY_UNRESOLVED"
     assert by_id["R1"]["ccf_best"] == ""
+    assert by_id["R1"]["ccf_estimate"] == "NA"
+    assert by_id["R1"]["ccf_confidence"] == "unresolved"
+    assert by_id["R1"]["clonality_multiplier"] == "1.0000"
     assert by_id["W1"]["ccf_method"] == "WES_SV_CAPTURE_LIMITED_APPROX"
     assert by_id["W1"]["ccf_confidence"] == "low"
     assert "wes_sv_capture_limited" in by_id["W1"]["ccf_warning"]
+
+
+def test_ccf21_clamps_estimate_and_preserves_raw_ccf(tmp_path):
+    events = tmp_path / "events.tsv"
+    purity = tmp_path / "purity.tsv"
+    cnv = tmp_path / "cnv.tsv"
+    write_tsv(events, [{
+        "event_id": "E1", "sample_id": "S1", "mutation_source": "SNV",
+        "chrom": "chr1", "pos": "100", "tumor_vaf": "0.127",
+        "tumor_depth": "100", "tumor_alt_count": "13",
+    }])
+    write_tsv(purity, [{"purity": "0.12", "ploidy": "2"}])
+    write_tsv(cnv, [{
+        "chrom": "chr1", "start": "1", "end": "1000", "total_cn": "2",
+        "major_cn": "1", "minor_cn": "1",
+    }])
+    row = build_ccf_2(events, purity, cnv, load_profile("default"), tmp_path / "ccf.tsv")[0]
+    assert float(row["raw_ccf"]) > 1.0
+    assert row["ccf_estimate"] == "1.0000"
+    assert row["ccf_best"] == "1.0000"
+    assert "raw_ccf_above_1_clamped" in row["ccf_warning"]
+
+
+def test_ccf21_easyfuse_without_dna_vaf_is_rna_only_unresolved(tmp_path):
+    events = tmp_path / "events.tsv"
+    purity = tmp_path / "purity.tsv"
+    write_tsv(events, [{
+        "event_id": "EF1", "sample_id": "S1", "event_type": "Fusion",
+        "mutation_source": "SV", "source": "easyfuse:fusions.pass.csv",
+        "rna_junction_reads": "25", "tumor_vaf": "0.0", "chrom": "chr1", "pos": "100",
+    }])
+    write_tsv(purity, [{"purity": "0.20", "ploidy": "2"}])
+    row = build_ccf_2(events, purity, None, load_profile("default"), tmp_path / "ccf.tsv")[0]
+    assert row["ccf_method"] == "RNA_ONLY_UNRESOLVED"
+    assert row["ccf_status"] == "RNA_ONLY_UNRESOLVED"
+    assert row["ccf_estimate"] == "NA"
+    assert row["clonality_multiplier"] == "1.0000"
+
+
+def test_ccf21_accepts_sequenza_segment_columns(tmp_path):
+    events = tmp_path / "events.tsv"
+    purity = tmp_path / "purity.tsv"
+    cnv = tmp_path / "sequenza_segments.tsv"
+    write_tsv(events, [{
+        "event_id": "E1", "sample_id": "S1", "mutation_source": "SNV",
+        "chrom": "chr1", "pos": "150", "tumor_vaf": "0.10",
+        "tumor_depth": "100", "tumor_alt_count": "10",
+    }])
+    write_tsv(purity, [{"purity": "0.30", "ploidy": "2.2", "source": "sequenza"}])
+    write_tsv(cnv, [{
+        "chromosome": "chr1", "start.pos": "100", "end.pos": "200",
+        "CNt": "5", "A": "4", "B": "1",
+    }])
+    row = build_ccf_2(events, purity, cnv, load_profile("default"), tmp_path / "ccf.tsv")[0]
+    assert row["total_cn"] == "5.0000"
+    assert row["major_cn"] == "4.0000"
+    assert row["minor_cn"] == "1.0000"
+    assert row["cnv_confidence"] == "high"
+
+
+def test_ccf21_recomputes_diploid_high_vaf_with_interval_and_conservative_wording(tmp_path):
+    events = tmp_path / "events.tsv"
+    purity = tmp_path / "purity.tsv"
+    cnv = tmp_path / "cnv.tsv"
+    write_tsv(events, [{
+        "event_id": "E_DNA", "sample_id": "S1", "mutation_source": "SNV",
+        "chrom": "chr7", "pos": "150", "tumor_vaf": "0.458",
+        "tumor_depth": "500", "tumor_alt_count": "229",
+        "normal_depth": "120", "normal_alt_count": "0",
+    }])
+    write_tsv(purity, [{"purity": "0.92", "ploidy": "2.12", "source": "multi_tool_consensus", "confidence": "high"}])
+    # Deliberately omit the chr prefix to exercise cross-tool chromosome normalization.
+    write_tsv(cnv, [{"chrom": "7", "start": "1", "end": "1000", "total_cn": "2", "major_cn": "1", "minor_cn": "1"}])
+    row = build_ccf_2(events, purity, cnv, load_profile("default"), tmp_path / "ccf.tsv")[0]
+    assert abs(float(row["ccf_estimate"]) - 0.9957) < 0.001
+    assert row["multiplicity_candidates"] == "1"
+    assert row["multiplicity_best"] == "1"
+    assert row["local_cnv_status"] == "MATCHED_LOCAL_SEGMENT"
+    assert row["normal_contamination_status"] == "NO_MATERIAL_NORMAL_ALT_DETECTED"
+    assert row["ccf_interval_method"].startswith("Wilson 95%")
+    assert float(row["ccf_ci_low"]) < float(row["ccf_estimate"]) <= float(row["ccf_ci_high"])
+    assert row["ccf_status"] in {"clonal_compatible", "clonality_indeterminate"}
+    assert row["ccf_status"] != "clonal_like"
+
+
+def test_ccf21_flags_diploid_fallback_and_matched_normal_alt(tmp_path):
+    events = tmp_path / "events.tsv"
+    purity = tmp_path / "purity.tsv"
+    write_tsv(events, [{
+        "event_id": "E_REVIEW", "sample_id": "S1", "mutation_source": "InDel",
+        "chrom": "chr2", "pos": "200", "tumor_vaf": "0.40",
+        "tumor_depth": "100", "tumor_alt_count": "40",
+        "normal_depth": "100", "normal_alt_count": "4", "normal_vaf": "0.04",
+    }])
+    write_tsv(purity, [{"purity": "0.80", "ploidy": "2", "confidence": "high"}])
+    row = build_ccf_2(events, purity, None, load_profile("default"), tmp_path / "ccf.tsv")[0]
+    assert row["local_cnv_status"] == "DIPLOID_FALLBACK_LOW_CONFIDENCE"
+    assert row["normal_contamination_status"] == "MATCHED_NORMAL_ALT_REVIEW"
+    assert row["ccf_confidence"] == "low"
+    assert "default_copy_number_2" in row["ccf_warning"]
+    assert "matched_normal_alt_requires_review" in row["ccf_warning"]
+    assert row["ccf_status"] == "clonality_indeterminate"
+
+
+def test_ccf21_uses_explicit_variant_copy_number_and_purity_range(tmp_path):
+    events = tmp_path / "events.tsv"
+    purity = tmp_path / "purity.json"
+    cnv = tmp_path / "cnv.tsv"
+    write_tsv(events, [{
+        "event_id": "E_GAIN", "sample_id": "S1", "mutation_source": "SNV",
+        "chrom": "3", "pos": "300", "tumor_vaf": "0.30", "tumor_depth": "200",
+        "tumor_alt_count": "60", "variant_copy_number": "2",
+    }])
+    purity.write_text(json.dumps({
+        "status": "CONCORDANT", "recommended_purity": 0.85,
+        "range": "0.80-0.90", "n_tools": 2, "tool_values": {"FACETS": 0.8, "PURPLE": 0.9},
+    }))
+    write_tsv(cnv, [{"chrom": "chr3", "start": "1", "end": "1000", "total_cn": "4", "major_cn": "3", "minor_cn": "1"}])
+    row = build_ccf_2(events, purity, cnv, load_profile("default"), tmp_path / "ccf.tsv")[0]
+    assert row["multiplicity_candidates"] == "2"
+    assert row["mutation_multiplicity_source"] == "provided_event_variant_copy_number"
+    assert row["multiplicity_confidence"] == "high"
+    assert float(row["ccf_ci_low"]) < float(row["ccf_ci_high"])
+    assert "purity*total_cn" in row["ccf_formula_assumptions"]
 
 
 def test_ccf21_external_clonality_conflict_and_clusters(tmp_path):
@@ -91,3 +219,60 @@ def test_ccf21_svclone_preferred_for_sv_event(tmp_path):
     assert rows[0]["external_clonality_tool"] == "SVclone"
     assert rows[0]["svclone_ccf"] == "0.88"
     assert rows[0]["ccf_resolution"] == "external_svclone_preferred"
+
+
+def _write_ccf_inputs(tmp_path):
+    events = tmp_path / "events.tsv"
+    cnv = tmp_path / "cnv.tsv"
+    write_tsv(events, [{
+        "event_id": "E1", "sample_id": "S1", "mutation_source": "SNV",
+        "chrom": "chr1", "pos": "150", "tumor_vaf": "0.25",
+        "tumor_depth": "100", "tumor_alt_count": "25",
+    }])
+    write_tsv(cnv, [{
+        "chrom": "chr1", "start": "1", "end": "1000", "total_cn": "2",
+        "major_cn": "1", "minor_cn": "1", "cnv_confidence": "high",
+    }])
+    return events, cnv
+
+
+def test_ccf21_uses_concordant_multi_tool_median(tmp_path):
+    events, cnv = _write_ccf_inputs(tmp_path)
+    recommendation = tmp_path / "purity_recommendation.json"
+    recommendation.write_text(json.dumps({
+        "status": "CONCORDANT", "recommended_purity": 0.7, "range": "0.6800-0.7200",
+        "n_tools": 3, "tool_values": {"FACETS": 0.68, "PURPLE": 0.7, "Sequenza": 0.72},
+    }), encoding="utf-8")
+
+    rows = build_ccf_2(events, recommendation, cnv, load_profile("default"), tmp_path / "ccf.tsv")
+
+    row = rows[0]
+    assert row["purity"] == "0.7000"
+    assert row["purity_source"] == "multi_tool_median"
+    assert row["purity_confidence"] == "high"
+    assert row["purity_consensus_status"] == "CONCORDANT"
+    assert json.loads(row["purity_tool_values"])["FACETS"] == 0.68
+    assert row["ccf_confidence"] in {"high", "medium"}
+    assert "purity_" not in row["ccf_warning"]
+
+
+def test_ccf21_strong_purity_discordance_forces_low_confidence(tmp_path):
+    events, cnv = _write_ccf_inputs(tmp_path)
+    recommendation = tmp_path / "purity_recommendation.json"
+    recommendation.write_text(json.dumps({
+        "status": "STRONG_DISCORDANCE", "recommended_purity": 0.52,
+        "range": "0.2500-0.8200", "n_tools": 3,
+        "tool_values": {"FACETS": 0.25, "PURPLE": 0.52, "ASCAT": 0.82},
+    }), encoding="utf-8")
+
+    out = tmp_path / "ccf.tsv"
+    rows = build_ccf_2(events, recommendation, cnv, load_profile("default"), out)
+
+    row = rows[0]
+    assert row["purity"] == "0.5200"
+    assert row["purity_consensus_status"] == "STRONG_DISCORDANCE"
+    assert row["ccf_confidence"] == "low"
+    assert "purity_strong_discordance" in row["ccf_warning"]
+    qc = read_tsv(out.parent / "ccf_input_qc.tsv")[0]
+    assert qc["ccf_ready_status"] == "limited"
+    assert json.loads(qc["purity_tool_values"])["ASCAT"] == 0.82

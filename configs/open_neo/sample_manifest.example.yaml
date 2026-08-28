@@ -1,0 +1,78 @@
+schema_version: open-neo-sample-v1
+case_id: CASE001
+sample_id: TUMOR001
+genome_build: GRCh38
+tumor_type: DSRCT
+
+inputs:
+  tumor_dna_bam: ""
+  normal_dna_bam: ""
+  tumor_rna_bam: ""
+  tumor_dna_fastq: []
+  normal_dna_fastq: []
+  tumor_rna_fastq: []
+  # RNA FASTQ -> expression + fusion + splice production profile assets.
+  # With exactly two tumor_rna_fastq files, Skill2 generates this profile
+  # automatically when production_manifest is not supplied.
+  star_index: /ref/GRCh38/star_index
+  ctat_genome_lib: /ref/ctat/current
+  easyfuse_ref: /ref/easyfuse/easyfuse_ref_v4
+  normal_readthrough: /ref/fusion/normal_readthrough.tsv
+  snaf_workflow: ""       # optional; must emit snaf_candidates.tsv
+  splicemutr_workflow: "" # optional; must emit splicemutr_candidates.tsv
+  rna_threads: 16
+  somatic_vcf: /path/to/tumor.normal.somatic.vcf.gz
+  fusion_tsv: /path/to/fusions.pass.tsv
+  splice_junction_tsv: /path/to/regtools.splice.tsv
+  hla_alleles:
+    - HLA-A*02:01
+    - HLA-B*07:02
+  expression_tsv: /path/to/gene_tpm.tsv
+  transcript_expression_tsv: /path/to/transcript_tpm.tsv
+  rna_evidence_tsv: /path/to/rna_alt_vaf.tsv
+  # To calculate both gene and transcript TPM from RNA FASTQ instead:
+  salmon_index: /ref/salmon/transcriptome_index
+  tx2gene: /ref/annotation/tx2gene.tsv
+  # Alternative: rsem_reference: /ref/rsem/GRCh38_gencode
+  purity_tsv: /path/to/purity.tsv
+  cnv_tsv: /path/to/cnv_segments.tsv
+  hla_loh_tsv: /path/to/hla_loh.tsv
+  normal_expression: /path/to/normal_expression.tsv
+  normal_hla_ligands: /path/to/normal_ligandome.tsv
+  reference_proteome: /path/to/normal_proteome.fa
+  normal_junctions: /path/to/normal_junctions.tsv
+  reference_fasta: /path/to/GRCh38.fa
+  gencode_gtf: /path/to/gencode.gtf
+  vep_cache: /path/to/vep_cache
+
+tool_results:
+  hla_typing:
+    optitype: ""
+    spechla: ""
+    hla-la: ""
+  hla_loh:
+    lohhla: ""
+    spechla: ""
+  fusion:
+    easyfuse: ""
+    arriba: ""
+    star-fusion: ""
+  splice_dna:
+    spliceai: ""
+  splice_rna:
+    regtools: ""
+  splice_neoantigen:
+    pvacsplice: ""
+    snaf: ""
+    splicemutr: ""
+  purity_cnv:
+    facets: ""
+    ascat: ""
+    purple: ""
+    sequenza: ""
+
+execution:
+  mode: dry-run
+  profile: sarcoma_rna_supported
+  backend: production-run
+  reuse_existing: true

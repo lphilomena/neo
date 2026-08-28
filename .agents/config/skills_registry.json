@@ -1,0 +1,200 @@
+{
+  "neoag-input-qc": {
+    "intents": [
+      "input_check",
+      "patient_report_update",
+      "run_scoring"
+    ],
+    "module": "neoag.agent_skills.input_qc",
+    "outputs": [
+      "input_status.json",
+      "input_qc_report.tsv",
+      "missing_inputs.tsv",
+      "recommended_workflow.md"
+    ]
+  },
+  "neoag-tool-and-reference-qc": {
+    "intents": [
+      "tool_check"
+    ],
+    "module": "neoag.agent_skills.tool_reference_qc",
+    "outputs": [
+      "tool_qc_report.tsv",
+      "reference_qc_report.tsv",
+      "tool_reference_qc.md"
+    ]
+  },
+  "neoag-run-demo-and-smoke": {
+    "intents": [
+      "demo_smoke",
+      "tool_check"
+    ],
+    "module": "neoag.agent_skills.run_demo_smoke",
+    "outputs": [
+      "smoke_test_report.md"
+    ]
+  },
+  "neoag-evidence-scoring": {
+    "intents": [
+      "run_scoring"
+    ],
+    "module": "neoag.agent_skills.evidence_scoring",
+    "outputs": [
+      "evidence_scoring_plan.md",
+      "scoring/ranked_peptides.tsv"
+    ]
+  },
+  "neoag-hla-loh-appm-review": {
+    "intents": [
+      "appm_escape_review",
+      "patient_report_update"
+    ],
+    "module": "neoag.agent_skills.appm_review",
+    "outputs": [
+      "appm_escape_review.md",
+      "hla_loh_consensus.tsv",
+      "appm_driver_defects_summary.tsv"
+    ]
+  },
+  "neoag-ccf-clonality-review": {
+    "intents": [
+      "ccf_review",
+      "patient_report_update"
+    ],
+    "module": "neoag.agent_skills.ccf_review",
+    "outputs": [
+      "ccf_clonality_review.md",
+      "ccf_confidence_flags.tsv",
+      "ccf_modifier_summary.tsv"
+    ]
+  },
+  "neoag-ranking-compare": {
+    "intents": [
+      "ranking_compare",
+      "patient_report_update",
+      "experiment_design"
+    ],
+    "module": "neoag.agent_skills.ranking_compare",
+    "outputs": [
+      "ranking_compare_report.md",
+      "topn_overlap.tsv",
+      "rank_shift.tsv",
+      "shared_top20_candidates.tsv"
+    ]
+  },
+  "neoag-patient-report": {
+    "intents": [
+      "patient_report_update"
+    ],
+    "module": "neoag.agent_skills.patient_report",
+    "outputs": [
+      "patient_report.md",
+      "patient_report.html",
+      "patient_report.docx"
+    ]
+  },
+  "neoag-sliding-run": {
+    "intents": [
+      "sliding_run",
+      "run_scoring"
+    ],
+    "type": "documented_workflow",
+    "path": ".agents/skills/neoag-sliding-run/SKILL.md",
+    "outputs": [
+      "sliding_run_summary.json",
+      "run-full/upstream/tools/variant_peptides.tsv",
+      "run-full/upstream/tools/variant_peptides.annotated.tsv",
+      "run-full/upstream/parsed/raw_events.tsv",
+      "run-full/upstream/parsed/raw_peptides.tsv",
+      "run-full/presentation/presentation_evidence.tsv",
+      "run-full/scoring/ranked_events.tsv",
+      "run-full/scoring/ranked_peptides.tsv",
+      "run-full/scoring/validation_plan.tsv",
+      "run-full/reports/evidence_report.html",
+      "run-full/reports/evidence_report.patient.html",
+      "run-full/reports/evidence_report.technical.html",
+      "run-full/provenance.json"
+    ]
+  },
+  "neoag-result-inspector": {
+    "intents": [
+      "inspect_results",
+      "patient_report_update"
+    ],
+    "module": "neoag.agent_skills.result_inspector",
+    "outputs": [
+      "result_inspection.md",
+      "result_inspection.json"
+    ]
+  },
+  "neoag-purity-cnv-run-and-review": {
+    "intents": [
+      "purity_cnv_review",
+      "inspect_results"
+    ],
+    "module": "neoag.agent_skills.purity_cnv_review",
+    "outputs": [
+      "purity_cnv_review.md",
+      "purity_cnv_tool_summary.tsv",
+      "purity_recommendation.json",
+      "purity_cnv_run_suggestions.tsv"
+    ]
+  },
+  "neoag-hla-typing-run-and-compare": {
+    "intents": [
+      "hla_typing_compare",
+      "inspect_results"
+    ],
+    "module": "neoag.agent_skills.hla_typing_compare",
+    "outputs": [
+      "hla_typing_compare.md",
+      "hla_typing_tool_summary.tsv",
+      "hla_typing_consensus.tsv",
+      "hla_typing_recommendation.json",
+      "hla_typing_run_suggestions.tsv"
+    ]
+  },
+  "neoag-fusion-rna-run": {
+    "intents": [
+      "fusion_rna_run",
+      "inspect_results"
+    ],
+    "module": "neoag.agent_skills.fusion_rna_run",
+    "outputs": [
+      "fusion_rna_review.md",
+      "fusion_tool_summary.tsv",
+      "fusion_consensus.tsv",
+      "fusion_recommendation.json",
+      "fusion_run_suggestions.tsv"
+    ]
+  },
+  "neoag-rna-fastq-to-tpm": {
+    "intents": [
+      "rna_fastq_to_tpm",
+      "inspect_results"
+    ],
+    "module": "neoag.agent_skills.rna_fastq_to_tpm",
+    "outputs": [
+      "rna_expression_summary.md",
+      "expression_input_summary.tsv",
+      "rna_input_files.tsv",
+      "gene_tpm.tsv",
+      "rna_tpm_run_suggestions.tsv",
+      "rna_expression_recommendation.json"
+    ]
+  },
+  "neoag-workflow-select": {
+    "intents": [
+      "workflow_run_request",
+      "input_check",
+      "purity_cnv_review",
+      "hla_typing_compare"
+    ],
+    "type": "documented_workflow",
+    "path": ".agents/skills/neoag-workflow-select/SKILL.md",
+    "outputs": [
+      "workflow_selection.json",
+      "workflow_selection.md"
+    ]
+  }
+}

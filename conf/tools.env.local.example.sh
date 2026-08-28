@@ -15,12 +15,26 @@
 
 # Reference data
 # export NEOAG_NORMAL_PROTEOME_FASTA="/path/to/Homo_sapiens.GRCh38.pep.all.fa"
+# export NEOAG_NORMAL_JUNCTIONS="/path/to/normal_junctions.GRCh38.tsv.gz"
 # export NEOAG_DBSNP_VCF="/path/to/dbsnp_chr.vcf.gz"
 # export NEOAG_SHARED_REF_DIR="/path/to/shared_refs"
 #
-# VEP cache root (must contain homo_sapiens/105_GRCh38/, not the 105_GRCh38 dir itself)
+# VEP cache root (must contain homo_sapiens/105_GRCh38/, not the release dir itself)
 # export NEOAG_VEP_CACHE="/path/to/data/vep"
 # export NEOAG_VEP_CACHE_VERSION="105"
+#
+# External tool deployment (LOHHLA / FACETS / ASCAT / Arriba / PRIME):
+#   bash scripts/deploy_external_tools.sh
+#   bash scripts/verify_external_tools.sh
 
-# Patient / cohort data (example: chenxiaoliang)
-# export CHENXIAOLIANG_DATA_ROOT="/path/to/chenxiaoliang_data"
+# Site-local cohort data root, if your deployment uses one
+# export NEOAG_COHORT_DATA_ROOT="/path/to/cohort_data"
+
+# RNA FASTQ to TPM (optional; used by neoag-rna-fastq-to-tpm)
+# export SALMON_BIN="salmon"
+# export SALMON_INDEX="$NEOAG_DATA_ROOT/data/ref/rna/salmon_index"
+# export SALMON_TX2GENE="$NEOAG_DATA_ROOT/data/ref/rna/tx2gene.tsv"
+# export SALMON_THREADS="8"
+# export RSEM_BIN="rsem-calculate-expression"
+# export RSEM_REFERENCE="$NEOAG_DATA_ROOT/data/ref/rna/rsem_reference/rsem_ref"
+# export RSEM_THREADS="8"

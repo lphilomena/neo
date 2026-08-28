@@ -1,0 +1,201 @@
+manifest_version: 1
+genome_build: GRCh38
+created_at: 2026-07-16
+owner: neoag
+
+references:
+  splicemutr_bsgenome_hg38:
+    path: ${OPEN_NEO_REFERENCE_ROOT}/data/splice/splicemutr/r_library/BSgenome.Hsapiens.UCSC.hg38
+    source: UCSC/Bioconductor BSgenome
+    version: 1.4.5_hg38_GRCh38.p14
+    marker: DESCRIPTION
+    required: true
+
+  reference_fasta:
+    path: ${OPEN_NEO_REFERENCE_ROOT}/data/ref/hg38/Homo_sapiens_assembly38.fasta
+    source: Ensembl/EasyFuse reference bundle
+    version: GRCh38.110
+    sha256: 1e74081a49ceb9739cc14c812fbb8b3db978eb80ba8e5350beb80d8ad8dfef3b
+    marker: .fai
+    required: true
+
+  gencode_gtf:
+    path: ${OPEN_NEO_REFERENCE_ROOT}/data/ref/hg38/gencode.gtf
+    source: Ensembl/EasyFuse reference bundle
+    version: GRCh38.110
+    sha256: 12582b0db02ebe19c29c5733c6edaa62599fe934af593cb7f24423a14db3186c
+    required: true
+
+  vep_cache:
+    path: ${OPEN_NEO_REFERENCE_ROOT}/data/vep/homo_sapiens/105_GRCh38
+    source: Ensembl VEP
+    version: 105_GRCh38
+    vep_version_required: "105"
+    marker: info.txt
+    required: true
+
+  bigmhc_models:
+    path: ${OPEN_NEO_TOOLS_ROOT}/tools/bigmhc/models
+    source: BigMHC
+    version: project_default
+    marker: bat512/im
+    required: true
+
+  easyfuse_ref:
+    path: ${OPEN_NEO_REFERENCE_ROOT}/data/easyfuse/easyfuse_ref_v4
+    source: EasyFuse
+    version: v4
+    marker: BEFORE_EXECUTING_EASYFUSE
+    required: false
+
+  hla_la_graph:
+    path: ${OPEN_NEO_REFERENCE_ROOT}/data/hla/PRG_MHC_GRCh38_withIMGT
+    source: HLA-LA graph bundle
+    version: PRG_MHC_GRCh38_withIMGT
+    marker: serializedGRAPH
+    required: false
+
+  facets_common_snp_vcf:
+    path: ${OPEN_NEO_REFERENCE_ROOT}/data/facets/reference/common_snp.hg38.vcf.gz
+    source: FACETS common SNP reference
+    version: hg38
+    sha256: dd21f5de0057743bf6a374b43fab0c30bfc70c5078e0a7e25cd7b37938dc3d3b
+    marker: .tbi
+    required: true
+
+  bam_matcher_loci:
+    path: ${OPEN_NEO_REFERENCE_ROOT}/data/sample_identity/bam_matcher.common_snps.hg38.vcf
+    source: curated common high-MAF biallelic SNP identity panel
+    version: GRCh38
+    sha256: 5c1391ea76712ca9098af4b89fa4eb69c475dec0b2e13d483cae681f1085bb3f
+    required: false
+
+  normal_proteome:
+    path: ${OPEN_NEO_REFERENCE_ROOT}/data/normal/proteome/Homo_sapiens.GRCh38.pep.all.fa
+    source: Ensembl peptide reference
+    version: GRCh38.110
+    required: true
+
+  normal_ligandome:
+    path: ${OPEN_NEO_REFERENCE_ROOT}/data/normal/ligandome/normal_ms_ligands.tsv
+    source: HLA Ligand Atlas
+    version: "2020.12"
+    license: CC-BY-4.0
+    manifest: ${OPEN_NEO_REFERENCE_ROOT}/data/normal/hla_ligand_atlas/2020.12/manifest.json
+    checksums: ${OPEN_NEO_REFERENCE_ROOT}/data/normal/hla_ligand_atlas/2020.12/SHA256SUMS
+    builder: scripts/build_hla_ligand_atlas_reference.py
+    required: true
+
+  normal_expression:
+    path: ${OPEN_NEO_REFERENCE_ROOT}/data/normal/expression/normal_expression.gtex_v11_hpa_hspc.tsv
+    source: GTEx v11 normal tissue expression plus HPA HSPC background
+    version: GTEx_v11_HPA_25.1_GRCh38
+    sha256: d999c2b89e3cfb6244e5aa12d122c0e85a8bcc84f427942d418a8492bfc91d32
+    qc: ${OPEN_NEO_REFERENCE_ROOT}/data/normal/expression/normal_expression.gtex_v11_hpa_hspc.qc.tsv
+    required: true
+    scoring_role: normal_expression_background
+
+  iedb_human_ms_ligands_detail:
+    path: ${OPEN_NEO_REFERENCE_ROOT}/data/normal/iedb_mhc_ligand/2026-07-14/build/iedb_human_ms_ligands_detail.tsv
+    source: IEDB MHC ligand full TSV export
+    version: IEDB-export-2026-07-14
+    sha256: 219125f7501f951b6c42f2a0ca513d5e57b5266c1a74a8c674258edb2acb0207
+    manifest: ${OPEN_NEO_REFERENCE_ROOT}/data/normal/iedb_mhc_ligand/2026-07-14/manifest.json
+    required: true
+
+  iedb_human_ms_ligands:
+    path: ${OPEN_NEO_REFERENCE_ROOT}/data/normal/iedb_mhc_ligand/2026-07-14/build/iedb_human_ms_ligands.tsv
+    source: IEDB MHC ligand full TSV export
+    version: IEDB-export-2026-07-14
+    sha256: e72f6fad29dfe96fa3a147ffe5b47ef1112cb14f655cdac8e8d84fcddc49bddf
+    required: true
+
+  iedb_strict_normal_ligands:
+    path: ${OPEN_NEO_REFERENCE_ROOT}/data/normal/iedb_mhc_ligand/2026-07-14/build/iedb_human_normal_direct_ex_vivo_ligands.tsv
+    source: IEDB healthy-or-unspecified Direct Ex Vivo subset
+    version: IEDB-export-2026-07-14
+    sha256: e8da603e58a8bd697d0c3375c6318fec260737321803fa277684b9886a4fa7eb
+    manifest: ${OPEN_NEO_REFERENCE_ROOT}/data/normal/iedb_mhc_ligand/2026-07-14/manifest.json
+    required: true
+
+  cancer_gene_list:
+    path: ${OPEN_NEO_REFERENCE_ROOT}/data/annotation/cancer_gene/oncokb_v7.3_2026-06-25/cancerGeneList.tsv
+    source: OncoKB Cancer Gene List
+    version: v7.3_2026-06-25
+    sha256: e333f58739c8fdf31b98ee5cb00c9fb05a36eeba74719a25d17d7f68c27156ba
+    manifest: ${OPEN_NEO_REFERENCE_ROOT}/data/annotation/cancer_gene/oncokb_v7.3_2026-06-25/manifest.json
+    required: false
+    scoring_role: annotation_and_report_only
+
+  normal_junctions_liver:
+    path: ${OPEN_NEO_REFERENCE_ROOT}/data/normal/junctions/gtex_v8_liver.GRCh38.tsv.gz
+    source: recount3 GTEx v8 Liver exon-exon junction counts
+    version: recount3_2023-01-04_GRCh38
+    marker: .meta.json
+    required: false
+
+  normal_junctions:
+    path: ${OPEN_NEO_REFERENCE_ROOT}/data/normal/junctions/normal_junctions.GRCh38.tsv.gz
+    source: recount3 GTEx v8 pan-tissue exon-exon junction counts
+    version: recount3_2023-01-04_GRCh38
+    sha256: f0e4292f8a873530d06d0621295c415f20be917a9d17c0ed55feb30e5df3fe5b
+    marker: .meta.json
+    required: false
+
+  salmon_index:
+    path: ${OPEN_NEO_REFERENCE_ROOT}/data/rna/gencode_v49/salmon_index
+    source: GENCODE v49 transcriptome Salmon index
+    version: GENCODE_v49_GRCh38
+    marker: versionInfo.json
+    required: false
+
+  salmon_tx2gene:
+    path: ${OPEN_NEO_REFERENCE_ROOT}/data/rna/gencode_v49/tx2gene.tsv
+    source: GENCODE v49 transcript-to-gene mapping
+    version: GENCODE_v49_GRCh38
+    required: false
+
+  rsem_reference:
+    path: ${OPEN_NEO_REFERENCE_ROOT}/data/rna/rsem_reference/gencode_v49/gencode_v49_gene_first
+    source: GENCODE v49 GRCh38 RSEM reference prefix
+    version: GENCODE_v49_GRCh38
+    marker: .grp
+    required: false
+
+  star_index:
+    path: ${OPEN_NEO_REFERENCE_ROOT}/data/ref/ctat/current/ctat_genome_lib_build_dir/ref_genome.fa.star.idx
+    source: CTAT/STAR genome index matching the configured GRCh38 FASTA and GTF
+    version: GRCh38_project_bundle
+    marker: Genome
+    required: false
+
+  ctat_genome_lib:
+    path: ${OPEN_NEO_REFERENCE_ROOT}/data/ref/ctat/current/ctat_genome_lib_build_dir
+    source: CTAT genome library
+    version: project_current
+    marker: ref_genome.fa.star.idx
+    required: false
+
+  spechla_db:
+    path: ${OPEN_NEO_REFERENCE_ROOT}/data/hla/spechla/db
+    source: SpecHLA database assets
+    version: project_frozen
+    required: false
+
+  lohhla_reference:
+    path: ${OPEN_NEO_REFERENCE_ROOT}/data/lohhla/polysolver
+    source: LOHHLA/Polysolver HLA reference assets
+    version: project_frozen
+    required: false
+
+  sequenza_gc_wiggle:
+    path: ${OPEN_NEO_REFERENCE_ROOT}/data/sequenza/reference/Homo_sapiens.GRCh38.dna.primary_assembly.chr.gc50.wig.gz
+    source: Sequenza GRCh38 GC wiggle
+    version: GRCh38_gc50
+    required: false
+
+  purple_reference:
+    path: ${OPEN_NEO_REFERENCE_ROOT}/data/hmf/purple_reference
+    source: PURPLE/AMBER/COBALT reference bundle
+    version: project_frozen
+    required: false

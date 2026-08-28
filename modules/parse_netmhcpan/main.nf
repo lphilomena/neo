@@ -12,12 +12,12 @@ process PARSE_NETMHCPAN {
 
   script:
   """
-  neoag-v03 parse-netmhcpan \
+  neoag parse-netmhcpan \
     --sample-id '${sample_id}' \
     --input '${netmhcpan_file}' \
     --out netmhcpan_evidence.tsv
 
   echo "PARSE_NETMHCPAN:" > versions.yml
-  echo "  neoag-v03: \$(python -c 'import neoag_v03; print(neoag_v03.__version__)')" >> versions.yml
+  echo "  neoag: \$(python -c 'import neoag; print(neoag.__version__)')" >> versions.yml
   """
 }

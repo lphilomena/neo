@@ -1,3 +1,49 @@
+# NeoAg Event Pipeline v0.5.0 — Formal Splice Provenance Layer
+
+- Version: `v0.5.0`
+- Release date: 2026-07-29
+- Scope: formal junction/event/transcript-hypothesis/ORF/peptide-origin/presentation provenance with compatibility projection.
+
+## v0.5.0 Major Additions
+
+- Introduces stable `SEV|`, `STH|`, `ORF|`, `PEP|`, `POR|`, and `PRE|` entity identifiers.
+- Materializes authoritative junction, event, event-junction link, transcript-hypothesis, ORF, peptide-origin, presentation, normal-background, evidence, consensus, conflict, and QC tables.
+- Adds RegTools/STAR-compatible junction, SplAdder GFF3/TXT, IRFinder-S, ImmunoPepper, and pVACbind adapters.
+- Requires exact pVACbind FASTA Index provenance and verifies every returned epitope against its mapped ORF sequence.
+- Separates event evidence, ORF reconstruction, normal safety, and presentation into independent evidence groups; raw tool count is not treated as independent confirmation.
+- Applies conservative E0–E3, O0–O3, N0–N3, P0/P1, and R1–R4 consensus rules with explicit caps and hard-fail codes.
+- Preserves v0.4.4 exact-junction non-leakage and emits backward-compatible `raw_events.tsv`, `raw_peptides.tsv`, and `rna_junction_evidence.tsv`.
+- Adds the `neoag-splice-layer` CLI and a two-pass production shell driver that can generate pVACbind input, run pVACbind, and rebuild the final layer with presentation evidence.
+
+## Compatibility
+
+The v0.5.0 layer is additive. Existing v0.4.4 workflows can continue reading the compatibility tables, while new consumers should treat the formal splice tables and `provenance_manifest.json` as authoritative.
+
+---
+
+# NeoAg Event Pipeline v0.4.4 — Exact Junction & Provenance Repair
+
+- Version: `v0.4.4`
+- Release date: 2026-07-28
+- Scope: exact splice-junction normalization, evidence non-leakage, and provenance-preserving production merges.
+
+## v0.4.4 Critical Fixes
+
+- Canonical junction identity is `SJ|build|chrom|intron_start|intron_end|strand`, with 1-based closed intron coordinates.
+- RegTools annotated tables and BED12 extraction output are normalized through explicit coordinate adapters.
+- Removed gene-level, nearest-locus, and maximum-read fallback transfer. Unresolved caller counts remain only in `provided_rna_junction_reads`.
+- Ambiguous source-junction aliases transfer zero verified reads and emit a conflict record.
+- SNAF/SpliceMutr cross-domain confirmation now requires an exact canonical junction.
+- Production-runner duplicate handling now materializes one provenance row per input record instead of discarding later rows.
+- Added event/peptide provenance, merge-conflict, canonical-junction, consensus, QC, and manifest outputs.
+- Added non-skipped regression tests for same-gene evidence leakage, coordinate conversion, ambiguous aliases, multi-tool provenance, and exact consensus.
+
+## Compatibility
+
+`raw_events.tsv` and `raw_peptides.tsv` remain schema-compatible outputs. New v0.4.4 fields are additive. Legacy `rna_junction_reads` now means verified exact-junction support; caller-provided but unverified values are isolated in `provided_rna_junction_reads`.
+
+---
+
 # NeoAg Event Pipeline v0.4.3 Online Release
 
 - Release name: `v043_online_20260629`
@@ -12,7 +58,7 @@
 
 This release contains the v0.4.3 neoantigen prioritization pipeline with:
 
-- v03 schema-compatible event and peptide parsing/scoring outputs. The `v03` suffix is a stable table-schema label, not the software version.
+- schema-compatible event and peptide parsing/scoring outputs. The schema suffix is a stable table-schema label, not the software version.
 - APPM 2.0 gene/module/peptide evidence and input-status tracking.
 - CCF 2.0 clonality estimates from purity, copy-number, and VAF context.
 - Peptide safety gates for normal expression, normal ligandome, normal junction, matched-normal, and reference proteome context.
@@ -51,7 +97,7 @@ The online release was verified on the source tree and the unpacked online packa
 | Check | Scope | Status |
 | --- | --- | --- |
 | `pytest -q` | default release-safe tests | PASS |
-| `neoag-v03 run-demo --outdir ...` | CLI fixture demo | PASS |
+| `neoag run-demo --outdir ...` | CLI fixture demo | PASS |
 | unpacked package `pytest -q` | package smoke | PASS |
 | unpacked package demo | package smoke | PASS |
 | Nextflow fixture with pre-populated `NXF_HOME` | workflow smoke | PASS |
@@ -63,7 +109,7 @@ This refresh completes three production-facing evidence gaps:
 
 - RNA allele support: `build-evidence-layer --rna-vaf` now materializes `rna_alt_reads`, `rna_ref_reads`, `rna_depth`, `rna_vaf`, `rna_vaf_source`, and `rna_support_status` in `parsed/rna_junction_evidence.tsv`.
 - Fusion/splice targeted RNA validation: fusion evidence and splice junction evidence now produce `targeted_validation_status`, `targeted_validation_source`, and `targeted_validation_method` alongside junction reads.
-- HLA LOH cross-validation: `neoag-v03 crosscheck-hla-loh` compares normalized LOHHLA and SpecHLA calls, writes a detailed cross-check table, and can emit a downstream-compatible consensus `hla_loh.tsv`.
+- HLA LOH cross-validation: `neoag crosscheck-hla-loh` compares normalized LOHHLA and SpecHLA calls, writes a detailed cross-check table, and can emit a downstream-compatible consensus `hla_loh.tsv`.
 
 ## Default Pytest vs Run-All
 
@@ -117,7 +163,7 @@ Typical setup:
 ```bash
 export NEOAG_TOOLS_ROOT=/path/to/neoag_artifacts
 source conf/tools.env.sh
-neoag-v03 check-tools
+neoag check-tools
 ```
 
 The fixture demo and default tests do not require licensed or heavyweight tools.
@@ -127,7 +173,7 @@ The fixture demo and default tests do not require licensed or heavyweight tools.
 ```bash
 python -m pip install -e '.[test]'
 pytest -q
-neoag-v03 run-demo --outdir work/demo_v043 --sample-id DEMO001
+neoag run-demo --outdir work/demo_v043 --sample-id DEMO001
 ```
 
 ## Interpretation Boundary

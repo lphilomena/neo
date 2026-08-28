@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from neoag_v03.hla_loh_crosscheck import crosscheck_hla_loh, write_hla_loh_crosscheck
-from neoag_v03.utils import read_tsv
+from neoag.hla_loh_crosscheck import crosscheck_hla_loh, write_hla_loh_crosscheck
+from neoag.utils import read_tsv
 
 
 def test_hla_loh_crosscheck_consensus_discordant_and_single_tool(tmp_path: Path):
@@ -26,8 +26,11 @@ def test_hla_loh_crosscheck_consensus_discordant_and_single_tool(tmp_path: Path)
     rows = crosscheck_hla_loh(lohhla_hla_loh=lohhla, spechla_hla_loh=spechla)
     by = {r["hla_allele"]: r for r in rows}
     assert by["HLA-A*02:01"]["crosscheck_status"] == "CONSENSUS_LOH"
+    assert by["HLA-A*02:01"]["consensus_status"] == "CONSENSUS_LOST"
     assert by["HLA-B*07:02"]["crosscheck_status"] == "DISCORDANT"
+    assert by["HLA-B*07:02"]["consensus_status"] == "DISCORDANT"
     assert by["HLA-C*07:02"]["crosscheck_status"] == "SINGLE_TOOL_LOH"
+    assert by["HLA-C*07:02"]["consensus_status"] == "UNASSESSED"
 
     out = tmp_path / "hla_loh.crosscheck.tsv"
     consensus = tmp_path / "hla_loh.consensus.tsv"

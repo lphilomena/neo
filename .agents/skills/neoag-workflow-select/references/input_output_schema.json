@@ -1,0 +1,13 @@
+{
+  "inputs": {
+    "sample_manifest": "required path",
+    "tools_manifest": "recommended path",
+    "reference_manifest": "recommended path",
+    "show_paths": "optional boolean; false by default"
+  },
+  "outputs": {
+    "workflow_selection.json": "machine-readable selected workflow and stages",
+    "workflow_selection.md": "human-readable dry-run plan"
+  },
+  "execution": false
+}

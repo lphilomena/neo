@@ -9,7 +9,7 @@
 #
 # Common overrides:
 #   PATIENT_ID=sample_id
-#   OUTDIR=results/chenxiaoliang_facets/<sample>_omni2p5_biallelic_snponly_downsample1m
+#   OUTDIR=results/facets/<sample>/omni2p5_biallelic_snponly_downsample1m
 #   FACETS_SNP_VCF=data/facets/reference/1000G_omni2.5.hg38.biallelic.vcf.gz
 #   FACETS_TARGET_ROWS=1000000
 #   FACETS_CVAL_PRE=25
@@ -36,8 +36,30 @@ FACETS_STEP="${FACETS_STEP:-all}"
 
 FACETS_SNPSET_NAME="${FACETS_SNPSET_NAME:-omni2p5}"
 FACETS_SNP_VCF="${FACETS_SNP_VCF:-${OMNI2P5_VCF:-${ROOT}/data/facets/reference/1000G_omni2.5.hg38.biallelic.vcf.gz}}"
-SNP_PILEUP_BIN="${SNP_PILEUP_BIN:-${ROOT}/bin/snp-pileup}"
-RSCRIPT="${RSCRIPT:-${NEOAG_CONDA_BASE}/envs/${NEOAG_FUSION_ENV:-neoag-fusion-r36}/bin/Rscript}"
+SNP_PILEUP_BIN="${SNP_PILEUP_BIN:-}"
+FACETS_R_ENV_PREFIX="${FACETS_R_ENV_PREFIX:-}"
+if [[ -z "${FACETS_R_ENV_PREFIX}" ]]; then
+  for candidate in neoag-facets neoag-r neoag-fusion neoag-tools; do
+    candidate_prefix="${NEOAG_CONDA_BASE}/envs/${candidate}"
+    if [[ -x "${candidate_prefix}/bin/Rscript" ]] && \
+       "${candidate_prefix}/bin/Rscript" -e 'quit(status=ifelse(requireNamespace("facets", quietly=TRUE), 0, 1))' >/dev/null 2>&1; then
+      FACETS_R_ENV_PREFIX="${candidate_prefix}"
+      break
+    fi
+  done
+fi
+RSCRIPT="${RSCRIPT:-${FACETS_R_ENV_PREFIX}/bin/Rscript}"
+if [[ -z "${SNP_PILEUP_BIN:-}" ]]; then
+  if [[ -x "${NEOAG_CONDA_BASE}/envs/neoag-facets/bin/snp-pileup" ]]; then
+    SNP_PILEUP_BIN="${NEOAG_CONDA_BASE}/envs/neoag-facets/bin/snp-pileup"
+  elif [[ -x "${NEOAG_CONDA_BASE}/envs/neoag-tools/bin/snp-pileup" ]]; then
+    SNP_PILEUP_BIN="${NEOAG_CONDA_BASE}/envs/neoag-tools/bin/snp-pileup"
+  elif [[ -x "${ROOT}/bin/snp-pileup" ]]; then
+    SNP_PILEUP_BIN="${ROOT}/bin/snp-pileup"
+  else
+    SNP_PILEUP_BIN="snp-pileup"
+  fi
+fi
 SNP_PILEUP_MIN_READS="${SNP_PILEUP_MIN_READS:-5,5}"
 FACETS_TARGET_ROWS="${FACETS_TARGET_ROWS:-1000000}"
 FACETS_NDEPTH="${FACETS_NDEPTH:-5}"
@@ -45,9 +67,7 @@ FACETS_CVAL_PRE="${FACETS_CVAL_PRE:-25}"
 FACETS_CVAL_PROC="${FACETS_CVAL_PROC:-25}"
 FACETS_MIN_NHET="${FACETS_MIN_NHET:-5}"
 
-FACETS_HOME="${FACETS_HOME:-${NEOAG_TOOLS_ROOT}/tools/facets}"
-FACETS_QUARANTINE="${ROOT}/../neoag_event_pipeline_v03_rc_artifact_quarantine_20260622_091158/tools/facets"
-RUN_FACETS_R="${FACETS_HOME}/runFACETS.R"
+RUN_FACETS_R="${FACETS_EXPORT_SCRIPT:-${ROOT}/scripts/facets_export_from_rds.R}"
 
 PILEUP="${OUT}/${PATIENT_ID}.${FACETS_SNPSET_NAME}.snponly.pileup.csv"
 DOWNSAMPLED="${OUT}/${PATIENT_ID}.${FACETS_SNPSET_NAME}.snponly.downsample${FACETS_TARGET_ROWS}.csv"
@@ -65,32 +85,19 @@ step_wanted() {
   [[ "${FACETS_STEP}" == "all" || "${FACETS_STEP}" == "$1" ]]
 }
 
-resolve_facets_home() {
-  if [[ -f "${RUN_FACETS_R}" ]]; then
-    return 0
-  fi
-  if [[ -f "${FACETS_QUARANTINE}/runFACETS.R" ]]; then
-    FACETS_HOME="${FACETS_QUARANTINE}"
-    RUN_FACETS_R="${FACETS_HOME}/runFACETS.R"
-    return 0
-  fi
-  echo "ERROR: runFACETS.R not found under ${FACETS_HOME} or ${FACETS_QUARANTINE}" >&2
-  exit 1
-}
-
 check_prereqs() {
   [[ -x "${SNP_PILEUP_BIN}" ]] || { echo "ERROR: missing snp-pileup: ${SNP_PILEUP_BIN}" >&2; exit 1; }
   [[ -x "${RSCRIPT}" ]] || { echo "ERROR: missing Rscript: ${RSCRIPT}" >&2; exit 1; }
   [[ -s "${FACETS_SNP_VCF}" ]] || { echo "ERROR: missing FACETS_SNP_VCF: ${FACETS_SNP_VCF}" >&2; exit 1; }
   [[ -s "${TUMOR_BAM}" ]] || { echo "ERROR: missing TUMOR_BAM: ${TUMOR_BAM}" >&2; exit 1; }
   [[ -s "${NORMAL_BAM}" ]] || { echo "ERROR: missing NORMAL_BAM: ${NORMAL_BAM}" >&2; exit 1; }
-  [[ -s "${TUMOR_BAM}.bai" ]] || { echo "ERROR: missing tumor BAI: ${TUMOR_BAM}.bai" >&2; exit 1; }
-  [[ -s "${NORMAL_BAM}.bai" ]] || { echo "ERROR: missing normal BAI: ${NORMAL_BAM}.bai" >&2; exit 1; }
+  [[ -s "${TUMOR_BAM}.bai" || -s "${TUMOR_BAM%.bam}.bai" ]] || { echo "ERROR: missing tumor BAI for ${TUMOR_BAM}" >&2; exit 1; }
+  [[ -s "${NORMAL_BAM}.bai" || -s "${NORMAL_BAM%.bam}.bai" ]] || { echo "ERROR: missing normal BAI for ${NORMAL_BAM}" >&2; exit 1; }
   if ! "${RSCRIPT}" -e 'stopifnot(requireNamespace("facets", quietly=TRUE))' 2>/dev/null; then
     echo "ERROR: facets R package missing in ${RSCRIPT}" >&2
     exit 1
   fi
-  resolve_facets_home
+  [[ -s "${RUN_FACETS_R}" ]] || { echo "ERROR: missing FACETS exporter: ${RUN_FACETS_R}" >&2; exit 1; }
 }
 
 write_summary() {
@@ -122,6 +129,7 @@ EOS
 }
 
 run_pileup() {
+  local pileup_tmp="${PILEUP}.tmp.$$"
   echo "==> ${FACETS_SNPSET_NAME} SNP-only snp-pileup $(date -Is)"
   echo "    sample=${PATIENT_ID}"
   echo "    tumor_bam=${TUMOR_BAM}"
@@ -129,8 +137,13 @@ run_pileup() {
   echo "    vcf=${FACETS_SNP_VCF}"
   echo "    output=${PILEUP}"
   echo "    params=-q15 -Q20 -r${SNP_PILEUP_MIN_READS} without -P pseudo-snps"
-  "${SNP_PILEUP_BIN}" -q15 -Q20 -r"${SNP_PILEUP_MIN_READS}" \
-    "${FACETS_SNP_VCF}" "${PILEUP}" "${NORMAL_BAM}" "${TUMOR_BAM}"
+  rm -f "${pileup_tmp}"
+  if ! "${SNP_PILEUP_BIN}" -q15 -Q20 -r"${SNP_PILEUP_MIN_READS}" \
+    "${FACETS_SNP_VCF}" "${pileup_tmp}" "${NORMAL_BAM}" "${TUMOR_BAM}"; then
+    rm -f "${pileup_tmp}"
+    return 1
+  fi
+  mv "${pileup_tmp}" "${PILEUP}"
   local rows
   rows="$(tail -n +2 "${PILEUP}" | wc -l | tr -d " ")"
   echo "    pileup_rows=${rows}"
@@ -166,7 +179,7 @@ run_export() {
   [[ -s "${RDS}" ]] || { echo "ERROR: missing FACETS RDS: ${RDS}" >&2; exit 1; }
   echo "==> FACETS export $(date -Is)"
   if "${RSCRIPT}" "${RUN_FACETS_R}" "${RDS}" "${PURITY_TXT}" "${CNCF_TSV}"; then
-    "${ROOT}/bin/neoag-v03" convert-facets \
+    "${ROOT}/bin/neoag" convert-facets \
       --purity-input "${PURITY_TXT}" \
       --purity-output "${PURITY_TSV}" \
       --sample-id "${PATIENT_ID}" \

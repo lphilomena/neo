@@ -1,0 +1,175 @@
+manifest_version: 1
+genome_build: GRCh38
+created_at: 2026-07-14
+owner: neoag
+layout_root: /opt/neoag
+
+references:
+  reference_fasta:
+    path: /opt/neoag/refs/GRCh38/fasta/GRCh38.fa
+    source: GATK Resource Bundle
+    version: hg38_v0
+    sha256: "<sha256>"
+    required: true
+
+  gencode_gtf:
+    path: /opt/neoag/refs/GRCh38/gencode/gencode.v44.annotation.gtf.gz
+    source: GENCODE
+    version: v44
+    sha256: "<sha256>"
+    required: true
+
+  vep_cache:
+    path: /opt/neoag/refs/GRCh38/vep/vep_115_GRCh38
+    source: Ensembl VEP
+    version: 115_GRCh38
+    vep_version_required: "115"
+    required: true
+
+  protein_fasta:
+    path: /opt/neoag/refs/GRCh38/protein/protein.fa
+    source: Ensembl or GENCODE
+    version: "<version>"
+    required: false
+
+  normal_proteome:
+    path: /opt/neoag/refs/safety/normal_proteome/human_proteome.fa
+    source: UniProt_or_GENCODE
+    version: "<version>"
+    required: false
+
+  normal_ligandome:
+    path: /opt/neoag/refs/safety/normal_ligandome/normal_ms_ligands.tsv
+    source: HLA Ligand Atlas
+    version: "2020.12"
+    license: CC-BY-4.0
+    manifest: /opt/neoag/refs/safety/hla_ligand_atlas/2020.12/manifest.json
+    checksums: /opt/neoag/refs/safety/hla_ligand_atlas/2020.12/SHA256SUMS
+    builder: scripts/build_hla_ligand_atlas_reference.py
+    required: false
+
+  iedb_human_ms_ligands_detail:
+    path: /opt/neoag/refs/safety/iedb_mhc_ligand/2026-07-14/build/iedb_human_ms_ligands_detail.tsv
+    source: IEDB MHC ligand full TSV export
+    version: IEDB-export-2026-07-14
+    sha256: 219125f7501f951b6c42f2a0ca513d5e57b5266c1a74a8c674258edb2acb0207
+    manifest: /opt/neoag/refs/safety/iedb_mhc_ligand/2026-07-14/manifest.json
+    required: false
+
+  iedb_human_ms_ligands:
+    path: /opt/neoag/refs/safety/iedb_mhc_ligand/2026-07-14/build/iedb_human_ms_ligands.tsv
+    source: IEDB MHC ligand full TSV export
+    version: IEDB-export-2026-07-14
+    sha256: e72f6fad29dfe96fa3a147ffe5b47ef1112cb14f655cdac8e8d84fcddc49bddf
+    required: false
+
+  iedb_strict_normal_ligands:
+    path: /opt/neoag/refs/safety/iedb_mhc_ligand/2026-07-14/build/iedb_human_normal_direct_ex_vivo_ligands.tsv
+    source: IEDB healthy-or-unspecified Direct Ex Vivo subset
+    version: IEDB-export-2026-07-14
+    sha256: e8da603e58a8bd697d0c3375c6318fec260737321803fa277684b9886a4fa7eb
+    required: false
+
+  cancer_gene_list:
+    path: /opt/neoag/refs/annotation/cancer_gene/oncokb_v7.3_2026-06-25/cancerGeneList.tsv
+    source: OncoKB Cancer Gene List
+    version: v7.3_2026-06-25
+    sha256: e333f58739c8fdf31b98ee5cb00c9fb05a36eeba74719a25d17d7f68c27156ba
+    required: false
+    scoring_role: annotation_and_report_only
+
+  normal_junctions:
+    path: /opt/neoag/refs/safety/normal_junctions/normal_splice_junctions.tsv
+    source: curated
+    version: "<version>"
+    required: false
+
+  hla_reference:
+    path: /opt/neoag/refs/hla/
+    source: local curated HLA references
+    version: "<version>"
+    required: false
+
+  hla_la_graph:
+    path: /opt/neoag/refs/hla/hla-la/graph/PRG_MHC_GRCh38_withIMGT
+    source: HLA-LA graph bundle
+    version: GRCh38_withIMGT
+    required: false
+
+  lohhla_reference:
+    path: /opt/neoag/refs/hla/lohhla/hla_reference
+    source: LOHHLA reference bundle
+    version: "<version>"
+    required: false
+
+  facets_snp_vcf:
+    path: /opt/neoag/refs/cnv/facets/common_snp.vcf.gz
+    source: gnomAD/1000G common biallelic SNPs
+    version: GRCh38
+    sha256: "<sha256>"
+    required: false
+
+  bam_matcher_loci:
+    path: /opt/neoag/refs/GRCh38/sample_identity/bam_matcher.common_snps.vcf
+    source: curated common high-MAF biallelic SNP identity panel
+    version: GRCh38
+    sha256: "<sha256>"
+    required: false
+    notes: "Must match reference_fasta contig naming and genome build; bundled BAM-matcher hg19 panels are not compatible."
+
+  ascat_loci:
+    path: /opt/neoag/refs/cnv/ascat/loci/G1000_loci_hg38.txt
+    source: ASCAT hg38 reference
+    version: "<version>"
+    required: false
+
+  ascat_alleles:
+    path: /opt/neoag/refs/cnv/ascat/loci/G1000_alleles_hg38.txt
+    source: ASCAT hg38 reference
+    version: "<version>"
+    required: false
+
+  arriba_reference:
+    path: /opt/neoag/refs/fusion/arriba/
+    source: Arriba reference bundle
+    version: "<version>"
+    required: false
+
+  star_fusion_reference:
+    path: /opt/neoag/refs/fusion/star_fusion/ctat/current/
+    source: CTAT genome lib
+    version: "<version>"
+    required: false
+
+  star_index:
+    path: /opt/neoag/refs/GRCh38/star_index
+    source: STAR genomeGenerate from the declared FASTA and GTF
+    version: "<STAR-version>_<GENCODE-version>"
+    required: false
+
+  easyfuse_ref:
+    path: /opt/neoag/refs/fusion/easyfuse/easyfuse_ref_v4
+    source: EasyFuse reference bundle
+    version: v4
+    required: false
+
+  salmon_index:
+    path: /opt/neoag/refs/expression/salmon/gencode_transcripts
+    source: Salmon index from matching GENCODE transcripts
+    version: "<Salmon-version>_<GENCODE-version>"
+    required: false
+
+  tx2gene:
+    path: /opt/neoag/refs/expression/salmon/tx2gene.tsv
+    source: matching GENCODE transcript-to-gene mapping
+    version: "<GENCODE-version>"
+    required: false
+
+  normal_readthrough:
+    path: /opt/neoag/refs/fusion/normal_readthrough/normal_readthrough.tsv
+    source: curated normal fusion/read-through background
+    version: "<version>"
+    required: false
+
+notes:
+  boundary: example manifest only; replace paths locally and do not commit private paths

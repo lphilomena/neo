@@ -1,0 +1,19 @@
+{
+  "name": "neoag-ranking-compare",
+  "required_inputs": ["left", "right"],
+  "optional_inputs": ["left_name", "right_name"],
+  "legacy_input_aliases": {
+    "netmhcpan42": "left",
+    "recommendation": "right"
+  },
+  "outputs": [
+    "ranking_compare_report.md",
+    "ranking_comparison_summary.json",
+    "topn_overlap.tsv",
+    "candidate_rank_changes.tsv",
+    "high_rank_hard_fail.tsv",
+    "top_composition.tsv",
+    "evidence_qc_summary.tsv",
+    "manual_review_candidates.tsv"
+  ]
+}

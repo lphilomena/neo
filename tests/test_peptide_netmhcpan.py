@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from neoag_v03.adapters.peptide_netmhcpan import (
+from neoag.adapters.peptide_netmhcpan import (
     annotate_raw_peptides_tsv,
     annotate_variant_peptide_row,
     annotate_variant_peptide_rows,
@@ -8,9 +8,9 @@ from neoag_v03.adapters.peptide_netmhcpan import (
     netmhcpan_columns_from_pvac_row,
     resolve_peptide_source,
 )
-from neoag_v03.schemas import PEPTIDE_FIELDS
-from neoag_v03.utils import read_tsv, write_tsv
-from neoag_v03.adapters.pvacseq_enrich import enrich_pvacseq_aggregated
+from neoag.schemas import PEPTIDE_FIELDS
+from neoag.utils import read_tsv, write_tsv
+from neoag.adapters.pvacseq_enrich import enrich_pvacseq_aggregated
 
 
 def test_format_sample_hla_alleles():

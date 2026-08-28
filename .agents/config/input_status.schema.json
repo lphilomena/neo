@@ -1,0 +1,11 @@
+{
+  "type": "object",
+  "required": ["status", "features", "recommended_workflow", "missing_inputs"],
+  "properties": {
+    "status": {"type": "string"},
+    "sample_ids": {"type": "array", "items": {"type": "string"}},
+    "features": {"type": "object"},
+    "recommended_workflow": {"type": "string"},
+    "missing_inputs": {"type": "array"}
+  }
+}

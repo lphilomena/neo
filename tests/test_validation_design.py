@@ -1,8 +1,8 @@
 from pathlib import Path
 
-from neoag_v03.utils import write_tsv
-from neoag_v03.validation import make_validation_plan_v03
-from neoag_v03.validation_design import (
+from neoag.utils import write_tsv
+from neoag.validation import make_validation_plan
+from neoag.validation_design import (
     classify_validation_mode,
     design_validation_row,
     minigene_to_long_peptide,
@@ -78,7 +78,7 @@ def test_design_frameshift_uses_catalog_minigene(tmp_path):
         peptide="YLSFTLETL",
         wildtype_peptide="YLSFTLTKL",
     )
-    rows = make_validation_plan_v03([peptide], peptide_catalog_tsv=catalog)
+    rows = make_validation_plan([peptide], peptide_catalog_tsv=catalog)
     assert rows[0]["validation_mode"] == "frameshift_long"
     assert rows[0]["minigene"] == "GQSVLLFEVLFYQPDLK|YLSFTLET|LS"
     assert rows[0]["long_peptide"] == "GQSVLLFEVLFYQPDLKYLSFTLETLS"

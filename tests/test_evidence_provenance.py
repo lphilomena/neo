@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from neoag_v03.adapters.netmhcpan import parse_netmhcpan, write_netmhcpan_evidence
-from neoag_v03.evidence_provenance import (
+from neoag.adapters.netmhcpan import parse_netmhcpan, write_netmhcpan_evidence
+from neoag.evidence_provenance import (
     MODE_TOOL_RUN,
     SOURCE_EXTERNAL,
     SOURCE_FIXTURE,
@@ -14,10 +14,10 @@ from neoag_v03.evidence_provenance import (
     provenance_not_used,
     provenance_stub,
 )
-from neoag_v03.schemas import EVIDENCE_PROVENANCE_FIELDS
-from neoag_v03.presentation import build_presentation_evidence
-from neoag_v03.config import load_profile
-from neoag_v03.utils import read_tsv, write_tsv
+from neoag.schemas import EVIDENCE_PROVENANCE_FIELDS
+from neoag.presentation import build_presentation_evidence
+from neoag.config import load_profile
+from neoag.utils import read_tsv, write_tsv
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -38,8 +38,8 @@ def test_netmhcpan_evidence_has_provenance_fields(tmp_path):
 
 def test_netmhcpan_tool_run_provenance_columns(tmp_path, monkeypatch):
     monkeypatch.delenv("NEOAG_NETMHCPAN_BACKEND", raising=False)
-    from neoag_v03.tools.registry import RunContext
-    from neoag_v03.tools.runner import run_netmhcpan
+    from neoag.tools.registry import RunContext
+    from neoag.tools.runner import run_netmhcpan
 
     pep = tmp_path / "raw_peptides.tsv"
     write_tsv(
@@ -102,14 +102,14 @@ def test_presentation_tool_summary_columns(tmp_path):
     registry.register_not_used("bigmhc_im")
     registry.register_stub("prime")
 
-    from neoag_v03.adapters.pvactools_parser import parse_pvactools_outputs
+    from neoag.adapters.pvactools_parser import parse_pvactools_outputs
 
     _, peptides = parse_pvactools_outputs([ROOT / "data/fixtures/pvacseq_aggregated.tsv"], "S1", "default")
     pep = tmp_path / "peptides.tsv"
     write_tsv(pep, peptides)
     net = tmp_path / "net.tsv"
     write_netmhcpan_evidence(net, parse_netmhcpan(ROOT / "data/fixtures/netmhcpan_example.xls", "S1"))
-    from neoag_v03.adapters.mhcflurry import parse_mhcflurry, write_mhcflurry_evidence
+    from neoag.adapters.mhcflurry import parse_mhcflurry, write_mhcflurry_evidence
 
     mhc = tmp_path / "mhc.tsv"
     write_mhcflurry_evidence(mhc, parse_mhcflurry(ROOT / "data/fixtures/mhcflurry_predictions.csv", "S1"))

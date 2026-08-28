@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from neoag_v03.snv_call.pipeline import run_snv_wes_full, write_snv_run_config
+from neoag.snv_call.pipeline import run_snv_wes_full, write_snv_run_config
 
 ROOT = Path(__file__).resolve().parents[1]
 FX = ROOT / "data" / "fixtures_snv"

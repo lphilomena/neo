@@ -2,14 +2,14 @@ from pathlib import Path
 
 import pytest
 
-from neoag_v03.adapters.peptide_input import (
+from neoag.adapters.peptide_input import (
     convert_peptide_input,
     normalize_hla_allele,
     unique_peptide_hla_records,
     PeptideHlaRecord,
 )
-from neoag_v03.tools.prep import unique_peptide_hla_pairs
-from neoag_v03.cli import main
+from neoag.tools.prep import unique_peptide_hla_pairs
+from neoag.cli import main
 
 
 def test_normalize_hla_formats():
@@ -49,6 +49,18 @@ def test_convert_flexible_csv(tmp_path):
     pairs = unique_peptide_hla_pairs(summary.raw_peptides_tsv)
     assert ("SIINFEKL", "HLA-A*02:01") in pairs
     assert ("SIINFEKL", "HLA-A*11:01") in pairs
+
+
+def test_tsv_detection_uses_header_when_data_contains_many_commas(tmp_path):
+    inp = tmp_path / "evidence.tsv"
+    inp.write_text(
+        "peptide\thla\tevidence\n"
+        "SIINFEKL\tHLA-A*02:01\t(a,b,c,d,e,f,g,h,i,j)\n",
+        encoding="utf-8",
+    )
+    summary = convert_peptide_input(inp, tmp_path / "out", sample_id="S1")
+    assert summary.delimiter == "\t"
+    assert summary.pair_rows == 1
 
 
 def test_peptide_predict_stub_cli(tmp_path):

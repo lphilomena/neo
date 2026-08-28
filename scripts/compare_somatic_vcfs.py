@@ -206,7 +206,7 @@ def main() -> None:
     ap.add_argument("--vep-946")
     ap.add_argument("--vep-383")
     ap.add_argument("--tumor-946", default="ML150006946_L01_137")
-    ap.add_argument("--tumor-383", default="M1ML150017383_L01_438")
+    ap.add_argument("--tumor-383", default="SAMPLE001_L01_438")
     ap.add_argument("--normal", default="ML150006927_L01_470")
     ap.add_argument("--outdir", required=True)
     args = ap.parse_args()
@@ -276,19 +276,19 @@ def main() -> None:
     for key in sorted(only946):
         all_rows.append(build_row(key, "only_ML150006946"))
     for key in sorted(only383):
-        all_rows.append(build_row(key, "only_M1ML150017383"))
+        all_rows.append(build_row(key, "only_SAMPLE001"))
 
     write_tsv(outdir / "somatic_variants_compare.all.tsv", all_rows, OUT_FIELDS)
     write_tsv(outdir / "somatic_variants_compare.overlap.tsv", [r for r in all_rows if r["set"] == "overlap"], OUT_FIELDS)
     write_tsv(outdir / "somatic_variants_compare.only_ML150006946.tsv", [r for r in all_rows if r["set"] == "only_ML150006946"], OUT_FIELDS)
-    write_tsv(outdir / "somatic_variants_compare.only_M1ML150017383.tsv", [r for r in all_rows if r["set"] == "only_M1ML150017383"], OUT_FIELDS)
+    write_tsv(outdir / "somatic_variants_compare.only_SAMPLE001.tsv", [r for r in all_rows if r["set"] == "only_SAMPLE001"], OUT_FIELDS)
 
     # VAF stratification
     vaf_summary: list[dict[str, str]] = []
     for set_name, keys, vaf_key in [
         ("overlap", overlap, None),
         ("only_ML150006946", only946, "tumor_vaf_946"),
-        ("only_M1ML150017383", only383, "tumor_vaf_383"),
+        ("only_SAMPLE001", only383, "tumor_vaf_383"),
     ]:
         type_ctr: Counter[str] = Counter()
         bin_ctr: Counter[str] = Counter()
@@ -315,7 +315,7 @@ def main() -> None:
     for row in all_rows:
         gene = row.get("gene") or "UNKNOWN"
         gene_ctr[row["set"]][gene] += 1
-    for set_name in ("overlap", "only_ML150006946", "only_M1ML150017383"):
+    for set_name in ("overlap", "only_ML150006946", "only_SAMPLE001"):
         for gene, n in gene_ctr[set_name].most_common():
             gene_rows.append({"set": set_name, "gene": gene, "count": str(n)})
     write_tsv(outdir / "somatic_variants_compare.gene_summary.tsv", gene_rows, ["set", "gene", "count"])
@@ -337,10 +337,10 @@ def main() -> None:
 
     counts = {
         "ML150006946_total": len(keys946),
-        "M1ML150017383_total": len(keys383),
+        "SAMPLE001_total": len(keys383),
         "overlap": len(overlap),
         "only_ML150006946": len(only946),
-        "only_M1ML150017383": len(only383),
+        "only_SAMPLE001": len(only383),
         "gene_annotated_overlap": sum(1 for k in overlap if gene_index.get(k)),
     }
     summary_path = outdir / "somatic_variants_compare.counts.tsv"

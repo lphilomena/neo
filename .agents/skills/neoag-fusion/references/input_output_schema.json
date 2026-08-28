@@ -1,0 +1,42 @@
+{
+  "name": "neoag-fusion",
+  "category": "A",
+  "category_label": "入口适配型 Skills：把不同来源输入转换为 Project B 标准 raw_events/raw_peptides/evidence tables",
+  "purpose": "Fusion caller 输出标准化",
+  "description": "Normalize EasyFuse/Arriba/STAR-Fusion/FusionCatcher fusion outputs into raw_events/raw_peptides and fusion evidence tables.",
+  "use_when": [
+    "用户提供 fusions.pass.csv 或其他 fusion caller 输出",
+    "需要生成 fusion junction 候选输入"
+  ],
+  "do_not_use_when": [
+    "fusion 结果尚未经过 read-through 复核时直接作为临床结论"
+  ],
+  "required_inputs": [
+    "fusion"
+  ],
+  "optional_inputs": [
+    "sample_id",
+    "normal_readthrough_db"
+  ],
+  "outputs": [
+    "fusion_events.tsv",
+    "raw_events.tsv",
+    "raw_peptides.tsv",
+    "fusion_evidence.tsv",
+    "fusion_qc.tsv"
+  ],
+  "risk_level": "LOW",
+  "approval_required": false,
+  "handler": "fusion",
+  "external_tools": [],
+  "downstream_skills": [
+    "neoag-presentation",
+    "neoag-experiment-design"
+  ],
+  "boundaries": [
+    "Skill 不承担临床决策；不得判断患者是否适合治疗或推荐临床用药。",
+    "缺失证据只能标记为 missing/unassessed，不能解释为阴性结果。",
+    "高风险写入、HPC 提交、安装工具、下载参考库、删除或覆盖文件必须经过 human approval。",
+    "Skill 目录不包含患者 BAM/FASTQ/VCF、大型参考库、VEP cache、NetMHCpan license、LOHHLA reference 或大型 conda env。"
+  ]
+}

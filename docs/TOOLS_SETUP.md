@@ -22,7 +22,7 @@ find bin -maxdepth 1 -type f -exec chmod +x {} \;
 find scripts -maxdepth 1 -type f -name '*.sh' -exec chmod +x {} \;
 python -m pip install -e '.[test]'
 pytest -q
-neoag-v03 run-demo --outdir work/demo_v043 --sample-id DEMO001
+neoag run-demo --outdir work/demo_v043 --sample-id DEMO001
 ```
 
 Migration-test reference result: `175 passed, 95 skipped` for the light test suite. Skips are expected for external tools and benchmark tests.
@@ -34,7 +34,7 @@ Create or update the primary tool env:
 ```bash
 bash scripts/setup_tools_env.sh
 source conf/tools.env.sh
-neoag-v03 check-tools
+neoag check-tools
 ```
 
 If `mhcflurry-downloads fetch` fails with a `CXXABI` or `libstdc++` error:
@@ -55,7 +55,7 @@ mhcflurry-downloads fetch
 ```bash
 bash scripts/install_gatk.sh
 source conf/tools.env.sh
-neoag-v03 check-tools
+neoag check-tools
 ```
 
 ### 4.2 VEP
@@ -63,7 +63,7 @@ neoag-v03 check-tools
 ```bash
 bash scripts/install_vep.sh
 source conf/tools.env.sh
-neoag-v03 check-tools
+neoag check-tools
 ```
 
 VEP cache may be slow to download. Either run:
@@ -97,7 +97,7 @@ cp /path/to/netMHCpan-4.2c.Linux.tar.gz vendor/
 export NEOAG_CONDA_BASE="$(conda info --base)"
 bash scripts/install_netmhcpan.sh vendor/netMHCpan-4.2c.Linux.tar.gz
 source conf/tools.env.sh
-neoag-v03 check-tools
+neoag check-tools
 netMHCpan -h | head
 ```
 
@@ -107,14 +107,14 @@ If an existing installation needs only wrapper repair:
 bash scripts/install_netmhcpan.sh --repair
 ```
 
-The previous hardcoded `/home/na/miniforge3` path was removed. Use `NEOAG_CONDA_BASE` to override conda location.
+The previous hardcoded `${NEOAG_CONDA_BASE}` path was removed. Use `NEOAG_CONDA_BASE` to override conda location.
 
 ### 4.4 NetMHCstabpan
 
 ```bash
 bash scripts/install_netmhcstabpan.sh --iedb
 source conf/tools.env.sh
-neoag-v03 check-tools
+neoag check-tools
 ```
 
 ### 4.5 DeepImmuno
@@ -122,7 +122,7 @@ neoag-v03 check-tools
 ```bash
 bash scripts/install_deepimmuno.sh
 source conf/tools.env.sh
-neoag-v03 check-tools
+neoag check-tools
 ```
 
 ### 4.6 PRIME / MixMHCpred / BigMHC
@@ -130,7 +130,7 @@ neoag-v03 check-tools
 ```bash
 bash scripts/install_immunogenicity_tools.sh
 source conf/tools.env.sh
-neoag-v03 check-tools
+neoag check-tools
 ```
 
 Fixes incorporated after migration testing:
@@ -147,7 +147,7 @@ If BigMHC cloning fails due to network interruption, rerun the script or pre-sta
 ```bash
 bash scripts/install_facets.sh
 source conf/tools.env.sh
-neoag-v03 check-tools
+neoag check-tools
 ```
 
 This installs the R package/wrapper. Real FACETS analysis still needs pileup input, common-SNP VCF, and sample-specific fit/export settings.
@@ -157,7 +157,7 @@ This installs the R package/wrapper. Real FACETS analysis still needs pileup inp
 ```bash
 bash scripts/install_ascat_pyclone.sh
 source conf/tools.env.sh
-neoag-v03 check-tools
+neoag check-tools
 ```
 
 Do **not** run `pip install mamba` to satisfy this script. That installs a Python test framework named `mamba`, not the conda-forge solver. The updated script uses `conda` by default.
@@ -167,7 +167,7 @@ Do **not** run `pip install mamba` to satisfy this script. That installs a Pytho
 ```bash
 bash scripts/install_lohhla.sh
 source conf/tools.env.sh
-neoag-v03 check-tools
+neoag check-tools
 ```
 
 For real LOHHLA runs, also configure in `conf/tools.env.local.sh`:
@@ -181,9 +181,56 @@ LOHHLA also requires patient HLA calls, HLA FASTA/resources, tumor/normal BAM, a
 
 ### 4.10 Fusion tools
 
-The release includes wrappers for EasyFuse/STAR-Fusion/FusionCatcher when their environments and references are already prepared. `scripts/seed_easyfuse_conda_envs.sh` is **not** a full fresh installer; it seeds from an existing Nextflow conda cache. If `work/.nextflow_conda` does not exist, first prepare the fusion environments/references or use site-provided tool bundles.
+```bash
+bash scripts/install_fusion_tools.sh
+source conf/tools.env.sh
+neoag check-tools > results/check-tools.fusion.txt
+grep -E 'arriba|star-fusion|fusioncatcher' results/check-tools.fusion.txt
+```
 
-Arriba is optional and may be installed separately via conda or upstream binaries. Put `arriba` on `PATH` before checking.
+This installs the `neoag-fusion` conda environment with Arriba and Nextflow, and optionally clones STAR-Fusion and FusionCatcher into `tools/`. EasyFuse still needs its reference bundle and Nextflow cache prepared separately.
+
+Example Arriba run:
+
+```bash
+PATIENT_ID=S1 INPUT_BAM=/path/rna.bam bash scripts/run_arriba_sample.sh
+```
+
+### 4.11 Closed-loop external tool deployment
+
+For LOHHLA, FACETS, ASCAT, Arriba, and PRIME together:
+
+```bash
+bash scripts/deploy_external_tools.sh
+bash scripts/deploy_external_tools.sh --smoke
+source conf/tools.env.sh
+bash scripts/verify_external_tools.sh
+```
+
+Fresh machine prerequisites: `conda` (miniforge/mambaforge), `git`, network access; PRIME also needs `g++` and `python3` with `pip`.
+
+The deploy script auto-skips tools that are already installed on the current host. To force a full reinstall:
+
+```bash
+NEOAG_FORCE_INSTALL=1 bash scripts/deploy_external_tools.sh
+NEOAG_FORCE_ENV_UPDATE=1 bash scripts/install_fusion_tools.sh
+```
+
+Per-tool closed loop:
+
+| Tool | Install | Example run | Convert to neoag evidence |
+| --- | --- | --- | --- |
+| LOHHLA | `bash scripts/install_lohhla.sh` | `bash scripts/run_lohhla_example.sh` or `bash scripts/run_lohhla_sample.sh` | `neoag convert-lohhla -i <HLAlossPrediction_CI*> -o hla_loh.tsv` |
+| FACETS | `bash scripts/install_facets.sh` | `PATIENT_ID=S1 TUMOR_BAM=... NORMAL_BAM=... bash scripts/run_facets_sample.sh` | `neoag convert-facets --purity-input facets_purity.txt --purity-output purity.tsv` |
+| ASCAT | `bash scripts/install_ascat_pyclone.sh` | `PILEUP=... PATIENT_ID=S1 bash scripts/run_ascat_sample.sh` | `neoag convert-ascat --summary-input ascat_summary.tsv --purity-output purity.tsv` |
+| Arriba | `bash scripts/install_fusion_tools.sh` | `PATIENT_ID=S1 INPUT_BAM=... bash scripts/run_arriba_sample.sh` | ingest fusion TSV into EasyFuse/event catalog workflows |
+| PRIME | `bash scripts/install_immunogenicity_tools.sh` | `neoag peptide-predict -i peptides.tsv -o results/sample` | `presentation/prime_evidence.tsv` from scoring profile |
+
+Licensed or site-specific dependencies still required outside Git:
+
+- LOHHLA: Polysolver, Novoalign license, HLA FASTA/resources
+- FACETS: `bin/snp-pileup`, SNP VCF references under `data/facets/reference/` or `NEOAG_DBSNP_VCF`
+- Arriba: RNA BAM, GRCh38 FASTA, GTF (`NEOAG_REFERENCE_FASTA`, `NEOAG_EASYFUSE_REF`)
 
 ## 5. Expected `check-tools` interpretation
 
@@ -206,6 +253,41 @@ export NEOAG_STRICT_MODE=1
 ```
 
 Strict mode forbids stub tool outputs. Use demo/stub mode only for smoke testing and software validation.
+
+## SNAF and SpliceMutr
+
+For splice-derived candidate discovery, reference installation, container
+setup, Skill2 routing, and cohort requirements are documented in
+[`SNAF_SPLICEMUTR_WORKFLOW.md`](SNAF_SPLICEMUTR_WORKFLOW.md).
+
+## Extended splice and peptide tools
+
+Install current official versions in isolated environments:
+
+```bash
+export NEOAG_CONDA_BASE=/path/to/miniforge3
+export NEOAG_ENV_ROOT=/large/path/to/envs
+export NEOAG_SPLICE_TOOLS_ROOT=/large/path/to/tool_sources
+bash scripts/install_extended_splice_tools.sh --all
+bash scripts/verify_extended_splice_tools.sh
+```
+
+`NEOAG_SPLADDER_ENV` and `NEOAG_IMMUNOPEPPER_ENV` can override the two
+environment locations independently when local SSD storage is preferable to a
+shared filesystem.
+
+Pinned versions are SplAdder 3.1.1, IRFinder-S 2.0.1, ImmunoPepper 2.0.0
+from the recorded official source commit, and pVACtools/pVACbind 7.1.1. The
+pVACtools 7 is installed as an isolated package overlay on the tested legacy
+6.1.1 dependency environment. The base environment remains unchanged, and the
+new wrappers use the `-neoag7` suffix. This avoids pip legacy-dependency
+backtracking while preserving the rollback path. Override the dependency base
+with `NEOAG_PVACTOOLS_BASE_ENV` when needed.
+
+ImmunoPepper consumes a SplAdder splice graph and therefore has its own
+compatibility environment. IRFinder-S uses the official Docker image. Set
+`NEOAG_IRFINDER_WORKDIR` to the directory containing its reference and sample
+inputs and use `/work/...` paths in IRFinder arguments.
 
 ## 7. Common failure table
 

@@ -1,0 +1,32 @@
+# Copy this file outside the release and replace every /ref or /data path.
+output_dir: results/SAMPLE001/branches/splice/splicemutr
+sample_sheet: configs/workflows/splicemutr.samples.example.tsv
+target_sample_id: TUMOR001
+
+splicemutr_home: /opt/neoag/tools/SpliceMutr
+python: python
+rscript: Rscript
+threads: 16
+
+# Official LeafCutter/LeafViz runtime.
+leafcutter_cluster_script: /opt/neoag/tools/SpliceMutr/python_scripts/splicemutr_leafcutter_cluster_regtools.py
+leafcutter_ds_script: /opt/leafcutter/scripts/leafcutter_ds.R
+leafviz_prepare_results_script: /opt/leafcutter/leafviz/prepare_results.R
+leafcutter_exon_file: /ref/splicemutr/GRCh38/gencode.exons.txt
+leafcutter_annotation_prefix: /ref/splicemutr/GRCh38/gencode
+leafcutter_min_samples: 3
+max_intron_length: 500000
+
+# Transcript reconstruction references must use the same GRCh38/GENCODE build.
+txdb: /ref/splicemutr/GRCh38/gencode.txdb.sqlite
+bsgenome_name: BSgenome.Hsapiens.GENCODE.GRCh38
+
+# Cohort power and filtering policy.
+min_normal_samples: 2
+min_tumor_samples: 1
+min_unique_reads: 10
+allow_low_power: false
+peptide_lengths: 8,9,10,11
+
+# Optional exact-junction normal background. Absence without coverage remains UNASSESSED.
+normal_junction_reference: /ref/neoag/normal_junctions.GRCh38.tsv

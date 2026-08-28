@@ -1,4 +1,4 @@
-from neoag_v03.adapters.deepimmuno import (
+from neoag.adapters.deepimmuno import (
     is_valid_peptide,
     normalize_hla_for_deepimmuno,
     normalize_hla_allele,
@@ -6,11 +6,11 @@ from neoag_v03.adapters.deepimmuno import (
     predict_pairs,
     predict_pair_stub,
 )
-from neoag_v03.adapters.peptide_input import convert_peptide_input
-from neoag_v03.config import load_profile
-from neoag_v03.immunogenicity_composite import component_scores, resolve_immunogenicity_score
-from neoag_v03.tools.runner import run_deepimmuno
-from neoag_v03.tools.registry import RunContext
+from neoag.adapters.peptide_input import convert_peptide_input
+from neoag.config import load_profile
+from neoag.immunogenicity_composite import component_scores, resolve_immunogenicity_score
+from neoag.tools.runner import run_deepimmuno
+from neoag.tools.registry import RunContext
 
 
 def test_normalize_hla_for_deepimmuno():

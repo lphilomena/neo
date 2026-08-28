@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+set -euo pipefail
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+REPO_ROOT=$(cd -- "$SCRIPT_DIR/.." && pwd)
+[[ -f "$REPO_ROOT/conf/tools.env.sh" ]] && source "$REPO_ROOT/conf/tools.env.sh"
+IMAGE=${NEOAG_SPECHLA_IMAGE:-neoag-spechla:ubuntu22.04}
+docker image inspect "$IMAGE" >/dev/null 2>&1 || { echo "WARN: SpecHLA image missing; build with scripts/build_priority_tool_containers.sh spechla"; exit 0; }
+docker run --rm "$IMAGE" "python3 --version && samtools --version >/dev/null && bowtie2 --version >/dev/null && echo PASS: SpecHLA container base runtime starts"
+SPECHLA_HOME=${SPECHLA_HOME:-${NEOAG_SPECHLA_HOME:-${NEOAG_TOOLS_ROOT:-$REPO_ROOT}/tools/SpecHLA}}
+SPECHLA_DB=${SPECHLA_DB:-$SPECHLA_HOME/db}
+[[ -d "$SPECHLA_HOME/script" ]] && echo "PASS: SpecHLA scripts exist: $SPECHLA_HOME/script" || echo "WARN: SpecHLA scripts missing: $SPECHLA_HOME/script"
+[[ -d "$SPECHLA_HOME/db" ]] && echo "PASS: SpecHLA db exists: $SPECHLA_HOME/db" || echo "WARN: SpecHLA db missing: $SPECHLA_HOME/db"
+[[ -s "$SPECHLA_DB/ref/hla.ref.extend.fa" ]] || { echo "ERROR: SpecHLA database marker missing: $SPECHLA_DB/ref/hla.ref.extend.fa" >&2; exit 1; }
+[[ -f "$SPECHLA_HOME/script/cal.hla.copy.pl" ]] && echo "PASS: SpecHLA LOH module exists" || { echo "ERROR: SpecHLA LOH module missing: $SPECHLA_HOME/script/cal.hla.copy.pl" >&2; exit 1; }
+SPECHLA_CMD=python3 "$REPO_ROOT/scripts/run_spechla_container.sh" -c \
+  'import Bio, networkx, numpy, pandas, pulp, pyfaidx, pysam, scipy, vcf' || {
+  echo "ERROR: SpecHLA Python runtime dependencies are incomplete" >&2; exit 1;
+}
+echo "PASS: SpecHLA Python runtime dependencies import"
+SPECHLA_CMD=freebayes "$REPO_ROOT/scripts/run_spechla_container.sh" --version >/dev/null || {
+  echo "ERROR: SpecHLA freebayes runtime is missing" >&2; exit 1;
+}
+echo "PASS: SpecHLA freebayes runtime starts"
+if [[ -x "$SPECHLA_HOME/bin/novoalign" && -f "$SPECHLA_HOME/bin/novoalign.lic" ]]; then
+  for prefix in hla_gen.format.filter.extend.DRB.no26789 hla_gen.format.filter.extend.DRB.no26789.v2; do
+    [[ ! -s "$SPECHLA_DB/ref/$prefix.fasta" || -s "$SPECHLA_DB/ref/$prefix.ndx" ]] || {
+      echo "ERROR: licensed novoalign index missing: $SPECHLA_DB/ref/$prefix.ndx" >&2; exit 1;
+    }
+  done
+  echo "PASS: SpecHLA licensed novoalign indexes exist"
+fi
+SPECHLA_MODE=loh "$REPO_ROOT/scripts/run_spechla_container.sh" -h >/dev/null 2>&1 || {
+  rc=$?
+  [[ "$rc" == "255" ]] || { echo "ERROR: SpecHLA LOH module smoke failed with exit_code=$rc" >&2; exit "$rc"; }
+}
+echo "PASS: SpecHLA LOH module starts"

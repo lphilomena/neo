@@ -34,4 +34,4 @@ fi
 echo
 echo "== Tool environment hint =="
 echo "source $ROOT/conf/tools.env.sh"
-echo "neoag-v03 check-tools"
+echo "neoag check-tools"

@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from neoag_v03.adapters.vcf_appm import (
+from neoag.adapters.vcf_appm import (
     extract_appm_variants,
     extract_gx_expression,
     extract_appm_inputs_from_vcf,

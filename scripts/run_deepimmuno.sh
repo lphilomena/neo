@@ -51,10 +51,10 @@ ARGS=(
   -o "${WORKDIR}"
   --sample-id "${SAMPLE_ID}"
 )
-if command -v neoag-v03 >/dev/null 2>&1; then
-  neoag-v03 "${ARGS[@]}"
+if command -v neoag >/dev/null 2>&1; then
+  neoag "${ARGS[@]}"
 else
-  python3 -m neoag_v03.cli "${ARGS[@]}"
+  python3 -m neoag.cli "${ARGS[@]}"
 fi
 
 RAW="${WORKDIR}/00_input/raw_peptides.tsv"
@@ -67,10 +67,10 @@ RUN_ARGS=(
 )
 [[ "${STUB}" == true ]] && RUN_ARGS+=(--stub)
 
-if command -v neoag-v03 >/dev/null 2>&1; then
-  neoag-v03 "${RUN_ARGS[@]}"
+if command -v neoag >/dev/null 2>&1; then
+  neoag "${RUN_ARGS[@]}"
 else
-  python3 -m neoag_v03.cli "${RUN_ARGS[@]}"
+  python3 -m neoag.cli "${RUN_ARGS[@]}"
 fi
 
 echo "Wrote DeepImmuno evidence to ${OUT}"

@@ -93,10 +93,10 @@ ARGS=(
 [[ "${SKIP_BIGMHC}" == true ]] && ARGS+=(--skip-bigmhc-im)
 [[ "${SKIP_STABPAN}" == true ]] && ARGS+=(--skip-stabpan)
 
-if command -v neoag-v03 >/dev/null 2>&1; then
-  neoag-v03 "${ARGS[@]}"
-elif [[ -x "${ROOT}/bin/neoag-v03" ]]; then
-  "${ROOT}/bin/neoag-v03" "${ARGS[@]}"
+if command -v neoag >/dev/null 2>&1; then
+  neoag "${ARGS[@]}"
+elif [[ -x "${ROOT}/bin/neoag" ]]; then
+  "${ROOT}/bin/neoag" "${ARGS[@]}"
 else
-  python3 -m neoag_v03.cli "${ARGS[@]}"
+  python3 -m neoag.cli "${ARGS[@]}"
 fi

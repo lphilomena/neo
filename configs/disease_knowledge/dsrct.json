@@ -1,0 +1,34 @@
+{
+  "schema_version": "open-neo-disease-knowledge-v1",
+  "disease_id": "DSRCT",
+  "display_name": "Desmoplastic small round cell tumor",
+  "disease_aliases": [
+    "desmoplastic small round cell tumor",
+    "desmoplastic small round cell tumour",
+    "促结缔组织增生性小圆细胞肿瘤"
+  ],
+  "anchors": [
+    {
+      "event": "EWSR1::WT1",
+      "aliases": ["EWSR1--WT1", "EWSR1_WT1"],
+      "label": "DSRCT关键分子锚定事件：EWSR1::WT1融合",
+      "molecular_significance": "EWSR1::WT1是DSRCT的关键分子特征和核心致病机制事件",
+      "patient_interpretation": "检测到EWSR1::WT1融合。该融合是DSRCT的关键分子特征；如本事件经独立方法确认，应结合病理及临床资料进行诊断整合。本报告本身不替代病理诊断。",
+      "diagnostic_boundary": "分子知识库关联不等同于本报告已经建立结构化临床诊断，也不能替代病理诊断。",
+      "references": [
+        {
+          "name": "NCI Childhood Soft Tissue Sarcoma Treatment (PDQ)",
+          "url": "https://www.cancer.gov/types/soft-tissue-sarcoma/hp/child-soft-tissue-treatment-pdq"
+        }
+      ],
+      "review_priority": 1,
+      "public_neoantigens": [
+        {
+          "sequence": "SSYGQQSEK",
+          "hla_prefixes": ["HLA-A*03", "HLA-A*11"],
+          "evidence": "HLA-IP/MS presentation and preclinical functional T-cell evidence"
+        }
+      ]
+    }
+  ]
+}

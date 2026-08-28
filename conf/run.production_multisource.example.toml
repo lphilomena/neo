@@ -1,0 +1,53 @@
+# Production merge-and-rank example for SNV/InDel, fusion, and splice peptides.
+# Generate each branch first, then point pvac_files at its aggregated candidate table.
+# All three sources are merged before NetMHCpan and MHCflurry run.
+
+[sample]
+id = "SAMPLE001"
+profile = "default"
+outdir = "results/SAMPLE001_multisource"
+
+[tools]
+stub = false
+enabled = ["netmhcpan", "mhcflurry"]
+immunogenicity_stub = false
+
+[inputs]
+entry_mode = "e2e"
+hla_alleles = [
+  "HLA-A*02:01",
+  "HLA-B*07:02",
+  "HLA-C*07:02",
+]
+
+# Branch outputs. Each table must contain candidate peptides and HLA alleles.
+pvac_files = [
+  "results/SAMPLE001_branches/snv/pvacseq_aggregated.tsv",
+  "results/SAMPLE001_branches/fusion/pvacfuse_aggregated.tsv",
+  "results/SAMPLE001_branches/splice/pvacsplice_aggregated.tsv",
+]
+
+# Missing expected sources do not stop the run; they mark source completeness LOW_CONFIDENCE.
+expected_peptide_sources = ["pVACseq", "pVACfuse", "pVACsplice"]
+required_presentation_predictors = ["netmhcpan", "mhcflurry"]
+
+# DNA consequence and expression evidence prepared by the upstream branches.
+vep_appm = "results/SAMPLE001_evidence/vep_appm.tsv"
+expression = "results/SAMPLE001_evidence/gene_expression.tsv"
+rna_junction_tsv = "results/SAMPLE001_evidence/rna_junction_support.tsv"
+
+# Purity, copy number, clonality, and HLA allele loss evidence.
+purity = "results/SAMPLE001_evidence/purity.tsv"
+cnv = "results/SAMPLE001_evidence/cnv_segments.tsv"
+hla_loh = "results/SAMPLE001_evidence/hla_loh.tsv"
+
+# Tumor-specificity and peptide safety evidence.
+normal_expression = "resources/normal_expression.example.tsv"
+normal_hla_ligands = "resources/normal_hla_ligands.example.tsv"
+
+# Do not derive APPM fields from a VCF in this merge stage; use vep_appm above.
+extract_appm_from_vcf = false
+
+# To reuse existing predictor outputs, remove both predictors from tools.enabled and add:
+# netmhcpan = "results/SAMPLE001_cached/netmhcpan.xls"
+# mhcflurry = "results/SAMPLE001_cached/mhcflurry.csv"

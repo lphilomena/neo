@@ -13,14 +13,23 @@ LOG="${ROOT}/work/vep_install.log"
 
 CACHE_URL="https://ftp.ensembl.org/pub/release-105/variation/indexed_vep_cache/homo_sapiens_vep_105_GRCh38.tar.gz"
 CACHE_NAME="homo_sapiens_vep_105_GRCh38.tar.gz"
-VEP_DIR="${HOME}/.vep"
+VEP_DIR="${NEOAG_VEP_CACHE:-${HOME}/.vep}"
 TMP_DIR="${VEP_DIR}/tmp"
 TARBALL="${TMP_DIR}/${CACHE_NAME}"
 
-CONDA_BASE="$(conda info --base 2>/dev/null || echo /root/miniconda3)"
+CONDA_BASE="${NEOAG_CONDA_BASE:-$(conda info --base 2>/dev/null || true)}"
+if [[ -z "${CONDA_BASE}" ]]; then
+  for base in "${HOME}/miniforge3" "${HOME}/mambaforge" "${HOME}/miniconda3" "${HOME}/anaconda3" /opt/conda; do
+    if [[ -x "${base}/bin/conda" ]]; then
+      CONDA_BASE="${base}"
+      break
+    fi
+  done
+fi
+[[ -n "${CONDA_BASE}" && -f "${CONDA_BASE}/etc/profile.d/conda.sh" ]] || { echo "ERROR: conda not found; set NEOAG_CONDA_BASE" >&2; exit 1; }
 # shellcheck disable=SC1091
 source "${CONDA_BASE}/etc/profile.d/conda.sh"
-conda activate neoag-vep
+conda activate "${NEOAG_VEP_ENV:-neoag-vep}"
 
 exec > >(tee -a "${LOG}") 2>&1
 

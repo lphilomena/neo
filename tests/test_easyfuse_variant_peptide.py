@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from neoag_v03.adapters.easyfuse_variant_peptide import (
+from neoag.adapters.easyfuse_variant_peptide import (
     EasyFusePeptideConfig,
     build_easyfuse_catalog,
     build_fusion_centered_minigene,
@@ -10,7 +10,7 @@ from neoag_v03.adapters.easyfuse_variant_peptide import (
     sliding_fusion_neo_peptides,
     write_easyfuse_qc_tables,
 )
-from neoag_v03.adapters.variant_peptide_adapter import (
+from neoag.adapters.variant_peptide_adapter import (
     _catalog_rows_to_raw_peptides,
     run_variant_peptide_upstream,
 )
@@ -47,6 +47,18 @@ def test_sliding_fusion_neo_peptides_dedupes_windows():
     assert "ABCDEHGI" not in peptides
     assert len(peptides) == len(windows)
     assert all(8 <= len(p) <= 9 for p in peptides)
+
+
+def test_sliding_fusion_windows_record_both_junction_sides():
+    windows = sliding_fusion_neo_peptides("ACDEFGHIKLMN", (9,), bp_pos=5)
+    spanning = [row for row in windows if row["crosses_junction"] == "yes"]
+    assert spanning
+    assert all(row["fusion_left_peptide"] and row["fusion_right_peptide"] for row in spanning)
+    assert all(
+        row["fusion_junction_display"]
+        == row["fusion_left_peptide"] + "|" + row["fusion_right_peptide"]
+        for row in spanning
+    )
 
 
 
@@ -139,6 +151,13 @@ def test_catalog_rows_to_raw_peptides_links_fusion_events():
     assert peptides[0]["event_type"] == "Fusion"
     assert peptides[0]["source_tool"] == "EasyFuse"
     assert peptides[0]["crosses_junction"] == "yes"
+
+
+def test_easyfuse_catalog_supports_optional_12mer():
+    windows = sliding_fusion_neo_peptides("ACDEFGHIKLMNPQRST", (12,), bp_pos=8)
+    assert windows and all(len(row["mutant_peptide"]) == 12 for row in windows)
+    result = build_easyfuse_catalog(FIXTURE, "S1", "default", lengths=(8, 9, 10, 11, 12))
+    assert result.summary_qc["peptide_lengths"] == "8,9,10,11,12"
 
 
 def test_run_variant_peptide_upstream_merges_easyfuse(tmp_path):

@@ -5,10 +5,10 @@ from pathlib import Path
 
 import pytest
 
-from neoag_v03.adapters.facets import parse_facets_cncf, parse_facets_purity
-from neoag_v03.adapters.lohhla import parse_lohhla_prediction
-from neoag_v03.tools.postprocess import facets_to_cnv_tsv, facets_to_purity_tsv, lohhla_to_hla_loh_tsv
-from neoag_v03.tools.upstream import load_run_config, run_upstream
+from neoag.adapters.facets import parse_facets_cncf, parse_facets_purity
+from neoag.adapters.lohhla import parse_lohhla_prediction
+from neoag.tools.postprocess import facets_to_cnv_tsv, facets_to_purity_tsv, lohhla_to_hla_loh_tsv
+from neoag.tools.upstream import load_run_config, run_upstream
 
 ROOT = Path(__file__).resolve().parents[1]
 TOOLS_ROOT = Path(os.environ.get("NEOAG_TOOLS_ROOT", ROOT))
@@ -54,6 +54,25 @@ def test_parse_facets_purity_and_cncf(tmp_path):
     assert len(segs) == 2
     assert segs[0]["chrom"] == "chr1"
     assert segs[0]["total_cn"] == "1.5000"
+
+
+def test_lohhla_requires_copy_number_and_pvalue_and_preserves_raw_evidence(tmp_path):
+    prediction = tmp_path / "sample.HLAlossPrediction_CI.tsv"
+    prediction.write_text(
+        "HLA_A_type1\tHLA_A_type2\tHLA_type1copyNum_withBAF\tHLA_type1copyNum_withBAF_lower\t"
+        "HLA_type1copyNum_withBAF_upper\tHLA_type2copyNum_withBAF\tHLA_type2copyNum_withBAF_lower\t"
+        "HLA_type2copyNum_withBAF_upper\tPVal\tLossAllele\tKeptAllele\tnumMisMatchSitesCov\tpropSupportiveSites\n"
+        "hla_a_02_06_01\thla_a_30_01_01\t0.85\t0.75\t0.95\t0.25\t0.20\t0.30\t1e-8\t"
+        "hla_a_30_01_01\thla_a_02_06_01\t142\t89.5\n"
+        "hla_b_13_02_01\thla_b_48_01_01\t0.20\t0.10\t0.30\t0.70\t0.60\t0.80\t0.20\t"
+        "hla_b_13_02_01\thla_b_48_01_01\t60\t80\n",
+        encoding="utf-8",
+    )
+    rows = {row["hla_allele"]: row for row in parse_lohhla_prediction(prediction)}
+    assert rows["HLA-A*30:01"]["loh_status"] == "loh"
+    assert rows["HLA-A*30:01"]["lohhla_pval"] == "1e-8"
+    assert rows["HLA-A*30:01"]["lohhla_copy_number_with_baf"] == "0.25"
+    assert rows["HLA-B*13:02"]["loh_status"] == "no"
 
 
 def test_facets_converters(tmp_path):

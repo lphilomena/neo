@@ -5,28 +5,38 @@
 #   bash scripts/install_gatk.sh
 #   source conf/tools.env.sh
 #   gatk --help
-#   neoag-v03 check-tools | grep gatk
+#   neoag check-tools | grep gatk
 #
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ENV_NAME="${NEOAG_GATK_ENV:-neoag-gatk}"
 YML="${ROOT}/conda/env.neoag-gatk.yml"
-TOOLS_ENV="${ROOT}/conf/tools.env.sh"
-CONDA_BASE="$(conda info --base)"
+TOOLS_ENV="${NEOAG_TOOLS_ENV:-${ROOT}/conf/tools.env.local.sh}"
+CONDA_BASE="${NEOAG_CONDA_BASE:-$(command conda info --base)}"
 GATK_BIN="${CONDA_BASE}/envs/${ENV_NAME}/bin"
 
 echo "==> Installing GATK4 conda env: ${ENV_NAME}"
 
-# shellcheck disable=SC1091
-source "${CONDA_BASE}/etc/profile.d/conda.sh"
+conda_safe() {
+  set +u
+  conda "$@"
+  local rc=$?
+  set -u
+  return "$rc"
+}
 
-if conda env list | awk '{print $1}' | grep -qx "${ENV_NAME}"; then
+# shellcheck disable=SC1091
+set +u
+source "${CONDA_BASE}/etc/profile.d/conda.sh"
+set -u
+
+if conda_safe env list | awk '{print $1}' | grep -qx "${ENV_NAME}"; then
   echo "==> Updating existing env ${ENV_NAME} ..."
-  conda env update -n "${ENV_NAME}" -f "${YML}" --prune -y
+  conda_safe env update -n "${ENV_NAME}" -f "${YML}" --prune
 else
   echo "==> Creating env from ${YML} (may take several minutes) ..."
-  conda env create -n "${ENV_NAME}" -f "${YML}"
+  conda_safe env create -n "${ENV_NAME}" -f "${YML}"
 fi
 
 if [[ ! -x "${GATK_BIN}/gatk" ]]; then
@@ -51,4 +61,4 @@ else
   echo "==> conf/tools.env.sh already references NEOAG_GATK_ENV (edit PATH manually if needed)"
 fi
 
-echo "==> Done. Run: source conf/tools.env.sh && neoag-v03 check-tools"
+echo "==> Done. Run: source conf/tools.env.sh && neoag check-tools"

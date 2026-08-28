@@ -1,8 +1,8 @@
 
 from pathlib import Path
-from neoag_v03.reports_v041 import make_report_v041
-from neoag_v03.benchmark_system import run_system_benchmark
-from neoag_v03.utils import read_tsv
+from neoag.reports_v041 import make_report_v041
+from neoag.benchmark_system import run_system_benchmark
+from neoag.utils import read_tsv
 
 
 def test_report_v041_contains_appm_cards(tmp_path):
@@ -20,8 +20,8 @@ def test_report_v041_contains_appm_cards(tmp_path):
     assert "MHC_I_CORE" in text
     assert "Peptide Mechanism Cards" in text
     assert "v0.4.2" not in text
-    assert "v0.4.3" in text
-    assert "<title>NeoAg v0.4.3 Evidence Report</title>" in text
+    assert "v0.5.2" in text
+    assert "<title>NeoAg v0.5.2 Evidence Report</title>" in text
 
 
 def test_benchmark_v042_external_required_outputs(tmp_path):

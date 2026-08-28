@@ -1,0 +1,45 @@
+{
+  "name": "neoag-hla-typing-loh",
+  "category": "B",
+  "category_label": "公共证据分析型 Skills：对所有入口共用的 HLA、表达、CCF、APPM、安全和排序证据层进行标准化分析",
+  "purpose": "HLA typing / HLA LOH 共识与 peptide-level HLA loss flags",
+  "description": "Normalize HLA typing and HLA LOH outputs from OptiType, SpecHLA, HLA-LA/HD and LOHHLA into consensus tables.",
+  "use_when": [
+    "需要标准化 HLA 分型",
+    "需要判断 restricting HLA 是否 LOH"
+  ],
+  "do_not_use_when": [
+    "只需要解释已有 ranking 差异，不需要更新 HLA 状态"
+  ],
+  "required_inputs": [
+    "hla"
+  ],
+  "optional_inputs": [
+    "hla_loh",
+    "ranked_peptides",
+    "sample_id"
+  ],
+  "outputs": [
+    "hla_typing.normalized.tsv",
+    "hla_typing_consensus.tsv",
+    "hla_loh_consensus.tsv",
+    "restricting_hla_peptide_flags.tsv",
+    "hla_review.md"
+  ],
+  "risk_level": "LOW",
+  "approval_required": false,
+  "handler": "hla_typing_loh",
+  "external_tools": [
+    "OptiType",
+    "SpecHLA",
+    "LOHHLA",
+    "HLA-LA/HLA-HD optional"
+  ],
+  "downstream_skills": [],
+  "boundaries": [
+    "Skill 不承担临床决策；不得判断患者是否适合治疗或推荐临床用药。",
+    "缺失证据只能标记为 missing/unassessed，不能解释为阴性结果。",
+    "高风险写入、HPC 提交、安装工具、下载参考库、删除或覆盖文件必须经过 human approval。",
+    "Skill 目录不包含患者 BAM/FASTQ/VCF、大型参考库、VEP cache、NetMHCpan license、LOHHLA reference 或大型 conda env。"
+  ]
+}

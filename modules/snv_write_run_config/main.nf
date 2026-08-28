@@ -39,7 +39,7 @@ extract_appm_from_vcf = true
 expression = "${params.expression_tsv ?: projectDir + '/../data/fixtures/gene_expression.tsv'}"
 cnv = "${params.cnv_tsv ?: projectDir + '/../data/fixtures/cnv_segments.tsv'}"
 normal_expression = "${params.normal_expression ?: projectDir + '/../resources/normal_expression.example.tsv'}"
-normal_hla_ligands = "${params.normal_hla_ligands ?: projectDir + '/../resources/normal_hla_ligands.tsv'}"
+normal_hla_ligands = "${params.normal_hla_ligands ?: projectDir + '/../resources/normal_hla_ligands.example.tsv'}"
 EOF
     """
 }

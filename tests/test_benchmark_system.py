@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from neoag_v03.benchmark_system import run_system_benchmark
-from neoag_v03.cli import build_parser
-from neoag_v03.utils import read_tsv, write_tsv
+from neoag.benchmark_system import run_system_benchmark
+from neoag.cli import build_parser
+from neoag.utils import read_tsv, write_tsv
 
 
 def test_system_benchmark_writes_synthetic_sensitivity_and_pending_ligandome(tmp_path):

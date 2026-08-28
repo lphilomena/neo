@@ -32,7 +32,7 @@ for rel in "${required[@]}"; do
   fi
 done
 
-TOOLS_ENV="${ROOT}/conf/tools.env.sh"
+TOOLS_ENV="${NEOAG_TOOLS_ENV:-${ROOT}/conf/tools.env.local.sh}"
 line="export DEEPIMMUNO_DIR=\"${TARGET}\""
 if [[ -f "${TOOLS_ENV}" ]]; then
   if grep -q 'DEEPIMMUNO_DIR' "${TOOLS_ENV}"; then
@@ -47,4 +47,4 @@ fi
 
 echo "==> Done. Test:"
 echo "  source ${TOOLS_ENV}"
-echo "  neoag-v03 check-tools | grep deepimmuno"
+echo "  neoag check-tools | grep deepimmuno"

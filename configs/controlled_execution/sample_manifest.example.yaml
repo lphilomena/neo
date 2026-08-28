@@ -1,0 +1,37 @@
+manifest_version: 1
+sample_id: SAMPLE001
+case_id: CASE001
+disease: example_tumor
+genome_build: GRCh38
+
+run_layout:
+  run_root: /opt/neoag/runs/SAMPLE001/run_20260714_001
+  outputs: /opt/neoag/runs/SAMPLE001/run_20260714_001/outputs
+  logs: /opt/neoag/runs/SAMPLE001/run_20260714_001/logs
+  audit_log: /opt/neoag/runs/SAMPLE001/run_20260714_001/audit_log.jsonl
+
+tumor:
+  dna_bam: /data/SAMPLE001/tumor.bam
+  rna_bam: /data/SAMPLE001/rna.bam
+  wes_bam: null
+
+normal:
+  dna_bam: /data/SAMPLE001/normal.bam
+  wes_bam: null
+
+inputs:
+  somatic_vcf: /data/SAMPLE001/results/mutect2.pass.vcf.gz
+  sv_vcf:
+    - data/fixtures/manta.somaticSV.vcf.gz
+  fusion_tsv: results/SAMPLE001/fusion/fusions.pass.csv
+  expression_tsv: results/SAMPLE001/rna/gene_tpm.tsv
+  hla_typing: results/SAMPLE001/hla/hla_typing.tsv
+  hla_loh: results/SAMPLE001/hla/spechla_loh.tsv
+  purity_tsv: results/SAMPLE001/cnv/facets_purity.tsv
+  cnv_segments: results/SAMPLE001/cnv/cnv_segments.tsv
+  ranked_peptides_recommendation: results/SAMPLE001/scoring/ranked_peptides.recommendation.tsv
+  ranked_peptides_netmhcpan42: results/SAMPLE001/scoring/ranked_peptides.netmhcpan42.tsv
+  evidence_report: results/SAMPLE001/reports/evidence_report.html
+
+notes:
+  boundary: example manifest only; replace paths locally and do not commit patient-private paths

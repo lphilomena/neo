@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+CONDA_BASE="${NEOAG_CONDA_BASE:-$(conda info --base 2>/dev/null || true)}"
+PYTHON="${NEOAG_LLM_PYTHON:-}"
+if [[ -z "$PYTHON" && -n "$CONDA_BASE" && -x "$CONDA_BASE/envs/neoag-vllm/bin/python" ]]; then
+  PYTHON="$CONDA_BASE/envs/neoag-vllm/bin/python"
+elif [[ -z "$PYTHON" ]]; then
+  PYTHON="$(command -v python3 || command -v python || true)"
+fi
+if [[ -z "$PYTHON" || ! -x "$PYTHON" ]]; then
+  echo "ERROR: set NEOAG_LLM_PYTHON=/path/to/python with agent dependencies installed" >&2
+  echo "Install example: python -m pip install -e \"$ROOT.[agent-llm]\"" >&2
+  exit 127
+fi
+export PYTHONPATH="$ROOT/src:${PYTHONPATH:-}"
+exec "$PYTHON" -m neoag.llm_coordinator.coordinator_agent "$@"

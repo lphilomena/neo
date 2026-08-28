@@ -1,0 +1,34 @@
+# HCC1395 — Mode C splice junction (real tools, no stub)
+# Prerequisite: source conf/tools.env.sh
+
+[sample]
+id = "HCC1395"
+profile = "default"
+outdir = "results/HCC1395_splice_real"
+
+[tools]
+stub = false
+enabled = ["pvacsplice", "netmhcpan", "mhcflurry"]
+
+[inputs]
+entry_mode = "splice_junction"
+pass_only = false
+
+hla_alleles = [
+    "HLA-A*29:02",
+    "HLA-B*45:01",
+    "HLA-B*82:02",
+    "HLA-C*06:02",
+]
+
+splice_junction_tsv = "data/examples/HCC1395/HCC1395_inputs/HCC1395.splice_junctions.tsv"
+variants_vcf = "data/examples/HCC1395/HCC1395_inputs/annotated.expression.vcf.gz"
+tumor_vcf = "data/examples/HCC1395/HCC1395_inputs/annotated.expression.vcf.gz"
+tumor_sample_name = "HCC1395_TUMOR_DNA"
+normal_sample_name = "HCC1395_NORMAL_DNA"
+reference_fasta = "data/ref/hg38/Homo_sapiens_assembly38.fasta"
+gencode_gtf = "data/ref/ctat/current/ctat_genome_lib_build_dir/ref_annot.gtf"
+
+cnv = "data/fixtures/cnv_segments.tsv"
+normal_expression = "resources/normal_expression.example.tsv"
+normal_hla_ligands = "resources/normal_hla_ligands.example.tsv"

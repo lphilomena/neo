@@ -1,7 +1,7 @@
 from pathlib import Path
-from neoag_v03.appm_lite import build_appm_lite
-from neoag_v03.safety import load_normal_expression, apply_event_safety
-from neoag_v03.config import load_profile
+from neoag.appm_lite import build_appm_lite
+from neoag.safety import load_normal_expression, apply_event_safety
+from neoag.config import load_profile
 
 ROOT = Path(__file__).resolve().parents[1]
 

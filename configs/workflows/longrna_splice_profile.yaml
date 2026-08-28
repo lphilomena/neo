@@ -1,0 +1,39 @@
+profile_version: 1
+name: longrna_splice_v1
+genome_build: GRCh38
+
+inputs:
+  longrna_fastq_dir: ""
+  sample_id: ""
+  hla_file: ""
+  reference_manifest: configs/references/reference_manifest.yaml
+
+parameters:
+  threads: 8
+  peptide_lengths: [8, 9, 10, 11]
+  min_junction_reads: 3
+  require_complete_cds: true
+  require_non_nmd: true
+  min_psauron_score: 0.8
+  skip_netmhcstabpan: false
+
+stages:
+  - fastq_validation
+  - isoquant_transcript_reconstruction
+  - sqanti3_structure_orf_annotation
+  - td2_protein_translation
+  - snaf_splicemutr_cross_validation
+  - junction_peptide_generation
+  - mhc_presentation_prediction
+  - comprehensive_evidence
+
+outputs:
+  status_file: longrna_splice_status.tsv
+  comprehensive_evidence: comprehensive_evidence.tsv
+
+evidence_policy:
+  complete_orf: transcript_id + cds_start + cds_end + frame + protein_sequence + junction_spanning
+  missing_orf: junction_peptide_only
+  missing_optional_evidence: UNASSESSED
+  single_tool_support: LOW_CONFIDENCE
+  multi_tool_support: HIGH_CONFIDENCE

@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+BEDTOOLS_BIN="${BEDTOOLS_BIN:-/home/na/project/open-neo-deploy/env_tool/conda_pkgs/bedtools-2.31.1-h13024bc_3/bin/bedtools}"
+LIB_ROOT="${BEDTOOLS_LIB_ROOT:-/home/na/miniforge3/envs/neoag-tools/lib}"
+export LD_LIBRARY_PATH="${LIB_ROOT}:${LD_LIBRARY_PATH:-}"
+
+exec "${BEDTOOLS_BIN}" "$@"

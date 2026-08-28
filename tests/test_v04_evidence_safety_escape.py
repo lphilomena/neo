@@ -1,9 +1,10 @@
+import gzip
 from pathlib import Path
 
-from neoag_v03.sv.phase1 import build_sv_phase1_raw
-from neoag_v03.utils import read_tsv, write_tsv
-from neoag_v03.peptide_safety_gate import build_peptide_safety_gate
-from neoag_v03.immune_escape import build_immune_escape_evidence
+from neoag.sv.phase1 import build_sv_phase1_raw
+from neoag.utils import read_tsv, write_tsv
+from neoag.peptide_safety_gate import build_peptide_safety_gate
+from neoag.immune_escape import build_immune_escape_evidence
 
 ROOT = Path(__file__).resolve().parents[1]
 FX = ROOT / "data" / "fixtures_sv"
@@ -14,12 +15,15 @@ def test_wes_phase1_5_capture_annotation_and_cap(tmp_path):
         sample_id="SVMINI",
         sv_vcfs=[FX / "mini_sv.vcf"],
         callers=["GRIDSS2"],
+        tumor_sample_name="TUMOR",
+        normal_sample_name="NORMAL",
         reference_fasta=FX / "mini_ref.fa",
         gencode_gtf=FX / "mini.gtf",
         hla=FX / "hla.txt",
         outdir=tmp_path,
         expression_tsv=FX / "expression.tsv",
-        rna_junction_tsv=FX / "rna_junctions.tsv",
+        rna_junction_tsv=FX / "rna_junctions_exact.tsv",
+        expressed_products_tsv=FX / "expressed_products.tsv",
         normal_expression_tsv=FX / "normal_expression.tsv",
         normal_hla_ligands_tsv=FX / "normal_hla_ligands.tsv",
         wes_mode=True,
@@ -46,13 +50,16 @@ def test_wes_phase1_5_priority_cap_comes_from_profile(tmp_path):
         sample_id="SVMINI",
         sv_vcfs=[FX / "mini_sv.vcf"],
         callers=["GRIDSS2"],
+        tumor_sample_name="TUMOR",
+        normal_sample_name="NORMAL",
         reference_fasta=FX / "mini_ref.fa",
         gencode_gtf=FX / "mini.gtf",
         hla=FX / "hla.txt",
         outdir=tmp_path / "run",
         profile_name=str(profile),
         expression_tsv=FX / "expression.tsv",
-        rna_junction_tsv=FX / "rna_junctions.tsv",
+        rna_junction_tsv=FX / "rna_junctions_exact.tsv",
+        expressed_products_tsv=FX / "expressed_products.tsv",
         normal_expression_tsv=FX / "normal_expression.tsv",
         normal_hla_ligands_tsv=FX / "normal_hla_ligands.tsv",
         wes_mode=True,
@@ -75,6 +82,34 @@ def test_peptide_safety_reference_proteome_rejects_exact_match(tmp_path):
     assert rows[0]["reference_proteome_exact_match"] == "yes"
     assert rows[0]["safety_status"] == "FAIL"
     assert "reference_proteome_exact_match" in rows[0]["safety_reason"]
+
+
+def test_peptide_safety_matches_normal_junction_by_grch38_coordinate(tmp_path):
+    events = tmp_path / "events.tsv"
+    peptides = tmp_path / "peptides.tsv"
+    normal_junctions = tmp_path / "normal_junctions.tsv.gz"
+    safety = tmp_path / "peptide_safety.tsv"
+    write_tsv(events, [{
+        "event_id":"SPLICE_1_chr1:123-456", "sample_id":"S1", "gene":"G1",
+        "event_type":"Splice", "mutation_source":"aberrant_splicing",
+        "chromosome":"1", "junction_start":"123", "junction_end":"456", "strand":"+",
+    }])
+    write_tsv(peptides, [{
+        "peptide_id":"P1", "event_id":"SPLICE_1_chr1:123-456", "sample_id":"S1",
+        "gene":"G1", "peptide":"AAAAAAAAA", "hla_allele":"HLA-A*02:01",
+        "mhc_class":"I", "event_type":"splice_junction", "crosses_junction":"yes",
+    }])
+    with gzip.open(normal_junctions, "wt") as handle:
+        handle.write("junction_id\tchromosome\tstart\tend\tstrand\tnormal_reads\ttissue\tsource\n")
+        handle.write("chr1:123-456:+\tchr1\t123\t456\t+\t7\tLIVER\trecount3_GTEx_v8\n")
+    rows, _ = build_peptide_safety_gate(
+        raw_events=events, raw_peptides=peptides, out_peptide_safety=safety,
+        normal_junctions=normal_junctions,
+    )
+    assert rows[0]["normal_junction_seen"] == "yes"
+    assert rows[0]["normal_junction_max_reads"] == "7"
+    assert rows[0]["safety_status"] == "FAIL"
+    assert "normal_junction_seen" in rows[0]["safety_reason"]
 
 
 def test_immune_escape_lost_hla_flags_restricting_peptide(tmp_path):

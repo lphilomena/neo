@@ -1,0 +1,44 @@
+{
+  "name": "neoag-sv-wes",
+  "category": "A",
+  "category_label": "入口适配型 Skills：把不同来源输入转换为 Project B 标准 raw_events/raw_peptides/evidence tables",
+  "purpose": "WES/capture-limited SV 入口标准化",
+  "description": "Parse WES/capture-limited SV VCFs and enforce conservative confidence caps and capture-limited flags.",
+  "use_when": [
+    "用户提供 WES/capture-limited SV VCF + capture BED",
+    "需要保守解释外显子捕获 SV"
+  ],
+  "do_not_use_when": [
+    "输入为 WGS SV，应调用 neoag-sv-wgs"
+  ],
+  "required_inputs": [
+    "sv_vcf",
+    "capture_bed"
+  ],
+  "optional_inputs": [
+    "gtf",
+    "reference_fasta",
+    "sample_id"
+  ],
+  "outputs": [
+    "sv_events.tsv",
+    "raw_events.tsv",
+    "raw_peptides.tsv",
+    "sv_wes_confidence.tsv"
+  ],
+  "risk_level": "LOW",
+  "approval_required": false,
+  "handler": "sv_wes",
+  "external_tools": [],
+  "downstream_skills": [
+    "neoag-presentation",
+    "neoag-experiment-design"
+  ],
+  "boundaries": [
+    "WES SV 是 capture-limited hypothesis，默认 final priority 不应直接升至 A/B high-confidence。",
+    "Skill 不承担临床决策；不得判断患者是否适合治疗或推荐临床用药。",
+    "缺失证据只能标记为 missing/unassessed，不能解释为阴性结果。",
+    "高风险写入、HPC 提交、安装工具、下载参考库、删除或覆盖文件必须经过 human approval。",
+    "Skill 目录不包含患者 BAM/FASTQ/VCF、大型参考库、VEP cache、NetMHCpan license、LOHHLA reference 或大型 conda env。"
+  ]
+}

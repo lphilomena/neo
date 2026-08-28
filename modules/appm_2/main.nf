@@ -1,6 +1,5 @@
 process APPM_2 {
   tag "$sample_id"
-  label 'medium'
   publishDir "${params.outdir}/appm", mode: 'copy'
 
   input:
@@ -12,9 +11,11 @@ process APPM_2 {
     path cnv_file
     path raw_peptides
     path purity_file
+    path ccf_file
 
   output:
     path "appm_gene_status.tsv", emit: appm_gene_status
+    path "appm_variant_evidence.tsv", emit: appm_variant_evidence
     path "appm_pathway_status.tsv", emit: appm_pathway_status
     path "appm_module_scores.tsv", emit: appm_module_scores
     path "appm_submodule_scores.tsv", emit: appm_submodule_scores
@@ -29,7 +30,7 @@ process APPM_2 {
 
   script:
   """
-  neoag-v03 appm-2 \
+  neoag appm-2 \
     --sample-id '${sample_id}' \
     --profile '${profile_name}' \
     --vep-tsv '${vep_appm_file}' \
@@ -38,9 +39,10 @@ process APPM_2 {
     --cnv '${cnv_file}' \
     --raw-peptides '${raw_peptides}' \
     --tumor-purity '${purity_file}' \
+    --ccf '${ccf_file}' \
     --outdir .
 
   echo "APPM_2:" > versions.yml
-  echo "  neoag-v03: \$(python -c 'import neoag_v03; print(neoag_v03.__version__)')" >> versions.yml
+  echo "  neoag: \$(python -c 'import neoag; print(neoag.__version__)')" >> versions.yml
   """
 }

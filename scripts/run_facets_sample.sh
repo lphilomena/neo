@@ -18,12 +18,10 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-if [[ -d /home/na/miniforge3 ]]; then
-  export NEOAG_CONDA_BASE="${NEOAG_CONDA_BASE:-/home/na/miniforge3}"
-  export PATH="${NEOAG_CONDA_BASE}/bin:${PATH}"
-fi
 # shellcheck source=/dev/null
 source "${ROOT}/conf/tools.env.sh"
+: "${NEOAG_CONDA_BASE:?ERROR: set NEOAG_CONDA_BASE to your conda/mamba installation root}"
+export PATH="${NEOAG_CONDA_BASE}/bin:${PATH}"
 
 PATIENT_ID="${PATIENT_ID:?ERROR: set PATIENT_ID=sample_id}"
 TUMOR_BAM="${TUMOR_BAM:?ERROR: set TUMOR_BAM=/path/tumor.bam}"
@@ -47,10 +45,14 @@ case "${FACETS_MODE}" in
     exec bash "${ROOT}/scripts/run_facets_omni2p5_snponly_downsample.sh"
     ;;
   dbsnp|full-dbsnp|full)
+    : "${FACETS_DBSNP_VCF:?ERROR: set FACETS_DBSNP_VCF or use FACETS_MODE=omni2p5/common_snp}"
     export PATIENT_ID TUMOR_BAM NORMAL_BAM
+    export FACETS_SNPSET_NAME="dbsnp_full"
+    export FACETS_SNP_VCF="${FACETS_DBSNP_VCF}"
+    export FACETS_NO_DOWNSAMPLE="${FACETS_NO_DOWNSAMPLE:-1}"
     export OUTDIR="${OUTDIR:-${ROOT}/results/facets/${PATIENT_ID}/dbsnp_full}"
-    export LOG="${LOG:-${ROOT}/work/run_facets_${PATIENT_ID}.log}"
-    exec bash "${ROOT}/scripts/run_facets_chenxiaoliang.sh"
+    export LOG="${LOG:-${OUTDIR}/run.log}"
+    exec bash "${ROOT}/scripts/run_facets_omni2p5_snponly_downsample.sh"
     ;;
   *)
     echo "ERROR: FACETS_MODE must be omni2p5, common_snp, or dbsnp; got ${FACETS_MODE}" >&2

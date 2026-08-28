@@ -8,23 +8,34 @@
 # Usage:
 #   bash scripts/install_ascat_pyclone.sh
 #   source conf/tools.env.sh
-#   neoag-v03 check-tools | grep -E 'ascat|pyclone'
+#   neoag check-tools | grep -E 'ascat|pyclone'
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-CONDA_BASE="${NEOAG_CONDA_BASE:-$(conda info --base)}"
+CONDA_BASE="${NEOAG_CONDA_BASE:-$(command conda info --base)}"
 ASCAT_ENV="${NEOAG_ASCAT_ENV:-neoag-ascat}"
 PYCLONE_ENV="${NEOAG_PYCLONE_ENV:-neoag-pyclone}"
 ASCAT_YML="${ROOT}/conda/env.neoag-ascat.yml"
 PYCLONE_YML="${ROOT}/conda/env.neoag-pyclone.yml"
-TOOLS_ENV="${ROOT}/conf/tools.env.sh"
+TOOLS_ENV="${NEOAG_TOOLS_ENV:-${ROOT}/conf/tools.env.local.sh}"
+BIOC_CACHE_HELPER="${ROOT}/.agents/skills/neoag-remote-deploy/scripts/with_bioc_data_cache.sh"
 
 if ! command -v conda >/dev/null 2>&1; then
   echo "ERROR: conda not found" >&2
   exit 1
 fi
+conda_safe() {
+  set +u
+  conda "$@"
+  local rc=$?
+  set -u
+  return "$rc"
+}
+
 # shellcheck disable=SC1091
+set +u
 source "${CONDA_BASE}/etc/profile.d/conda.sh"
+set -u
 
 if [[ "${NEOAG_USE_MAMBA:-0}" == "1" ]] && command -v mamba >/dev/null 2>&1 && mamba --version >/dev/null 2>&1; then
   CONDA_RUNNER=mamba
@@ -32,50 +43,117 @@ else
   CONDA_RUNNER=conda
 fi
 
-env_exists() { conda env list | awk '{print $1}' | grep -qx "$1"; }
+detect_env_prefix() {
+  local env_name="$1" prefix
+  for prefix in \
+    "${CONDA_BASE}/envs/${env_name}" \
+    "$(dirname "${CONDA_BASE}")/${env_name}" \
+    "${NEOAG_TOOLS_ROOT:-}/${env_name}"; do
+    [[ -n "${prefix}" && -d "${prefix}" ]] && { printf '%s\n' "${prefix}"; return 0; }
+  done
+  conda_safe env list | awk -v name="${env_name}" '$1 == name {print $NF; exit}'
+}
+
+env_exists() { [[ -n "$(detect_env_prefix "$1")" ]]; }
 
 create_or_update_env() {
   local env_name="$1" yml="$2"
+  local -a runner=("${CONDA_RUNNER}")
   echo "==> Installing/updating ${env_name} using ${CONDA_RUNNER}: ${yml}"
+  if [[ "${env_name}" == "${ASCAT_ENV}" && -x "${BIOC_CACHE_HELPER}" ]]; then
+    runner=("${BIOC_CACHE_HELPER}" --conda-base "${CONDA_BASE}" \
+      --cache-root "${NEOAG_TOOLS_ROOT:-${ROOT}}/install_cache" \
+      --package-key genomeinfodbdata-1.2.13 -- "${CONDA_RUNNER}")
+  fi
   if env_exists "${env_name}"; then
-    "${CONDA_RUNNER}" env update -n "${env_name}" -f "${yml}" --prune -y
+    "${runner[@]}" env update -n "${env_name}" -f "${yml}" --prune \
+      --override-channels -c conda-forge -c bioconda
   else
-    "${CONDA_RUNNER}" env create -n "${env_name}" -f "${yml}" -y
+    "${runner[@]}" env create -n "${env_name}" -f "${yml}" -y \
+      --override-channels -c conda-forge -c bioconda
   fi
 }
 
-create_or_update_env "${ASCAT_ENV}" "${ASCAT_YML}"
-create_or_update_env "${PYCLONE_ENV}" "${PYCLONE_YML}"
+env_has_ascat() {
+  local prefix
+  prefix="$(detect_env_prefix "$1")"
+  [[ -x "${prefix}/bin/Rscript" ]] && \
+    "${prefix}/bin/Rscript" -e 'quit(status=ifelse(requireNamespace("ASCAT", quietly=TRUE),0,1))' >/dev/null 2>&1
+}
+
+env_has_pyclone() {
+  local prefix
+  prefix="$(detect_env_prefix "$1")"
+  [[ -x "${prefix}/bin/pyclone-vi" ]] && \
+    "${prefix}/bin/pyclone-vi" --version >/dev/null 2>&1
+}
+
+ascat_ready() {
+  [[ -x "${ROOT}/bin/ascat.R" ]] && "${ROOT}/bin/ascat.R" --version >/dev/null 2>&1
+}
+
+pyclone_ready() {
+  [[ -x "${ROOT}/bin/pyclone" ]] && "${ROOT}/bin/pyclone" --version >/dev/null 2>&1
+}
+
+if ascat_ready && pyclone_ready; then
+  echo "==> ASCAT/PyClone wrappers already present; skipping env update"
+else
+  if [[ "${NEOAG_FORCE_ENV_UPDATE:-0}" == "1" ]] || ! env_exists "${ASCAT_ENV}"; then
+    create_or_update_env "${ASCAT_ENV}" "${ASCAT_YML}"
+  elif env_has_ascat "${ASCAT_ENV}"; then
+    echo "==> ASCAT package present in ${ASCAT_ENV}; skipping env update"
+  else
+    echo "==> ${ASCAT_ENV} exists but ASCAT R package missing; recreating env"
+    conda_safe env remove -n "${ASCAT_ENV}" -y
+    create_or_update_env "${ASCAT_ENV}" "${ASCAT_YML}"
+  fi
+
+  if [[ "${NEOAG_FORCE_ENV_UPDATE:-0}" == "1" ]] || ! env_exists "${PYCLONE_ENV}"; then
+    create_or_update_env "${PYCLONE_ENV}" "${PYCLONE_YML}"
+  elif env_has_pyclone "${PYCLONE_ENV}"; then
+    echo "==> PyClone-VI present in ${PYCLONE_ENV}; skipping env update"
+  else
+    echo "==> PyClone-VI missing in ${PYCLONE_ENV}; refreshing env"
+    create_or_update_env "${PYCLONE_ENV}" "${PYCLONE_YML}"
+  fi
+fi
+
+ASCAT_PREFIX="$(detect_env_prefix "${ASCAT_ENV}")"
+PYCLONE_PREFIX="$(detect_env_prefix "${PYCLONE_ENV}")"
+[[ -n "${ASCAT_PREFIX}" ]] || { echo "ERROR: ASCAT environment prefix not found" >&2; exit 1; }
+[[ -n "${PYCLONE_PREFIX}" ]] || { echo "ERROR: PyClone environment prefix not found" >&2; exit 1; }
 
 mkdir -p "${ROOT}/bin"
 cat > "${ROOT}/bin/ascat.R" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
 if [[ "\${1:-}" == "--version" || "\${1:-}" == "-v" ]]; then
-  conda run -n "${ASCAT_ENV}" Rscript -e 'cat(as.character(utils::packageVersion("ASCAT")), "\\n")'
+  "${ASCAT_PREFIX}/bin/Rscript" -e 'cat(as.character(utils::packageVersion("ASCAT")), "\\n")'
   exit 0
 fi
 if [[ "\$#" -eq 0 ]]; then
   echo "ASCAT wrapper. For custom analyses, run: conda activate ${ASCAT_ENV}; Rscript your_ascat_script.R" >&2
   exit 0
 fi
-conda run -n "${ASCAT_ENV}" Rscript "\$@"
+"${ASCAT_PREFIX}/bin/Rscript" "\$@"
 EOF
 chmod +x "${ROOT}/bin/ascat.R"
 
 cat > "${ROOT}/bin/pyclone" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
-if command -v "${CONDA_BASE}/envs/${PYCLONE_ENV}/bin/pyclone-vi" >/dev/null 2>&1; then
-  exec "${CONDA_BASE}/envs/${PYCLONE_ENV}/bin/pyclone-vi" "\$@"
-fi
-exec conda run -n "${PYCLONE_ENV}" pyclone-vi "\$@"
+exec "${PYCLONE_PREFIX}/bin/pyclone-vi" "\$@"
 EOF
 chmod +x "${ROOT}/bin/pyclone"
 
 echo "==> Smoke tests"
-"${ROOT}/bin/ascat.R" --version || echo "WARN: ASCAT package version check failed; inspect env ${ASCAT_ENV}" >&2
-"${ROOT}/bin/pyclone" --version || echo "WARN: PyClone-VI version check failed; inspect env ${PYCLONE_ENV}" >&2
+if ! "${ROOT}/bin/ascat.R" --version >/dev/null 2>&1; then
+  echo "WARN: ASCAT wrapper version check failed; inspect env ${ASCAT_ENV}" >&2
+fi
+if ! "${ROOT}/bin/pyclone" --version >/dev/null 2>&1; then
+  echo "WARN: PyClone-VI version check failed; inspect env ${PYCLONE_ENV}" >&2
+fi
 
 mkdir -p "${ROOT}/conf"
 if [[ ! -f "${TOOLS_ENV}" ]]; then
@@ -98,4 +176,4 @@ export PATH="${ROOT}/bin:\${PATH}"
 EOF
 fi
 
-echo "==> Done. Run: source conf/tools.env.sh && neoag-v03 check-tools | grep -E 'ascat|pyclone'"
+echo "==> Done. Run: source conf/tools.env.sh && neoag check-tools | grep -E 'ascat|pyclone'"

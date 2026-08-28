@@ -1,0 +1,33 @@
+{
+  "schema_version": "neoag-splice-provenance-config-v0.5.0",
+  "sample_id": "PATIENT_001",
+  "genome_build": "GRCh38",
+  "disease_profile": "default",
+  "inputs": {
+    "junctions": "results/regtools_junctions.tsv",
+    "junction_coordinate_system": "bed12",
+    "star_junctions": "results/star/SJ.out.tab",
+    "spladder_gff3": ["results/spladder/merge_graphs_exon_skip_C3.confirmed.gff3"],
+    "spladder_txt": [],
+    "irfinder": ["results/irfinder/IRFinder-IR-nondir.txt"],
+    "irfinder_coordinate_system": "intron_1based_closed",
+    "immunopepper_meta": ["results/immunopepper/ref_sample_peptides_meta.tsv"],
+    "immunopepper_kmers": ["results/immunopepper/ref_graph_kmer_JuncExpr.tsv"],
+    "normal_junctions": ["references/normal_junctions.tsv"],
+    "normal_coverage": ["results/normal_coverage.tsv"]
+  },
+  "presentation": {
+    "hla_file": "results/hla.txt",
+    "algorithms": ["MHCflurry", "MHCflurryEL"],
+    "threads": 4
+  },
+  "tool_versions": {
+    "STAR": "LOCKED_BY_SITE",
+    "RegTools": "LOCKED_BY_SITE",
+    "SplAdder": "LOCKED_BY_SITE",
+    "IRFinder-S": "LOCKED_BY_SITE",
+    "ImmunoPepper": "LOCKED_BY_SITE",
+    "pVACbind": "LOCKED_BY_SITE"
+  },
+  "strict": true
+}

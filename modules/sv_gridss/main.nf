@@ -1,7 +1,6 @@
 process SV_GRIDSS {
     tag "${sample_id}"
     cpus params.threads ?: 16
-    container 'gridss/gridss:2.13.2'
     publishDir "${params.outdir}/sv_calls/gridss", mode: 'copy'
 
     input:

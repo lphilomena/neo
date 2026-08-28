@@ -1,5 +1,5 @@
-from neoag_v03.config import load_profile
-from neoag_v03.immunogenicity_composite import (
+from neoag.config import load_profile
+from neoag.immunogenicity_composite import (
     apply_immunogenicity_evidence,
     combine_component_scores,
     component_scores,
@@ -92,3 +92,38 @@ def test_mixed_real_and_stub_evidence_uses_only_real_component(tmp_path):
     assert rows[0]["bigmhc_im_score"] == "0.42"
     assert rows[0]["immunogenicity_source"] == "bigmhc_im"
     assert rows[0]["immunogenicity_composite_score"] == "0.4200"
+
+
+def test_immunogenicity_merge_links_matched_wildtype_scores(tmp_path):
+    profile = load_profile("default")
+    prime = tmp_path / "prime_evidence.tsv"
+    prime.write_text(
+        "sample_id\tpeptide\thla_allele\tprime_score\tprime_rank\tevidence_status\n"
+        "S\tMTPEPTID\tHLA-A*02:01\t0.90\t1.0\treal\n"
+        "S\tWTPEPTID\tHLA-A*02:01\t0.20\t50.0\treal\n",
+        encoding="utf-8",
+    )
+    bigmhc = tmp_path / "bigmhc_im_evidence.tsv"
+    bigmhc.write_text(
+        "sample_id\tpeptide\thla_allele\tbigmhc_im_score\tevidence_status\n"
+        "S\tMTPEPTID\tHLA-A*02:01\t0.80\treal\n"
+        "S\tWTPEPTID\tHLA-A*02:01\t0.10\treal\n",
+        encoding="utf-8",
+    )
+    rows = [{
+        "peptide": "MTPEPTID",
+        "wildtype_peptide": "WTPEPTID",
+        "hla_allele": "HLA-A*02:01",
+    }]
+
+    apply_immunogenicity_evidence(
+        rows,
+        {"prime": prime, "bigmhc_im": bigmhc, "deepimmuno": None, "iedb": None},
+        profile,
+    )
+
+    assert rows[0]["prime_score"] == "0.90"
+    assert rows[0]["prime_wt_score"] == "0.20"
+    assert rows[0]["prime_wt_rank"] == "50.0"
+    assert rows[0]["bigmhc_im_score"] == "0.80"
+    assert rows[0]["bigmhc_im_wt_score"] == "0.10"

@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+BIGMHC_DIR="${BIGMHC_DIR:-${NEOAG_TOOLS_ROOT:-${ROOT}}/tools/bigmhc}"
+PYTHON_BIN="${NEOAG_IMMUNO_PYTHON:-python3}"
+if [[ ! -f "${BIGMHC_DIR}/src/predict.py" ]]; then
+  echo "ERROR: BigMHC predict.py not found under BIGMHC_DIR=${BIGMHC_DIR}" >&2
+  exit 2
+fi
+cd "${BIGMHC_DIR}/src"
+exec "${PYTHON_BIN}" predict.py "$@"

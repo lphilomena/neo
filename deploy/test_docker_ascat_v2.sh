@@ -33,22 +33,24 @@ docker run --rm "${IMAGE}" R -e '
   }
 ' 2>&1
 
-# ---- 演示完整调用格式 ----
-echo ""
-echo "  # ASCAT 完整调用示例 (需 Tumor/Normal LogR + BAF 数据):"
-echo "  docker run --rm \\"
-echo "    -v \$(pwd)/input:/input \\"
-echo "    -v \$(pwd)/output:/output \\"
-echo "    ${IMAGE} \\"
-echo "    R -e '"
-echo "      library(ASCAT);"
-echo "      ascat.aspcf <- ascat.aspc(\\""
-echo "        ascat.bc = ascat.loadData(\\"/input/tumor.LogR\\", \\"/input/tumor.BAF\\", \\"/input/normal.LogR\\", \\"/input/normal.BAF\\"),"
-echo "        ascat.gg = ascat.loadAlleleCounts(\\"/input/tumor.alleleCounts\\", \\"/input/normal.alleleCounts\\")"
-echo "      );"
-echo "      ascat.output <- ascat.runAscat(ascat.aspcf);"
-echo "      write.table(ascat.output[["segments"]], \\"/output/ascat_segments.tsv\\", sep=\\"\\t\\", quote=F, row.names=F)"
-echo "    '"
+# ---- Full invocation example ----
+cat <<'EXAMPLE'
+
+  # ASCAT full invocation example (requires Tumor/Normal LogR + BAF data):
+  docker run --rm \
+    -v $(pwd)/input:/input \
+    -v $(pwd)/output:/output \
+    ${IMAGE} \
+    R -e '
+      library(ASCAT);
+      ascat.aspcf <- ascat.aspc(
+        ascat.bc = ascat.loadData("/input/tumor.LogR", "/input/tumor.BAF", "/input/normal.LogR", "/input/normal.BAF"),
+        ascat.gg = ascat.loadAlleleCounts("/input/tumor.alleleCounts", "/input/normal.alleleCounts")
+      );
+      ascat.output <- ascat.runAscat(ascat.aspcf);
+      write.table(ascat.output[["segments"]], "/output/ascat_segments.tsv", sep="\t", quote=F, row.names=F)
+    '
+EXAMPLE
 
 echo ""
 echo "=== ASCAT 2.5.2 容器测试完成 ==="

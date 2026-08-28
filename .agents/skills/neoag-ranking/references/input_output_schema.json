@@ -1,0 +1,14 @@
+{
+  "name": "neoag-ranking",
+  "handler": "ranking",
+  "production_command": "neoag evidence-rank",
+  "required_inputs": ["comprehensive_evidence", "weighted_baseline"],
+  "optional_inputs": ["rules", "provenance", "track"],
+  "outputs": [
+    "all_tool_results.tsv",
+    "ranked_peptides.weighted_baseline.tsv",
+    "ranked_peptides.evidence_consensus.tsv",
+    "ranked_events.evidence_consensus.tsv",
+    "ranking_compare_weighted_vs_consensus.md"
+  ]
+}

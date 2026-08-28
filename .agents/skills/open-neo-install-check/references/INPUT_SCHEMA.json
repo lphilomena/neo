@@ -1,0 +1,161 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "open-neo-install-check input",
+  "type": "object",
+  "required": [
+    "outdir"
+  ],
+  "properties": {
+    "outdir": {
+      "type": "string"
+    },
+    "project_root": {
+      "type": "string"
+    },
+    "release_tarball": {
+      "type": "string"
+    },
+    "conda_base": {
+      "type": "string",
+      "description": "Existing Conda/Miniforge root, including NAS/site-managed installations"
+    },
+    "sha256": {
+      "type": "string"
+    },
+    "deployment_tier": {
+      "enum": [
+        "review",
+        "core",
+        "prediction",
+        "full"
+      ]
+    },
+    "mode": {
+      "enum": [
+        "plan",
+        "verify",
+        "repair",
+        "install",
+        "resume"
+      ]
+    },
+    "tools_manifest": {
+      "type": "string"
+    },
+    "reference_manifest": {
+      "type": "string"
+    },
+    "sample_manifest": {
+      "type": "string"
+    },
+    "profile": {
+      "type": "string"
+    },
+    "run_demo": {
+      "type": "boolean"
+    },
+    "run_pytest": {
+      "type": "boolean"
+    },
+    "run_nextflow": {
+      "type": "boolean"
+    },
+    "mini_smoke": {
+      "type": "boolean"
+    },
+    "release_audit": {
+      "type": "boolean"
+    },
+    "approved": {
+      "type": "boolean"
+    },
+    "deploy_root": {
+      "type": "string"
+    },
+    "tools_root": {
+      "type": "string"
+    },
+    "reference_root": {
+      "type": "string"
+    },
+    "licensed_root": {
+      "type": "string"
+    },
+    "gateway_url": {
+      "type": "string",
+      "description": "Optional NeoAg Gateway URL; install-check validates /health for full-tier execution readiness"
+    },
+    "asset_source_host": {
+      "type": "string",
+      "description": "SSH asset source host, for example user@host; provide explicitly for approved remote asset sync."
+    },
+    "asset_source_root": {
+      "type": "string",
+      "description": "Asset source root corresponding to /srv/neoag-assets/source in the portable manifest; provide explicitly for approved asset sync."
+    },
+    "sync_public_assets": {
+      "type": "boolean",
+      "description": "Use the public Hugging Face Dataset when an explicit site asset source is not supplied."
+    },
+    "public_asset_repo": {
+      "type": "string"
+    },
+    "public_asset_revision": {
+      "type": "string"
+    },
+    "hf_endpoint": {
+      "type": "string",
+      "description": "Optional Hugging Face base URL; otherwise uses HF_ENDPOINT or the official endpoint."
+    },
+    "public_asset_root": {
+      "type": "string"
+    },
+    "public_asset_cache": {
+      "type": "string"
+    },
+    "asset_manifest": {
+      "type": "string"
+    },
+    "deployment_reference_manifest": {
+      "type": "string"
+    },
+    "install_timeout": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Installer timeout in seconds; 0 disables the timeout"
+    },
+    "allow_download": {
+      "type": "boolean"
+    },
+    "install_claude_code": {
+      "type": "boolean",
+      "description": "Install Claude Code through the approved Anthropic native installer"
+    },
+    "claude_code_channel": {
+      "type": "string",
+      "description": "Claude Code release channel (stable/latest) or exact X.Y.Z version"
+    },
+    "installer_profile": {
+      "enum": [
+        "minimal",
+        "standard",
+        "all-open"
+      ]
+    },
+    "no_sync_assets": {
+      "type": "boolean"
+    }
+  },
+  "anyOf": [
+    {
+      "required": [
+        "project_root"
+      ]
+    },
+    {
+      "required": [
+        "release_tarball"
+      ]
+    }
+  ]
+}

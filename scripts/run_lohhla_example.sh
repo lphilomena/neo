@@ -17,12 +17,12 @@ HLA_FASTA="${ROOT}/tools/lohhla/example-file/correct-example-out/example.patient
 HLAS="${ROOT}/tools/lohhla/example-file/hlas"
 COPYNUM="${ROOT}/tools/lohhla/example-file/solutions.txt"
 GATK_DIR="${ROOT}/tools/picard-lohhla"
-NOVO_DIR="/home/na/project/neoantigen/software/polysolver/binaries"
-NOVOINDEX="/home/na/project/neoantigen/software/polysolver/scripts/novoindex"
+NOVO_DIR="${POLYSOLVER_HOME:-${ROOT}/tools/polysolver}/binaries"
+NOVOINDEX="${POLYSOLVER_HOME:-${ROOT}/tools/polysolver}/scripts/novoindex"
 
 mkdir -p "${WORKDIR}"
 export PATH="${NOVO_DIR}:${NOVOINDEX%/*}:${PATH}"
-export NOVOALIGN_LICENSE_FILE="/home/na/project/neoantigen/wbscript/novoalign.lic"
+export NOVOALIGN_LICENSE_FILE="${NOVOALIGN_LICENSE_FILE:?ERROR: set NOVOALIGN_LICENSE_FILE=/path/to/novoalign.lic}"
 cp "${NOVOALIGN_LICENSE_FILE}" "${NOVO_DIR}/novoalign.lic"
 
 echo "[$(date -Iseconds)] starting LOHHLA example" | tee -a "${LOG}"

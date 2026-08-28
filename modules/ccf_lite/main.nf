@@ -1,7 +1,3 @@
-// @Deprecated: Use CCF_2 (modules/ccf_2/main.nf) instead — CCF_2 produces
-// ccf_lite.tsv as a side output, superseding this standalone module.
-// This module is kept for backward compatibility and will be removed in a
-// future release.
 process CCF_LITE {
   tag "ccf-lite"
   publishDir "${params.outdir}/clonality", mode: 'copy'
@@ -18,7 +14,7 @@ process CCF_LITE {
 
   script:
   """
-  neoag-v03 ccf-lite \
+  neoag ccf-lite \
     --events '${raw_events}' \
     --profile '${profile_name}' \
     --purity '${purity_file}' \
@@ -26,6 +22,6 @@ process CCF_LITE {
     --out ccf_lite.tsv
 
   echo "CCF_LITE:" > versions.yml
-  echo "  neoag-v03: \$(python -c 'import neoag_v03; print(neoag_v03.__version__)')" >> versions.yml
+  echo "  neoag: \$(python -c 'import neoag; print(neoag.__version__)')" >> versions.yml
   """
 }

@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Open-Neo macro Skill result",
+  "type": "object",
+  "required": ["schema_version", "skill", "status", "steps", "outputs"],
+  "properties": {
+    "schema_version": {"const": "open-neo-macro-skill-v1"},
+    "skill": {"const": "open-neo-install-check"},
+    "status": {"enum": ["READY", "PARTIAL", "BLOCKED", "UNSAFE", "APPROVAL_REQUIRED", "FAILED"]},
+    "steps": {"type": "array"},
+    "outputs": {"type": "object"}
+  }
+}

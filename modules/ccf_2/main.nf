@@ -1,6 +1,5 @@
 process CCF_2 {
   tag "ccf-2"
-  label 'medium'
   publishDir "${params.outdir}/clonality", mode: 'copy'
 
   input:
@@ -19,7 +18,7 @@ process CCF_2 {
 
   script:
   """
-  neoag-v03 ccf-2 \
+  neoag ccf-2 \
     --events '${raw_events}' \
     --profile '${profile_name}' \
     --purity '${purity_file}' \
@@ -29,6 +28,6 @@ process CCF_2 {
   cp ccf_2.tsv ccf_lite.tsv
 
   echo "CCF_2:" > versions.yml
-  echo "  neoag-v03: \$(python -c 'import neoag_v03; print(neoag_v03.__version__)')" >> versions.yml
+  echo "  neoag: \$(python -c 'import neoag; print(neoag.__version__)')" >> versions.yml
   """
 }

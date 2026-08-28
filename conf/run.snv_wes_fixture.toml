@@ -19,4 +19,4 @@ extract_appm_from_vcf = true
 expression = "data/fixtures/gene_expression.tsv"
 cnv = "data/fixtures/cnv_segments.tsv"
 normal_expression = "resources/normal_expression.example.tsv"
-normal_hla_ligands = "resources/normal_hla_ligands.tsv"
+normal_hla_ligands = "resources/normal_hla_ligands.example.tsv"

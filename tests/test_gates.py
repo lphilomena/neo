@@ -1,8 +1,8 @@
-from neoag_v03.config import load_profile
-from neoag_v03.gates import evaluate_presentation_gate
-from neoag_v03.scoring_v03 import (
+from neoag.config import load_profile
+from neoag.gates import evaluate_presentation_gate
+from neoag.scoring import (
     compute_peptide_efficacy,
-    effective_v03_weights,
+    effective_weights,
     is_placeholder_immunogenicity,
 )
 
@@ -32,13 +32,38 @@ def test_presentation_gate_fail_grade():
     assert "grade" in gate["presentation_gate_reason"]
 
 
+def test_presentation_gate_uses_stabpan_percentile_rank_when_available():
+    profile = load_profile("default")
+    pres = {
+        "presentation_evidence_grade": "A",
+        "netmhcpan_el_rank": "0.5",
+        "netmhcstabpan_score": "0.298",
+        "netmhcstabpan_rank": "1.4",
+    }
+    gate = evaluate_presentation_gate({}, {}, pres, profile)
+    assert gate["presentation_gate_status"] == "PASS"
+
+
+def test_presentation_gate_rejects_weak_stabpan_percentile_rank():
+    profile = load_profile("default")
+    pres = {
+        "presentation_evidence_grade": "A",
+        "netmhcpan_el_rank": "0.5",
+        "netmhcstabpan_score": "0.900",
+        "netmhcstabpan_rank": "2.0",
+    }
+    gate = evaluate_presentation_gate({}, {}, pres, profile)
+    assert gate["presentation_gate_status"] == "FAIL"
+    assert "stabpan_rank=2.00" in gate["presentation_gate_reason"]
+
+
 def test_immunogenicity_placeholder_redistribution():
     profile = load_profile("default")
     peptide = {"immunogenicity_score": "0.5"}
-    w = effective_v03_weights(profile, peptide)
+    w = effective_weights(profile, peptide)
     assert w["immunogenicity"] == 0.0
-    assert w["presentation_evidence"] > profile["v03_score_weights"]["presentation_evidence"]
-    assert w["binding_evidence"] > profile["v03_score_weights"]["binding_evidence"]
+    assert w["presentation_evidence"] > profile["score_weights"]["presentation_evidence"]
+    assert w["binding_evidence"] > profile["score_weights"]["binding_evidence"]
 
 
 def test_efficacy_uses_immunogenicity_composite():

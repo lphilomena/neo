@@ -4,13 +4,14 @@
 # Usage:
 #   bash scripts/install_facets.sh
 #   source conf/tools.env.sh
-#   neoag-v03 check-tools | grep facets
+#   neoag check-tools | grep facets
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-CONDA_BASE="${NEOAG_CONDA_BASE:-$(conda info --base)}"
+CONDA_BASE="${NEOAG_CONDA_BASE:-$(command conda info --base)}"
+export PATH="${CONDA_BASE}/bin:${PATH}"
 ENV_NAME="${NEOAG_FACETS_ENV:-neoag-facets}"
-TOOLS_ENV="${ROOT}/conf/tools.env.sh"
+TOOLS_ENV="${NEOAG_TOOLS_ENV:-${ROOT}/conf/tools.env.local.sh}"
 BIN_DIR="${ROOT}/bin"
 mkdir -p "${BIN_DIR}"
 
@@ -18,40 +19,89 @@ if ! command -v conda >/dev/null 2>&1; then
   echo "ERROR: conda not found" >&2
   exit 1
 fi
+conda_safe() {
+  set +u
+  conda "$@"
+  local rc=$?
+  set -u
+  return "$rc"
+}
+
 # shellcheck disable=SC1091
+set +u
 source "${CONDA_BASE}/etc/profile.d/conda.sh"
+set -u
 
-if conda env list | awk '{print $1}' | grep -qx "${ENV_NAME}"; then
-  conda install -n "${ENV_NAME}" -c conda-forge -c bioconda -y r-base r-optparse r-devtools r-remotes htslib || true
-else
-  conda create -n "${ENV_NAME}" -c conda-forge -c bioconda -y r-base r-optparse r-devtools r-remotes htslib
+env_exists() { conda_safe env list | awk '{print $1}' | grep -qx "$1"; }
+env_has_facets() {
+  conda_safe run -n "$1" Rscript -e 'quit(status=ifelse(requireNamespace("facets", quietly=TRUE),0,1))' >/dev/null 2>&1
+}
+
+FACETS_ENV="${ENV_NAME}"
+for candidate in "${ENV_NAME}" neoag-fusion-r36 neoag-fusion; do
+  if env_exists "${candidate}" && env_has_facets "${candidate}"; then
+    FACETS_ENV="${candidate}"
+    echo "==> Reusing existing facets R package in conda env: ${FACETS_ENV}"
+    break
+  fi
+done
+
+if ! env_has_facets "${FACETS_ENV}"; then
+  if env_exists "${ENV_NAME}"; then
+    conda_safe install -n "${ENV_NAME}" -c conda-forge -c bioconda -y r-base r-optparse r-devtools r-remotes htslib || true
+  else
+    conda_safe create -n "${ENV_NAME}" -c conda-forge -c bioconda -y r-base r-optparse r-devtools r-remotes htslib
+  fi
+  FACETS_ENV="${ENV_NAME}"
+  if ! env_has_facets "${FACETS_ENV}"; then
+    if ! conda_safe install -n "${FACETS_ENV}" -c conda-forge -c bioconda -y r-facets; then
+      SRC_ROOT="${NEOAG_TOOLS_SRC_ROOT:-$(dirname "${CONDA_BASE}")/tools/src}"
+      mkdir -p "${SRC_ROOT}"
+      if [[ ! -d "${SRC_ROOT}/pctGCdata/.git" ]]; then
+        git clone --depth 1 https://github.com/mskcc/pctGCdata.git "${SRC_ROOT}/pctGCdata"
+      else
+        git -C "${SRC_ROOT}/pctGCdata" pull --ff-only
+      fi
+      if [[ ! -d "${SRC_ROOT}/facets/.git" ]]; then
+        git clone --depth 1 https://github.com/mskcc/facets.git "${SRC_ROOT}/facets"
+      else
+        git -C "${SRC_ROOT}/facets" pull --ff-only
+      fi
+      "${CONDA_BASE}/bin/conda" run -n "${FACETS_ENV}" R CMD INSTALL "${SRC_ROOT}/pctGCdata"
+      "${CONDA_BASE}/bin/conda" run -n "${FACETS_ENV}" R CMD INSTALL "${SRC_ROOT}/facets"
+    fi
+  fi
 fi
+ENV_NAME="${FACETS_ENV}"
 
-# Try conda package first if available on the local channels; otherwise GitHub fallback.
-if ! conda run -n "${ENV_NAME}" Rscript -e 'quit(status=ifelse(requireNamespace("facets", quietly=TRUE),0,1))' >/dev/null 2>&1; then
-  conda install -n "${ENV_NAME}" -c conda-forge -c bioconda -y r-facets || \
-  conda run -n "${ENV_NAME}" Rscript -e 'if (!requireNamespace("remotes", quietly=TRUE)) install.packages("remotes", repos="https://cloud.r-project.org"); remotes::install_github("mskcc/facets")'
+if [[ ! -x "${CONDA_BASE}/envs/${ENV_NAME}/bin/snp-pileup" ]]; then
+  conda_safe install -n "${ENV_NAME}" -c conda-forge -c bioconda -y snp-pileup=0.6.2
+fi
+"${CONDA_BASE}/envs/${ENV_NAME}/bin/snp-pileup" --help >/dev/null 2>&1 || rc=$?
+if [[ "${rc:-0}" -gt 2 ]]; then
+  echo "ERROR: snp-pileup functional check failed in ${ENV_NAME}" >&2
+  exit 1
 fi
 
 cat > "${BIN_DIR}/runFACETS.R" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
 if [[ "\${1:-}" == "--version" || "\${1:-}" == "-v" ]]; then
-  conda run -n "${ENV_NAME}" Rscript -e 'cat(as.character(utils::packageVersion("facets")), "\\n")'
+  ${CONDA_BASE}/bin/conda run -n "${ENV_NAME}" Rscript -e 'cat(as.character(utils::packageVersion("facets")), "\\n")'
   exit 0
 fi
 if [[ "\$#" -eq 0 ]]; then
   echo "FACETS wrapper. Use scripts/facets_fit_from_pileup.R or run: conda activate ${ENV_NAME}; Rscript your_facets_script.R" >&2
   exit 0
 fi
-conda run -n "${ENV_NAME}" Rscript "\$@"
+${CONDA_BASE}/bin/conda run -n "${ENV_NAME}" Rscript "\$@"
 EOF
 chmod +x "${BIN_DIR}/runFACETS.R"
 
 if [[ ! -f "${TOOLS_ENV}" ]]; then
   cat > "${TOOLS_ENV}" <<EOF
 export NEOAG_PROJECT_ROOT="${ROOT}"
-export NEOAG_TOOLS_ROOT="${ROOT}"
+export NEOAG_TOOLS_ROOT="$(dirname "${CONDA_BASE}")"
 export NEOAG_CONDA_BASE="${CONDA_BASE}"
 export NEOAG_CONDA_ENV="neoag-tools"
 EOF
@@ -61,10 +111,12 @@ if ! grep -q 'FACETS — installed via scripts/install_facets.sh' "${TOOLS_ENV}"
 
 # FACETS — installed via scripts/install_facets.sh
 export NEOAG_FACETS_ENV="${ENV_NAME}"
+export FACETS_R_ENV_PREFIX="${CONDA_BASE}/envs/${ENV_NAME}"
+export SNP_PILEUP_BIN="${CONDA_BASE}/envs/${ENV_NAME}/bin/snp-pileup"
 export FACETS_HOME="${BIN_DIR}"
 export PATH="${BIN_DIR}:\${PATH}"
 EOF
 fi
 
 "${BIN_DIR}/runFACETS.R" --version || true
-echo "==> Done. Run: source conf/tools.env.sh && neoag-v03 check-tools | grep facets"
+echo "==> Done. Run: source conf/tools.env.sh && neoag check-tools | grep facets"

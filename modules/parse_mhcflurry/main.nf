@@ -12,12 +12,12 @@ process PARSE_MHCFLURRY {
 
   script:
   """
-  neoag-v03 parse-mhcflurry \
+  neoag parse-mhcflurry \
     --sample-id '${sample_id}' \
     --input '${mhcflurry_file}' \
     --out mhcflurry_evidence.tsv
 
   echo "PARSE_MHCFLURRY:" > versions.yml
-  echo "  neoag-v03: \$(python -c 'import neoag_v03; print(neoag_v03.__version__)')" >> versions.yml
+  echo "  neoag: \$(python -c 'import neoag; print(neoag.__version__)')" >> versions.yml
   """
 }

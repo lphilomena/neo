@@ -1,0 +1,130 @@
+[metadata]
+schema_version = "report-dimension-map-v1"
+ranking_release = "EC-v2.1-source-chain"
+principle = "code_is_ranking_source_of_truth_report_is_explanatory_projection"
+
+[dimensions.source_chain_confidence]
+label_zh = "候选来源链置信度（C1-C4）"
+layer = "automatic"
+ranking_role = "annotation_in_compatibility; cap/pareto_in_integrated_profile"
+applies_to = ["SNV", "INDEL", "FUSION", "SPLICE"]
+fields = ["source_chain_confidence_tier", "source_chain_confidence_label", "source_chain_reason_codes", "source_chain_rule_version"]
+required_for_report = true
+interpretation_boundary = "C1-C4评估事件到转录本/ORF再到肽段的可追溯性，不等同R1-R4实验推荐等级。"
+
+[dimensions.event_authenticity]
+label_zh = "事件真实性"
+layer = "automatic"
+ranking_role = "core"
+applies_to = ["SNV", "INDEL", "FUSION", "SPLICE", "DNA_SV"]
+fields = ["event_authenticity_state", "event_authenticity_grade", "event_authenticity_reason_code"]
+required_for_report = false
+interpretation_boundary = "确认上游事件获得测序/计算支持，不等于确认新抗原。"
+
+[dimensions.rna_support]
+label_zh = "RNA直接支持"
+layer = "automatic"
+ranking_role = "core"
+applies_to = ["SNV", "INDEL", "FUSION", "SPLICE", "DNA_SV"]
+fields = ["rna_support_state", "rna_support_grade", "rna_support_reason_code", "rna_alt_reads", "rna_vaf", "rna_junction_reads"]
+required_for_report = false
+interpretation_boundary = "gene TPM不能替代突变等位基因或精确junction支持。"
+
+[dimensions.transcript_orf_validity]
+label_zh = "转录本/ORF有效性"
+layer = "track_specific"
+ranking_role = "source-chain and track-specific Pareto evidence"
+applies_to = ["INDEL", "FUSION", "SPLICE", "DNA_SV"]
+fields = ["frame_status", "rna_frame_status", "orf_id", "transcript_hypothesis_id", "novel_tail_status", "nmd_risk_status"]
+required_for_report = false
+interpretation_boundary = "适用性依事件类型决定；不适用必须标NOT_APPLICABLE。"
+
+[dimensions.novel_sequence_specificity]
+label_zh = "新序列有效性与MT/WT特异性"
+layer = "automatic_and_track_specific"
+ranking_role = "core or track-specific"
+applies_to = ["SNV", "INDEL", "FUSION", "SPLICE", "DNA_SV"]
+fields = ["mutant_specificity_status", "mutant_specificity_gate_status", "mutation_positions_in_peptide", "crosses_junction", "contains_novel_aa"]
+required_for_report = false
+interpretation_boundary = "真正包含事件来源新序列与MT相对WT呈递优势是相关但不同的问题。"
+
+[dimensions.presentation_consensus]
+label_zh = "HLA呈递工具共识"
+layer = "automatic"
+ranking_role = "core"
+applies_to = ["SNV", "INDEL", "FUSION", "SPLICE", "DNA_SV"]
+fields = ["presentation_consensus_state", "presentation_consensus_grade", "netmhcpan_mt_rank_el", "mhcflurry_presentation_score"]
+required_for_report = false
+interpretation_boundary = "计算呈递支持不等于体内自然呈递。"
+
+[dimensions.restricting_hla]
+label_zh = "限制性HLA状态"
+layer = "automatic"
+ranking_role = "hard-fail/cap"
+applies_to = ["SNV", "INDEL", "FUSION", "SPLICE", "DNA_SV"]
+fields = ["restricting_hla_lost", "restricting_hla_status", "hla_loh_status"]
+required_for_report = false
+interpretation_boundary = "现有证据未见丢失不等同LOH已被完整排除。"
+
+[dimensions.appm_integrity]
+label_zh = "APPM完整性"
+layer = "automatic"
+ranking_role = "hard-fail/cap/core"
+applies_to = ["SNV", "INDEL", "FUSION", "SPLICE", "DNA_SV"]
+fields = ["appm_integrity_status", "appm_evidence_completeness", "appm_action", "appm_multiplier"]
+required_for_report = false
+interpretation_boundary = "APPM计算代理证据不能诊断临床敏感或耐药。"
+
+[dimensions.safety]
+label_zh = "正常组织安全性"
+layer = "automatic"
+ranking_role = "hard-fail/core"
+applies_to = ["SNV", "INDEL", "FUSION", "SPLICE", "DNA_SV"]
+fields = ["safety_status", "safety_evidence_completeness", "reference_proteome_status", "normal_ligandome_status", "normal_junction_assessment_status"]
+required_for_report = false
+interpretation_boundary = "缺失参考层必须标PARTIAL/UNASSESSED，不得自动判PASS。"
+
+[dimensions.clonality]
+label_zh = "CCF/克隆性"
+layer = "automatic"
+ranking_role = "core when applicable"
+applies_to = ["SNV", "INDEL", "DNA_SV"]
+fields = ["ccf_status", "ccf_estimate", "ccf_confidence"]
+required_for_report = false
+interpretation_boundary = "RNA-only fusion/splice为NA/UNRESOLVED，不是0或低克隆。"
+
+[dimensions.evidence_completeness]
+label_zh = "证据完整度"
+layer = "automatic"
+ranking_role = "core/cap"
+applies_to = ["SNV", "INDEL", "FUSION", "SPLICE", "DNA_SV"]
+fields = ["evidence_completeness_state", "evidence_completeness_grade", "evidence_completeness"]
+required_for_report = false
+interpretation_boundary = "完整度表示评估覆盖，不代表生物学阳性。"
+
+[dimensions.orthogonal_event_confirmation]
+label_zh = "事件级正交确认"
+layer = "review_overlay"
+ranking_role = "C1 versus C2; not a generic EC-v2 automatic dimension"
+applies_to = ["SNV", "INDEL", "FUSION", "SPLICE", "DNA_SV"]
+fields = ["source_chain_orthogonal_status", "source_chain_orthogonal_sources", "orthogonal_confirmation_status", "rt_pcr_status", "sanger_status", "long_read_status"]
+required_for_report = false
+interpretation_boundary = "同一BAM的多个caller是算法一致性，不等同独立正交确认。"
+
+[dimensions.protein_ligandome_evidence]
+label_zh = "蛋白/免疫肽组直接证据"
+layer = "review_overlay"
+ranking_role = "optional enhancement"
+applies_to = ["SNV", "INDEL", "FUSION", "SPLICE", "DNA_SV"]
+fields = ["protein_evidence_status", "proteomics_status", "ligandome_evidence_status", "peptide_mass_spec_status"]
+required_for_report = false
+interpretation_boundary = "未检测或未做评估必须结合实验检测能力解释。"
+
+[dimensions.functional_validation]
+label_zh = "T细胞功能验证"
+layer = "post_ranking_validation"
+ranking_role = "not used by EC-v2.1"
+applies_to = ["SNV", "INDEL", "FUSION", "SPLICE", "DNA_SV"]
+fields = ["functional_validation_status", "elispot_status", "tetramer_status", "tcr_recognition_status", "killing_assay_status"]
+required_for_report = false
+interpretation_boundary = "功能实验结果是排序后验证层，不应被报告为当前计算证据已使用。"

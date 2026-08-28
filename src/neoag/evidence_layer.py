@@ -1,0 +1,541 @@
+"""Materialize standard intermediate evidence TSVs for multi-entry Project B scoring."""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any, Mapping
+
+from .config import load_profile
+from .model_layers import enrich_event_layers, enrich_peptide_layers, rna_evidence_metrics
+from .safety import apply_event_safety, apply_peptide_safety, load_normal_expression, load_normal_hla_ligands
+from .schemas import (
+    EXPRESSION_EVIDENCE_FIELDS,
+    EVENT_FIELDS,
+    PEPTIDE_FIELDS,
+    RNA_JUNCTION_EVIDENCE_FIELDS,
+    SAFETY_EVIDENCE_FIELDS,
+)
+from .evidence_provenance import ProvenanceRecord, provenance_derived, attach_provenance
+from .utils import first, read_tsv, safe_id, to_float, write_tsv
+
+
+def _expression_source(expression_path: str | Path | None) -> str:
+    if expression_path and Path(expression_path).is_file():
+        return str(expression_path)
+    return "raw_events.event_expression"
+
+
+def _load_expression_map(path: str | Path | None, keys: tuple[str, ...]) -> dict[str, float]:
+    if not path or not Path(path).is_file():
+        return {}
+    out: dict[str, float] = {}
+    for row in read_tsv(path):
+        key = first(row, list(keys), "").split(".", 1)[0]
+        value = first(row, ["TPM", "tpm", "expression_tpm", "transcript_tpm", "gene_tpm"], "")
+        if key and value != "":
+            out[key] = max(out.get(key, 0.0), to_float(value, 0.0))
+    return out
+
+
+def _load_transcript_expression_maps(
+    path: str | Path | None,
+) -> tuple[dict[str, float], dict[str, float]]:
+    """Load transcript TPM and, when possible, aggregate it by gene.
+
+    Salmon indexes built from GENCODE commonly emit a composite ``Name`` such
+    as ``ENST...|ENSG...|...|GENE_SYMBOL|...``.  Raw gene-level tables may use
+    Ensembl IDs while NeoAg events use gene symbols, so the composite metadata
+    is the most reliable portable bridge between the two namespaces.
+    """
+    if not path or not Path(path).is_file():
+        return {}, {}
+    transcript_map: dict[str, float] = {}
+    gene_map: dict[str, float] = {}
+    for row in read_tsv(path):
+        raw_key = first(
+            row,
+            ["transcript_id", "transcript", "target_id", "Name", "isoform_id"],
+            "",
+        ).strip()
+        raw_value = first(row, ["TPM", "tpm", "expression_tpm", "transcript_tpm"], "")
+        if not raw_key or raw_value == "":
+            continue
+        value = to_float(raw_value, 0.0)
+        parts = raw_key.split("|")
+        transcript_id = parts[0].split(".", 1)[0]
+        if transcript_id:
+            transcript_map[transcript_id] = max(transcript_map.get(transcript_id, 0.0), value)
+
+        aliases = {
+            first(row, ["gene", "gene_symbol", "symbol", "Gene"], "").strip(),
+            first(row, ["gene_id", "ensembl_gene_id"], "").strip().split(".", 1)[0],
+        }
+        # GENCODE transcript FASTA headers use fields 2 and 6 for gene ID and
+        # gene symbol, respectively.  Ignore absent/placeholder fields.
+        if len(parts) > 1:
+            aliases.add(parts[1].strip().split(".", 1)[0])
+        if len(parts) > 5:
+            aliases.add(parts[5].strip())
+        for alias in aliases - {"", "-"}:
+            gene_map[alias] = gene_map.get(alias, 0.0) + value
+    return transcript_map, gene_map
+
+
+def build_expression_evidence(
+    raw_events: str | Path,
+    out_path: str | Path,
+    *,
+    expression_path: str | Path | None = None,
+    transcript_expression_path: str | Path | None = None,
+    sample_id: str = "",
+    provenance: ProvenanceRecord | None = None,
+) -> list[dict[str, str]]:
+    """Event-level expression evidence from raw events (+ optional TPM table join)."""
+    tpm_map = _load_expression_map(
+        expression_path,
+        ("gene", "gene_symbol", "symbol", "Gene", "gene_id", "ensembl_gene_id"),
+    )
+    transcript_map, transcript_gene_map = _load_transcript_expression_maps(
+        transcript_expression_path
+    )
+
+    rows: list[dict[str, str]] = []
+    for ev in read_tsv(raw_events):
+        ev = enrich_event_layers(ev)
+        gene = str(ev.get("gene") or "")
+        transcript_id = str(ev.get("transcript_id") or "").split(".", 1)[0]
+        raw_gene_tpm = ev.get("gene_expression_tpm") or ev.get("event_expression")
+        # Rebuilding an evidence layer must not treat values written by an
+        # earlier build as independent observations.  Re-resolve them from the
+        # current input tables; retain only genuinely upstream raw-event values.
+        prior_expression_layer = str(ev.get("expression_evidence_status") or "").strip()
+        prior_gene_source = str(ev.get("expression_source") or "").strip()
+        gene_assessed = (
+            str(raw_gene_tpm or "").strip() != ""
+            and not prior_gene_source
+            and not prior_expression_layer
+        )
+        gene_tpm = to_float(raw_gene_tpm, 0.0)
+        if gene in tpm_map:
+            gene_tpm = max(gene_tpm, tpm_map[gene])
+            gene_assessed = True
+        elif gene in transcript_gene_map:
+            gene_tpm = max(gene_tpm, transcript_gene_map[gene])
+            gene_assessed = True
+        elif "::" in gene:
+            combined_gene_map = {**transcript_gene_map, **tpm_map}
+            partner_tpms = [combined_gene_map[g] for g in gene.split("::") if g in combined_gene_map]
+            if partner_tpms:
+                # A fusion is limited by its lower-expressed partner. Junction
+                # reads remain the direct evidence for the fusion transcript.
+                gene_tpm = max(gene_tpm, min(partner_tpms))
+                gene_assessed = True
+        raw_tx_tpm = ev.get("transcript_expression_tpm")
+        prior_tx_source = str(ev.get("transcript_expression_source") or "").strip()
+        transcript_assessed = (
+            str(raw_tx_tpm or "").strip() != ""
+            and not prior_tx_source
+            and not prior_expression_layer
+        )
+        tx_tpm = to_float(raw_tx_tpm, 0.0)
+        if transcript_id in transcript_map:
+            tx_tpm = max(tx_tpm, transcript_map[transcript_id])
+            transcript_assessed = True
+        tpm = max(gene_tpm, tx_tpm)
+        if gene_tpm > 0 and tx_tpm > 0:
+            expression_status = "GENE_AND_TRANSCRIPT_SUPPORTED"
+        elif tx_tpm > 0:
+            expression_status = "TRANSCRIPT_SUPPORTED"
+        elif gene_tpm > 0:
+            expression_status = "GENE_ONLY_PARTIAL"
+        elif gene_assessed or transcript_assessed:
+            expression_status = "NOT_DETECTED"
+        elif expression_path or transcript_expression_path:
+            expression_status = "UNASSESSED_ID_NOT_MAPPED"
+        else:
+            expression_status = "UNASSESSED"
+        rows.append({
+            "event_id": ev.get("event_id", ""),
+            "sample_id": ev.get("sample_id", sample_id),
+            "gene": gene,
+            "transcript_id": transcript_id,
+            "event_expression": f"{tpm:.4f}",
+            "gene_expression_tpm": f"{gene_tpm:.4f}" if gene_assessed else "",
+            "transcript_expression_tpm": f"{tx_tpm:.4f}" if transcript_assessed else "",
+            "expression_tpm": f"{tpm:.4f}",
+            "expression_evidence_status": expression_status,
+            "expression_source": _expression_source(expression_path),
+            "transcript_expression_source": str(transcript_expression_path or ""),
+            "mutation_source": ev.get("mutation_source", ""),
+            "peptide_consequence": ev.get("peptide_consequence", ""),
+        })
+    prov = provenance or provenance_derived("expression_evidence", out_path, upstream=_expression_source(expression_path))
+    write_tsv(out_path, attach_provenance(rows, prov), EXPRESSION_EVIDENCE_FIELDS)
+    return rows
+
+
+def _rna_support_status(alt_reads: str, depth: str, vaf: str, junction_reads: int) -> str:
+    alt = to_float(alt_reads, 0.0)
+    dp = to_float(depth, 0.0)
+    vf = to_float(vaf, 0.0)
+    if alt > 0 and (dp > 0 or vf > 0):
+        return "RNA_ALT_SUPPORTED"
+    if junction_reads > 0:
+        return "RNA_JUNCTION_SUPPORTED"
+    if dp > 0:
+        return "RNA_ALT_NOT_DETECTED"
+    return "UNASSESSED"
+
+
+def _targeted_validation(reads: int, source: str, mutation_source: str, consequence: str) -> dict[str, str]:
+    method = "junction"
+    text = f"{mutation_source} {consequence}".lower()
+    if "fusion" in text:
+        method = "fusion_targeted_rna"
+    elif "splice" in text or "junction" in text:
+        method = "splice_junction_targeted_rna"
+    if not source:
+        return {
+            "targeted_validation_status": "UNASSESSED",
+            "targeted_validation_source": "",
+            "targeted_validation_method": method,
+        }
+    return {
+        "targeted_validation_status": "SUPPORTED" if reads > 0 else "NO_TARGETED_SUPPORT",
+        "targeted_validation_source": source,
+        "targeted_validation_method": method,
+    }
+
+
+def build_rna_junction_evidence(
+    raw_events: str | Path,
+    raw_peptides: str | Path,
+    out_path: str | Path,
+    *,
+    junction_path: str | Path | None = None,
+    fusion_evidence_path: str | Path | None = None,
+    rna_vaf_path: str | Path | None = None,
+    sample_id: str = "",
+    provenance: ProvenanceRecord | None = None,
+) -> list[dict[str, str]]:
+    """RNA allele and junction support at event and peptide level."""
+    from .adapters.rna_vaf import choose_rna_vaf_support, load_rna_vaf_support
+
+    extra: dict[str, int] = {}
+    if junction_path and Path(junction_path).is_file():
+        from .sv.evidence import load_junction_reads
+
+        extra = load_junction_reads(junction_path)
+
+    fusion_reads: dict[str, int] = {}
+    fusion_frames: dict[str, str] = {}
+    if fusion_evidence_path and Path(fusion_evidence_path).is_file():
+        for row in read_tsv(fusion_evidence_path):
+            if row.get("filter_status") != "pass":
+                continue
+            eid = row.get("event_id", "")
+            reads = int(to_float(row.get("rna_junction_reads"), 0.0))
+            if eid:
+                fusion_reads[eid] = max(fusion_reads.get(eid, 0), reads)
+                if row.get("frame_status"):
+                    fusion_frames[eid] = row.get("frame_status", "")
+
+    rna_vaf = load_rna_vaf_support(rna_vaf_path)
+
+    def build_row(source_row: Mapping[str, Any], *, peptide_id: str, row_source: str) -> dict[str, str]:
+        enriched = enrich_peptide_layers(source_row) if peptide_id else enrich_event_layers(source_row)
+        eid = enriched.get("event_id", "")
+        gene = str(enriched.get("gene") or "")
+        reads = int(to_float(enriched.get("rna_junction_reads"), 0.0))
+        for key in (eid, gene, gene.replace("::", "_")):
+            if key and key in extra:
+                reads = max(reads, extra[key])
+        if eid in fusion_reads:
+            reads = max(reads, fusion_reads[eid])
+        source = ""
+        if eid in fusion_reads:
+            source = str(fusion_evidence_path)
+        elif any(k in extra for k in (eid, gene, gene.replace("::", "_")) if k):
+            source = str(junction_path) if junction_path else "rna_junction"
+        elif reads > 0:
+            source = row_source
+        rna = choose_rna_vaf_support(enriched, rna_vaf, row_source)
+        rna_fields = rna.as_fields()
+        mutation_source = enriched.get("mutation_source", "")
+        consequence = enriched.get("peptide_consequence", "")
+        raw_consequence = enriched.get("consequence", "")
+        inferred_frame = raw_consequence if raw_consequence in {
+            "neo_frame", "out_frame", "in_frame", "no_frame",
+        } else ""
+        out = {
+            "evidence_id": safe_id(f"RNAJ_{peptide_id or eid}"),
+            "event_id": eid,
+            "peptide_id": peptide_id,
+            "sample_id": enriched.get("sample_id", sample_id),
+            "gene": gene,
+            "gene_pair": gene if "::" in gene else "",
+            "junction_reads": str(reads),
+            "junction_source": source,
+            "mutation_source": mutation_source,
+            "peptide_consequence": consequence,
+            **rna_fields,
+            "rna_frame_status": fusion_frames.get(eid) or enriched.get("rna_frame_status", "") or inferred_frame,
+            "rna_support_status": _rna_support_status(
+                rna_fields.get("rna_alt_reads", ""),
+                rna_fields.get("rna_depth", ""),
+                rna_fields.get("rna_vaf", ""),
+                reads,
+            ),
+            **_targeted_validation(reads, source, mutation_source, consequence),
+        }
+        out.update(rna_evidence_metrics({
+            **enriched,
+            "rna_junction_reads": str(reads),
+            "rna_junction_source": source,
+            **rna_fields,
+            "rna_frame_status": out["rna_frame_status"],
+            "rna_support_status": out["rna_support_status"],
+        }))
+        return out
+
+    rows: list[dict[str, str]] = []
+    seen: set[str] = set()
+
+    for ev in read_tsv(raw_events):
+        row = build_row(ev, peptide_id="", row_source="raw_events")
+        if row["evidence_id"] not in seen:
+            seen.add(row["evidence_id"])
+            rows.append(row)
+
+    for pep in read_tsv(raw_peptides):
+        pid = pep.get("peptide_id", "")
+        row = build_row(pep, peptide_id=pid, row_source="raw_peptides")
+        if row["evidence_id"] in seen:
+            continue
+        seen.add(row["evidence_id"])
+        rows.append(row)
+
+    prov = provenance or provenance_derived(
+        "rna_junction_evidence",
+        out_path,
+        upstream=str(rna_vaf_path or junction_path or fusion_evidence_path or "raw_events"),
+    )
+    write_tsv(out_path, attach_provenance(rows, prov), RNA_JUNCTION_EVIDENCE_FIELDS)
+    return rows
+
+def build_safety_evidence(
+    raw_events: str | Path,
+    raw_peptides: str | Path,
+    out_path: str | Path,
+    profile: Mapping[str, Any],
+    *,
+    normal_expression: str | Path | None = None,
+    normal_hla_ligands: str | Path | None = None,
+    provenance: ProvenanceRecord | None = None,
+) -> list[dict[str, str]]:
+    """Pre-score safety evidence for events and peptides."""
+    norm_expr = load_normal_expression(normal_expression)
+    norm_lig = load_normal_hla_ligands(normal_hla_ligands)
+    event_map: dict[str, dict[str, str]] = {}
+    rows: list[dict[str, str]] = []
+
+    for ev in read_tsv(raw_events):
+        ev = enrich_event_layers(dict(ev))
+        ev = apply_event_safety(ev, profile, norm_expr)
+        event_map[ev["event_id"]] = ev
+        rows.append({
+            "evidence_id": safe_id(f"SAFE_EVT_{ev['event_id']}"),
+            "level": "event",
+            "event_id": ev.get("event_id", ""),
+            "peptide_id": "",
+            "sample_id": ev.get("sample_id", ""),
+            "gene": ev.get("gene", ""),
+            "peptide": "",
+            "safety_status": ev.get("safety_status", ""),
+            "safety_reason": ev.get("safety_reason", ""),
+            "normal_tissue_max_tpm": ev.get("normal_tissue_max_tpm", ""),
+            "normal_hspc_tpm": ev.get("normal_hspc_tpm", ""),
+            "critical_tissue_hit": ev.get("critical_tissue_hit", ""),
+            "normal_hla_ligand_overlap": "",
+        })
+
+    for pep in read_tsv(raw_peptides):
+        pep = enrich_peptide_layers(dict(pep))
+        ev = event_map.get(pep.get("event_id", ""), {})
+        if not ev:
+            continue
+        pep = apply_peptide_safety(pep, ev, profile, norm_lig)
+        rows.append({
+            "evidence_id": safe_id(f"SAFE_PEP_{pep.get('peptide_id', '')}"),
+            "level": "peptide",
+            "event_id": pep.get("event_id", ""),
+            "peptide_id": pep.get("peptide_id", ""),
+            "sample_id": pep.get("sample_id", ""),
+            "gene": pep.get("gene", ""),
+            "peptide": pep.get("peptide", ""),
+            "safety_status": pep.get("safety_status", ""),
+            "safety_reason": pep.get("safety_reason", ""),
+            "normal_tissue_max_tpm": ev.get("normal_tissue_max_tpm", ""),
+            "normal_hspc_tpm": ev.get("normal_hspc_tpm", ""),
+            "critical_tissue_hit": ev.get("critical_tissue_hit", ""),
+            "normal_hla_ligand_overlap": pep.get("normal_hla_ligand_overlap", ""),
+        })
+
+    prov = provenance or provenance_derived(
+        "safety_evidence",
+        out_path,
+        upstream=f"normal_expression:{normal_expression};normal_hla_ligands:{normal_hla_ligands}",
+    )
+    write_tsv(out_path, attach_provenance(rows, prov), SAFETY_EVIDENCE_FIELDS)
+    return rows
+
+
+def merge_standard_evidence_into_raw(
+    raw_events: str | Path,
+    raw_peptides: str | Path,
+    expression_evidence: str | Path,
+    rna_evidence: str | Path,
+) -> None:
+    """Hydrate scoring inputs with materialized expression and RNA evidence."""
+    expression_by_event = {
+        row.get("event_id", ""): row
+        for row in read_tsv(expression_evidence)
+        if row.get("event_id")
+    }
+    rna_by_event: dict[str, dict[str, str]] = {}
+    rna_by_peptide: dict[str, dict[str, str]] = {}
+    for row in read_tsv(rna_evidence):
+        if row.get("peptide_id"):
+            rna_by_peptide[row["peptide_id"]] = row
+        elif row.get("event_id"):
+            rna_by_event[row["event_id"]] = row
+
+    expression_fields = (
+        "event_expression", "gene_expression_tpm", "transcript_expression_tpm",
+        "expression_evidence_status",
+    )
+    rna_fields = (
+        "rna_alt_reads", "rna_depth", "rna_vaf", "rna_vaf_source",
+        "rna_frame_status", "rna_support_status", "rna_evidence_completeness",
+        "rna_evidence_score",
+    )
+
+    events: list[dict[str, str]] = []
+    for event in read_tsv(raw_events):
+        event = enrich_event_layers(event)
+        expr = expression_by_event.get(event.get("event_id", ""), {})
+        rna = rna_by_event.get(event.get("event_id", ""), {})
+        for field in expression_fields:
+            if expr.get(field, "") != "":
+                event[field] = expr[field]
+        if rna.get("junction_reads", "") != "":
+            event["rna_junction_reads"] = rna["junction_reads"]
+        if rna.get("junction_source", "") != "":
+            event["rna_junction_source"] = rna["junction_source"]
+        for field in rna_fields:
+            if rna.get(field, "") != "":
+                event[field] = rna[field]
+        event.update(rna_evidence_metrics(event))
+        events.append(event)
+
+    event_map = {row.get("event_id", ""): row for row in events}
+    peptides: list[dict[str, str]] = []
+    for peptide in read_tsv(raw_peptides):
+        event = event_map.get(peptide.get("event_id", ""), {})
+        peptide = enrich_peptide_layers(peptide, event)
+        for field in expression_fields + (
+            "rna_junction_source", "rna_frame_status", "rna_support_status",
+            "rna_evidence_completeness", "rna_evidence_score", "rna_vaf",
+            "rna_alt_reads", "rna_depth", "rna_vaf_source",
+        ):
+            if event.get(field, "") != "":
+                peptide[field] = event[field]
+        row = rna_by_peptide.get(peptide.get("peptide_id", ""), {})
+        # A peptide row often lacks genomic coordinates. Its UNASSESSED RNA
+        # placeholder must not erase coordinate-resolved event-level evidence.
+        row_is_assessed = row.get("rna_evidence_completeness") not in {"", "UNASSESSED"}
+        if row_is_assessed:
+            if row.get("junction_reads", "") != "":
+                peptide["rna_junction_reads"] = row["junction_reads"]
+            if row.get("junction_source", "") != "":
+                peptide["rna_junction_source"] = row["junction_source"]
+            for field in rna_fields:
+                if row.get(field, "") != "":
+                    peptide[field] = row[field]
+        peptides.append(peptide)
+
+    write_tsv(raw_events, events, EVENT_FIELDS)
+    write_tsv(raw_peptides, peptides, PEPTIDE_FIELDS)
+
+
+def build_standard_evidence_layer(
+    outdir: str | Path,
+    profile: Mapping[str, Any] | str,
+    *,
+    raw_events: str | Path | None = None,
+    raw_peptides: str | Path | None = None,
+    expression: str | Path | None = None,
+    transcript_expression: str | Path | None = None,
+    rna_junction: str | Path | None = None,
+    fusion_evidence: str | Path | None = None,
+    rna_vaf: str | Path | None = None,
+    normal_expression: str | Path | None = None,
+    normal_hla_ligands: str | Path | None = None,
+    sample_id: str = "",
+) -> dict[str, str]:
+    """Write expression / RNA junction / safety evidence under the standard layout."""
+    outdir = Path(outdir)
+    if isinstance(profile, str):
+        profile = load_profile(profile)
+
+    parsed = outdir / "parsed"
+    safety_dir = outdir / "safety"
+    parsed.mkdir(parents=True, exist_ok=True)
+    safety_dir.mkdir(parents=True, exist_ok=True)
+
+    events_path = Path(raw_events) if raw_events else parsed / "raw_events.tsv"
+    peptides_path = Path(raw_peptides) if raw_peptides else parsed / "raw_peptides.tsv"
+    fusion_evidence_path = Path(fusion_evidence) if fusion_evidence else parsed / "fusion_evidence.tsv"
+    if not fusion_evidence_path.is_file():
+        fusion_evidence_path = None
+
+    expr_out = parsed / "expression_evidence.tsv"
+    rna_out = parsed / "rna_junction_evidence.tsv"
+    safe_out = safety_dir / "safety_evidence.tsv"
+
+    build_expression_evidence(
+        events_path,
+        expr_out,
+        expression_path=expression,
+        transcript_expression_path=transcript_expression,
+        sample_id=sample_id,
+    )
+    build_rna_junction_evidence(
+        events_path,
+        peptides_path,
+        rna_out,
+        junction_path=rna_junction,
+        fusion_evidence_path=fusion_evidence_path,
+        rna_vaf_path=rna_vaf,
+        sample_id=sample_id,
+    )
+    merge_standard_evidence_into_raw(events_path, peptides_path, expr_out, rna_out)
+    build_safety_evidence(
+        events_path,
+        peptides_path,
+        safe_out,
+        profile,
+        normal_expression=normal_expression,
+        normal_hla_ligands=normal_hla_ligands,
+    )
+
+    return {
+        "expression_evidence": str(expr_out),
+        "rna_junction_evidence": str(rna_out),
+        "safety_evidence": str(safe_out),
+        **(
+            {"fusion_evidence": str(fusion_evidence_path)}
+            if fusion_evidence_path
+            else {}
+        ),
+    }

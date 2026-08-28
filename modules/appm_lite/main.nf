@@ -1,7 +1,3 @@
-// @Deprecated: Use APPM_2 (modules/appm_2/main.nf) instead — APPM_2 provides
-// superset functionality including CNV/purity integration and expanded outputs.
-// This module is kept for backward compatibility and will be removed in a
-// future release.
 process APPM_LITE {
   tag "$sample_id"
   publishDir "${params.outdir}/appm", mode: 'copy'
@@ -20,7 +16,7 @@ process APPM_LITE {
 
   script:
   """
-  neoag-v03 appm-lite \
+  neoag appm-lite \
     --sample-id '${sample_id}' \
     --profile '${profile_name}' \
     --vep-tsv '${vep_appm_file}' \
@@ -29,6 +25,6 @@ process APPM_LITE {
     --outdir .
 
   echo "APPM_LITE:" > versions.yml
-  echo "  neoag-v03: \$(python -c 'import neoag_v03; print(neoag_v03.__version__)')" >> versions.yml
+  echo "  neoag: \$(python -c 'import neoag; print(neoag.__version__)')" >> versions.yml
   """
 }

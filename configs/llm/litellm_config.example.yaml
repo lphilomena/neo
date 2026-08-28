@@ -1,0 +1,37 @@
+# Example LiteLLM Gateway configuration for Project B LLM-assisted Coordinator.
+# Do not put patient data or API keys in this file.
+# Start with: litellm --config configs/llm/litellm_config.example.yaml --port 4000
+
+model_list:
+  - model_name: neoag-router
+    litellm_params:
+      model: openai/qwen3-router
+      api_base: http://localhost:8000/v1
+      api_key: os.environ/LOCAL_VLLM_API_KEY
+
+  - model_name: neoag-planner
+    litellm_params:
+      model: openai/qwen3-32b
+      api_base: http://localhost:8000/v1
+      api_key: os.environ/LOCAL_VLLM_API_KEY
+
+  - model_name: neoag-reporter
+    litellm_params:
+      model: openai/qwen3-32b
+      api_base: http://localhost:8000/v1
+      api_key: os.environ/LOCAL_VLLM_API_KEY
+
+  # Optional de-identified fallback only.
+  - model_name: neoag-dev-deepseek
+    litellm_params:
+      model: deepseek/deepseek-chat
+      api_key: os.environ/DEEPSEEK_API_KEY
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  telemetry: false
+
+router_settings:
+  routing_strategy: simple-shuffle
+  num_retries: 2
+  timeout: 120

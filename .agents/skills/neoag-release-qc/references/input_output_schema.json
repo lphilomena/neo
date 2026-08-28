@@ -1,0 +1,33 @@
+{
+  "name": "neoag-release-qc",
+  "category": "D",
+  "category_label": "工程治理/执行控制型 Skills：输入质控、环境健康检查、全流程编排、发布审计和受控执行",
+  "purpose": "发布边界审计",
+  "description": "Scan for caches, runtime artifacts, hard-coded private paths and patient/site hints.",
+  "use_when": [
+    "生成发布包前",
+    "用户问 release 是否干净"
+  ],
+  "do_not_use_when": [
+    "不要自动删除文件，除非用户明确确认"
+  ],
+  "required_inputs": [
+    "project_root"
+  ],
+  "optional_inputs": [],
+  "outputs": [
+    "release_audit_report.md",
+    "release_boundary_findings.tsv"
+  ],
+  "risk_level": "LOW",
+  "approval_required": false,
+  "handler": "release_qc",
+  "external_tools": [],
+  "downstream_skills": [],
+  "boundaries": [
+    "Skill 不承担临床决策；不得判断患者是否适合治疗或推荐临床用药。",
+    "缺失证据只能标记为 missing/unassessed，不能解释为阴性结果。",
+    "高风险写入、HPC 提交、安装工具、下载参考库、删除或覆盖文件必须经过 human approval。",
+    "Skill 目录不包含患者 BAM/FASTQ/VCF、大型参考库、VEP cache、NetMHCpan license、LOHHLA reference 或大型 conda env。"
+  ]
+}

@@ -1,5 +1,5 @@
-from neoag_v03.adapters.pvactools_parser import event_from_row
-from neoag_v03.adapters.variant_peptide_adapter import event_from_variant_row
+from neoag.adapters.pvactools_parser import event_from_row
+from neoag.adapters.variant_peptide_adapter import event_from_variant_row
 
 
 def test_pvactools_event_from_row_parses_rna_metrics():
@@ -20,6 +20,32 @@ def test_pvactools_event_from_row_parses_rna_metrics():
     assert ev["rna_vaf"] == "0.18"
     assert ev["rna_depth"] == "88"
     assert ev["rna_alt_reads"] == "16"
+
+
+def test_pvactools_reuse_preserves_indel_and_fusion_rna_evidence():
+    indel = event_from_row(
+        {"Index": "7.CASP9.ENST1.FS.413-414T/TGG", "Gene": "CASP9"},
+        "S1",
+        "default",
+        "pVACseq",
+    )
+    assert indel["event_type"] == "InDel"
+
+    fusion = event_from_row(
+        {
+            "Index": "1.EWSR1-WT1.ENST1-ENST2.inframe_fusion.23",
+            "Gene": "EWSR1-WT1",
+            "Best Transcript": "ENST1-ENST2",
+            "Expr": "12.5",
+            "Read Support": "23",
+        },
+        "S1",
+        "default",
+        "pVACfuse",
+    )
+    assert fusion["rna_junction_reads"] == "23"
+    assert fusion["event_expression"] == "12.5"
+    assert fusion["transcript_id"] == "ENST1-ENST2"
 
 
 def test_variant_peptide_adapter_maps_rna_metrics():
@@ -49,9 +75,9 @@ def test_variant_peptide_adapter_maps_rna_metrics():
 
 
 def test_parse_generic_rna_vaf_table_and_evidence_layer(tmp_path):
-    from neoag_v03.adapters.rna_vaf import parse_rna_vaf_table
-    from neoag_v03.evidence_layer import build_standard_evidence_layer
-    from neoag_v03.utils import read_tsv
+    from neoag.adapters.rna_vaf import parse_rna_vaf_table
+    from neoag.evidence_layer import build_standard_evidence_layer
+    from neoag.utils import read_tsv
 
     events = tmp_path / "raw_events.tsv"
     events.write_text(

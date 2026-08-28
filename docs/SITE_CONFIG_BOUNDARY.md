@@ -30,4 +30,4 @@ release portable and avoids leaking local deployment details.
 1. Copy `conf/site.config.example` to `conf/site.config`.
 2. Copy `conf/run.private.example.toml` to `conf/private/<project>.toml`.
 3. Replace placeholder paths with local paths.
-4. Run `neoag-v03 check-tools` before production runs.
+4. Run `neoag check-tools` before production runs.

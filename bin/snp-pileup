@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ -n "${SNP_PILEUP_BIN:-}" && "${SNP_PILEUP_BIN}" != "$0" && -x "${SNP_PILEUP_BIN}" ]]; then
+  exec "${SNP_PILEUP_BIN}" "$@"
+fi
+
+for candidate in \
+  "${NEOAG_CONDA_BASE:-${HOME}/miniforge3}/envs/neoag-tools/bin/snp-pileup" \
+  "${CONDA_PREFIX:-}/bin/snp-pileup" \
+  "/home/na/miniforge3/envs/neoag-tools/bin/snp-pileup"; do
+  if [[ -n "$candidate" && "$candidate" != "$0" && -x "$candidate" ]]; then
+    exec "$candidate" "$@"
+  fi
+done
+
+echo "ERROR: usable snp-pileup not found. Install neoag-tools or set SNP_PILEUP_BIN." >&2
+exit 127

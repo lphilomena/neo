@@ -1,6 +1,6 @@
 # WES SNV Phase 1
 
-Tumor-normal **WES** somatic SNV calling with GATK Mutect2 + FilterMutectCalls, then pVACseq and score_v03.
+Tumor-normal **WES** somatic SNV calling with GATK Mutect2 + FilterMutectCalls, then pVACseq and score.
 
 ## Pipeline
 
@@ -10,7 +10,7 @@ flowchart LR
   B --> C[FilterMutectCalls]
   C --> D[somatic.vcf.gz]
   D --> E[pVACseq + binding]
-  E --> F[score_v03]
+  E --> F[score]
 ```
 
 Phase 1 scope:
@@ -25,7 +25,7 @@ Phase 1 scope:
 source conf/tools.env.sh
 
 # Fixture E2E (no BAM, no GATK)
-neoag-v03 snv-run-full-wes \
+neoag snv-run-full-wes \
   --sample-id SNVMINI \
   --profile default \
   --hla data/fixtures_snv/hla.txt \
@@ -35,7 +35,7 @@ neoag-v03 snv-run-full-wes \
   --outdir results/SNVMINI_snv_wes_e2e
 
 # Real calling (requires GATK + indexed reference + BAMs)
-neoag-v03 snv-call-wes \
+neoag snv-call-wes \
   --sample-id P001 \
   --tumor-bam P001.tumor.bam \
   --normal-bam P001.normal.bam \
@@ -45,7 +45,7 @@ neoag-v03 snv-call-wes \
   --normal-sample-name P001_NORMAL \
   --outdir results/P001_calling
 
-neoag-v03 snv-run-full-wes \
+neoag snv-run-full-wes \
   --sample-id P001 \
   --hla hla.txt \
   --tumor-bam P001.tumor.bam \

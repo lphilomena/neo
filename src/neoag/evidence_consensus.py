@@ -1,0 +1,1704 @@
+from __future__ import annotations
+
+from collections import Counter, defaultdict
+import datetime
+import hashlib
+import json
+import os
+from pathlib import Path
+import shutil
+import tomllib
+from typing import Any, Mapping
+
+from .evidence_states import DERIVERS, derive_all_states, event_track
+from .candidate_identity import IDENTITY_FIELDS, candidate_identity
+from .source_chain import derive_source_chain_confidence
+from .pareto import nondominated_fronts
+from .utils import read_tsv, write_tsv
+
+
+DEFAULT_RULES: dict[str, Any] = {
+    "metadata": {
+        "name": "sarcoma_evidence_consensus_v1",
+        "version": "1.0",
+        "status": "PROVISIONAL_RESEARCH_ONLY",
+        "mode": "parallel",
+        "replace_weighted_ranking": False,
+        "unassessed_is_negative": False,
+    },
+    "presentation": {
+        "netmhcpan_el_strong": 0.5,
+        "netmhcpan_el_supported": 2.0,
+        "mhcflurry_presentation_strong": 0.70,
+        "mhcflurry_presentation_supported": 0.50,
+        "netmhcstabpan_supported": 1.4,
+        "prime_rank_strong": 2.0,
+        "prime_rank_supported": 5.0,
+        "bigmhc_im_strong": 0.70,
+        "bigmhc_im_supported": 0.50,
+        "deepimmuno_supported": 0.50,
+    },
+    "rna": {
+        "snv_min_alt_reads": 3,
+        "snv_min_vaf": 0.02,
+        "junction_min_reads": 3,
+        "junction_strong_reads": 10,
+    },
+    "completeness": {
+        "allow_r1_with_hla_loh_unassessed": False,
+        "allow_r1_with_safety_partial": False,
+        "allow_r1_with_ccf_low_confidence": False,
+    },
+    "manual_review": {"genes": ["KRAS", "TP53"], "events": ["EWSR1::WT1"]},
+    "output": {"peptide_id_tie_break": True, "event_deduplicate": True},
+    "source_chain": {
+        "enabled": False,
+        "rule_version": "source-chain-v1.0",
+        "integration_mode": "compatibility",
+        "include_in_pareto": False,
+        "include_in_tiebreak": False,
+        "c2_max_grade_research": "R1",
+        "c2_max_grade_translational": "R2",
+        "profile": "research",
+        "dna_min_depth": 20,
+        "dna_min_alt_reads": 3,
+        "rna_min_evaluable_depth": 10,
+        "fusion_min_split_reads": 3,
+        "fusion_strong_split_reads": 10,
+        "junction_min_reads": 3,
+        "junction_strong_reads": 10,
+    },
+}
+
+ALL_TOOL_RESULTS_SCHEMA_VERSION = "1.0"
+ALL_TOOL_RESULTS_REQUIRED_FIELDS = [
+    "all_tool_results_schema_version", "canonical_record_type", "canonical_record_id",
+    "peptide_id", "event_id", "peptide", "hla_allele",
+    "evidence_source_precedence_version", "evidence_field_sources",
+    "evidence_conflict_fields",
+]
+ALL_TOOL_RESULTS_RNA_ALLELE_FIELDS = [
+    "rna_ref_reads", "rna_alt_reads", "rna_depth", "rna_vaf",
+]
+ALL_TOOL_RESULTS_CORE_FIELDS = ALL_TOOL_RESULTS_REQUIRED_FIELDS + [
+    "sample_id", "gene", "event_type", "peptide_consequence", "mhc_class",
+    "comprehensive_evidence_schema_version", "comprehensive_evidence_status",
+    "comprehensive_evidence_sources", "evidence_conflict_count",
+] + ALL_TOOL_RESULTS_RNA_ALLELE_FIELDS
+
+BASE_DIMENSIONS = [
+    "event_authenticity_grade",
+    "rna_support_grade",
+    "presentation_consensus_grade",
+    "mutant_specificity_grade",
+    "safety_grade",
+    "hla_appm_grade",
+    "clonality_grade",
+    "evidence_completeness_grade",
+]
+PARETO_DERIVED_FIELDS = [
+    "novel_tail_evidence_grade",
+    "junction_authenticity_grade",
+    "junction_reads_grade",
+    "frame_evidence_grade",
+    "fusion_orf_gate_grade",
+    "normal_junction_safety_grade",
+]
+SOURCE_CHAIN_DIMENSION = "source_chain_confidence_grade"
+PARETO_DIMENSIONS_BY_TRACK = {
+    "MISSENSE": [
+        "event_authenticity_grade", "rna_support_grade", "presentation_consensus_grade",
+        "mutant_specificity_grade", "safety_grade", "hla_appm_grade", "clonality_grade",
+        "evidence_completeness_grade",
+    ],
+    "FRAMESHIFT": [
+        "event_authenticity_grade", "rna_support_grade", "novel_tail_evidence_grade",
+        "presentation_consensus_grade", "safety_grade", "hla_appm_grade", "clonality_grade",
+    ],
+    "FUSION": [
+        "junction_authenticity_grade", "junction_reads_grade", "frame_evidence_grade",
+        "fusion_orf_gate_grade",
+        "presentation_consensus_grade", "normal_junction_safety_grade", "hla_appm_grade",
+        "evidence_completeness_grade",
+    ],
+    "SPLICE": [
+        "junction_authenticity_grade", "junction_reads_grade", "frame_evidence_grade",
+        "presentation_consensus_grade", "normal_junction_safety_grade", "hla_appm_grade",
+        "evidence_completeness_grade",
+    ],
+    "DNA_SV": [
+        "event_authenticity_grade", "rna_support_grade", "novel_tail_evidence_grade",
+        "presentation_consensus_grade", "safety_grade", "hla_appm_grade", "clonality_grade",
+        "evidence_completeness_grade",
+    ],
+    "MANUAL_REVIEW": BASE_DIMENSIONS,
+    "OTHER": BASE_DIMENSIONS,
+}
+DIMENSIONS = BASE_DIMENSIONS + PARETO_DERIVED_FIELDS
+STATE_NAMES = (
+    "event_authenticity", "rna_support", "presentation_consensus",
+    "mutant_specificity", "clonality", "hla_appm", "safety",
+    "evidence_completeness",
+)
+STATE_OUTPUT_FIELDS = tuple(f"{name}_state" for name in STATE_NAMES)
+STATE_REASON_CODE_FIELDS = tuple(f"{name}_reason_code" for name in STATE_NAMES)
+STATE_REASON_FIELDS = tuple(f"{name}_reason" for name in STATE_NAMES)
+GRADE_ORDER = {"R1": 1, "R2": 2, "R3": 3, "R4": 4}
+CAP_TO_GRADE = {
+    "A": "R1", "NONE": "R1", "B": "R2", "B_CAUTION": "R2",
+    "C": "R3", "C_CAUTION": "R3", "D": "R4",
+}
+CAP_FIELDS = (
+    "priority_cap", "safety_priority_cap", "cross_platform_priority_cap",
+    "mutant_specificity_priority_cap",
+)
+CONSENSUS_FIELDS = (
+    *IDENTITY_FIELDS,
+    "peptide_hla_rank", "peptide_hla_representative", "peptide_hla_duplicate_count",
+    "peptide_hla_member_event_ids", "peptide_hla_member_protein_change_ids",
+    "legacy_weighted_rank", "biological_event_track", "evidence_track", "pareto_dimensions",
+    "hard_failure", "hard_failure_codes", "hard_failure_reasons",
+    "legacy_priority_cap", "consensus_priority_cap", "evidence_grade_cap", "evidence_grade_cap_reasons",
+    "manual_review_required", "manual_review_reason",
+    *STATE_OUTPUT_FIELDS, *STATE_REASON_CODE_FIELDS, *STATE_REASON_FIELDS,
+    *DIMENSIONS, "safety_completeness_grade",
+    "ccf_confidence_state", "ccf_confidence_grade",
+    "netmhcpan_tiebreak_rank", "mhcflurry_tiebreak_score",
+    "evidence_grade_uncapped", "evidence_grade", "pareto_front", "track_rank",
+    "evidence_rank", "evidence_rank_key", "evidence_consensus_score", "evidence_completeness_score",
+    "evidence_assessed_layers", "evidence_missing_layers", "evidence_conflict_layers",
+    "evidence_layer_states", "evidence_reason_codes", "consensus_action",
+    "recommended_next_steps", "consensus_trace",
+    "source_chain_track", "source_chain_confidence_tier", "source_chain_confidence_label",
+    "source_chain_confidence_grade", "source_chain_rule_version",
+    "source_chain_orthogonal_status", "source_chain_orthogonal_sources",
+    "source_chain_hard_failure", "source_chain_hard_failure_codes", "source_chain_reason_codes",
+    "source_chain_supported_requirements", "source_chain_missing_requirements",
+    "source_chain_low_power_requirements", "source_chain_negative_requirements",
+    "source_chain_conflict_requirements", "source_chain_not_applicable_requirements",
+    "source_chain_requirement_count", "source_chain_supported_count", "source_chain_unassessed_count",
+    "source_chain_low_power_count", "source_chain_negative_count", "source_chain_conflict_count",
+    "source_chain_not_applicable_count", "source_chain_requirement_statuses",
+    "source_chain_requirement_details", "source_chain_integration_mode",
+    "fusion_orf_gate_status", "fusion_candidate_pool", "fusion_orf_gate_reason_code",
+)
+CONFLICT_FIELDS = (
+    "peptide_id", "event_id", "gene", "evidence_track", "layer", "state",
+    "field", "selected_source", "selected_value", "other_source", "other_value",
+    "precedence_version", "conflict_type", "reason_code", "reason", "recommended_action",
+)
+
+
+def load_consensus_rules(path: str | Path | None = None) -> dict[str, Any]:
+    if path is None:
+        return json.loads(json.dumps(DEFAULT_RULES))
+    with Path(path).open("rb") as handle:
+        loaded = tomllib.load(handle)
+    merged = json.loads(json.dumps(DEFAULT_RULES))
+    for section, values in loaded.items():
+        if isinstance(values, Mapping) and isinstance(merged.get(section), Mapping):
+            merged[section].update(values)
+        else:
+            merged[section] = values
+    return merged
+
+
+def _number(value: Any) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _strictest_cap(row: Mapping[str, Any]) -> str:
+    caps = [str(row.get(field, "")).strip().upper() for field in CAP_FIELDS]
+    caps = [cap for cap in caps if cap in CAP_TO_GRADE]
+    return max(caps, key=lambda cap: GRADE_ORDER[CAP_TO_GRADE[cap]], default="")
+
+
+def _source_chain_config(rules: Mapping[str, Any]) -> Mapping[str, Any]:
+    cfg = rules.get("source_chain", {}) if isinstance(rules, Mapping) else {}
+    return cfg if isinstance(cfg, Mapping) else {}
+
+
+def _source_chain_enabled(rules: Mapping[str, Any]) -> bool:
+    return bool(_source_chain_config(rules).get("enabled", True))
+
+
+def _source_chain_integration_mode(rules: Mapping[str, Any]) -> str:
+    mode = str(_source_chain_config(rules).get("integration_mode", "compatibility")).strip().lower()
+    return mode if mode in {"compatibility", "integrated"} else "compatibility"
+
+
+def _pareto_dimensions_for_track(track: str, rules: Mapping[str, Any]) -> list[str]:
+    dimensions = list(PARETO_DIMENSIONS_BY_TRACK.get(track, BASE_DIMENSIONS))
+    cfg = _source_chain_config(rules)
+    if _source_chain_enabled(rules) and bool(cfg.get("include_in_pareto", False)):
+        if SOURCE_CHAIN_DIMENSION not in dimensions:
+            dimensions.append(SOURCE_CHAIN_DIMENSION)
+    return dimensions
+
+
+def _source_chain_caps(source_chain: Mapping[str, str], rules: Mapping[str, Any]) -> list[tuple[str, str]]:
+    if not _source_chain_enabled(rules) or _source_chain_integration_mode(rules) != "integrated":
+        return []
+    tier = str(source_chain.get("source_chain_confidence_tier", "C3")).upper()
+    cfg = _source_chain_config(rules)
+    profile = str(cfg.get("profile", "research")).lower()
+    if tier == "C4":
+        return [("R4", "CAP_SOURCE_CHAIN_C4")]
+    if tier == "C3":
+        return [("R3", "CAP_SOURCE_CHAIN_C3")]
+    if tier == "C2":
+        configured = str(cfg.get(
+            "c2_max_grade_translational" if profile == "translational" else "c2_max_grade_research",
+            "R2" if profile == "translational" else "R1",
+        )).upper()
+        if configured in GRADE_ORDER and configured != "R1":
+            return [(configured, f"CAP_SOURCE_CHAIN_C2_{profile.upper()}")]
+    return []
+
+
+def _manual_review(row: Mapping[str, Any], rules: Mapping[str, Any]) -> tuple[bool, str]:
+    cfg = rules.get("manual_review", {})
+    gene = str(row.get("gene", "")).strip().upper()
+    event_text = " ".join(str(row.get(field, "")) for field in ("gene", "event_id", "fusion_name")).upper()
+    genes = {str(value).upper() for value in cfg.get("genes", [])}
+    events = {str(value).upper() for value in cfg.get("events", [])}
+    reasons = []
+    if gene in genes:
+        reasons.append(f"manual-review gene={gene}")
+    for event in events:
+        if event and event in event_text:
+            reasons.append(f"manual-review event={event}")
+    return bool(reasons), ";".join(reasons)
+
+
+def _first_number(row: Mapping[str, Any], *fields: str) -> float | None:
+    for field in fields:
+        value = row.get(field)
+        if value in (None, "", "NA", "N/A", "."):
+            continue
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def _pareto_derived_grades(
+    source: Mapping[str, Any],
+    states: Mapping[str, Mapping[str, Any]],
+    biological_track: str,
+    rules: Mapping[str, Any],
+) -> dict[str, int]:
+    text = " ".join(str(source.get(field, "")).upper() for field in (
+        "event_type", "peptide_consequence", "consequence", "frame_status", "rna_frame_status",
+        "contains_novel_aa", "novel_tail_status",
+    ))
+    novel_tail = 3 if _is_clear_novel_sequence(source) or any(token in text for token in (
+        "FRAMESHIFT", "FRAME_SHIFT", "NOVEL_TAIL", "NOVEL AA", "CONTAINS_NOVEL_AA TRUE",
+    )) else 0
+
+    junction_reads = _first_number(source, "rna_junction_reads", "junction_reads", "split_reads")
+    rna_cfg = rules.get("rna", {})
+    minimum = float(rna_cfg.get("junction_min_reads", 3))
+    strong = float(rna_cfg.get("junction_strong_reads", 10))
+    if junction_reads is None:
+        junction_grade = 0
+    elif junction_reads >= strong:
+        junction_grade = 3
+    elif junction_reads >= minimum:
+        junction_grade = 2
+    elif junction_reads > 0:
+        junction_grade = 1
+    else:
+        junction_grade = 0
+
+    frame_text = " ".join(str(source.get(field, "")).upper() for field in (
+        "frame_status", "rna_frame_status", "in_frame", "reading_frame",
+    ))
+    if any(token in frame_text for token in ("IN_FRAME", "IN-FRAME", "INFRAME", "FRAME_CONFIRMED")):
+        frame_grade = 3
+    elif any(token in frame_text for token in ("OUT_OF_FRAME", "OUT-OF-FRAME", "FRAMESHIFT")):
+        frame_grade = 2 if novel_tail else 1
+    elif frame_text.strip():
+        frame_grade = 1
+    else:
+        frame_grade = 0
+
+    normal_text = " ".join(str(source.get(field, "")).upper() for field in (
+        "normal_junction_status", "normal_junction_assessment_status", "normal_junction_exact_match",
+    ))
+    if any(token in normal_text for token in ("DETECTED", "EXACT_MATCH", "SUPPORTED_IN_NORMAL")) and "NOT_DETECTED" not in normal_text:
+        normal_junction_grade = 0
+    elif any(token in normal_text for token in ("NOT_DETECTED", "ABSENT", "NO_MATCH")):
+        normal_junction_grade = 3
+    elif normal_text.strip() and not any(token in normal_text for token in ("UNASSESSED", "MISSING", "NOT_AVAILABLE")):
+        normal_junction_grade = 2
+    else:
+        normal_junction_grade = 1
+
+    junction_authenticity = int(states["event_authenticity"]["grade"])
+    if biological_track not in {"FUSION", "SPLICE"}:
+        junction_authenticity = 0
+        junction_grade = 0
+        frame_grade = 0
+        normal_junction_grade = 0
+    return {
+        "novel_tail_evidence_grade": novel_tail,
+        "junction_authenticity_grade": junction_authenticity,
+        "junction_reads_grade": junction_grade,
+        "frame_evidence_grade": frame_grade,
+        "fusion_orf_gate_grade": 0,
+        "normal_junction_safety_grade": normal_junction_grade,
+    }
+
+
+def _fusion_orf_gate(
+    biological_track: str,
+    source_chain_result: Any,
+) -> dict[str, str]:
+    if biological_track != "FUSION":
+        return {
+            "fusion_orf_gate_status": "NOT_APPLICABLE",
+            "fusion_candidate_pool": "NOT_APPLICABLE",
+            "fusion_orf_gate_reason_code": "FUSION_ORF_NOT_APPLICABLE",
+            "fusion_orf_gate_grade": "0",
+        }
+    requirement = next(
+        (item for item in source_chain_result.requirements if item.name == "fusion_transcript_orf"),
+        None,
+    )
+    status = str(getattr(requirement, "status", "UNASSESSED"))
+    reason_code = str(getattr(requirement, "reason_code", "SC_FUSION_ORF_UNASSESSED"))
+    if status == "SUPPORTED":
+        return {
+            "fusion_orf_gate_status": "FUSION_ORF_ESTABLISHED",
+            "fusion_candidate_pool": "ORF_SUPPORTED",
+            "fusion_orf_gate_reason_code": reason_code,
+            "fusion_orf_gate_grade": "3",
+        }
+    if status in {"NEGATIVE", "CONFLICT"}:
+        return {
+            "fusion_orf_gate_status": "FUSION_ORF_INVALID_OR_CONFLICT",
+            "fusion_candidate_pool": "REJECTED_ORF_INVALID",
+            "fusion_orf_gate_reason_code": reason_code,
+            "fusion_orf_gate_grade": "0",
+        }
+    return {
+        "fusion_orf_gate_status": "FUSION_ORF_UNESTABLISHED",
+        "fusion_candidate_pool": "EXPLORATION_ORF_REQUIRED",
+        "fusion_orf_gate_reason_code": reason_code,
+        "fusion_orf_gate_grade": "1",
+    }
+
+
+def _safety_completeness_grade(
+    source: Mapping[str, Any], safety_state: Mapping[str, Any],
+) -> int:
+    text = " ".join(str(source.get(field, "")).strip().upper() for field in (
+        "safety_evidence_completeness", "event_safety_evidence_completeness",
+        "reference_proteome_status", "normal_ligandome_status", "normal_junction_assessment_status",
+    ))
+    if any(token in text for token in ("UNASSESSED", "MISSING", "NOT_AVAILABLE", "INCOMPLETE")):
+        return 0
+    if any(token in text for token in ("COMPLETE", "FULL", "HIGH")):
+        return 3
+    if any(token in text for token in ("PARTIAL", "MEDIUM")):
+        return 2
+    if "LOW" in text:
+        return 1
+    state = str(safety_state.get("state", ""))
+    return 3 if state == "SAFETY_PASS" else 1 if safety_state.get("assessed") else 0
+
+
+def _ccf_confidence(
+    source: Mapping[str, Any], clonality_state: Mapping[str, Any],
+) -> tuple[str, int]:
+    text = " ".join(str(source.get(field, "")).strip().upper() for field in (
+        "ccf_confidence", "ccf_resolution", "ccf_status", "clonality_status",
+    ))
+    if any(token in text for token in ("UNASSESSED", "UNRESOLVED", "MISSING", "NOT_AVAILABLE")):
+        return "CCF_UNASSESSED", 0
+    if "LOW" in text:
+        return "CCF_LOW_CONFIDENCE", 1
+    if any(token in text for token in ("MEDIUM", "MODERATE", "PARTIAL")):
+        return "CCF_MEDIUM_CONFIDENCE", 2
+    if any(token in text for token in ("HIGH", "CONFIDENT", "CLONAL_LIKE")):
+        return "CCF_HIGH_CONFIDENCE", 3
+    if not clonality_state.get("assessed"):
+        return "CCF_UNASSESSED", 0
+    return "CCF_CONFIDENCE_UNSPECIFIED", 1
+
+
+def _format_tiebreak_number(value: float | None) -> str:
+    return "NA" if value is None else f"{value:.8g}"
+
+
+def _is_clear_novel_sequence(source: Mapping[str, Any]) -> bool:
+    novel = str(source.get("contains_novel_aa", "")).strip().lower() in {"true", "yes", "1"}
+    junction = str(source.get("crosses_junction", "")).strip().lower() in {"true", "yes", "1"}
+    consequence = " ".join(
+        str(source.get(field, "")).upper()
+        for field in ("peptide_consequence", "variant_consequence", "consequence", "event_type", "evidence_track")
+    )
+    return novel or junction or any(
+        token in consequence
+        for token in ("NOVEL_TAIL", "NOVEL JUNCTION", "FRAMESHIFT_NOVEL", "FRAMESHIFT")
+    )
+
+
+def _uncapped_grade(
+    source: Mapping[str, Any],
+    states: Mapping[str, Mapping[str, Any]],
+    track: str,
+) -> str:
+    event = states["event_authenticity"]["state"]
+    rna = states["rna_support"]["state"]
+    presentation = states["presentation_consensus"]["state"]
+    specificity = states["mutant_specificity"]["state"]
+    hla = states["hla_appm"]["state"]
+    safety = states["safety"]["state"]
+    clonality = states["clonality"]
+    completeness = states["evidence_completeness"]["grade"]
+    cross = " ".join(str(source.get(field, "")).upper() for field in ("cross_platform_status", "comparison_status"))
+
+    if (
+        any(state["hard_fail"] for state in states.values())
+        or event == "EVENT_ARTIFACT_RISK"
+        or presentation == "PRESENTATION_WEAK"
+        or specificity in {"WT_BETTER", "NON_MUTANT_SEQUENCE"}
+        or hla in {"RESTRICTING_HLA_LOST", "MAJOR_APPM_DEFECT"}
+        or safety in {"SAFETY_HIGH_RISK", "SAFETY_REJECT"}
+        or (event == "EVENT_CONFLICT" and "SOURCE_PASS_NOT_REPRODUCED_BY_PILEUP" not in cross)
+    ):
+        return "R4"
+
+    mutant_specific = specificity == "MT_SPECIFIC" or _is_clear_novel_sequence(source)
+    ccf_supported_or_not_required = clonality["grade"] >= 2 or track in {"FUSION", "SPLICE"}
+    safety_complete = safety == "SAFETY_PASS" and not str(source.get("safety_missing_layers", "")).strip()
+    r1 = (
+        event in {"EVENT_STRONG", "EVENT_CONFIRMED"}
+        and rna == "RNA_CONFIRMED"
+        and presentation == "PRESENTATION_CONSISTENT_STRONG"
+        and mutant_specific
+        and hla == "HLA_APPM_RETAINED"
+        and safety_complete
+        and ccf_supported_or_not_required
+        and completeness >= 3
+    )
+    if r1:
+        return "R1"
+
+    core_established = (
+        event in {"EVENT_STRONG", "EVENT_CONFIRMED"}
+        and rna == "RNA_CONFIRMED"
+        and presentation in {"PRESENTATION_CONSISTENT_STRONG", "PRESENTATION_MODERATE"}
+        and specificity not in {"WT_BETTER", "NON_MUTANT_SEQUENCE", "UNASSESSED"}
+        and hla not in {"RESTRICTING_HLA_LOST", "MAJOR_APPM_DEFECT", "HLA_LOH_UNASSESSED"}
+        and safety not in {"SAFETY_HIGH_RISK", "SAFETY_REJECT"}
+    )
+    cautions = 0
+    cautions += clonality["grade"] < 2 and track not in {"FUSION", "SPLICE"}
+    cautions += hla == "HLA_APPM_CAUTION" or "LOW" in str(source.get("appm_evidence_completeness", "")).upper()
+    cautions += safety in {"SAFETY_PARTIAL", "SAFETY_REVIEW"}
+    cautions += specificity == "MARGINAL_MT_ADVANTAGE"
+    cautions += completeness < 3
+    if core_established and cautions <= 1:
+        return "R2"
+    return "R3"
+
+
+def _next_steps(
+    grade: str,
+    source: Mapping[str, Any],
+    states: Mapping[str, Mapping[str, Any]],
+) -> tuple[str, str]:
+    if grade == "R1":
+        return "FIRST_BATCH_EXPERIMENTAL_PRIORITY", "confirm assay design; retain matched WT control; proceed to first-batch experimental validation"
+    if grade == "R2":
+        return "ADVANCE_WITH_CAUTION", "resolve the single caution where feasible; retain matched WT control; then proceed to validation"
+    if grade == "R4":
+        return "DO_NOT_ADVANCE", "retain only for audit or mechanism-driven manual review; do not advance automatically"
+    steps: list[str] = []
+    rna_state = states["rna_support"]["state"]
+    if rna_state == "RNA_NEGATIVE":
+        steps.extend(["deprioritize pending independent RNA confirmation", "targeted RNA or orthogonal RNA assay"])
+    elif rna_state == "RNA_LOW_SUPPORT":
+        steps.extend(["increase RNA site coverage", "targeted RNA"])
+    elif rna_state in {"RNA_UNASSESSED", "GENE_EXPRESSION_ONLY"}:
+        steps.extend(["obtain evaluable RNA site coverage", "targeted RNA", "IGV"])
+    if event_track(source) == "FUSION" and not states["clonality"]["assessed"]:
+        steps.extend(["RT-PCR/Sanger", "second fusion caller", "orthogonal breakpoint review"])
+    if states["presentation_consensus"]["state"] in {"PRESENTATION_SINGLE_TOOL", "PRESENTATION_DISCORDANT", "PRESENTATION_UNASSESSED"}:
+        steps.append("second presentation tool/group")
+    normal_junction = " ".join(str(source.get(field, "")).upper() for field in (
+        "normal_junction_assessment_status", "event_normal_junction_assessment_status",
+    ))
+    if not normal_junction or "UNASSESSED" in normal_junction:
+        steps.append("normal tissue junction check")
+    phasing = " ".join(str(source.get(field, "")).upper() for field in ("haplotype_status", "phase_confidence"))
+    if any(token in phasing for token in ("REQUIRED", "UNPHASED", "LOW_CONFIDENCE")):
+        steps.extend(["IGV phasing review", "read-backed phasing"])
+    if states["mutant_specificity"]["state"] != "MT_SPECIFIC" and not _is_clear_novel_sequence(source):
+        steps.append("complete MT/WT paired prediction")
+    if "LOW" in str(source.get("appm_evidence_completeness", "")).upper() or states["hla_appm"]["state"] == "HLA_LOH_UNASSESSED":
+        steps.append("complete APPM/HLA LOH evidence")
+    if "LOW" in " ".join(str(source.get(field, "")).upper() for field in ("ccf_confidence", "ccf_resolution")):
+        steps.append("review purity/CNV/CCF evidence")
+    if states["safety"]["state"] == "SAFETY_PARTIAL":
+        steps.append("complete normal proteome/ligandome/junction safety references")
+    if states["event_authenticity"]["state"] not in {"EVENT_STRONG", "EVENT_CONFIRMED"}:
+        steps.append("second caller or targeted event validation")
+    unique = list(dict.fromkeys(steps))
+    return "EVIDENCE_COMPLETION_FIRST", "; ".join(unique or ["complete missing evidence before experimental progression"])
+
+
+def _constrained_grade(uncapped: str, cap: str, hard_failure: bool) -> str:
+    minimum = 4 if hard_failure else GRADE_ORDER.get(CAP_TO_GRADE.get(cap, "R1"), 1)
+    return f"R{max(GRADE_ORDER[uncapped], minimum)}"
+
+
+def _derived_grade_caps(
+    source: Mapping[str, Any],
+    states: Mapping[str, Mapping[str, Any]],
+    track: str,
+    source_chain_tier: str = "",
+) -> list[tuple[str, str]]:
+    caps: list[tuple[str, str]] = []
+    if track == "FUSION":
+        pool = str(source.get("fusion_candidate_pool", "")).upper()
+        if pool == "EXPLORATION_ORF_REQUIRED":
+            caps.append(("R3", "CAP_FUSION_ORF_UNESTABLISHED"))
+        elif pool == "REJECTED_ORF_INVALID":
+            caps.append(("R4", "CAP_FUSION_ORF_INVALID"))
+    if track == "SPLICE":
+        prefilter = str(source.get("splice_prefilter_status", "")).upper()
+        formal_pass = str(source.get("splice_formal_gate_pass", "")).lower() in {"yes", "true", "1"}
+        pool = str(source.get("splice_candidate_pool", "")).upper()
+        if prefilter == "REJECT" or pool == "REJECTED_SPLICE_CANDIDATE":
+            caps.append(("R4", "CAP_SPLICE_FORMAL_GATE_FAILED"))
+        elif not formal_pass and pool != "FORMAL_SPLICE_CANDIDATE":
+            caps.append(("R3", "CAP_SPLICE_FORMAL_GATE_INCOMPLETE"))
+    mutation_source = str(source.get("mutation_source", "")).upper()
+    ccf_resolution = str(source.get("ccf_resolution", "")).upper()
+    # RNA-only origin is not itself weak evidence. A fusion with a complete C1/C2
+    # breakpoint->transcript/ORF->peptide chain may proceed without a DNA-SV call.
+    # Keep the legacy cap only when the source chain is incomplete or unresolved.
+    if (
+        track == "FUSION"
+        and source_chain_tier not in {"C1", "C2"}
+        and ("RNA_ONLY" in mutation_source or "RNA_ONLY" in ccf_resolution or not states["clonality"]["assessed"])
+    ):
+        caps.append(("R3", "CAP_RNA_ONLY_FUSION"))
+    normal_junction = " ".join(str(source.get(field, "")).upper() for field in (
+        "normal_junction_assessment_status", "event_normal_junction_assessment_status",
+    ))
+    if not normal_junction or any(token in normal_junction for token in ("UNASSESSED", "MISSING", "NOT_AVAILABLE")):
+        if track in {"FUSION", "SPLICE"}:
+            caps.append(("R3", "CAP_NORMAL_JUNCTION_UNASSESSED"))
+    if states["safety"]["state"] == "SAFETY_PARTIAL":
+        caps.append(("R3", "CAP_SAFETY_PARTIAL"))
+    phasing = " ".join(str(source.get(field, "")).upper() for field in ("haplotype_status", "phase_confidence"))
+    if any(token in phasing for token in ("REQUIRED", "UNPHASED", "LOW_CONFIDENCE")):
+        caps.append(("R3", "CAP_PHASING_REQUIRED"))
+    capture = " ".join(str(source.get(field, "")).upper() for field in ("evidence_scope", "capture_limited", "wes_confidence_tier"))
+    if track == "DNA_SV" and ("CAPTURE" in capture or "TRUE" in capture or "WES" in capture):
+        caps.append(("R3", "CAP_WES_CAPTURE_LIMITED_SV"))
+    specificity = states["mutant_specificity"]["state"]
+    if specificity == "MT_WT_SIMILAR":
+        caps.append(("R3", "CAP_MT_WT_SIMILAR"))
+    elif specificity == "MARGINAL_MT_ADVANTAGE":
+        caps.append(("R3", "CAP_MARGINAL_MT_ADVANTAGE"))
+    elif specificity == "WT_BETTER":
+        caps.append(("R4", "CAP_WT_BETTER"))
+    elif specificity == "UNASSESSED" and not _is_clear_novel_sequence(source):
+        caps.append(("R2", "CAP_MUTANT_SPECIFICITY_UNASSESSED"))
+    if str(source.get("wt_self_reactivity_risk_status", "")).upper() == "WT_STRONG_BINDING_REVIEW":
+        caps.append(("R3", "CAP_WT_STRONG_BINDING_REVIEW"))
+    hla_state = states["hla_appm"]["state"]
+    if hla_state == "HLA_LOH_UNASSESSED":
+        caps.append(("R2", "CAP_HLA_LOH_UNASSESSED"))
+    elif hla_state == "MAJOR_APPM_DEFECT":
+        caps.append(("R4", "CAP_MAJOR_APPM_DEFECT"))
+    appm_completeness = str(source.get("appm_evidence_completeness", "")).upper()
+    if "LOW" in appm_completeness:
+        caps.append(("R2", "CAP_APPM_EVIDENCE_LOW"))
+    ccf_confidence = " ".join(str(source.get(field, "")).upper() for field in ("ccf_confidence", "ccf_resolution"))
+    if "LOW" in ccf_confidence:
+        caps.append(("R2", "CAP_CCF_LOW_CONFIDENCE"))
+    if track in {"MISSENSE", "INDEL", "DNA_SV"} and states["clonality"]["state"] == "UNASSESSED":
+        caps.append(("R3", "CAP_CCF_UNASSESSED_DNA_EVENT"))
+    presentation = states["presentation_consensus"]["state"]
+    if presentation == "PRESENTATION_SINGLE_TOOL":
+        caps.append(("R3", "CAP_SINGLE_PRESENTATION_TOOL"))
+    elif presentation == "PRESENTATION_DISCORDANT":
+        caps.append(("R3", "CAP_PRESENTATION_DISCORDANT"))
+    cross = " ".join(str(source.get(field, "")).upper() for field in ("cross_platform_status", "comparison_status"))
+    if "SOURCE_PASS_NOT_REPRODUCED_BY_PILEUP" in cross:
+        caps.append(("R3", "CAP_SOURCE_UNREPRODUCED"))
+    if states["event_authenticity"]["state"] == "EVENT_SAMPLE_SPECIFIC":
+        caps.append(("R3", "CAP_EVENT_SAMPLE_SPECIFIC"))
+    rna_state = states["rna_support"]["state"]
+    rna_reason = str(states["rna_support"].get("reason_code") or "")
+    if rna_state == "RNA_NEGATIVE":
+        caps.append(("R3", "CAP_RNA_NEGATIVE_ADEQUATE_COVERAGE" if rna_reason == "RNA_NO_ALT_ADEQUATE_COVERAGE" else "CAP_RNA_NEGATIVE"))
+    elif rna_state == "RNA_LOW_SUPPORT":
+        caps.append(("R3", "CAP_RNA_LOW_COVERAGE"))
+    elif rna_state == "RNA_UNASSESSED":
+        caps.append(("R3", "CAP_RNA_NO_COVERAGE"))
+    elif rna_state == "GENE_EXPRESSION_ONLY":
+        caps.append(("R3", "CAP_GENE_EXPRESSION_ONLY"))
+    return caps
+
+
+def _normalized_row(
+    source: Mapping[str, Any],
+    rules: Mapping[str, Any],
+    legacy_rank: int,
+) -> tuple[dict[str, str], list[dict[str, str]]]:
+    states = derive_all_states(source, rules)
+    source_chain_enabled = _source_chain_enabled(rules)
+    source_chain_mode = _source_chain_integration_mode(rules)
+    biological_track = event_track(source)
+    source_chain_result = derive_source_chain_confidence(source, rules)
+    source_chain_fields = source_chain_result.as_row()
+    review, review_reason = _manual_review(source, rules)
+    pareto_track = "MANUAL_REVIEW" if review else biological_track
+    row = {key: str(value or "") for key, value in source.items()}
+    row["legacy_weighted_rank"] = str(legacy_rank)
+    row["biological_event_track"] = biological_track
+    row["evidence_track"] = pareto_track
+    row["pareto_dimensions"] = ",".join(_pareto_dimensions_for_track(pareto_track, rules))
+    row.update(source_chain_fields)
+    row["source_chain_integration_mode"] = source_chain_mode if source_chain_enabled else "disabled"
+    assessed = [name for name, state in states.items() if state["assessed"]]
+    missing = [name for name, state in states.items() if not state["assessed"]]
+    conflicts = [name for name, state in states.items() if state["conflict"]]
+    source_conflict_fields = [value for value in str(source.get("evidence_conflict_fields", "")).split(",") if value]
+    if source_conflict_fields:
+        conflicts.append("source_precedence")
+    hard = [
+        f"{state.get('hard_code') or 'HARD_UNSPECIFIED'}:{name}:{state['reason']}"
+        for name, state in states.items() if state["hard_fail"]
+    ]
+    hard_codes = [
+        str(state.get("hard_code") or state.get("reason_code") or "HARD_UNSPECIFIED")
+        for state in states.values() if state["hard_fail"]
+    ]
+    if source_chain_enabled and source_chain_mode == "integrated" and source_chain_result.hard_failure:
+        hard.extend(
+            f"{code}:source_chain:{source_chain_result.label}"
+            for code in source_chain_result.hard_failure_codes
+        )
+        hard_codes.extend(source_chain_result.hard_failure_codes)
+    for name, state in states.items():
+        row[f"{name}_state"] = str(state["state"])
+        row[f"{name}_grade"] = str(state["grade"])
+        row[f"{name}_reason_code"] = str(state["reason_code"])
+        row[f"{name}_reason"] = str(state["reason"])
+    row.update({key: str(value) for key, value in _pareto_derived_grades(
+        source, states, biological_track, rules,
+    ).items()})
+    row.update(_fusion_orf_gate(biological_track, source_chain_result))
+    netmhcpan_rank = _first_number(
+        source, "netmhcpan_mt_rank_el", "netmhcpan_el_rank", "el_rank", "binding_rank",
+    )
+    mhcflurry_score = _first_number(source, "mhcflurry_presentation_score")
+    row["safety_completeness_grade"] = str(_safety_completeness_grade(source, states["safety"]))
+    ccf_confidence_state, ccf_confidence_grade = _ccf_confidence(source, states["clonality"])
+    row["ccf_confidence_state"] = ccf_confidence_state
+    row["ccf_confidence_grade"] = str(ccf_confidence_grade)
+    row["netmhcpan_tiebreak_rank"] = _format_tiebreak_number(netmhcpan_rank)
+    row["mhcflurry_tiebreak_score"] = _format_tiebreak_number(mhcflurry_score)
+    cap = _strictest_cap(source)
+    uncapped = _uncapped_grade(source, states, biological_track)
+    derived_caps = _derived_grade_caps(
+        row,
+        states,
+        biological_track,
+        source_chain_result.tier
+        if source_chain_enabled and source_chain_mode == "integrated" else "",
+    )
+    derived_caps.extend(_source_chain_caps(source_chain_fields, rules))
+    if cap:
+        derived_caps.append((CAP_TO_GRADE[cap], f"CAP_EXISTING_PRIORITY_{cap}"))
+    grade_cap = max((value for value, _ in derived_caps), key=lambda value: GRADE_ORDER[value], default="R1")
+    grade = _constrained_grade(uncapped, next((name for name, value in CAP_TO_GRADE.items() if value == grade_cap), ""), bool(hard))
+    action, next_steps = _next_steps(grade, source, states)
+    if row.get("fusion_candidate_pool") == "EXPLORATION_ORF_REQUIRED":
+        action = "FUSION_ORF_RECONSTRUCTION_FIRST"
+        next_steps = "; ".join(filter(None, [
+            next_steps,
+            "establish exact fusion transcript and breakpoints; confirm translation start and frame; reconstruct ORF; verify peptide placement in ORF; assess NMD",
+        ]))
+    source_chain_steps = []
+    if source_chain_result.tier == "C3":
+        if source_chain_result.missing_requirements:
+            source_chain_steps.append("complete source-chain requirements: " + ",".join(source_chain_result.missing_requirements))
+        if source_chain_result.low_power_requirements:
+            source_chain_steps.append("increase evidence power for: " + ",".join(source_chain_result.low_power_requirements))
+        if source_chain_result.negative_requirements:
+            source_chain_steps.append("review negative source-chain evidence: " + ",".join(source_chain_result.negative_requirements))
+    elif source_chain_result.tier == "C2" and source_chain_result.orthogonal_status != "SUPPORTED":
+        source_chain_steps.append("obtain independent/cross-modal orthogonal confirmation")
+    elif source_chain_result.tier == "C4":
+        source_chain_steps.append("do not advance until source-chain hard failures are resolved")
+    if source_chain_steps:
+        next_steps = "; ".join(filter(None, [next_steps, *source_chain_steps]))
+    if source_conflict_fields:
+        review = True
+        source_reason = "source conflicts=" + ",".join(source_conflict_fields)
+        review_reason = ";".join(value for value in (review_reason, source_reason) if value)
+    row.update({
+        "hard_failure": "yes" if hard else "no",
+        "hard_failure_codes": ",".join(dict.fromkeys(hard_codes)),
+        "hard_failure_reasons": ";".join(hard),
+        "legacy_priority_cap": cap,
+        "consensus_priority_cap": grade_cap,
+        "evidence_grade_cap": grade_cap,
+        "evidence_grade_cap_reasons": ",".join(reason for _, reason in derived_caps),
+        "manual_review_required": "yes" if review else "no",
+        "manual_review_reason": review_reason,
+        "evidence_grade_uncapped": uncapped,
+        "evidence_grade": grade,
+        "evidence_consensus_score": f"{sum(state['grade'] for state in states.values()) / (3 * len(states)):.4f}",
+        "evidence_completeness_score": f"{len(assessed) / len(states):.4f}",
+        "evidence_assessed_layers": ",".join(assessed),
+        "evidence_missing_layers": ",".join(missing),
+        "evidence_conflict_layers": ",".join(conflicts),
+        "evidence_layer_states": ";".join(f"{name}:{state['state']}" for name, state in states.items()),
+        "evidence_reason_codes": ";".join(f"{name}:{state['reason_code']}" for name, state in states.items()),
+        "consensus_action": action,
+        "recommended_next_steps": next_steps,
+        "pareto_front": "",
+        "track_rank": "",
+        "evidence_rank": "",
+        "evidence_rank_key": "",
+    })
+    trace = []
+    if hard:
+        trace.append("hard_failure")
+    if cap:
+        trace.append(f"priority_cap={cap}")
+    if derived_caps:
+        trace.append("grade_caps=" + ",".join(reason for _, reason in derived_caps))
+    if missing:
+        trace.append("missing=" + ",".join(missing))
+    if conflicts:
+        trace.append("conflict=" + ",".join(conflicts))
+    if review:
+        trace.append("manual_review")
+    if grade != uncapped:
+        trace.append(f"grade_capped={uncapped}->{grade}")
+    row["consensus_trace"] = ";".join(trace or ["evidence_grade_only"])
+
+    state_row = {
+        "peptide_id": str(source.get("peptide_id", "")),
+        "event_id": str(source.get("event_id", "")),
+        "sample_id": str(source.get("sample_id", "")),
+        "gene": str(source.get("gene", "")),
+        "event_type": str(source.get("event_type", "")),
+        "biological_event_track": biological_track,
+        "evidence_track": row["evidence_track"],
+        "pareto_dimensions": row["pareto_dimensions"],
+        "legacy_weighted_rank": str(legacy_rank),
+        "legacy_efficacy_score": str(source.get("efficacy_score", "")),
+        "legacy_final_priority": str(source.get("final_priority", "")),
+    }
+    for name, state in states.items():
+        state_row[f"{name}_state"] = str(state["state"])
+        state_row[f"{name}_grade"] = str(state["grade"])
+        state_row[f"{name}_assessed"] = "yes" if state["assessed"] else "no"
+        state_row[f"{name}_reason_code"] = str(state["reason_code"])
+        state_row[f"{name}_reason"] = str(state["reason"])
+    state_row.update({field: row[field] for field in (
+        "source_chain_track", "source_chain_confidence_tier", "source_chain_confidence_label",
+        "source_chain_confidence_grade", "source_chain_rule_version", "source_chain_orthogonal_status",
+        "source_chain_orthogonal_sources", "source_chain_hard_failure", "source_chain_hard_failure_codes",
+        "source_chain_reason_codes", "source_chain_supported_requirements", "source_chain_missing_requirements",
+        "source_chain_low_power_requirements", "source_chain_negative_requirements",
+        "source_chain_conflict_requirements", "source_chain_not_applicable_requirements",
+        "source_chain_requirement_statuses", "source_chain_requirement_details", "source_chain_integration_mode",
+        "fusion_orf_gate_status", "fusion_candidate_pool", "fusion_orf_gate_reason_code",
+        "fusion_orf_gate_grade",
+        "hard_failure", "hard_failure_codes", "hard_failure_reasons", "legacy_priority_cap", "consensus_priority_cap",
+        "evidence_grade_cap", "evidence_grade_cap_reasons",
+        "manual_review_required", "manual_review_reason", "evidence_grade_uncapped",
+        "evidence_grade", "evidence_consensus_score", "evidence_completeness_score",
+        "evidence_assessed_layers", "evidence_missing_layers", "evidence_conflict_layers", "evidence_reason_codes",
+        "consensus_action", "recommended_next_steps", "consensus_trace",
+    )})
+    conflict_rows = [{
+        "peptide_id": str(source.get("peptide_id", "")),
+        "event_id": str(source.get("event_id", "")),
+        "gene": str(source.get("gene", "")),
+        "evidence_track": row["evidence_track"],
+        "layer": name,
+        "state": str(states[name]["state"]),
+        "field": "",
+        "selected_source": "",
+        "selected_value": "",
+        "other_source": "",
+        "other_value": "",
+        "precedence_version": str(source.get("evidence_source_precedence_version", "")),
+        "conflict_type": "DERIVED_STATE_CONFLICT",
+        "reason_code": str(states[name]["reason_code"]),
+        "reason": str(states[name]["reason"]),
+        "recommended_action": "manual evidence reconciliation before candidate progression",
+    } for name in conflicts if name != "source_precedence"]
+    for requirement in source_chain_result.requirements:
+        if requirement.status != "CONFLICT" or _source_chain_integration_mode(rules) != "integrated":
+            continue
+        conflict_rows.append({
+            "peptide_id": str(source.get("peptide_id", "")),
+            "event_id": str(source.get("event_id", "")),
+            "gene": str(source.get("gene", "")),
+            "evidence_track": row["evidence_track"],
+            "layer": "source_chain",
+            "state": "CONFLICT",
+            "field": requirement.name,
+            "selected_source": "",
+            "selected_value": "",
+            "other_source": "",
+            "other_value": "",
+            "precedence_version": str(source.get("evidence_source_precedence_version", "")),
+            "conflict_type": "SOURCE_CHAIN_REQUIREMENT_CONFLICT",
+            "reason_code": requirement.reason_code,
+            "reason": requirement.reason,
+            "recommended_action": "resolve source-chain conflict before candidate progression",
+        })
+    try:
+        source_details = json.loads(str(source.get("evidence_conflict_details", "[]")) or "[]")
+    except json.JSONDecodeError:
+        source_details = []
+    for detail in source_details if isinstance(source_details, list) else []:
+        conflict_rows.append({
+            "peptide_id": str(source.get("peptide_id", "")),
+            "event_id": str(source.get("event_id", "")),
+            "gene": str(source.get("gene", "")),
+            "evidence_track": row["evidence_track"],
+            "layer": "source_precedence",
+            "state": "CONFLICT",
+            "field": str(detail.get("field", "")),
+            "selected_source": str(detail.get("selected_source", "")),
+            "selected_value": str(detail.get("selected_value", "")),
+            "other_source": str(detail.get("other_source", "")),
+            "other_value": str(detail.get("other_value", "")),
+            "precedence_version": str(detail.get("precedence_version", source.get("evidence_source_precedence_version", ""))),
+            "conflict_type": str(detail.get("conflict_type", "NONEMPTY_SOURCE_DISAGREEMENT")),
+            "reason_code": "SOURCE_FIELD_VALUE_CONFLICT",
+            "reason": f"authoritative source selected for field {detail.get('field', '')}",
+            "recommended_action": "review source disagreement; retain precedence-selected value unless evidence provenance is wrong",
+        })
+    return row, [state_row, *conflict_rows]
+
+
+def score_evidence_consensus(row: Mapping[str, Any], rules: Mapping[str, Any] | None = None) -> dict[str, str]:
+    """Compatibility helper returning normalized consensus fields for one row."""
+
+    normalized, _ = _normalized_row(row, rules or DEFAULT_RULES, 1)
+    return {field: normalized[field] for field in CONSENSUS_FIELDS if field in normalized}
+
+
+def _assign_pareto(rows: list[dict[str, str]], rules: Mapping[str, Any]) -> None:
+    groups: dict[tuple[str, str], list[dict[str, str]]] = defaultdict(list)
+    for index, row in enumerate(rows):
+        row["_pareto_id"] = str(index)
+        groups[(row["evidence_track"], row["evidence_grade"])].append(row)
+    for (track, _grade), group in groups.items():
+        dimensions = _pareto_dimensions_for_track(track, rules)
+        fronts = nondominated_fronts(group, dimensions)
+        for row in group:
+            row["pareto_front"] = str(fronts[row["_pareto_id"]])
+    for row in rows:
+        row.pop("_pareto_id", None)
+
+
+def _build_evidence_rank_key(row: Mapping[str, Any]) -> str:
+    netmhcpan = _first_number(row, "netmhcpan_tiebreak_rank")
+    mhcflurry = _first_number(row, "mhcflurry_tiebreak_score")
+    return "|".join((
+        str(row.get("evidence_grade", "R4")),
+        str(row.get("evidence_track", "OTHER")),
+        f"F{int(_number(row.get('pareto_front')) or 999999)}",
+        f"FUSION_ORF_POOL={row.get('fusion_candidate_pool', 'NOT_APPLICABLE')}",
+        f"SOURCE_CHAIN={row.get('source_chain_confidence_tier', 'C3')}",
+        f"{row.get('safety_state', 'UNASSESSED')}_COMPLETENESS_{int(_number(row.get('safety_completeness_grade')))}",
+        str(row.get("event_authenticity_state", "EVENT_UNASSESSED")),
+        str(row.get("rna_support_state", "RNA_UNASSESSED")),
+        str(row.get("presentation_consensus_state", "PRESENTATION_UNASSESSED")),
+        str(row.get("mutant_specificity_state", "UNASSESSED")),
+        str(row.get("hla_appm_state", "HLA_LOH_UNASSESSED")),
+        f"{row.get('clonality_state', 'UNASSESSED')}_{row.get('ccf_confidence_state', 'CCF_UNASSESSED')}",
+        str(row.get("evidence_completeness_state", "LOW")),
+        f"NETMHCPAN_EL={_format_tiebreak_number(netmhcpan)}",
+        f"MHCFLURRY={_format_tiebreak_number(mhcflurry)}",
+        str(row.get("peptide_id", "")),
+    ))
+
+
+def _rank_key(row: Mapping[str, Any], rules: Mapping[str, Any]) -> tuple[Any, ...]:
+    peptide_tie_break = bool(rules.get("output", {}).get("peptide_id_tie_break", True))
+    netmhcpan = _first_number(row, "netmhcpan_tiebreak_rank")
+    mhcflurry = _first_number(row, "mhcflurry_tiebreak_score")
+    return (
+        GRADE_ORDER.get(str(row.get("evidence_grade", "R4")), 4),
+        str(row.get("evidence_track", "")),
+        int(_number(row.get("pareto_front")) or 999999),
+        -int(_number(row.get("fusion_orf_gate_grade"))),
+        -int(_number(row.get("source_chain_confidence_grade"))) if bool(_source_chain_config(rules).get("include_in_tiebreak", False)) else 0,
+        -int(_number(row.get("safety_completeness_grade"))),
+        -int(_number(row.get("event_authenticity_grade"))),
+        -int(_number(row.get("rna_support_grade"))),
+        -int(_number(row.get("presentation_consensus_grade"))),
+        -int(_number(row.get("mutant_specificity_grade"))),
+        -int(_number(row.get("hla_appm_grade"))),
+        -int(_number(row.get("ccf_confidence_grade"))),
+        -int(_number(row.get("evidence_completeness_grade"))),
+        netmhcpan if netmhcpan is not None else float("inf"),
+        -mhcflurry if mhcflurry is not None else float("inf"),
+        str(row.get("peptide_id", "")) if peptide_tie_break else "",
+    )
+
+
+def _row_text(row: Mapping[str, Any], *fields: str) -> str:
+    for field in fields:
+        value = str(row.get(field, "")).strip()
+        if value and value.upper() not in {"NA", "N/A", "NONE", "."}:
+            return value
+    return ""
+
+
+def _representative_fields(row: Mapping[str, Any], index: int) -> dict[str, str]:
+    prefix = f"representative_{index}_"
+    return {
+        f"{prefix}event_id": _row_text(row, "event_id"),
+        f"{prefix}peptide_id": _row_text(row, "peptide_id"),
+        f"{prefix}peptide": _row_text(row, "peptide", "mutant_peptide", "mt_peptide"),
+        f"{prefix}hla_allele": _row_text(row, "hla_allele", "hla", "allele", "restricting_hla"),
+        f"{prefix}evidence_rank": _row_text(row, "evidence_rank"),
+        f"{prefix}evidence_grade": _row_text(row, "evidence_grade"),
+        f"{prefix}source_chain_confidence_tier": _row_text(row, "source_chain_confidence_tier"),
+        f"{prefix}source_chain_confidence_label": _row_text(row, "source_chain_confidence_label"),
+        f"{prefix}fusion_candidate_pool": _row_text(row, "fusion_candidate_pool"),
+        f"{prefix}pareto_front": _row_text(row, "pareto_front"),
+        f"{prefix}redundancy_group": _row_text(row, "redundancy_group", "peptide_redundancy_group", "overlap_group"),
+        f"{prefix}evidence_rank_key": _row_text(row, "evidence_rank_key"),
+    }
+
+
+_EVENT_REPRESENTATIVE_EVIDENCE_FIELDS = (
+    "source_event_id",
+    "source_event_ids",
+    "source_record_id",
+    "source_record_ids",
+    "source_tool",
+    "source_tools",
+    "chrom",
+    "pos",
+    "ref",
+    "alt",
+    "protein_change",
+    "hgvsp",
+    "consequence",
+    "tumor_depth",
+    "tumor_alt_count",
+    "tumor_vaf",
+    "normal_depth",
+    "normal_alt_count",
+    "normal_vaf",
+    "gene_expression_tpm",
+    "transcript_expression_tpm",
+    "event_expression",
+    "expression_evidence_status",
+    "rna_depth",
+    "rna_ref_reads",
+    "rna_alt_reads",
+    "rna_vaf",
+    "rna_support_state",
+    "rna_support_grade",
+    "rna_support_reason_code",
+    "rna_support_reason",
+    "rna_junction_reads",
+    "junction_reads",
+    "provided_rna_junction_reads",
+    "junction_key",
+    "canonical_junction_id",
+    "junction_match_status",
+    "junction_match_method",
+    "junction_resolution_status",
+    "junction_support_status",
+    "junction_source",
+    "strict_cross_validated",
+    "splicemutr_structure_exact",
+    "fusion_orf_gate_status",
+    "fusion_candidate_pool",
+    "fusion_orf_gate_reason_code",
+    "fusion_orf_gate_grade",
+    "transcript_hypothesis_id",
+    "fusion_transcript_id",
+    "orf_id",
+    "fusion_protein_sequence",
+    "start_codon_status",
+    "nmd_risk_status",
+)
+
+
+def _event_output(peptides: list[dict[str, str]], deduplicate: bool) -> list[dict[str, str]]:
+    if not deduplicate:
+        return []
+    groups: dict[str, list[dict[str, str]]] = defaultdict(list)
+    for row in peptides:
+        event_id = _row_text(row, "event_id") or f"NO_EVENT:{row.get('peptide_id', '')}"
+        phase_group = _row_text(row, "phase_group_id", "haplotype_group_id")
+        group_id = f"PHASE:{phase_group}" if phase_group else f"EVENT:{event_id}"
+        groups[group_id].append(row)
+    events = []
+    for group_id, group in groups.items():
+        ordered = sorted(group, key=lambda item: int(item["evidence_rank"]))
+        best_by_event_hla: list[dict[str, str]] = []
+        seen_event_hla: set[tuple[str, str]] = set()
+        for row in ordered:
+            event_id = _row_text(row, "event_id") or f"NO_EVENT:{row.get('peptide_id', '')}"
+            hla = _row_text(row, "hla_allele", "hla", "allele", "restricting_hla")
+            key = (event_id, hla)
+            if key in seen_event_hla:
+                continue
+            seen_event_hla.add(key)
+            best_by_event_hla.append(row)
+
+        representatives: list[dict[str, str]] = []
+        seen_redundancy: set[str] = set()
+        for row in best_by_event_hla:
+            redundancy = _row_text(row, "redundancy_group", "peptide_redundancy_group", "overlap_group")
+            if redundancy and redundancy in seen_redundancy:
+                continue
+            if redundancy:
+                seen_redundancy.add(redundancy)
+            representatives.append(row)
+            if len(representatives) == 2:
+                break
+        if not representatives:
+            representatives = ordered[:1]
+
+        best = representatives[0]
+        member_event_ids = sorted({_row_text(row, "event_id") for row in group if _row_text(row, "event_id")})
+        phase_groups = sorted({_row_text(row, "phase_group_id", "haplotype_group_id") for row in group if _row_text(row, "phase_group_id", "haplotype_group_id")})
+        event_row = {
+            "event_group_id": group_id,
+            "event_id": _row_text(best, "event_id"),
+            "member_event_ids": ",".join(member_event_ids),
+            "member_event_count": str(len(member_event_ids)),
+            "phase_group_id": ",".join(phase_groups),
+            "sample_id": str(best.get("sample_id", "")),
+            "gene": str(best.get("gene", "")),
+            "event_type": str(best.get("event_type", "")),
+            "biological_event_track": str(best.get("biological_event_track", "")),
+            "evidence_track": best["evidence_track"],
+            "best_peptide_id": str(best.get("peptide_id", "")),
+            "best_peptide": _row_text(best, "peptide", "mutant_peptide", "mt_peptide"),
+            "best_hla_allele": _row_text(best, "hla_allele", "hla", "allele", "restricting_hla"),
+            "best_peptide_evidence_rank": best["evidence_rank"],
+            "best_evidence_grade": best["evidence_grade"],
+            "source_chain_track": _row_text(best, "source_chain_track"),
+            "source_chain_confidence_tier": _row_text(best, "source_chain_confidence_tier"),
+            "source_chain_confidence_label": _row_text(best, "source_chain_confidence_label"),
+            "source_chain_orthogonal_status": _row_text(best, "source_chain_orthogonal_status"),
+            "source_chain_reason_codes": _row_text(best, "source_chain_reason_codes"),
+            "source_chain_missing_requirements": _row_text(best, "source_chain_missing_requirements"),
+            "source_chain_hard_failure": _row_text(best, "source_chain_hard_failure"),
+            "source_chain_hard_failure_codes": _row_text(best, "source_chain_hard_failure_codes"),
+            "fusion_orf_gate_status": _row_text(best, "fusion_orf_gate_status"),
+            "fusion_candidate_pool": _row_text(best, "fusion_candidate_pool"),
+            "fusion_orf_gate_reason_code": _row_text(best, "fusion_orf_gate_reason_code"),
+            "best_pareto_front": best["pareto_front"],
+            "best_evidence_rank_key": best["evidence_rank_key"],
+            "peptide_count": str(len(group)),
+            "event_hla_candidate_count": str(len(best_by_event_hla)),
+            "representative_count": str(len(representatives)),
+            "representative_selection_rule": "best per event_id+HLA; deduplicate redundancy_group; maximum 2 per event/phase group",
+            "hard_failure_peptide_count": str(sum(row["hard_failure"] == "yes" for row in group)),
+            "manual_review_required": "yes" if any(row["manual_review_required"] == "yes" for row in group) else "no",
+            "consensus_action": best["consensus_action"],
+            "recommended_next_steps": best["recommended_next_steps"],
+            "event_consensus_trace": best["consensus_trace"],
+        }
+        # Event-level reports must retain the authoritative evidence attached to
+        # the selected representative. Otherwise correctly merged DNA/RNA and
+        # junction evidence silently becomes "unassessed" after deduplication.
+        for field in _EVENT_REPRESENTATIVE_EVIDENCE_FIELDS:
+            event_row[field] = _row_text(best, field)
+        for index, representative in enumerate(representatives, 1):
+            event_row.update(_representative_fields(representative, index))
+        if len(representatives) < 2:
+            event_row.update(_representative_fields({}, 2))
+        events.append(event_row)
+    events.sort(key=lambda row: int(row["best_peptide_evidence_rank"]))
+    for rank, row in enumerate(events, 1):
+        row["event_evidence_rank"] = str(rank)
+    return events
+
+
+def _comparison_rows(rows: list[dict[str, str]]) -> list[dict[str, str]]:
+    output = []
+    for row in rows:
+        legacy = int(row["legacy_weighted_rank"])
+        consensus = int(row["evidence_rank"])
+        shift = legacy - consensus
+        direction = "improved" if shift > 0 else "decreased" if shift < 0 else "unchanged"
+        output.append({
+            "peptide_id": str(row.get("peptide_id", "")),
+            "event_id": str(row.get("event_id", "")),
+            "gene": str(row.get("gene", "")),
+            "evidence_track": row["evidence_track"],
+            "event_type": str(row.get("event_type", "")),
+            "hla_allele": _row_text(row, "hla_allele", "hla", "allele", "restricting_hla"),
+            "rna_support_state": str(row.get("rna_support_state", "RNA_UNASSESSED")),
+            "safety_state": str(row.get("safety_state", row.get("safety_status", "SAFETY_PARTIAL"))),
+            "hard_failure": str(row.get("hard_failure", "no")),
+            "manual_review_required": str(row.get("manual_review_required", "no")),
+            "legacy_weighted_rank": str(legacy),
+            "legacy_efficacy_score": str(row.get("efficacy_score", "")),
+            "legacy_final_priority": str(row.get("final_priority", "")),
+            "evidence_rank": str(consensus),
+            "rank_shift_weighted_minus_consensus": str(shift),
+            "rank_shift_direction": direction,
+            "evidence_grade": row["evidence_grade"],
+            "source_chain_confidence_tier": row.get("source_chain_confidence_tier", "C3"),
+            "source_chain_track": row.get("source_chain_track", ""),
+            "source_chain_reason_codes": row.get("source_chain_reason_codes", ""),
+            "pareto_front": row["pareto_front"],
+            "evidence_rank_key": row["evidence_rank_key"],
+            "consensus_action": row["consensus_action"],
+            "recommended_next_steps": row["recommended_next_steps"],
+            "difference_reason": f"{row['consensus_trace']};rank_{direction};grade={row['evidence_grade']};pareto_front={row['pareto_front']}",
+        })
+    return output
+
+
+def _write_provenance(path: str | Path, rules: Mapping[str, Any], result: Mapping[str, Any]) -> None:
+    target = Path(path)
+    payload: dict[str, Any] = {}
+    if target.is_file():
+        try:
+            payload = json.loads(target.read_text())
+        except (OSError, json.JSONDecodeError):
+            payload = {}
+    rules_json = json.dumps(rules, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+    payload["evidence_consensus"] = {
+        "algorithm": "discrete_state_grade_track_pareto_source_chain_v3" if _source_chain_integration_mode(rules) == "integrated" else "discrete_state_grade_track_pareto_v2_source_chain_annotation",
+        "status": rules.get("metadata", {}).get("status", "PROVISIONAL_RESEARCH_ONLY"),
+        "rules_name": rules.get("metadata", {}).get("name", ""),
+        "rules_version": rules.get("metadata", {}).get("version", ""),
+        "rules_sha256": hashlib.sha256(rules_json.encode()).hexdigest(),
+        "replace_weighted_ranking": False,
+        "outputs": {key: value for key, value in result.items() if key.startswith("output_")},
+    }
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(payload, indent=2, ensure_ascii=True) + "\n")
+
+
+def _sha256(path: str | Path) -> str:
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _materialize_alias(source: str | Path, target: str | Path) -> str:
+    source_path = Path(source)
+    target_path = Path(target)
+    if source_path.resolve() == target_path.resolve():
+        return str(target_path)
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    if target_path.exists() or target_path.is_symlink():
+        target_path.unlink()
+    try:
+        os.link(source_path, target_path)
+    except OSError:
+        shutil.copy2(source_path, target_path)
+    return str(target_path)
+
+
+def _write_canonical_all_tool_results(
+    comprehensive_tsv: str | Path,
+    output_tsv: str | Path,
+    *,
+    ranked_rows: list[dict[str, str]] | None = None,
+) -> tuple[str, str]:
+    """Materialize the stable user-facing evidence table and its audit manifest."""
+    source = Path(comprehensive_tsv)
+    target = Path(output_tsv)
+    rows = ranked_rows if ranked_rows is not None else read_tsv(source)
+    canonical_rows: list[dict[str, str]] = []
+    for row in rows:
+        identity = "|".join(
+            str(row.get(field, ""))
+            for field in ("event_id", "peptide_id", "peptide", "hla_allele")
+        )
+        canonical = dict(row)
+        canonical.setdefault("evidence_source_precedence_version", "")
+        canonical.setdefault("evidence_field_sources", "{}")
+        canonical.setdefault("evidence_conflict_fields", "")
+        for field in ALL_TOOL_RESULTS_RNA_ALLELE_FIELDS:
+            canonical.setdefault(field, "")
+        canonical["all_tool_results_schema_version"] = ALL_TOOL_RESULTS_SCHEMA_VERSION
+        canonical["canonical_record_type"] = "PEPTIDE_HLA_EVIDENCE"
+        canonical["canonical_record_id"] = hashlib.sha256(identity.encode()).hexdigest()[:24]
+        canonical_rows.append(canonical)
+
+    all_fields = {field for row in canonical_rows for field in row}
+    canonical_fields = [field for field in ALL_TOOL_RESULTS_CORE_FIELDS if field in all_fields]
+    canonical_fields.extend(sorted(all_fields - set(canonical_fields)))
+    write_tsv(target, canonical_rows, canonical_fields)
+
+    missing_required = [field for field in ALL_TOOL_RESULTS_REQUIRED_FIELDS if field not in canonical_fields]
+    record_ids = [row["canonical_record_id"] for row in canonical_rows]
+    duplicate_record_ids = len(record_ids) - len(set(record_ids))
+    invalid_schema_rows = sum(
+        row.get("all_tool_results_schema_version") != ALL_TOOL_RESULTS_SCHEMA_VERSION
+        or row.get("canonical_record_type") != "PEPTIDE_HLA_EVIDENCE"
+        for row in canonical_rows
+    )
+    validation_errors = []
+    if missing_required:
+        validation_errors.append("missing required fields: " + ",".join(missing_required))
+    if duplicate_record_ids:
+        validation_errors.append(f"duplicate canonical_record_id rows: {duplicate_record_ids}")
+    if invalid_schema_rows:
+        validation_errors.append(f"invalid schema metadata rows: {invalid_schema_rows}")
+
+    source_manifest_path = source.with_name("comprehensive_evidence_manifest.json")
+    source_manifest: dict[str, Any] = {}
+    if source_manifest_path.is_file():
+        try:
+            source_manifest = json.loads(source_manifest_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            source_manifest = {}
+    conflict_rows = sum(bool(str(row.get("evidence_conflict_fields", "")).strip()) for row in rows)
+    missing_rows = sum(
+        bool(str(row.get("safety_missing_layers", "")).strip() or str(row.get("event_safety_missing_layers", "")).strip())
+        for row in rows
+    )
+    manifest_path = target.with_name("all_tool_results.manifest.json")
+    payload = {
+        "schema_version": ALL_TOOL_RESULTS_SCHEMA_VERSION,
+        "generated_at": datetime.datetime.now(datetime.UTC).isoformat().replace("+00:00", "Z"),
+        "record_type": "PEPTIDE_HLA_EVIDENCE",
+        "canonical": True,
+        "input": {
+            "path": str(source),
+            "sha256": _sha256(source),
+            "size_bytes": source.stat().st_size,
+            "source_manifest": str(source_manifest_path) if source_manifest_path.is_file() else "",
+            "sources": source_manifest.get("inputs", {}),
+        },
+        "output": {
+            "path": str(target),
+            "sha256": _sha256(target),
+            "size_bytes": target.stat().st_size,
+            "rows": len(canonical_rows),
+            "columns": len(canonical_fields),
+        },
+        "quality": {
+            "rows_with_field_conflicts": conflict_rows,
+            "rows_with_missing_safety_layers": missing_rows,
+            "rows_with_field_source_map": sum(bool(str(row.get("evidence_field_sources", "")).strip()) for row in rows),
+        },
+        "required_fields": ALL_TOOL_RESULTS_REQUIRED_FIELDS,
+        "validation": {
+            "status": "PASS" if not validation_errors else "FAIL",
+            "errors": validation_errors,
+            "duplicate_record_ids": duplicate_record_ids,
+            "invalid_schema_rows": invalid_schema_rows,
+        },
+    }
+    manifest_path.write_text(json.dumps(payload, indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
+    return str(target), str(manifest_path)
+
+
+def _write_source_chain_outputs(
+    output_dir: str | Path,
+    rows: list[dict[str, str]],
+) -> tuple[str, str]:
+    output_path = Path(output_dir) / "source_chain_confidence.tsv"
+    requirements_path = Path(output_dir) / "source_chain_requirements.long.tsv"
+    compact_fields = [
+        "sample_id", "event_id", "peptide_id", "gene", "event_type", "peptide", "hla_allele",
+        "source_chain_track", "source_chain_confidence_tier", "source_chain_confidence_label",
+        "source_chain_confidence_grade", "source_chain_rule_version", "source_chain_integration_mode",
+        "source_chain_orthogonal_status", "source_chain_orthogonal_sources",
+        "source_chain_hard_failure", "source_chain_hard_failure_codes", "source_chain_reason_codes",
+        "source_chain_supported_requirements", "source_chain_missing_requirements",
+        "source_chain_low_power_requirements", "source_chain_negative_requirements",
+        "source_chain_conflict_requirements", "source_chain_not_applicable_requirements",
+        "source_chain_requirement_count", "source_chain_supported_count", "source_chain_unassessed_count",
+        "source_chain_low_power_count", "source_chain_negative_count", "source_chain_conflict_count",
+        "source_chain_not_applicable_count", "source_chain_requirement_statuses",
+    ]
+    compact_rows = [{field: str(row.get(field, "")) for field in compact_fields} for row in rows]
+    write_tsv(output_path, compact_rows, compact_fields)
+    requirement_rows: list[dict[str, str]] = []
+    for row in rows:
+        try:
+            details = json.loads(str(row.get("source_chain_requirement_details", "{}")) or "{}")
+        except json.JSONDecodeError:
+            details = {}
+        if not isinstance(details, Mapping):
+            continue
+        for name, detail in details.items():
+            if not isinstance(detail, Mapping):
+                continue
+            requirement_rows.append({
+                "sample_id": str(row.get("sample_id", "")),
+                "event_id": str(row.get("event_id", "")),
+                "peptide_id": str(row.get("peptide_id", "")),
+                "gene": str(row.get("gene", "")),
+                "source_chain_track": str(row.get("source_chain_track", "")),
+                "source_chain_confidence_tier": str(row.get("source_chain_confidence_tier", "")),
+                "requirement_name": str(name),
+                "requirement_label": str(detail.get("label", "")),
+                "requirement_status": str(detail.get("status", "")),
+                "requirement_core": "yes" if bool(detail.get("core", True)) else "no",
+                "fatal_if_negative": "yes" if bool(detail.get("fatal_if_negative", False)) else "no",
+                "fatal_if_conflict": "yes" if bool(detail.get("fatal_if_conflict", True)) else "no",
+                "reason_code": str(detail.get("reason_code", "")),
+                "reason": str(detail.get("reason", "")),
+                "source_fields": ",".join(str(value) for value in detail.get("source_fields", []) if str(value)),
+                "rule_version": str(row.get("source_chain_rule_version", "")),
+            })
+    write_tsv(requirements_path, requirement_rows)
+    return str(output_path), str(requirements_path)
+
+
+def _write_consensus_summary(
+    path: str | Path,
+    rows: list[dict[str, str]],
+    event_rows: list[dict[str, str]],
+    conflicts: list[dict[str, str]],
+) -> None:
+    grade_counts = Counter(row["evidence_grade"] for row in rows)
+    track_counts = Counter(row["evidence_track"] for row in rows)
+    source_chain_counts = Counter(row.get("source_chain_confidence_tier", "C3") for row in rows)
+    source_chain_track_counts = Counter(row.get("source_chain_track", "OTHER") for row in rows)
+    summary = [
+        {"metric": "peptide_hla_rows", "category": "overall", "value": str(len(rows))},
+        {"metric": "unique_peptide_hla_candidates", "category": "overall", "value": str(len({row.get('peptide_hla_id', '') for row in rows}))},
+        {"metric": "duplicate_peptide_hla_evidence_rows", "category": "overall", "value": str(sum(row.get("peptide_hla_representative") == "no" for row in rows))},
+        {"metric": "event_rows", "category": "overall", "value": str(len(event_rows))},
+        {"metric": "conflict_rows", "category": "overall", "value": str(len(conflicts))},
+        {"metric": "hard_failure_rows", "category": "overall", "value": str(sum(row["hard_failure"] == "yes" for row in rows))},
+        {"metric": "manual_review_rows", "category": "overall", "value": str(sum(row["manual_review_required"] == "yes" for row in rows))},
+    ]
+    summary.extend({"metric": grade, "category": "evidence_grade", "value": str(count)} for grade, count in sorted(grade_counts.items()))
+    summary.extend({"metric": track, "category": "evidence_track", "value": str(count)} for track, count in sorted(track_counts.items()))
+    summary.extend({"metric": tier, "category": "source_chain_tier", "value": str(count)} for tier, count in sorted(source_chain_counts.items()))
+    summary.extend({"metric": track, "category": "source_chain_track", "value": str(count)} for track, count in sorted(source_chain_track_counts.items()))
+    write_tsv(path, summary, ["metric", "category", "value"])
+
+
+def _write_comparison_markdown(
+    path: str | Path,
+    comparison_rows: list[dict[str, str]],
+    grade_counts: Mapping[str, int],
+    track_counts: Mapping[str, int],
+) -> None:
+    direction_counts = Counter(row["rank_shift_direction"] for row in comparison_rows)
+    n_rows = len(comparison_rows)
+    spearman = "NA"
+    if n_rows > 1:
+        distance = sum((int(row["legacy_weighted_rank"]) - int(row["evidence_rank"])) ** 2 for row in comparison_rows)
+        spearman = f"{1.0 - (6.0 * distance) / (n_rows * (n_rows * n_rows - 1)):.6f}"
+    overlaps = []
+    for top_n in (10, 20, 50, 100):
+        left = {row["peptide_id"] for row in comparison_rows if int(row["legacy_weighted_rank"]) <= top_n}
+        right = {row["peptide_id"] for row in comparison_rows if int(row["evidence_rank"]) <= top_n}
+        overlaps.append((top_n, len(left & right), len(left), len(right)))
+    hla_count = len({row.get("hla_allele", "") for row in comparison_rows if row.get("hla_allele")})
+    event_types = Counter(row.get("event_type", "UNASSESSED") or "UNASSESSED" for row in comparison_rows)
+    source_chain_counts = Counter(row.get("source_chain_confidence_tier", "C3") or "C3" for row in comparison_rows)
+    rna_supported = sum("CONFIRMED" in row.get("rna_support_state", "") or "SUPPORTED" in row.get("rna_support_state", "") for row in comparison_rows)
+    safety_complete = sum(row.get("safety_state") == "SAFETY_PASS" for row in comparison_rows)
+    hard_fail_top = sum(row.get("hard_failure") == "yes" and int(row["evidence_rank"]) <= 50 for row in comparison_rows)
+    manual_review = sum(row.get("manual_review_required") == "yes" for row in comparison_rows)
+    largest = sorted(
+        comparison_rows,
+        key=lambda row: (-abs(int(row["rank_shift_weighted_minus_consensus"])), row["peptide_id"]),
+    )[:20]
+    lines = [
+        "# Weighted baseline vs evidence consensus",
+        "",
+        "The weighted baseline remains unchanged. Consensus ranking is an independent research-only view.",
+        "",
+        "## Summary",
+        "",
+        "| Metric | Value |",
+        "| --- | ---: |",
+        f"| Candidate peptide-HLA rows | {len(comparison_rows)} |",
+        f"| Spearman weighted vs consensus rank | {spearman} |",
+        f"| Distinct restricting HLA alleles | {hla_count} |",
+        f"| RNA-supported candidates | {rna_supported} |",
+        f"| Safety-complete candidates | {safety_complete} |",
+        f"| Hard-fail candidates in consensus Top50 | {hard_fail_top} |",
+        f"| Manual-review candidates | {manual_review} |",
+        *[f"| Top{top_n} overlap | {overlap} (weighted={left_n}, consensus={right_n}) |" for top_n, overlap, left_n, right_n in overlaps],
+        *[f"| Rank shift: {key} | {value} |" for key, value in sorted(direction_counts.items())],
+        *[f"| Evidence grade {key} | {value} |" for key, value in sorted(grade_counts.items())],
+        *[f"| Source-chain tier {key} | {value} |" for key, value in sorted(source_chain_counts.items())],
+        *[f"| Track {key} | {value} |" for key, value in sorted(track_counts.items())],
+        *[f"| Event type {key} | {value} |" for key, value in sorted(event_types.items())],
+        "",
+        "## Largest absolute rank shifts",
+        "",
+        "| Peptide ID | Event | Gene | Weighted rank | Consensus rank | Shift | Grade | Track |",
+        "| --- | --- | --- | ---: | ---: | ---: | --- | --- |",
+    ]
+    lines.extend(
+        "| {peptide_id} | {event_id} | {gene} | {legacy_weighted_rank} | {evidence_rank} | {rank_shift_weighted_minus_consensus} | {evidence_grade} | {evidence_track} |".format(**row)
+        for row in largest
+    )
+    Path(path).write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _write_run_manifest(
+    path: str | Path,
+    comprehensive_tsv: str | Path,
+    rules: Mapping[str, Any],
+    result: Mapping[str, Any],
+) -> None:
+    rules_json = json.dumps(rules, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+    outputs = {
+        key.removeprefix("output_"): {
+            "path": str(value),
+            "sha256": _sha256(value),
+            "size_bytes": Path(value).stat().st_size,
+        }
+        for key, value in result.items()
+        if key.startswith("output_") and value and Path(value).is_file() and Path(value) != Path(path)
+    }
+    payload = {
+        "schema_version": "1.0",
+        "generated_at": datetime.datetime.now(datetime.UTC).isoformat().replace("+00:00", "Z"),
+        "algorithm": "discrete_state_grade_track_pareto_source_chain_v3" if _source_chain_integration_mode(rules) == "integrated" else "discrete_state_grade_track_pareto_v2_source_chain_annotation",
+        "status": rules.get("metadata", {}).get("status", "PROVISIONAL_RESEARCH_ONLY"),
+        "rules_name": rules.get("metadata", {}).get("name", ""),
+        "rules_version": rules.get("metadata", {}).get("version", ""),
+        "rules_sha256": hashlib.sha256(rules_json.encode()).hexdigest(),
+        "input": {
+            "comprehensive_peptide_evidence": str(comprehensive_tsv),
+            "sha256": _sha256(comprehensive_tsv),
+            "size_bytes": Path(comprehensive_tsv).stat().st_size,
+        },
+        "counts": {
+            "peptide_hla_rows": result["rows"],
+            "unique_peptide_hla_candidates": result.get("unique_peptide_hla_candidates", result["rows"]),
+            "duplicate_peptide_hla_evidence_rows": result.get("duplicate_peptide_hla_evidence_rows", 0),
+            "event_rows": result["events"],
+            "conflict_rows": result["conflicts"],
+            "evidence_grades": result["grade_counts"],
+            "tracks": result["track_counts"],
+            "source_chain_tiers": result.get("source_chain_counts", {}),
+            "source_chain_tracks": result.get("source_chain_track_counts", {}),
+        },
+        "source_chain": {
+            "enabled": _source_chain_enabled(rules),
+            "integration_mode": _source_chain_integration_mode(rules),
+            "rule_version": _source_chain_config(rules).get("rule_version", "source-chain-v1.0"),
+            "include_in_pareto": bool(_source_chain_config(rules).get("include_in_pareto", False)),
+        },
+        "legacy_ranking_modified": False,
+        "outputs": outputs,
+    }
+    Path(path).write_text(json.dumps(payload, indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
+
+
+def rank_evidence_consensus(
+    comprehensive_tsv: str | Path,
+    output_peptides_tsv: str | Path,
+    output_events_tsv: str | Path,
+    output_states_tsv: str | Path,
+    output_conflicts_tsv: str | Path,
+    rules: Mapping[str, Any],
+    provenance_json: str | Path | None = None,
+) -> dict[str, Any]:
+    """Run the independent provisional evidence-consensus ranking."""
+
+    source_rows = read_tsv(comprehensive_tsv)
+    original_fields = list(source_rows[0]) if source_rows else []
+    rows: list[dict[str, str]] = []
+    states: list[dict[str, str]] = []
+    conflicts: list[dict[str, str]] = []
+    for legacy_rank, source in enumerate(source_rows, 1):
+        normalized, records = _normalized_row(source, rules, legacy_rank)
+        normalized.update(candidate_identity(normalized))
+        rows.append(normalized)
+        states.append(records[0])
+        conflicts.extend(records[1:])
+    _assign_pareto(rows, rules)
+    for row in rows:
+        row["evidence_rank_key"] = _build_evidence_rank_key(row)
+    rows.sort(key=lambda row: _rank_key(row, rules))
+    pair_members: dict[str, list[dict[str, str]]] = defaultdict(list)
+    for row in rows:
+        pair_members[row["peptide_hla_id"]].append(row)
+    pair_rank = 0
+    pair_rank_by_id: dict[str, int] = {}
+    tracks: Counter[str] = Counter()
+    for rank, row in enumerate(rows, 1):
+        row["evidence_rank"] = str(rank)
+        pair_id = row["peptide_hla_id"]
+        if pair_id not in pair_rank_by_id:
+            pair_rank += 1
+            pair_rank_by_id[pair_id] = pair_rank
+            representative = "yes"
+        else:
+            representative = "no"
+        members = pair_members[pair_id]
+        row["peptide_hla_rank"] = str(pair_rank_by_id[pair_id])
+        row["peptide_hla_representative"] = representative
+        row["peptide_hla_duplicate_count"] = str(len(members))
+        row["peptide_hla_member_event_ids"] = ";".join(sorted({
+            str(member.get("event_id") or "").strip() for member in members
+            if str(member.get("event_id") or "").strip()
+        }))
+        row["peptide_hla_member_protein_change_ids"] = ";".join(sorted({
+            member["protein_change_identity_id"] for member in members
+        }))
+        tracks[row["evidence_track"]] += 1
+        row["track_rank"] = str(tracks[row["evidence_track"]])
+
+    peptide_fields = original_fields + [field for field in CONSENSUS_FIELDS if field not in original_fields]
+    write_tsv(output_peptides_tsv, rows, peptide_fields)
+    write_tsv(output_states_tsv, states)
+    write_tsv(output_conflicts_tsv, conflicts, CONFLICT_FIELDS)
+    event_rows = _event_output(rows, bool(rules.get("output", {}).get("event_deduplicate", True)))
+    write_tsv(output_events_tsv, event_rows)
+    output_dir = Path(output_peptides_tsv).parent
+    source_chain_path, source_chain_requirements_path = _write_source_chain_outputs(output_dir, rows)
+    comparison_rows = _comparison_rows(rows)
+    comparison_path = output_dir / "ranking_compare_weighted_vs_consensus.tsv"
+    comparison_legacy_path = output_dir / "weighted_vs_consensus_comparison.tsv"
+    comparison_md_path = output_dir / "ranking_compare_weighted_vs_consensus.md"
+    summary_path = output_dir / "evidence_consensus_summary.tsv"
+    run_manifest_path = output_dir / "evidence_consensus_run.json"
+    all_tool_results_path = output_dir / "all_tool_results.tsv"
+    write_tsv(comparison_path, comparison_rows)
+    _materialize_alias(comparison_path, comparison_legacy_path)
+    grade_counts = dict(sorted(Counter(row["evidence_grade"] for row in rows).items()))
+    track_counts = dict(sorted(Counter(row["evidence_track"] for row in rows).items()))
+    source_chain_counts = dict(sorted(Counter(row.get("source_chain_confidence_tier", "C3") for row in rows).items()))
+    source_chain_track_counts = dict(sorted(Counter(row.get("source_chain_track", "OTHER") for row in rows).items()))
+    _write_consensus_summary(summary_path, rows, event_rows, conflicts)
+    _write_comparison_markdown(comparison_md_path, comparison_rows, grade_counts, track_counts)
+    all_tool_results, all_tool_results_manifest = _write_canonical_all_tool_results(
+        comprehensive_tsv, all_tool_results_path, ranked_rows=rows,
+    )
+    result = {
+        "rows": len(rows),
+        "unique_peptide_hla_candidates": len(pair_members),
+        "duplicate_peptide_hla_evidence_rows": len(rows) - len(pair_members),
+        "events": len(event_rows),
+        "conflicts": len(conflicts),
+        "output_peptides": str(output_peptides_tsv),
+        "output_events": str(output_events_tsv),
+        "output_states": str(output_states_tsv),
+        "output_conflicts": str(output_conflicts_tsv),
+        "output_comparison": str(comparison_path),
+        "output_comparison_legacy": str(comparison_legacy_path),
+        "output_comparison_markdown": str(comparison_md_path),
+        "output_summary": str(summary_path),
+        "output_run_manifest": str(run_manifest_path),
+        "output_all_tool_results": all_tool_results,
+        "output_all_tool_results_manifest": all_tool_results_manifest,
+        "output_source_chain": source_chain_path,
+        "output_source_chain_requirements": source_chain_requirements_path,
+        "grade_counts": grade_counts,
+        "track_counts": track_counts,
+        "source_chain_counts": source_chain_counts,
+        "source_chain_track_counts": source_chain_track_counts,
+        "legacy_ranking_modified": False,
+    }
+    _write_run_manifest(run_manifest_path, comprehensive_tsv, rules, result)
+    if provenance_json:
+        _write_provenance(provenance_json, rules, result)
+    return result
+
+
+def build_evidence_consensus(
+    comprehensive_tsv: str | Path,
+    outdir: str | Path,
+    rules: Mapping[str, Any] | None = None,
+    *,
+    peptide_output: str | Path | None = None,
+    provenance_json: str | Path | None = None,
+    weighted_baseline_tsv: str | Path | None = None,
+) -> dict[str, Any]:
+    output_dir = Path(outdir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    effective_rules = rules or load_consensus_rules()
+    result = rank_evidence_consensus(
+        comprehensive_tsv,
+        peptide_output or output_dir / "ranked_peptides.evidence_consensus.tsv",
+        output_dir / "ranked_events.evidence_consensus.tsv",
+        output_dir / "evidence_states.tsv",
+        output_dir / "evidence_conflicts.tsv",
+        effective_rules,
+        provenance_json,
+    )
+    baseline_candidates = (
+        [Path(weighted_baseline_tsv)] if weighted_baseline_tsv else [
+            output_dir / "ranked_peptides.tsv",
+            output_dir / "ranked_peptides.cancer_annotated.tsv",
+            output_dir / "ranked_peptides.v03.tsv",
+        ]
+    )
+    baseline_source = next((path for path in baseline_candidates if path.is_file()), baseline_candidates[0])
+    if baseline_source.is_file():
+        standard_ranked = output_dir / "ranked_peptides.tsv"
+        if not standard_ranked.is_file():
+            result["output_ranked_peptides_compat"] = _materialize_alias(baseline_source, standard_ranked)
+        result["output_weighted_baseline"] = _materialize_alias(
+            baseline_source, output_dir / "ranked_peptides.weighted_baseline.tsv",
+        )
+        _write_run_manifest(result["output_run_manifest"], comprehensive_tsv, effective_rules, result)
+    return {
+        "rows": result["rows"],
+        "ranked_peptides": result["output_peptides"],
+        "ranked_events": result["output_events"],
+        "evidence_states": result["output_states"],
+        "evidence_conflicts": result["output_conflicts"],
+        "comparison": result["output_comparison"],
+        "comparison_legacy": result["output_comparison_legacy"],
+        "comparison_markdown": result["output_comparison_markdown"],
+        "summary": result["output_summary"],
+        "run_manifest": result["output_run_manifest"],
+        "all_tool_results": result["output_all_tool_results"],
+        "all_tool_results_manifest": result["output_all_tool_results_manifest"],
+        "source_chain_confidence": result["output_source_chain"],
+        "source_chain_requirements": result["output_source_chain_requirements"],
+        "source_chain_counts": result["source_chain_counts"],
+        "source_chain_track_counts": result["source_chain_track_counts"],
+        "ranked_peptides_compat": result.get("output_ranked_peptides_compat", str(output_dir / "ranked_peptides.tsv")),
+        "weighted_baseline": result.get("output_weighted_baseline", ""),
+        "grade_counts": result["grade_counts"],
+        "track_counts": result["track_counts"],
+        "legacy_ranking_modified": False,
+    }
+
+
+def rank_by_evidence_consensus(
+    input_tsv: str | Path,
+    output_tsv: str | Path,
+    rules: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Compatibility API that writes the complete bundle beside output_tsv."""
+
+    result = build_evidence_consensus(input_tsv, Path(output_tsv).parent, rules, peptide_output=output_tsv)
+    return {
+        "rows": result["rows"],
+        "output": result["ranked_peptides"],
+        **{key: value for key, value in result.items() if key not in {"rows", "ranked_peptides"}},
+    }

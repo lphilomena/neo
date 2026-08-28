@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "open-neo-run output",
+  "type": "object",
+  "required": ["schema_version", "skill", "status", "steps", "outputs"],
+  "properties": {
+    "schema_version": {"const": "open-neo-macro-skill-v1"},
+    "skill": {"const": "open-neo-run"},
+    "status": {"enum": ["PASS", "PASS_WITH_WARNINGS", "PARTIAL", "DRY_RUN", "QUEUED", "RUNNING", "BLOCKED", "FAILED", "UNSAFE", "APPROVAL_REQUIRED"]},
+    "steps": {"type": "array"},
+    "outputs": {"type": "object"}
+  }
+}

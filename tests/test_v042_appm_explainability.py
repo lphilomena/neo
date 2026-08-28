@@ -1,7 +1,7 @@
 
 from pathlib import Path
-from neoag_v03.appm_v2 import build_appm_2
-from neoag_v03.utils import read_tsv
+from neoag.appm_v2 import build_appm_2
+from neoag.utils import read_tsv
 
 
 def test_appm_v042_confidence_and_submodules(tmp_path):
