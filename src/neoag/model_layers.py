@@ -228,10 +228,18 @@ def expression_dimension_score(event: Mapping[str, Any], high_expression_tpm: fl
 def rna_evidence_metrics(event: Mapping[str, Any]) -> dict[str, str]:
     """Return event-type-aware RNA support, completeness, and a 0-1 score."""
     source = _norm(event.get("mutation_source")).upper()
+    event_type = _norm(event.get("event_type")).upper().replace("-", "_")
     consequence = _norm(event.get("peptide_consequence")).lower()
-    is_junction = consequence in {"fusion", "splice_junction"} and source != "INDEL"
-    if source == "SV" and ("fusion" in consequence or "junction" in consequence):
+    allele_event_types = {"SNV", "INDEL", "INSERTION", "DELETION", "MISSENSE"}
+    junction_event_types = {"FUSION", "SPLICE", "SPLICE_JUNCTION", "SV"}
+    if event_type in allele_event_types or source in allele_event_types:
+        # Explicit DNA event identity is authoritative. A stale consequence value
+        # must not turn an SNV/indel into a junction event after table merges.
+        is_junction = False
+    elif event_type in junction_event_types or source in junction_event_types:
         is_junction = True
+    else:
+        is_junction = consequence in {"fusion", "splice_junction"}
 
     alt = to_float(event.get("rna_alt_reads"), 0.0)
     depth_raw = _norm(event.get("rna_depth"))
@@ -267,7 +275,9 @@ def rna_evidence_metrics(event: Mapping[str, Any]) -> dict[str, str]:
         }
 
     evaluable_depth = to_float(event.get("rna_min_evaluable_depth"), 10.0)
-    assessed = depth > 0 or bool(_norm(event.get("rna_vaf_source")))
+    # A source file path only proves that RNA counting was attempted globally;
+    # it does not prove that this locus had evaluable coverage.
+    assessed = depth > 0
     alt_score = clamp(alt / 5.0)
     vaf_score = clamp(vaf / 0.10)
     score = 0.65 * alt_score + 0.35 * vaf_score

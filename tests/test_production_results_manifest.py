@@ -7,7 +7,7 @@ import tomllib
 from pathlib import Path
 
 from neoag.utils import read_tsv
-from neoag.production_runner import _materialize_reusable_immunogenicity_outputs
+from neoag.production_runner import _materialize_reusable_immunogenicity_outputs, _outputs_ready
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -25,6 +25,25 @@ def make_star_index(path: Path) -> Path:
         write(path / name, "fixture\n")
     write(path / "genomeParameters.txt", "versionGenome 2.7.11b\nsjdbOverhang 149\n")
     return path
+
+
+def test_outputs_ready_rejects_existing_table_with_blank_required_fields(tmp_path):
+    purity = write(
+        tmp_path / "recommended_purity.tsv",
+        "sample_id\tpurity\tploidy\nS1\t\t\n",
+    )
+    outputs = {"purity": str(purity)}
+    assert not _outputs_ready(
+        outputs,
+        data_row_outputs=["purity"],
+        required_output_fields=["purity:purity", "purity:ploidy"],
+    )
+    purity.write_text("sample_id\tpurity\tploidy\nS1\t0.61\t2.0\n", encoding="utf-8")
+    assert _outputs_ready(
+        outputs,
+        data_row_outputs=["purity"],
+        required_output_fields=["purity:purity", "purity:ploidy"],
+    )
 
 
 def test_generator_builds_all_three_upstream_consensus_stages(tmp_path):
@@ -117,6 +136,50 @@ def test_generator_filters_splice_candidates_before_production_scoring(tmp_path)
     splice = manifest["stages"]["splice_candidates"]
     assert "filter_splice_production_candidates.py" in splice["command"]
     assert splice["outputs"]["raw_peptides"].endswith("production_selected/raw_peptides.tsv")
+
+
+def test_generator_enriches_splice_qc_from_star_and_rna_bam(tmp_path):
+    hla = write(tmp_path / "hla.txt", "HLA-A*02:01\n")
+    facets = write(tmp_path / "facets/facets_purity.txt", "purity\t0.60\n").parent
+    ascat = write(tmp_path / "ascat/ascat_summary.tsv", "sample_id\tpurity\tploidy\nS1\t0.64\t2.1\n").parent
+    lohhla = write(tmp_path / "lohhla/hla_loh.tsv", "hla_allele\tloh_status\nHLA-A*02:01\tretained\n")
+    spechla_loh = write(tmp_path / "spechla_loh/hla_loh.tsv", "hla_allele\tloh_status\nHLA-A*02:01\tretained\n")
+    star_sj = write(tmp_path / "star/SJ.out.tab", "chr1\t10\t20\t1\t1\t0\t12\t0\t25\n")
+    rna_bam = write(tmp_path / "star/Aligned.sortedByCoord.out.bam", "fixture\n")
+    write(Path(str(rna_bam) + ".bai"), "fixture\n")
+    rna_vaf = write(tmp_path / "rna_alt_vaf.tsv", "chrom\tpos\trna_depth\nchr1\t10\t20\n")
+    snaf = write(tmp_path / "snaf.tsv", "event_id\tpeptide\thla_allele\tbinding_rank\nE1\tACDEFGHIK\tHLA-A*02:01\t0.8\n")
+    normal = write(tmp_path / "normal_junctions.tsv", "junction_id\nchr1:10-20:+\n")
+    write(Path(str(normal) + ".sqlite"), "fixture\n")
+    output = tmp_path / "production.toml"
+    subprocess.run([
+        sys.executable, str(ROOT / "scripts/generate_production_from_results_manifest.py"),
+        "--project-root", str(ROOT), "--sample-id", "S1", "--outdir", str(tmp_path / "run"),
+        "--output", str(output), "--hla-file", str(hla), "--facets", str(facets),
+        "--ascat", str(ascat), "--lohhla", str(lohhla), "--spechla-loh", str(spechla_loh),
+        "--star-sj", str(star_sj), "--snaf", str(snaf), "--rna-bam", str(rna_bam),
+        "--rna-vaf", str(rna_vaf), "--normal-junctions", str(normal),
+    ], check=True)
+    manifest = tomllib.loads(output.read_text(encoding="utf-8"))
+    splice = manifest["stages"]["splice_candidates"]
+    assert "build_splice_junction_qc_from_star_bam.py" in splice["command"]
+    assert "--caller-consensus" in splice["command"]
+    assert "junction_qc/raw_events.enriched.tsv" in splice["command"]
+    assert splice["outputs"]["junction_read_qc"].endswith("splice_junction_qc.enriched.tsv")
+    assert "rna_bam_input" in splice["depends_on"]
+
+    output_without_normal = tmp_path / "production-without-normal.toml"
+    subprocess.run([
+        sys.executable, str(ROOT / "scripts/generate_production_from_results_manifest.py"),
+        "--project-root", str(ROOT), "--sample-id", "S1", "--outdir", str(tmp_path / "run-no-normal"),
+        "--output", str(output_without_normal), "--hla-file", str(hla), "--facets", str(facets),
+        "--ascat", str(ascat), "--lohhla", str(lohhla), "--spechla-loh", str(spechla_loh),
+        "--star-sj", str(star_sj), "--snaf", str(snaf), "--rna-bam", str(rna_bam),
+        "--rna-vaf", str(rna_vaf),
+    ], check=True)
+    command_without_normal = tomllib.loads(output_without_normal.read_text(encoding="utf-8"))["stages"]["splice_candidates"]["command"]
+    assert "build_splice_junction_qc_from_star_bam.py" in command_without_normal
+    assert "--normal-junction-sqlite" not in command_without_normal
 
 
 def test_generator_accepts_facets_and_ascat_when_other_purity_tools_failed(tmp_path):

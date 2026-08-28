@@ -263,9 +263,20 @@ def _has_data_row(path: Path) -> bool:
     return False
 
 
+def _has_nonempty_field(path: Path, field: str) -> bool:
+    if not path.is_file():
+        return False
+    with path.open("r", encoding="utf-8", errors="replace", newline="") as handle:
+        reader = csv.DictReader(handle, delimiter="\t")
+        if not reader.fieldnames or field not in reader.fieldnames:
+            return False
+        return any(str(row.get(field) or "").strip() for row in reader)
+
+
 def _outputs_ready(
     outputs: dict[str, Any],
     data_row_outputs: list[str] | None = None,
+    required_output_fields: list[str] | None = None,
 ) -> bool:
     paths = _flatten_paths(outputs)
     if not paths or not all(path.exists() for path in paths):
@@ -275,6 +286,15 @@ def _outputs_ready(
         values = value if isinstance(value, list) else [value]
         if not values or not all(
             isinstance(item, str) and item and _has_data_row(Path(item))
+            for item in values
+        ):
+            return False
+    for requirement in required_output_fields or []:
+        output_key, separator, field = str(requirement).partition(":")
+        value = outputs.get(output_key)
+        values = value if isinstance(value, list) else [value]
+        if not separator or not field or not values or not all(
+            isinstance(item, str) and item and _has_nonempty_field(Path(item), field)
             for item in values
         ):
             return False
@@ -363,6 +383,7 @@ def _run_stage(
     source = str(spec.get("source") or "")
     outputs = _expand_value(spec.get("outputs") or {}, context)
     data_row_outputs = [str(value) for value in (spec.get("data_row_outputs") or [])]
+    required_output_fields = [str(value) for value in (spec.get("required_output_fields") or [])]
     command = _expand(str(spec.get("command") or ""), context).strip()
     log_path = logs_dir / f"{name}.log"
     started_at = _utc_now()
@@ -373,7 +394,7 @@ def _run_stage(
             resources.cpus, resources.memory_gb, started_at, _utc_now(),
         )
 
-    if _outputs_ready(outputs, data_row_outputs) and not force:
+    if _outputs_ready(outputs, data_row_outputs, required_output_fields) and not force:
         return result("REUSED")
     if not execute:
         status = "PLANNED" if command else ("BLOCKED" if required else "LOW_CONFIDENCE")
@@ -410,7 +431,7 @@ def _run_stage(
     if proc.returncode != 0:
         status = "FAILED" if required else "LOW_CONFIDENCE"
         return result(status, f"command returned {proc.returncode}")
-    if not _outputs_ready(outputs, data_row_outputs):
+    if not _outputs_ready(outputs, data_row_outputs, required_output_fields):
         status = "FAILED" if required else "LOW_CONFIDENCE"
         return result(status, "command completed but declared outputs are missing or required tables contain no data rows")
     return result("PASS")

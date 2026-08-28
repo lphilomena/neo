@@ -2,6 +2,7 @@ from __future__ import annotations
 from pathlib import Path
 import gzip
 import os
+import shutil
 import tomllib
 
 from ..adapters.pvacseq_enrich import enrich_pvacseq_outputs, pvacseq_enrich_enabled
@@ -14,6 +15,7 @@ from ..adapters.variant_peptide_adapter import (
 from ..config import load_profile
 from ..input_router import resolve_entry_mode
 from ..preflight import vcf_preflight
+from ..splice_prefilter import prefilter_splice_peptides
 from .registry import RunContext, ROOT
 from .runner import run_tool
 from ..utils import write_tsv
@@ -314,6 +316,27 @@ def run_upstream(config_path: str | Path, outdir: str | Path | None = None) -> d
                 ["status", "expected_sources", "detected_sources", "missing_sources"],
             )
             outputs["peptide_source_coverage"] = str(coverage_path)
+
+    if entry_mode == "intermediates" and ctx.raw_peptides and Path(ctx.raw_peptides).is_file():
+        source_events = _path_or_none(inputs_cfg.get("raw_events"))
+        if source_events and source_events.is_file():
+            filtered_events = parsed / "raw_events.tsv"
+            filtered_peptides = parsed / "raw_peptides.tsv"
+            if source_events.resolve() != filtered_events.resolve():
+                shutil.copy2(source_events, filtered_events)
+            if Path(ctx.raw_peptides).resolve() != filtered_peptides.resolve():
+                shutil.copy2(ctx.raw_peptides, filtered_peptides)
+            summary = prefilter_splice_peptides(
+                filtered_peptides,
+                load_profile(profile),
+                parsed,
+                raw_events=filtered_events,
+            )
+            ctx.raw_peptides = filtered_peptides
+            outputs["raw_events"] = str(filtered_events)
+            outputs["raw_peptides"] = str(filtered_peptides)
+            outputs["splice_prefilter_funnel"] = str(summary["funnel"])
+            outputs["splice_prefilter_decisions"] = str(summary["decisions"])
 
     if "netmhcpan" in enabled:
         p = tools_dir / "netmhcpan.xls"

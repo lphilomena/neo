@@ -1085,6 +1085,7 @@ def test_rna_fastq_profile_generator_emits_full_dag(tmp_path: Path):
     assert "--outdir {outdir}/rna/expression" in text
     assert "--outdir {outdir}/rna/rsem_expression" in text
     assert "normalize_rna_fusion_splice.py" in text
+    assert "build_splice_junction_qc_from_star_bam.py" in text
     assert (tmp_path / "rna_fusion_splice.hla.txt").is_file()
     parsed = load_production_manifest(result["manifest"])
     assert parsed["run"]["profile"] == "rna_fusion_splice_v1"
@@ -1094,12 +1095,37 @@ def test_rna_fastq_profile_generator_emits_full_dag(tmp_path: Path):
     assert "--hla-file" in fusion_command
     assert "--require-nonempty-peptides" in fusion_command
     assert parsed["stages"]["fusion_peptide_generation"]["data_row_outputs"] == ["raw_peptides"]
+    assert parsed["stages"]["splice_candidate_normalization"]["outputs"]["raw_peptides"].endswith(
+        "junction_qc/raw_peptides.enriched.tsv"
+    )
     planned = run_production(
         result["manifest"], project_root=Path.cwd(), outdir=tmp_path / "production-plan"
     )
     assert {stage.name for stage in planned.stages} >= {
         "rna_alignment", "easyfuse_discovery", "splice_candidate_normalization"
     }
+
+
+def test_rna_fastq_profile_enriches_splice_qc_from_star_and_bam(tmp_path: Path):
+    inputs = _rna_profile_inputs(tmp_path)
+    normal_junctions = tmp_path / "normal_junctions.tsv"
+    normal_junctions.write_text("junction_id\nchr1:10-20:+\n", encoding="utf-8")
+    inputs["normal_junctions"] = str(normal_junctions)
+
+    result = generate_rna_fusion_splice_manifest(
+        inputs,
+        tmp_path / "profile-with-splice-qc.toml",
+        project_root=Path.cwd(),
+        outdir=tmp_path / "run",
+    )
+    parsed = load_production_manifest(result["manifest"])
+    splice = parsed["stages"]["splice_candidate_normalization"]
+    assert "--star-sj {outdir}/rna/star/SJ.out.tab" in splice["command"]
+    assert "build_normal_junction_index.py" in splice["command"]
+    assert "build_splice_junction_qc_from_star_bam.py" in splice["command"]
+    assert splice["outputs"]["raw_events"].endswith("junction_qc/raw_events.enriched.tsv")
+    assert splice["outputs"]["raw_peptides"].endswith("junction_qc/raw_peptides.enriched.tsv")
+    assert splice["outputs"]["junction_read_qc"].endswith("splice_junction_qc.enriched.tsv")
 
 
 
@@ -1277,8 +1303,53 @@ def test_capability_planner_builds_dna_hla_purity_loh_and_ranking_dag(tmp_path: 
     assert "configs/ranking/sarcoma_evidence_consensus_v3_source_chain.toml" in text
     assert 'required_presentation_predictors = ["netmhcpan", "mhcflurry", "netmhcstabpan", "netchop"]' in text
     assert set(["facets", "sequenza", "purple", "lohhla", "spechla", "netmhcpan", "mhcflurry"]) <= set(plan.selected_tools)
+    manifest = load_production_manifest(plan.manifest)
+    assert manifest["run"]["required_tool_groups"]["purity_cnv"]["tools"] == ["facets", "sequenza", "purple"]
+    assert manifest["run"]["required_tool_groups"]["hla_loh"]["tools"] == ["lohhla", "spechla"]
+    assert manifest["run"]["required_tool_groups"]["hla_loh"]["min_successful"] == 1
     rows = list(csv.DictReader(Path(plan.outputs["capability_decisions"]).open(), delimiter="\t"))
     assert any(row["domain"] == "purity_cnv" and row["status"] == "SELECTED" for row in rows)
+
+
+def test_capability_planner_discovers_complete_vep_plugin_pair(tmp_path: Path, monkeypatch):
+    inputs, tools, refs = _automatic_plan_inputs(tmp_path)
+    tools_data = json.loads(tools.read_text(encoding="utf-8"))
+    tools_data["tools"]["vep"] = {"executable": "/bin/true"}
+    tools.write_text(json.dumps(tools_data), encoding="utf-8")
+    asset_root = tmp_path / "assets"
+    plugins = asset_root / "work/vep_plugins"
+    plugins.mkdir(parents=True)
+    for filename in ("Wildtype.pm", "Frameshift.pm"):
+        (plugins / filename).write_text("package fixture;\n", encoding="utf-8")
+    monkeypatch.setenv("OPEN_NEO_REFERENCE_ROOT", str(asset_root))
+
+    plan = build_automatic_production_plan(
+        inputs, tmp_path / "vep-plugins.toml", project_root=Path.cwd(),
+        outdir=tmp_path / "run", tools_manifest=tools, reference_manifest=refs,
+    )
+    command = load_production_manifest(plan.manifest)["stages"]["snv_indel_candidates"]["command"]
+    assert f"--vep-plugins {plugins}" in command
+    assert "--vep-plugins  --" not in command
+    assert "--vep-bin" in command
+
+
+def test_capability_planner_release_gate_uses_only_selected_optional_tools(tmp_path: Path):
+    inputs, tools, refs = _automatic_plan_inputs(tmp_path)
+    tools_data = json.loads(tools.read_text(encoding="utf-8"))
+    tools_data["tools"]["sequenza"]["executable"] = "/nonexistent/sequenza"
+    tools.write_text(json.dumps(tools_data), encoding="utf-8")
+
+    plan = build_automatic_production_plan(
+        inputs, tmp_path / "without-sequenza.toml", project_root=Path.cwd(),
+        outdir=tmp_path / "run", tools_manifest=tools, reference_manifest=refs,
+    )
+    manifest = load_production_manifest(plan.manifest)
+    purity_rule = manifest["run"]["required_tool_groups"]["purity_cnv"]
+    hla_loh_rule = manifest["run"]["required_tool_groups"]["hla_loh"]
+    assert purity_rule["tools"] == ["facets", "purple"]
+    assert purity_rule["min_successful"] == 2
+    assert hla_loh_rule["tools"] == ["lohhla", "spechla"]
+    assert hla_loh_rule["min_successful"] == 1
 
 
 def test_capability_planner_resolves_explicit_hmftools_environment(

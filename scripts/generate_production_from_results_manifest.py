@@ -52,6 +52,29 @@ def discover_vep_cache(reference_fasta: str, normal_junctions: str | None = None
     return ""
 
 
+def discover_vep_plugins(
+    reference_fasta: str,
+    vep_cache: str,
+    explicit: str | None = None,
+) -> str:
+    candidates = [
+        explicit or "",
+        os.environ.get("NEOAG_VEP_PLUGINS", ""),
+        str(Path(os.environ["OPEN_NEO_ASSET_ROOT"]) / "work/vep_plugins")
+        if os.environ.get("OPEN_NEO_ASSET_ROOT") else "",
+        str(Path(os.environ["OPEN_NEO_REFERENCE_ROOT"]) / "work/vep_plugins")
+        if os.environ.get("OPEN_NEO_REFERENCE_ROOT") else "",
+    ]
+    for source in (reference_fasta, vep_cache):
+        if source:
+            candidates.extend(str(parent / "work/vep_plugins") for parent in Path(source).resolve().parents)
+    for value in dict.fromkeys(item for item in candidates if item):
+        path = Path(value).expanduser()
+        if all((path / filename).is_file() for filename in ("Wildtype.pm", "Frameshift.pm")):
+            return str(path.resolve())
+    return ""
+
+
 def resolve_result_file(path: str | None, label: str, names: tuple[str, ...]) -> str:
     resolved = Path(require(path, label))
     if resolved.is_file():
@@ -142,6 +165,8 @@ def main() -> int:
     )
     ap.add_argument("--reference-fasta")
     ap.add_argument("--vep-cache", help="VEP cache root containing homo_sapiens/<version>_GRCh38")
+    ap.add_argument("--vep-plugins", help="Directory containing Wildtype.pm and Frameshift.pm")
+    ap.add_argument("--vep-bin", default=os.environ.get("NEOAG_VEP_BIN", ""), help="Installed VEP executable or wrapper")
     ap.add_argument("--hla-file"); ap.add_argument("--optitype"); ap.add_argument("--spechla-typing"); ap.add_argument("--hla-la"); ap.add_argument("--somatic-vcf")
     ap.add_argument("--tumor-sample-name", default="", help="Tumor sample column in a multi-sample somatic VCF")
     ap.add_argument("--normal-sample-name", default="", help="Matched-normal sample column in a multi-sample somatic VCF")
@@ -322,18 +347,7 @@ def main() -> int:
     rna_vaf = ""
     rna_bam = ""
     rna_bam_dependency: list[str] = []
-    if args.rna_vaf:
-        rna_vaf = require(args.rna_vaf, "RNA VAF evidence")
-        stage(
-            lines,
-            "rna_alt_vaf_input",
-            source="RNA_ALLELE_COUNTS",
-            outputs={"rna_vaf": rna_vaf},
-            required=False,
-        )
-    elif args.rna_bam:
-        if not args.somatic_vcf:
-            raise SystemExit("--rna-bam requires --somatic-vcf for RNA allele counting")
+    if args.rna_bam:
         rna_bam = require(args.rna_bam, "RNA BAM")
         bam_path = Path(rna_bam)
         existing_bai = next((candidate for candidate in (
@@ -350,6 +364,18 @@ def main() -> int:
             required=True,
         )
         rna_bam_dependency = ["rna_bam_input"]
+    if args.rna_vaf:
+        rna_vaf = require(args.rna_vaf, "RNA VAF evidence")
+        stage(
+            lines,
+            "rna_alt_vaf_input",
+            source="RNA_ALLELE_COUNTS",
+            outputs={"rna_vaf": rna_vaf},
+            required=False,
+        )
+    elif rna_bam:
+        if not args.somatic_vcf:
+            raise SystemExit("--rna-bam requires --somatic-vcf for RNA allele counting")
         rna_vaf = "{outdir}/rna/rna_alt_vaf.tsv"
         allele_command = (
             f"PYTHONPATH={q(root / 'src')} {q(sys.executable)} "
@@ -480,12 +506,15 @@ def main() -> int:
         reference_env = f"NEOAG_REFERENCE_FASTA={q(reference_fasta)} " if reference_fasta else ""
         vep_cache = discover_vep_cache(reference_fasta, args.normal_junctions, args.vep_cache)
         vep_cache_arg = f" --vep-cache {q(vep_cache)}" if vep_cache and Path(vep_cache).is_dir() else ""
+        vep_plugins = discover_vep_plugins(reference_fasta, vep_cache, args.vep_plugins)
+        vep_plugins_arg = f" --vep-plugins {q(vep_plugins)}" if vep_plugins else ""
+        vep_bin_arg = f" --vep-bin {q(args.vep_bin)}" if args.vep_bin else ""
         sample_role_args = ""
         if args.tumor_sample_name:
             sample_role_args += f" --tumor-sample-name {q(args.tumor_sample_name)}"
         if args.normal_sample_name:
             sample_role_args += f" --normal-sample-name {q(args.normal_sample_name)}"
-        command = f"{reference_env}PYTHONPATH={q(root / 'src')} {q(sys.executable)} {q(root / 'scripts/run_candidate_upstream.py')} --mode snv --input {q(require(args.somatic_vcf, 'somatic VCF'))} --hla-file {q(hla)} --sample-id {q(args.sample_id)}{sample_role_args} --outdir {{outdir}}/branches/snv{vep_cache_arg}"
+        command = f"{reference_env}PYTHONPATH={q(root / 'src')} {q(sys.executable)} {q(root / 'scripts/run_candidate_upstream.py')} --mode snv --input {q(require(args.somatic_vcf, 'somatic VCF'))} --hla-file {q(hla)} --sample-id {q(args.sample_id)}{sample_role_args} --outdir {{outdir}}/branches/snv{vep_cache_arg}{vep_plugins_arg}{vep_bin_arg}"
         stage(lines, "snv_indel_candidates", source="SNV_INDEL", command=command, outputs={"raw_events": "{outdir}/branches/snv/parsed/raw_events.tsv", "raw_peptides": "{outdir}/branches/snv/parsed/raw_peptides.tsv"}, depends=hla_dependency)
         candidate_stages.append("snv_indel_candidates")
     if args.easyfuse or args.easyfuse_unfiltered or args.star_fusion or args.arriba or args.fusioncatcher or args.jaffal or args.fusion_caller_root:

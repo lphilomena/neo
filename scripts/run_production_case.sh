@@ -24,6 +24,8 @@ Usage:
     [--asset-root <liup_neodata4git>] \
     [--reference-fasta <GRCh38.fasta>] \
     [--vep-cache <VEP cache root>] \
+    [--vep-plugins <directory containing Wildtype.pm and Frameshift.pm>] \
+    [--vep-bin <installed VEP executable or wrapper>] \
     [--gencode-gtf <matching.gtf; also used for exact splice strand/origin reconstruction>] \
     [--hla-file <consensus HLA allele file>] \
     [--sequenza <result_file_or_dir>] \
@@ -51,7 +53,10 @@ Usage:
     [--max-parallel-stages <N>] \
     [--fusion-caller-root <completed_caller_results_dir>] \
     [--star-chimeric <STAR/Chimeric.out.junction; repeatable>] \
+    [--star-sj <STAR/SJ.out.tab for splice evidence>] \
     [--normal-readthrough <normal_readthrough.tsv>] \
+    [--snaf <completed snaf_candidates.tsv>] \
+    [--splicemutr <completed SpliceMutr result directory>] \
     [--prime-evidence <prime_evidence.tsv>] \
     [--bigmhc-evidence <bigmhc_im_evidence.tsv>] \
     [--deepimmuno-evidence <deepimmuno_evidence.tsv>] \
@@ -89,6 +94,8 @@ OUTDIR=""
 SOMATIC_VCF=""
 REFERENCE_FASTA=""
 VEP_CACHE="${NEOAG_VEP_CACHE:-}"
+VEP_PLUGINS="${NEOAG_VEP_PLUGINS:-}"
+VEP_BIN="${NEOAG_VEP_BIN:-}"
 GENCODE_GTF=""
 HLA_FILE=""
 SEQUENZA=""
@@ -117,7 +124,10 @@ TOTAL_MEMORY_GB="${NEOAG_TOTAL_MEMORY_GB:-0}"
 MAX_PARALLEL_STAGES="${NEOAG_MAX_PARALLEL_STAGES:-3}"
 FUSION_CALLER_ROOTS=()
 STAR_CHIMERIC_FILES=()
+STAR_SJ=""
 NORMAL_READTHROUGH=""
+SNAF_RESULT=""
+SPLICEMUTR_RESULT=""
 PRIME_EVIDENCE=""
 BIGMHC_EVIDENCE=""
 DEEPIMMUNO_EVIDENCE=""
@@ -136,6 +146,8 @@ while [[ $# -gt 0 ]]; do
     --asset-root) ASSET="$2"; CLI_ASSET="$2"; shift 2 ;;
     --reference-fasta) REFERENCE_FASTA="$2"; shift 2 ;;
     --vep-cache) VEP_CACHE="$2"; shift 2 ;;
+    --vep-plugins) VEP_PLUGINS="$2"; shift 2 ;;
+    --vep-bin) VEP_BIN="$2"; shift 2 ;;
     --gencode-gtf) GENCODE_GTF="$2"; shift 2 ;;
     --hla-file) HLA_FILE="$2"; shift 2 ;;
     --sequenza) SEQUENZA="$2"; shift 2 ;;
@@ -164,7 +176,10 @@ while [[ $# -gt 0 ]]; do
     --max-parallel-stages) MAX_PARALLEL_STAGES="$2"; shift 2 ;;
     --fusion-caller-root) FUSION_CALLER_ROOTS+=("$2"); shift 2 ;;
     --star-chimeric) STAR_CHIMERIC_FILES+=("$2"); shift 2 ;;
+    --star-sj) STAR_SJ="$2"; shift 2 ;;
     --normal-readthrough) NORMAL_READTHROUGH="$2"; shift 2 ;;
+    --snaf) SNAF_RESULT="$2"; shift 2 ;;
+    --splicemutr) SPLICEMUTR_RESULT="$2"; shift 2 ;;
     --prime-evidence) PRIME_EVIDENCE="$2"; shift 2 ;;
     --bigmhc-evidence) BIGMHC_EVIDENCE="$2"; shift 2 ;;
     --deepimmuno-evidence) DEEPIMMUNO_EVIDENCE="$2"; shift 2 ;;
@@ -195,14 +210,17 @@ TOTAL_CPUS="${TOTAL_CPUS:-$RNA_THREADS}"
     exit 2
   }
 }
-rna_input_modes=0
-[[ -n "$RNA_FASTQ1" ]] && ((rna_input_modes+=1))
-[[ -n "$RNA_BAM" ]] && ((rna_input_modes+=1))
-[[ -n "$RNA_VAF" ]] && ((rna_input_modes+=1))
-((rna_input_modes <= 1)) || {
-  echo "Use only one RNA allele-evidence input mode: FASTQ pair, BAM, or existing RNA VAF" >&2
+rna_alignment_modes=0
+[[ -n "$RNA_FASTQ1" ]] && ((rna_alignment_modes+=1))
+[[ -n "$RNA_BAM" ]] && ((rna_alignment_modes+=1))
+((rna_alignment_modes <= 1)) || {
+  echo "Use only one RNA alignment input mode: FASTQ pair or existing BAM" >&2
   exit 2
 }
+if [[ -n "$RNA_FASTQ1" && -n "$RNA_VAF" ]]; then
+  echo "Existing RNA VAF can accompany an existing RNA BAM, but not FASTQ alignment mode" >&2
+  exit 2
+fi
 if [[ -n "$RNA_FASTQ1" ]]; then
   [[ -n "$GENCODE_GTF" ]] || { echo "RNA FASTQ mode requires --gencode-gtf" >&2; exit 2; }
 fi
@@ -551,12 +569,13 @@ else
     "$CASE_ROOT/short-rna/evidence/transcript_quant.sf" \
     "$discovered_transcript_expression" || true
 fi
-if [[ -z "$RNA_FASTQ1" && -z "$RNA_BAM" && -z "$RNA_VAF" ]]; then
-  discovered_rna_vaf="$(latest_matching_file "$CASE_ROOT" -name rna_alt_vaf.tsv -o -name '*rna*vaf*.tsv' -o -name '*rna*alt*.tsv')"
-  [[ -z "$discovered_rna_vaf" && -d "$OUTDIR" ]] && discovered_rna_vaf="$(latest_matching_file "$OUTDIR" -name rna_alt_vaf.tsv -o -name '*rna*vaf*.tsv' -o -name '*rna*alt*.tsv')"
-  if [[ -n "$discovered_rna_vaf" ]]; then
-    RNA_VAF="$discovered_rna_vaf"
-  else
+if [[ -z "$RNA_FASTQ1" ]]; then
+  if [[ -z "$RNA_VAF" ]]; then
+    discovered_rna_vaf="$(latest_matching_file "$CASE_ROOT" -name rna_alt_vaf.tsv -o -name '*rna*vaf*.tsv' -o -name '*rna*alt*.tsv')"
+    [[ -z "$discovered_rna_vaf" && -d "$OUTDIR" ]] && discovered_rna_vaf="$(latest_matching_file "$OUTDIR" -name rna_alt_vaf.tsv -o -name '*rna*vaf*.tsv' -o -name '*rna*alt*.tsv')"
+    [[ -n "$discovered_rna_vaf" ]] && RNA_VAF="$discovered_rna_vaf"
+  fi
+  if [[ -z "$RNA_BAM" ]]; then
     discovered_rna_bam="$(latest_matching_file "$CASE_ROOT" -name Aligned.sortedByCoord.out.bam -o -name '*.Aligned.sortedByCoord.out.bam' -o -name '*.rna.bam')"
     [[ -z "$discovered_rna_bam" && -d "$OUTDIR" ]] && discovered_rna_bam="$(latest_matching_file "$OUTDIR" -name Aligned.sortedByCoord.out.bam -o -name '*.Aligned.sortedByCoord.out.bam' -o -name '*.rna.bam')"
     if [[ -z "$discovered_rna_bam" ]]; then
@@ -617,9 +636,26 @@ done
 [[ -n "$PRIME_EVIDENCE" ]] && GEN_ARGS+=(--prime-evidence "$PRIME_EVIDENCE")
 [[ -n "$BIGMHC_EVIDENCE" ]] && GEN_ARGS+=(--bigmhc-evidence "$BIGMHC_EVIDENCE")
 [[ -n "$DEEPIMMUNO_EVIDENCE" ]] && GEN_ARGS+=(--deepimmuno-evidence "$DEEPIMMUNO_EVIDENCE")
-add_if --junctions "$CASE_ROOT/short-rna/evidence/regtools_junctions.tsv"
-add_if --snaf "$CASE_ROOT/short-rna/snaf/snaf_candidates.tsv"
-add_if --splicemutr "$CASE_ROOT/short-rna/splicemutr"
+if [[ -n "$STAR_SJ" ]]; then
+  [[ -s "$STAR_SJ" ]] || { echo "STAR SJ.out.tab missing or empty: $STAR_SJ" >&2; exit 2; }
+  GEN_ARGS+=(--star-sj "$STAR_SJ")
+elif [[ -s "$CASE_ROOT/rna/star/SJ.out.tab" ]]; then
+  GEN_ARGS+=(--star-sj "$CASE_ROOT/rna/star/SJ.out.tab")
+else
+  add_if --junctions "$CASE_ROOT/short-rna/evidence/regtools_junctions.tsv"
+fi
+if [[ -n "$SNAF_RESULT" ]]; then
+  [[ -s "$SNAF_RESULT" ]] || { echo "SNAF result missing or empty: $SNAF_RESULT" >&2; exit 2; }
+  GEN_ARGS+=(--snaf "$SNAF_RESULT")
+else
+  add_if --snaf "$CASE_ROOT/short-rna/snaf/snaf_candidates.tsv"
+fi
+if [[ -n "$SPLICEMUTR_RESULT" ]]; then
+  [[ -d "$SPLICEMUTR_RESULT" ]] || { echo "SpliceMutr result directory missing: $SPLICEMUTR_RESULT" >&2; exit 2; }
+  GEN_ARGS+=(--splicemutr "$SPLICEMUTR_RESULT")
+else
+  add_if --splicemutr "$CASE_ROOT/short-rna/splicemutr"
+fi
 
 if [[ -n "$ASSET" ]]; then
   NORMAL_JUNCTIONS="$ASSET/data/normal/junctions/normal_junctions.GRCh38.tsv.gz"
@@ -661,6 +697,26 @@ if [[ -z "$VEP_CACHE" && -n "$ASSET" && -d "$ASSET/data/vep/homo_sapiens" ]]; th
   VEP_CACHE="$ASSET/data/vep"
 fi
 [[ -n "$VEP_CACHE" ]] && GEN_ARGS+=(--vep-cache "$VEP_CACHE")
+if [[ -z "$VEP_PLUGINS" && -n "$ASSET" && -f "$ASSET/work/vep_plugins/Wildtype.pm" && -f "$ASSET/work/vep_plugins/Frameshift.pm" ]]; then
+  VEP_PLUGINS="$ASSET/work/vep_plugins"
+fi
+[[ -n "$VEP_PLUGINS" ]] && GEN_ARGS+=(--vep-plugins "$VEP_PLUGINS")
+if [[ -z "$VEP_BIN" ]]; then
+  VEP_BIN="${NEOAG_VEP_BIN:-}"
+fi
+if [[ -z "$VEP_BIN" ]]; then
+  for candidate in \
+    "$PROJECT_ROOT/bin/vep-neoag" \
+    "${NEOAG_TOOLS_ROOT:-}/bin/vep-neoag" \
+    "${NEOAG_CONDA_BASE:-}/envs/${NEOAG_VEP_ENV:-neoag-vep}/bin/vep" \
+    "$(command -v vep 2>/dev/null || true)"; do
+    if [[ -n "$candidate" && -x "$candidate" ]]; then
+      VEP_BIN="$candidate"
+      break
+    fi
+  done
+fi
+[[ -n "$VEP_BIN" ]] && GEN_ARGS+=(--vep-bin "$VEP_BIN")
 [[ -n "$GENCODE_GTF" ]] && GEN_ARGS+=(--gencode-gtf "$GENCODE_GTF")
 [[ -n "$RNA_FASTQ1" ]] && GEN_ARGS+=(--rna-fastq1 "$RNA_FASTQ1" --rna-fastq2 "$RNA_FASTQ2")
 [[ -n "$RNA_BAM" ]] && GEN_ARGS+=(--rna-bam "$RNA_BAM")
@@ -689,6 +745,8 @@ echo "[INFO] generate manifest: $OUTDIR/manifest/production.results.toml"
 [[ -n "$PRED_DEPS" ]] && export NEOAG_TOOL_QUARANTINE="$PRED_DEPS"
 if [[ -n "$ASSET" ]]; then
   export NEOAG_VEP_CACHE="${VEP_CACHE:-$ASSET/data/vep}"
+  export NEOAG_VEP_PLUGINS="${VEP_PLUGINS:-$ASSET/work/vep_plugins}"
+  export NEOAG_VEP_BIN="$VEP_BIN"
 fi
 export NEOAG_VEP_CACHE_VERSION="${NEOAG_VEP_CACHE_VERSION:-105}"
 PY_PREFIX="$(cd "$(dirname "$PY")/.." && pwd)"

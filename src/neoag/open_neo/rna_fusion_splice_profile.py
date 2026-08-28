@@ -418,7 +418,7 @@ def generate_rna_fusion_splice_manifest(
         f"PYTHONPATH={_q(root / 'src')} {_q(Path(sys.executable))} "
         f"{script('normalize_rna_fusion_splice.py')} --sample-id {_q(sample_id)} "
         f"--profile {_q(PROFILE_NAME)} --genome-build {_q(inputs.get('genome_build') or 'GRCh38')} "
-        f"--junctions {{outdir}}/branches/splice/regtools_junctions.tsv "
+        f"--star-sj {{outdir}}/rna/star/SJ.out.tab "
         f"--annotation-gtf {_q(inputs.get('gencode_gtf') or '')} "
         f"--snaf {{outdir}}/branches/splice/snaf/snaf_candidates.tsv "
         f"--splicemutr {{outdir}}/branches/splice/splicemutr/splicemutr_candidates.tsv "
@@ -433,10 +433,37 @@ def generate_rna_fusion_splice_manifest(
         f"--splicemutr-glob '{{outdir}}/branches/splice/splicemutr/formed_transcripts/**/*_data_splicemutr_cp_corrected.txt' "
         f"--outdir {{outdir}}/branches/splice/intermediates/formal_origins"
     )
+    splice_raw_events = "{outdir}/branches/splice/intermediates/raw_events.tsv"
+    splice_raw_peptides = "{outdir}/branches/splice/intermediates/formal_origins/raw_peptides.formal_origins.tsv"
+    normal_junctions = str(inputs.get("normal_junctions") or "")
+    normal_index = ""
+    if normal_junctions:
+        shared_index = Path(normal_junctions + ".sqlite")
+        normal_index = str(shared_index) if shared_index.is_file() else "{outdir}/branches/splice/intermediates/junction_qc/normal_junctions.sqlite"
+        if not shared_index.is_file():
+            splice_norm += (
+                f" && PYTHONPATH={_q(root / 'src')} {_q(Path(sys.executable))} "
+                f"{script('build_normal_junction_index.py')} --input {_q(normal_junctions)} "
+                f"--output {normal_index}"
+            )
+    splice_norm += (
+        f" && PYTHONPATH={_q(root / 'src')} {_q(Path(sys.executable))} "
+        f"{script('build_splice_junction_qc_from_star_bam.py')} "
+        f"--events {splice_raw_events} --peptides {splice_raw_peptides} "
+        f"--star-sj {{outdir}}/rna/star/SJ.out.tab "
+        f"--rna-bam {{outdir}}/rna/star/Aligned.sortedByCoord.out.bam "
+        f"--samtools {_q(inputs.get('samtools_executable') or 'samtools')} "
+        f"--caller-consensus {{outdir}}/branches/splice/intermediates/splice_consensus.tsv "
+        f"--outdir {{outdir}}/branches/splice/intermediates/junction_qc"
+    )
+    if normal_index:
+        splice_norm += f" --normal-junction-sqlite {normal_index}"
+    splice_raw_events = "{outdir}/branches/splice/intermediates/junction_qc/raw_events.enriched.tsv"
+    splice_raw_peptides = "{outdir}/branches/splice/intermediates/junction_qc/raw_peptides.enriched.tsv"
     _stage(lines, "splice_candidate_normalization", required=bool(snaf_command and splicemutr_command), command=splice_norm, source="splice_consensus",
            outputs={
-               "raw_events": "{outdir}/branches/splice/intermediates/raw_events.tsv",
-               "raw_peptides": "{outdir}/branches/splice/intermediates/formal_origins/raw_peptides.formal_origins.tsv",
+               "raw_events": splice_raw_events,
+               "raw_peptides": splice_raw_peptides,
                "rna_junction_tsv": "{outdir}/branches/splice/intermediates/rna_junction_evidence.tsv",
                "splice_junctions": "{outdir}/branches/splice/intermediates/splice_junctions.tsv",
                "splice_tool_evidence": "{outdir}/branches/splice/intermediates/splice_tool_evidence.long.tsv",
@@ -452,6 +479,7 @@ def generate_rna_fusion_splice_manifest(
                "splice_evidence_conflicts": "{outdir}/branches/splice/intermediates/evidence_conflicts.tsv",
                "splice_qc": "{outdir}/branches/splice/intermediates/splice_qc.tsv",
                "provenance_manifest": "{outdir}/branches/splice/intermediates/provenance_manifest.json",
+               "junction_read_qc": "{outdir}/branches/splice/intermediates/junction_qc/splice_junction_qc.enriched.tsv",
            }, depends_on=["junction_extraction", "snaf_discovery", "splicemutr_discovery"])
 
     lines += [

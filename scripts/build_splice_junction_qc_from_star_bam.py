@@ -15,7 +15,7 @@ from collections import defaultdict
 from pathlib import Path
 
 COORD_RE = re.compile(r"^(chr[^:]+):(\d+)-(\d+):([+\-?])$")
-CANONICAL_RE = re.compile(r"^SJ\|[^|]+\|(chr[^|]+)\|(\d+)\|(\d+)\|([+\-?])$")
+CANONICAL_RE = re.compile(r"^SJ\|[^|]+\|([^|]+)\|(\d+)\|(\d+)\|([+\-?])$")
 CIGAR_RE = re.compile(r"(\d+)([MIDNSHP=X])")
 
 

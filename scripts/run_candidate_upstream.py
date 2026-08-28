@@ -97,6 +97,7 @@ def main() -> int:
     parser.add_argument("--reference-fasta", default="")
     parser.add_argument("--vep-cache", default="")
     parser.add_argument("--vep-plugins", default=os.environ.get("NEOAG_VEP_PLUGINS", ""))
+    parser.add_argument("--vep-bin", default=os.environ.get("NEOAG_VEP_BIN", ""))
     parser.add_argument("--normal-proteome", default="")
     args = parser.parse_args()
 
@@ -130,6 +131,7 @@ def main() -> int:
             "reference_fasta": reference_fasta,
             "vep_cache": vep_cache,
             "vep_plugins": args.vep_plugins,
+            "vep_bin": args.vep_bin,
             "normal_proteome_fasta": args.normal_proteome,
             "tumor_sample_name": tumor_sample_name,
             "normal_sample_name": normal_sample_name,
@@ -144,6 +146,7 @@ def main() -> int:
             f'hla_alleles = [{", ".join(repr(value) for value in alleles)}]\n'
             f'reference_fasta = "{reference_fasta}"\nvep_cache = "{vep_cache}"\n'
             f'vep_plugins = "{args.vep_plugins}"\n'
+            f'vep_bin = "{args.vep_bin}"\n'
             f'normal_proteome_fasta = "{args.normal_proteome}"\n'
             f'tumor_sample_name = {json.dumps(tumor_sample_name)}\n'
             f'normal_sample_name = {json.dumps(normal_sample_name)}\n',

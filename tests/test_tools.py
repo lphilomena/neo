@@ -131,6 +131,54 @@ extract_appm_from_vcf = false
     assert coverage["missing_sources"] == "pVACfuse"
 
 
+def test_intermediates_prefilter_runs_before_presentation_tools(tmp_path):
+    raw_events = tmp_path / "raw_events.tsv"
+    raw_peptides = tmp_path / "raw_peptides.tsv"
+    header = (
+        "event_id\tevent_type\tsplice_alignment_qc_status\tjunction_read_qc_status\t"
+        "unique_split_reads\ttotal_split_reads\ttumor_psi\tsplice_annotation_status\t"
+        "crosses_junction\n"
+    )
+    raw_events.write_text(
+        header
+        + "S_PASS\tSplice\tPASS\tPASS\t5\t12\t0.20\tUNANNOTATED\ttrue\n"
+        + "S_FAIL\tSplice\tPASS\tFAIL\t5\t12\t0.20\tUNANNOTATED\ttrue\n",
+        encoding="utf-8",
+    )
+    raw_peptides.write_text(
+        "peptide_id\tevent_id\tevent_type\tpeptide\thla_allele\tsplice_alignment_qc_status\t"
+        "junction_read_qc_status\tunique_split_reads\ttotal_split_reads\ttumor_psi\t"
+        "splice_annotation_status\tcrosses_junction\n"
+        "P_PASS\tS_PASS\tSplice\tACDEFGHIK\tHLA-A*02:01\tPASS\tPASS\t5\t12\t0.20\tUNANNOTATED\ttrue\n"
+        "P_FAIL\tS_FAIL\tSplice\tLMNPQRSTV\tHLA-A*02:01\tPASS\tFAIL\t5\t12\t0.20\tUNANNOTATED\ttrue\n",
+        encoding="utf-8",
+    )
+    cfg = tmp_path / "intermediates.toml"
+    cfg.write_text(
+        f'''[sample]
+id = "PREFILTER"
+profile = "default"
+
+[tools]
+enabled = []
+
+[inputs]
+entry_mode = "intermediates"
+raw_events = "{raw_events}"
+raw_peptides = "{raw_peptides}"
+''',
+        encoding="utf-8",
+    )
+
+    outputs = run_upstream(cfg, tmp_path / "upstream")
+    retained = read_tsv(outputs["raw_peptides"])
+    assert [row["event_id"] for row in retained] == ["S_PASS"]
+    funnel = {row["stage"]: row for row in read_tsv(outputs["splice_prefilter_funnel"])}
+    assert funnel["FORMAL_JUNCTION_READ_QC"]["assessed_events"] == "2"
+    assert funnel["FORMAL_JUNCTION_READ_QC"]["passed_events"] == "1"
+    assert funnel["FORMAL_JUNCTION_READ_QC"]["failed_events"] == "1"
+
+
 def test_upstream_prefers_purity_recommendation_over_facets(tmp_path):
     recommendation = tmp_path / "purity_recommendation.json"
     recommendation.write_text(json.dumps({

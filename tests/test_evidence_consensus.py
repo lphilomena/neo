@@ -951,3 +951,32 @@ def test_easyfuse_pass_does_not_trigger_internal_rescue_cap(tmp_path: Path):
     })
     row = _rank_one(tmp_path, candidate)
     assert "CAP_CANDIDATE_UNION_INTERNAL_RESCUE" not in row["evidence_grade_cap_reasons"]
+
+
+def test_rna_metrics_source_path_without_locus_depth_is_unassessed():
+    metrics = rna_evidence_metrics({
+        "event_type": "SNV",
+        "mutation_source": "SNV",
+        "rna_alt_reads": "0",
+        "rna_depth": "0",
+        "rna_vaf": "0",
+        "rna_vaf_source": "/results/rna_allele_counts.tsv",
+    })
+
+    assert metrics["rna_support_status"] == "UNASSESSED"
+    assert metrics["rna_evidence_completeness"] == "UNASSESSED"
+
+
+def test_rna_metrics_explicit_snv_overrides_stale_junction_consequence():
+    metrics = rna_evidence_metrics({
+        "event_type": "SNV",
+        "mutation_source": "SNV",
+        "peptide_consequence": "splice_junction",
+        "rna_alt_reads": "0",
+        "rna_depth": "171",
+        "rna_vaf": "0",
+        "rna_vaf_source": "/results/rna_allele_counts.tsv",
+    })
+
+    assert metrics["rna_support_status"] == "RNA_ALT_NOT_DETECTED"
+    assert metrics["rna_evidence_completeness"] == "COMPLETE"

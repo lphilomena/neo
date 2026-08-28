@@ -36,6 +36,7 @@ TOOL_EXECUTABLES = {
     "fusioncatcher": "fusioncatcher-neoag",
     "arriba": "arriba",
     "regtools": "regtools",
+    "vep": "vep",
     "snaf": "snaf",
     "splicemutr": "splicemutr",
     "netmhcpan": "netMHCpan",
@@ -166,6 +167,23 @@ def _resolve_references(inputs: dict[str, Any], manifest: str | Path | None) -> 
         matches = [(key, value) for key, value in flattened.items() if any(alias in key for alias in aliases)]
         if matches:
             result[name] = sorted(matches, key=lambda item: (len(item[0]), item[0]))[0][1]
+    plugin_candidates = [
+        result.get("vep_plugins", ""),
+        os.environ.get("NEOAG_VEP_PLUGINS", ""),
+        str(Path(reference_root) / "work/vep_plugins") if reference_root else "",
+    ]
+    for anchor in (result.get("vep_cache", ""), result.get("reference_fasta", "")):
+        if not anchor:
+            continue
+        plugin_candidates.extend(
+            str(parent / "work/vep_plugins") for parent in Path(anchor).expanduser().parents
+        )
+    result.pop("vep_plugins", None)
+    for value in dict.fromkeys(item for item in plugin_candidates if item):
+        candidate = Path(os.path.expandvars(os.path.expanduser(value)))
+        if all((candidate / filename).is_file() for filename in ("Wildtype.pm", "Frameshift.pm")):
+            result["vep_plugins"] = str(candidate.resolve())
+            break
     return result
 
 
@@ -223,7 +241,10 @@ def _render_manifest(path: Path, run: dict[str, Any], stages: dict[str, dict[str
         lines.extend(f"{key} = {_toml(value)}" for key, value in rule.items())
     for name, spec in stages.items():
         lines += ["", f"[stages.{name}]"]
-        for key in ("required", "source", "depends_on", "cpus", "memory_gb", "command"):
+        for key in (
+            "required", "source", "depends_on", "cpus", "memory_gb",
+            "data_row_outputs", "required_output_fields", "command",
+        ):
             if key in spec and spec[key] is not None and spec[key] != "":
                 lines.append(f"{key} = {_toml(spec[key])}")
         lines.append(f"[stages.{name}.outputs]")
@@ -302,10 +323,22 @@ def build_automatic_production_plan(
         if status == "SELECTED" and tool not in selected:
             selected.append(tool)
 
-    def add_stage(name: str, *, command: str, outputs: dict[str, str], required: bool = False, source: str = "", depends: list[str] | None = None) -> None:
+    def add_stage(
+        name: str,
+        *,
+        command: str,
+        outputs: dict[str, str],
+        required: bool = False,
+        source: str = "",
+        depends: list[str] | None = None,
+        data_row_outputs: list[str] | None = None,
+        required_output_fields: list[str] | None = None,
+    ) -> None:
         python_bin_dir = Path(sys.executable).resolve().parent
         cpus, memory_gb, command = _resource_profile(name, command, threads)
-        runtime_command = f'PATH="{python_bin_dir}:$PATH" {command}'
+        tools_env = root / "conf/tools.env.sh"
+        env_prefix = f"source {tools_env}; " if tools_env.is_file() else ""
+        runtime_command = f'{env_prefix}PATH="{python_bin_dir}:$PATH" {command}'
         stages[name] = {
             "required": required, "command": runtime_command, "outputs": outputs,
             "cpus": cpus, "memory_gb": memory_gb,
@@ -314,6 +347,10 @@ def build_automatic_production_plan(
             stages[name]["source"] = source
         if depends:
             stages[name]["depends_on"] = depends
+        if data_row_outputs:
+            stages[name]["data_row_outputs"] = data_row_outputs
+        if required_output_fields:
+            stages[name]["required_output_fields"] = required_output_fields
 
     tumor_bam = str(inputs.get("tumor_dna_bam") or "")
     normal_bam = str(inputs.get("normal_dna_bam") or "")
@@ -543,10 +580,12 @@ def build_automatic_production_plan(
             f"PYTHONPATH={root / 'src'} python {root / 'scripts/run_candidate_upstream.py'} --mode snv --input {somatic_vcf} "
             f"--hla-file {hla_file} --sample-id {sample_id} --outdir {{outdir}}/branches/snv/upstream"
         )
+        vep_available, vep_executable, _ = _tool_info("vep", tools)
         for flag, value in (
             ("--reference-fasta", refs.get("reference_fasta")),
             ("--vep-cache", refs.get("vep_cache")),
             ("--vep-plugins", refs.get("vep_plugins") or os.environ.get("NEOAG_VEP_PLUGINS")),
+            ("--vep-bin", vep_executable if vep_available else os.environ.get("NEOAG_VEP_BIN")),
             ("--normal-proteome", refs.get("reference_proteome")),
         ):
             if value:
@@ -663,6 +702,8 @@ def build_automatic_production_plan(
                     "hla_6p21_consensus": "{outdir}/purity/consensus/hla_6p21_cnv_consensus.tsv",
                 },
                 depends=dependencies,
+                data_row_outputs=["purity"],
+                required_output_fields=["purity:purity", "purity:ploidy"],
             )
             evidence["purity"] = "{outdir}/purity/consensus/recommended_purity.tsv"
             evidence["cnv"] = "{outdir}/purity/consensus/recommended_cnv_segments.tsv"
@@ -834,9 +875,25 @@ def build_automatic_production_plan(
         "default_stage_memory_gb": 4.0,
     }
     if bam_pair:
+        selected_purity_tools = [
+            row.tool for row in decisions
+            if row.domain == "purity_cnv" and row.status == "SELECTED"
+        ]
+        selected_hla_loh_tools = [
+            row.tool for row in decisions
+            if row.domain == "hla_loh" and row.status == "SELECTED"
+        ]
         run["required_tool_groups"] = {
-            "purity_cnv": {"tools": ["facets", "sequenza", "purple"], "min_successful": 2, "require_all_declared": True},
-            "hla_loh": {"tools": ["lohhla", "spechla"], "min_successful": 2, "require_all_declared": True},
+            "purity_cnv": {
+                "tools": selected_purity_tools,
+                "min_successful": 2,
+                "require_all_declared": True,
+            },
+            "hla_loh": {
+                "tools": selected_hla_loh_tools,
+                "min_successful": 1,
+                "require_all_declared": True,
+            },
         }
     if tumor_rna_fastq:
         run["rna_profile"] = "rna_fusion_splice_v1"
