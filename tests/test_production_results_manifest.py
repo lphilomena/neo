@@ -163,8 +163,8 @@ def test_generator_enriches_splice_qc_from_star_and_rna_bam(tmp_path):
     manifest = tomllib.loads(output.read_text(encoding="utf-8"))
     splice = manifest["stages"]["splice_candidates"]
     assert "build_splice_junction_qc_from_star_bam.py" in splice["command"]
-    assert "--caller-consensus" in splice["command"]
-    assert "junction_qc/raw_events.enriched.tsv" in splice["command"]
+    assert "--splice-consensus" in splice["command"]
+    assert "star_bam_qc/raw_events.enriched.tsv" in splice["command"]
     assert splice["outputs"]["junction_read_qc"].endswith("splice_junction_qc.enriched.tsv")
     assert "rna_bam_input" in splice["depends_on"]
 
