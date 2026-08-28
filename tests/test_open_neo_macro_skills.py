@@ -99,6 +99,25 @@ def test_install_readiness_normalizes_vep_cache_and_contig_style(tmp_path: Path)
     assert _contig_style("") == "UNKNOWN"
 
 
+def test_environment_installers_pin_target_interpreters():
+    root = Path.cwd()
+    tools = (root / "scripts/setup_tools_env.sh").read_text(encoding="utf-8")
+    assert 'PYTHON_BIN="${ENV_PREFIX}/bin/python"' in tools
+    assert 'TF_KERAS_SPEC="$("${PYTHON_BIN}" -' in tools
+    assert '"${PYTHON_BIN}" -m pip install -q "${TF_KERAS_SPEC}"' in tools
+    assert '"${ENV_PREFIX}/bin/mhcflurry-downloads" fetch' in tools
+
+    vep = (root / "scripts/install_vep.sh").read_text(encoding="utf-8")
+    assert 'run_in_vep_env "${ENV_PREFIX}/bin/perl" -MDBI' in vep
+    assert 'run_in_vep_env "${ENV_PREFIX}/bin/vep" --help' in vep
+    assert 'run_in_vep_env "${ENV_PREFIX}/bin/vep_install"' in vep
+    assert 'export PATH="${ENV_PREFIX}/bin:${PATH}"' in vep
+
+    skill = (root / ".agents/skills/open-neo-install-check/SKILL.md").read_text(encoding="utf-8")
+    assert "resolved Conda environment prefix as authoritative" in skill
+    assert "perl -MDBI" in skill
+
+
 def test_public_asset_plan_is_offline_and_detects_marker(tmp_path: Path):
     root = tmp_path / "refs"
     planned = sync_public_assets(root, cache_dir=tmp_path / "cache", execute=False)

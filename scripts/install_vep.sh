@@ -2,7 +2,7 @@
 # Install Ensembl VEP via conda and optionally download cache for offline use.
 #
 # Usage:
-#   bash scripts/install_vep.sh              # install vep into neoag-tools
+#   bash scripts/install_vep.sh              # install VEP into neoag-vep
 #   bash scripts/install_vep.sh --cache      # also install homo_sapiens cache (~10GB+)
 #
 set -euo pipefail
@@ -44,41 +44,65 @@ conda_safe() {
   return "$rc"
 }
 
-if [[ ! -x "$CONDA_BASE/envs/${ENV_NAME}/bin/vep" ]]; then
+resolve_env_prefix() {
+  conda_safe env list | awk -v n="${ENV_NAME}" '$1==n {print $NF; exit}'
+}
+
+ENV_PREFIX="$(resolve_env_prefix)"
+if [[ -z "${ENV_PREFIX}" || ! -x "${ENV_PREFIX}/bin/vep" ]]; then
   echo "==> Creating ${ENV_NAME} from conda/env.neoag-vep.yml ..."
   conda_safe create -n "${ENV_NAME}" --override-channels -c conda-forge -c bioconda -y "ensembl-vep=${VEP_VERSION}.*"
 fi
 
-set +u
-conda activate "${ENV_NAME}"
-set -u
-
-CURRENT_VEP_VERSION="$(conda list -n "${ENV_NAME}" ensembl-vep 2>/dev/null | awk '$1=="ensembl-vep" {print $2; exit}')"
-if ! command -v vep >/dev/null 2>&1 || [[ "${CURRENT_VEP_VERSION}" != ${VEP_VERSION}* ]]; then
-  echo "==> Installing ensembl-vep ${VEP_VERSION}.* into ${ENV_NAME} ..."
-  conda_safe install --override-channels -c conda-forge -c bioconda -y "ensembl-vep=${VEP_VERSION}.*"
+ENV_PREFIX="$(resolve_env_prefix)"
+if [[ -z "${ENV_PREFIX}" || ! -x "${ENV_PREFIX}/bin/perl" ]]; then
+  echo "ERROR: could not resolve Perl for conda env ${ENV_NAME}" >&2
+  exit 1
 fi
 
+run_in_vep_env() (
+  unset PERL5LIB PERL_LOCAL_LIB_ROOT PERL_MB_OPT PERL_MM_OPT
+  export PATH="${ENV_PREFIX}/bin:${PATH}"
+  "$@"
+)
+
+CURRENT_VEP_VERSION="$(conda_safe list -p "${ENV_PREFIX}" ensembl-vep 2>/dev/null | awk '$1=="ensembl-vep" {print $2; exit}')"
+if [[ ! -x "${ENV_PREFIX}/bin/vep" || "${CURRENT_VEP_VERSION}" != ${VEP_VERSION}* ]]; then
+  echo "==> Installing ensembl-vep ${VEP_VERSION}.* into ${ENV_NAME} ..."
+  conda_safe install -p "${ENV_PREFIX}" --override-channels -c conda-forge -c bioconda -y "ensembl-vep=${VEP_VERSION}.*"
+fi
+
+if ! run_in_vep_env "${ENV_PREFIX}/bin/perl" -MDBI -e 'exit 0'; then
+  echo "==> Installing missing Perl DBI into ${ENV_NAME} ..."
+  conda_safe install -p "${ENV_PREFIX}" --override-channels -c conda-forge -c bioconda -y perl-dbi
+fi
+run_in_vep_env "${ENV_PREFIX}/bin/perl" -MDBI -e 'print "DBI $DBI::VERSION\n"'
+
 echo "==> VEP version:"
-vep --help 2>&1 | head -3 || vep -h 2>&1 | head -3
+VEP_HELP="$(mktemp)"
+if ! run_in_vep_env "${ENV_PREFIX}/bin/vep" --help >"${VEP_HELP}" 2>&1; then
+  cat "${VEP_HELP}" >&2
+  rm -f "${VEP_HELP}"
+  echo "ERROR: VEP smoke test failed with ${ENV_PREFIX}/bin/perl" >&2
+  exit 1
+fi
+head -3 "${VEP_HELP}"
+rm -f "${VEP_HELP}"
 
 if [[ "${INSTALL_CACHE}" == "true" ]]; then
   echo "==> Installing VEP cache (homo_sapiens, can take long and use >10GB) ..."
-  vep_install -a cf -s homo_sapiens -y GRCh38 -n
+  run_in_vep_env "${ENV_PREFIX}/bin/vep_install" -a cf -s homo_sapiens -y GRCh38 -n
   echo "Cache installed. Pipeline can use: vep --cache --offline ..."
 else
   echo ""
   echo "NOTE: neoag upstream uses --cache --offline by default."
   echo "Run cache install when ready:"
-  echo "  export NEOAG_VEP_VERSION=${VEP_VERSION}"
-  echo "  set +u
-conda activate ${ENV_NAME}"
-  echo "  vep_install -a cf -s homo_sapiens -y"
+  echo "  NEOAG_VEP_ENV=${ENV_NAME} NEOAG_VEP_VERSION=${VEP_VERSION} bash scripts/install_vep.sh --cache"
   echo ""
   echo "Or use online VEP (set NEOAG_VEP_ONLINE=1 in run config / see docs/TOOLS_SETUP.md)."
 fi
 
-PREFIX="${CONDA_BASE}/envs/${ENV_NAME}"
+PREFIX="${ENV_PREFIX}"
 WRAPPER_DIR="${TOOLS_ROOT}/tools/bin"
 mkdir -p "${WRAPPER_DIR}"
 cat > "${WRAPPER_DIR}/vep" <<EOF
@@ -112,5 +136,4 @@ else
   echo "==> conf/tools.env.sh already contains a VEP install block; check NEOAG_VEP_BIN if needed."
 fi
 
-echo "==> Done. Test: set +u
-conda activate ${ENV_NAME} && vep --help | head"
+echo "==> Done. Test: ${VEP_BIN} --help"
