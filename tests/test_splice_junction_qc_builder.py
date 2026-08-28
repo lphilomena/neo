@@ -26,3 +26,14 @@ def test_snaf_consensus_and_splicemutr_origin_form_exact_crossvalidation(tmp_pat
     event_id = "SJ|GRCh38|chr1|101|200|+"
     assert event_id in snaf
     assert event_id in splicemutr
+
+
+def test_event_junction_prefers_canonical_and_accepts_structured_coordinates():
+    assert MODULE.event_junction({
+        "canonical_junction_id": "SJ|GRCh38|chr2|101|200|-",
+        "event_name": "JUNC0001",
+    }) == ("2", 101, 200, "-")
+    assert MODULE.event_junction({
+        "junction_chrom": "chr3", "junction_start": "301",
+        "junction_end": "400", "junction_strand": "+",
+    }) == ("3", 301, 400, "+")

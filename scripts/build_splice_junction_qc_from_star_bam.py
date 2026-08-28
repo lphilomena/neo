@@ -15,6 +15,7 @@ from collections import defaultdict
 from pathlib import Path
 
 COORD_RE = re.compile(r"^(chr[^:]+):(\d+)-(\d+):([+\-?])$")
+CANONICAL_RE = re.compile(r"^SJ\|[^|]+\|(chr[^|]+)\|(\d+)\|(\d+)\|([+\-?])$")
 CIGAR_RE = re.compile(r"(\d+)([MIDNSHP=X])")
 
 
@@ -38,6 +39,24 @@ def add_fields(fields: list[str], additions: list[str]) -> list[str]:
 
 def norm_chrom(value: str) -> str:
     return value[3:] if value.lower().startswith("chr") else value
+
+
+def event_junction(row: dict[str, str]) -> tuple[str, int, int, str] | None:
+    """Resolve an exact junction from canonical, structured, or display fields."""
+    for field in ("canonical_junction_id", "source_junction_id", "event_name"):
+        value = str(row.get(field) or "").strip()
+        match = CANONICAL_RE.match(value) or COORD_RE.match(value)
+        if match:
+            chrom, start, end, strand = match.groups()
+            if strand in {"+", "-"}:
+                return norm_chrom(chrom), int(start), int(end), strand
+    chrom = str(row.get("junction_chrom") or row.get("chrom") or "").strip()
+    start = str(row.get("junction_start") or "").strip()
+    end = str(row.get("junction_end") or "").strip()
+    strand = str(row.get("junction_strand") or "").strip()
+    if chrom and start.isdigit() and end.isdigit() and strand in {"+", "-"}:
+        return norm_chrom(chrom), int(start), int(end), strand
+    return None
 
 
 def load_star(path: Path):
@@ -231,10 +250,9 @@ def main() -> int:
     splice_events = [row for row in events if str(row.get("event_type") or "").lower() == "splice"]
     junction_keys = set()
     for row in splice_events:
-        match = COORD_RE.match(str(row.get("event_name") or ""))
-        if match:
-            chrom_full, start_text, end_text, strand = match.groups()
-            junction_keys.add((norm_chrom(chrom_full), int(start_text), int(end_text), strand))
+        junction = event_junction(row)
+        if junction:
+            junction_keys.add(junction)
     outdir = Path(args.outdir)
     outdir.mkdir(parents=True, exist_ok=True)
     bam_by_key = load_bam_metrics(args.samtools, Path(args.rna_bam), junction_keys, outdir)
@@ -250,15 +268,14 @@ def main() -> int:
     )
     for index, row in enumerate(splice_events, 1):
         event_id = str(row.get("event_id") or "")
-        match = COORD_RE.match(str(row.get("event_name") or ""))
+        junction = event_junction(row)
         metrics: dict[str, str] = {"event_id": event_id}
-        if not match:
-            metrics.update({"splice_alignment_qc_status": "FAIL", "junction_read_qc_status": "FAIL", "caller_filter_status": "FAIL", "junction_support_reason": "event_name has no exact genomic junction"})
+        if not junction:
+            metrics.update({"splice_alignment_qc_status": "FAIL", "junction_read_qc_status": "FAIL", "caller_filter_status": "FAIL", "junction_support_reason": "no exact stranded genomic junction in canonical or structured fields"})
             metrics_by_event[event_id] = metrics
             qc_rows.append(metrics)
             continue
-        chrom_full, start_text, end_text, strand = match.groups()
-        chrom, start, end = norm_chrom(chrom_full), int(start_text), int(end_text)
+        chrom, start, end, strand = junction
         key = (chrom, start, end, strand)
         star_row = star.get(key)
         uid = event_id.split("|", 1)[1] if "|" in event_id else event_id
