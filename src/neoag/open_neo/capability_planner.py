@@ -607,11 +607,26 @@ def build_automatic_production_plan(
                 "outdir": f"{{outdir}}/purity/{tool}", **refs,
             })
             if tool == "purple" and available and refs.get("purple_reference") and not command:
-                hmf_env = Path(executable).parent
-                hmf_env = hmf_env.parent if hmf_env.name == "bin" else hmf_env
-                bundled_env = hmf_env / "tools" / "HMFTOOLS" / ".conda"
-                if all((bundled_env / "bin" / name).exists() for name in ("amber", "cobalt", "purple")):
-                    hmf_env = bundled_env
+                required_hmf_tools = ("amber", "cobalt", "purple")
+
+                def valid_hmf_env(candidate: Path) -> bool:
+                    return all((candidate / "bin" / name).is_file() for name in required_hmf_tools)
+
+                executable_path = Path(executable).expanduser()
+                inferred_root = executable_path.parent
+                inferred_root = inferred_root.parent if inferred_root.name == "bin" else inferred_root
+                candidates = []
+                if os.environ.get("HMF_ENV"):
+                    candidates.append(Path(os.environ["HMF_ENV"]).expanduser())
+                if os.environ.get("HMFTOOLS_HOME"):
+                    candidates.append(Path(os.environ["HMFTOOLS_HOME"]).expanduser() / ".conda")
+                candidates.extend([
+                    inferred_root,
+                    inferred_root / ".conda",
+                    inferred_root / "tools" / "HMFTOOLS" / ".conda",
+                    root / "tools" / "HMFTOOLS" / ".conda",
+                ])
+                hmf_env = next((candidate for candidate in candidates if valid_hmf_env(candidate)), candidates[0])
                 command = (
                     f"HMF_ENV={hmf_env} "
                     f"HMFTOOLS_REFERENCE_ROOT={refs['purple_reference']} "
