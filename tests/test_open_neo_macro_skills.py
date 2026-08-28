@@ -1281,6 +1281,50 @@ def test_capability_planner_builds_dna_hla_purity_loh_and_ranking_dag(tmp_path: 
     assert any(row["domain"] == "purity_cnv" and row["status"] == "SELECTED" for row in rows)
 
 
+def test_capability_planner_resolves_explicit_hmftools_environment(
+    tmp_path: Path, monkeypatch,
+):
+    inputs, tools, refs = _automatic_plan_inputs(tmp_path)
+    deploy_bin = tmp_path / "deploy/bin"
+    deploy_bin.mkdir(parents=True)
+    purple_wrapper = deploy_bin / "purple"
+    purple_wrapper.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    purple_wrapper.chmod(0o755)
+    tools_data = json.loads(tools.read_text(encoding="utf-8"))
+    tools_data["tools"]["purple"]["executable"] = str(purple_wrapper)
+    tools.write_text(json.dumps(tools_data), encoding="utf-8")
+
+    def make_hmf_env(path: Path) -> Path:
+        for name in ("amber", "cobalt", "purple"):
+            binary = path / "bin" / name
+            binary.parent.mkdir(parents=True, exist_ok=True)
+            binary.write_text("fixture\n", encoding="utf-8")
+        return path
+
+    explicit_env = make_hmf_env(tmp_path / "explicit-hmf")
+    monkeypatch.setenv("HMF_ENV", str(explicit_env))
+    monkeypatch.setenv("HMFTOOLS_HOME", str(tmp_path / "ignored-hmf-home"))
+    explicit_plan = build_automatic_production_plan(
+        inputs, tmp_path / "explicit.toml", project_root=Path.cwd(),
+        outdir=tmp_path / "explicit-run", tools_manifest=tools, reference_manifest=refs,
+    )
+    explicit_command = load_production_manifest(explicit_plan.manifest)["stages"]["purity_purple"]["command"]
+    assert f"HMF_ENV={explicit_env}" in explicit_command
+    assert "/bin/bin/amber" not in explicit_command
+
+    hmf_home = tmp_path / "hmf-home"
+    home_env = make_hmf_env(hmf_home / ".conda")
+    monkeypatch.delenv("HMF_ENV")
+    monkeypatch.setenv("HMFTOOLS_HOME", str(hmf_home))
+    home_plan = build_automatic_production_plan(
+        inputs, tmp_path / "home.toml", project_root=Path.cwd(),
+        outdir=tmp_path / "home-run", tools_manifest=tools, reference_manifest=refs,
+    )
+    home_command = load_production_manifest(home_plan.manifest)["stages"]["purity_purple"]["command"]
+    assert f"HMF_ENV={home_env}" in home_command
+    assert str(deploy_bin / "bin") not in home_command
+
+
 def test_capability_planner_runs_three_hla_callers_from_normal_bam(tmp_path: Path):
     inputs, tools, refs = _automatic_plan_inputs(tmp_path)
     inputs["hla_file"] = str(tmp_path / "missing_hla.txt")
