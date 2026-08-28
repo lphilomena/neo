@@ -269,3 +269,30 @@ done = "{outdir}/should-not-run"
     assert result.stages[0].status == "BLOCKED"
     assert "exceeds global budget" in result.stages[0].message
     assert not (tmp_path / "run/should-not-run").exists()
+
+
+def test_production_runner_does_not_reuse_header_only_required_table(tmp_path):
+    events = tmp_path / "raw_events.tsv"
+    peptides = tmp_path / "raw_peptides.tsv"
+    events.write_text("event_id\nE1\n", encoding="utf-8")
+    peptides.write_text("peptide_id\n", encoding="utf-8")
+    manifest = tmp_path / "header_only.toml"
+    manifest.write_text(
+        f'''[run]
+sample_id = "HEADER_ONLY"
+
+[stages.fusion]
+required = true
+source = "EasyFuse"
+data_row_outputs = ["raw_peptides"]
+command = "true"
+[stages.fusion.outputs]
+raw_events = "{events}"
+raw_peptides = "{peptides}"
+''',
+        encoding="utf-8",
+    )
+
+    result = run_production(manifest, outdir=tmp_path / "run", project_root=ROOT)
+
+    assert result.stages[0].status == "PLANNED"

@@ -359,6 +359,10 @@ def easyfuse_row_to_variant_peptide_rows(
             "minigene_nt": "",
             "in_normal_proteome": "no",
             "variant_key": variant_key,
+            "candidate_union_source": event.get("candidate_union_source", ""),
+            "internal_tool_count": event.get("internal_tool_count", ""),
+            "internal_tools": event.get("internal_tools", ""),
+            "internal_high_confidence_reason": event.get("internal_high_confidence_reason", ""),
             "peptide_source": "easyfuse",
             "peptide_label": (
                 f"GENE={gene}|FUSION={fusion_gene}|EF={eid}"
@@ -436,6 +440,13 @@ def build_easyfuse_catalog(
 
     selected_rows: list[tuple[int, dict[str, str], dict[str, str]]] = []
     for event_id, candidates in by_event.items():
+        event_union_source = (
+            "EASYFUSE_PASS"
+            if any(item[2].get("candidate_union_source") == "EASYFUSE_PASS" for item in candidates)
+            else "INTERNAL_CALLER_HIGH_CONFIDENCE"
+        )
+        for _, _, candidate_event in candidates:
+            candidate_event["candidate_union_source"] = event_union_source
         fusion_gene = first(candidates[0][1], ["Fusion_Gene", "fusion_gene"], "")
         if peptide_cfg.dedup_per_event:
             best = (

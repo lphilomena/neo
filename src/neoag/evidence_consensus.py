@@ -531,6 +531,8 @@ def _next_steps(
         steps.extend(["obtain evaluable RNA site coverage", "targeted RNA", "IGV"])
     if event_track(source) == "FUSION" and not states["clonality"]["assessed"]:
         steps.extend(["RT-PCR/Sanger", "second fusion caller", "orthogonal breakpoint review"])
+    if "INTERNAL_CALLER_HIGH_CONFIDENCE" in str(source.get("candidate_union_source", "")).upper():
+        steps.extend(["independent fusion confirmation", "orthogonal breakpoint review"])
     if states["presentation_consensus"]["state"] in {"PRESENTATION_SINGLE_TOOL", "PRESENTATION_DISCORDANT", "PRESENTATION_UNASSESSED"}:
         steps.append("second presentation tool/group")
     normal_junction = " ".join(str(source.get(field, "")).upper() for field in (
@@ -592,6 +594,11 @@ def _derived_grade_caps(
         and ("RNA_ONLY" in mutation_source or "RNA_ONLY" in ccf_resolution or not states["clonality"]["assessed"])
     ):
         caps.append(("R3", "CAP_RNA_ONLY_FUSION"))
+    candidate_union_source = " ".join(str(source.get(field, "")).upper() for field in (
+        "candidate_union_source", "openneo_union_source",
+    ))
+    if track == "FUSION" and "INTERNAL_CALLER_HIGH_CONFIDENCE" in candidate_union_source:
+        caps.append(("R3", "CAP_CANDIDATE_UNION_INTERNAL_RESCUE"))
     normal_junction = " ".join(str(source.get(field, "")).upper() for field in (
         "normal_junction_assessment_status", "event_normal_junction_assessment_status",
     ))

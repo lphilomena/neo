@@ -2,10 +2,14 @@
 
 from pathlib import Path
 
+import pytest
+
 from neoag.adapters.easyfuse_adapter import (
     EasyFuseFilterConfig,
     _anchor_size,
     _tool_junction_reads,
+    build_easyfuse_candidate_union,
+    easyfuse_row_to_event,
     filter_easyfuse_row,
     is_easyfuse_table,
     parse_easyfuse,
@@ -44,6 +48,37 @@ def test_filter_easyfuse_row():
 
     ok, reason = filter_easyfuse_row(by_gene["NCF1_NCF1"])
     assert not ok and reason == "prediction_class_not_positive"
+
+
+def test_easyfuse_pass_plus_internal_high_confidence_union(tmp_path):
+    header = (
+        "BPID;context_sequence_id;FTID;Fusion_Gene;frame;type;neo_peptide_sequence;"
+        "ft_junc_cnt;ft_anch_cnt;starfusion_detected;fusioncatcher_detected;"
+        "arriba_detected;prediction_class;prediction_prob\n"
+    )
+    pass_path = tmp_path / "fusions.pass.csv"
+    all_path = tmp_path / "fusions.csv"
+    pass_row = "bp1;c1;t1;A_B;in_frame;trans;ABCDEFGHIJK;3;10;1;0;0;positive;0.8\n"
+    rescue_row = "bp2;c2;t2;C_D;in_frame;trans;ABCDEFGHIJK;6;20;0;0;1;;0.1\n"
+    weak_row = "bp3;c3;t3;E_F;in_frame;trans;ABCDEFGHIJK;3;10;0;0;1;;0.1\n"
+    pass_path.write_text(header + pass_row, encoding="utf-8")
+    all_path.write_text(header + pass_row + rescue_row + weak_row, encoding="utf-8")
+
+    rows, summary = build_easyfuse_candidate_union(pass_path, all_path)
+
+    assert len(rows) == 2
+    assert summary["internal_high_confidence_added"] == 1
+    by_bpid = {row["BPID"]: row for row in rows}
+    assert by_bpid["bp1"]["openneo_union_source"] == "EASYFUSE_PASS"
+    assert by_bpid["bp2"]["openneo_union_source"] == "INTERNAL_CALLER_HIGH_CONFIDENCE"
+    ok, reason = filter_easyfuse_row(by_bpid["bp2"])
+    assert ok and reason == "pass"
+    event, evidence = easyfuse_row_to_event(
+        by_bpid["bp2"], sample_id="S1", profile_name="default", source_path=all_path,
+    )
+    assert event is not None
+    assert event["candidate_union_source"] == "INTERNAL_CALLER_HIGH_CONFIDENCE"
+    assert evidence["candidate_union_source"] == "INTERNAL_CALLER_HIGH_CONFIDENCE"
 
 
 def test_parse_easyfuse_events_and_catalog():
@@ -110,6 +145,27 @@ def test_build_intermediates_easyfuse_mode(tmp_path):
 
     events = __import__("neoag.utils", fromlist=["read_tsv"]).read_tsv(paths["raw_events"])
     assert len(events) == 2
+
+
+def test_build_intermediates_easyfuse_expands_hla_and_requires_peptides(tmp_path):
+    hla = ["HLA-A*02:01", "HLA-B*07:02"]
+    cfg = {
+        "sample": {"id": "EF1", "profile": "default"},
+        "inputs": {
+            "entry_mode": "fusion",
+            "easyfuse_pass_csv": str(FIXTURE),
+            "hla_alleles": hla,
+            "require_nonempty_peptides": True,
+        },
+    }
+    paths = build_raw_intermediates(cfg, tmp_path / "with_hla", root=ROOT)
+    peptides = __import__("neoag.utils", fromlist=["read_tsv"]).read_tsv(paths["raw_peptides"])
+    assert peptides
+    assert {row["hla_allele"] for row in peptides} == set(hla)
+
+    cfg["inputs"]["hla_alleles"] = []
+    with pytest.raises(ValueError, match="candidate event.*no peptide-HLA rows"):
+        build_raw_intermediates(cfg, tmp_path / "without_hla", root=ROOT)
 
 
 def test_evidence_layer_uses_fusion_evidence(tmp_path):

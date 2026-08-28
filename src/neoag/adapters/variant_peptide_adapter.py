@@ -73,6 +73,10 @@ def event_from_variant_row(row: dict[str, str], sample_id: str, profile_name: st
         "source": tool,
         "mutation_source": infer_mutation_source(event_type=event_type, tool=tool, consequence=consequence),
         "peptide_consequence": infer_peptide_consequence(event_type=event_type, consequence=consequence, tool=tool),
+        "candidate_union_source": row.get("candidate_union_source", ""),
+        "internal_tool_count": row.get("internal_tool_count", ""),
+        "internal_tools": row.get("internal_tools", ""),
+        "internal_high_confidence_reason": row.get("internal_high_confidence_reason", ""),
     }
     return enrich_event_layers(base)
 
@@ -93,6 +97,10 @@ def peptide_from_variant_row(
         "event_type": event["event_type"],
         "mutation_source": event.get("mutation_source", ""),
         "peptide_consequence": event.get("peptide_consequence", ""),
+        "candidate_union_source": event.get("candidate_union_source", ""),
+        "internal_tool_count": event.get("internal_tool_count", ""),
+        "internal_tools": event.get("internal_tools", ""),
+        "internal_high_confidence_reason": event.get("internal_high_confidence_reason", ""),
         "gene": event["gene"],
         "peptide": peptide,
         "wildtype_peptide": wt,

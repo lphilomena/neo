@@ -89,13 +89,10 @@ def profile_requirements(inputs: dict[str, Any]) -> list[ProfileRequirement]:
         "one or more paired-end tumor RNA FASTQ batches, supplied as R1/R2 pairs",
     ))
     add("hla_alleles_or_hla_file", None, required=True, detail="required for peptide-HLA prediction")
-    add("reference_fasta", inputs.get("reference_fasta"), required=True, detail="GRCh38 FASTA used by STAR/Arriba and downstream reconstruction")
+    add("reference_fasta", inputs.get("reference_fasta"), required=True, detail="GRCh38 FASTA used by STAR and downstream reconstruction")
     add("gencode_gtf", inputs.get("gencode_gtf"), required=True, detail="GENCODE GTF matching the FASTA and indexes")
     add("star_index", inputs.get("star_index"), required=True, detail="STAR genome index matching FASTA/GTF")
     add("easyfuse_ref", inputs.get("easyfuse_ref"), required=True, detail="EasyFuse reference bundle")
-    fusioncatcher_ref = inputs.get("fusioncatcher_ref") or (str(Path(str(inputs.get("easyfuse_ref"))) / "fusioncatcher_index") if inputs.get("easyfuse_ref") else "")
-    add("fusioncatcher_ref", fusioncatcher_ref, required=False, detail="FusionCatcher reference/data directory; defaults to easyfuse_ref/fusioncatcher_index")
-    add("ctat_genome_lib", inputs.get("ctat_genome_lib"), required=True, detail="CTAT genome library for STAR-Fusion")
     salmon_ready = bool(
         inputs.get("salmon_index") and Path(str(inputs["salmon_index"])).is_dir()
         and inputs.get("tx2gene") and Path(str(inputs["tx2gene"])).is_file()
@@ -140,7 +137,7 @@ def _toml(value: Any) -> str:
 
 def _stage(lines: list[str], name: str, *, required: bool, command: str,
            outputs: dict[str, str], depends_on: list[str] | None = None,
-           source: str = "") -> None:
+           source: str = "", data_row_outputs: list[str] | None = None) -> None:
     thread_match = re.search(r"--(?:threads|cores)(?:=|\s+)(\d+)", command)
     ceiling = int(thread_match.group(1)) if thread_match else 16
     key = name.lower()
@@ -168,6 +165,8 @@ def _stage(lines: list[str], name: str, *, required: bool, command: str,
         lines.append(f"source = {_toml(source)}")
     if depends_on:
         lines.append(f"depends_on = {_toml(depends_on)}")
+    if data_row_outputs:
+        lines.append(f"data_row_outputs = {_toml(data_row_outputs)}")
     lines.append(f"cpus = {cpus}")
     lines.append(f"memory_gb = {memory_gb}")
     lines.append(f"command = {_toml(command)}")
@@ -302,81 +301,33 @@ def generate_rna_fusion_splice_manifest(
                    "rsem_transcript_expression": "{outdir}/rna/rsem_expression/transcript_tpm.tsv",
                }, depends_on=["fastq_qc"])
 
-    fusion_inputs: list[str] = []
-    fusion_union_inputs: list[str] = []
-    fusion_depends: list[str] = []
     easyfuse_ref = str(inputs.get("easyfuse_ref") or "")
-    if easyfuse_ref:
-        easyfuse_command = (
-            f"EASYFUSE_SAMPLE_ID={_q(sample_id)} EASYFUSE_FQ1={_q(pair[0])} EASYFUSE_FQ2={_q(pair[1])} "
-            f"NEOAG_EASYFUSE_REF={_q(easyfuse_ref)} OUTDIR={{outdir}}/branches/fusion/easyfuse "
-            f"bash {script('run_easyfuse_sample.sh')}"
-        )
-        _stage(lines, "easyfuse_discovery", required=True, command=easyfuse_command,
-               outputs={"fusion_tsv": f"{{outdir}}/branches/fusion/easyfuse/{sample_id}/fusions.pass.csv"},
-               depends_on=["fastq_qc"])
-        fusion_inputs.append(f"--easyfuse {{outdir}}/branches/fusion/easyfuse/{_q(sample_id)}/fusions.pass.csv")
-        fusion_union_inputs.extend([
-            f"--easyfuse {{outdir}}/branches/fusion/easyfuse/{_q(sample_id)}/fusions.pass.csv",
-            "--star-chimeric {outdir}/rna/star/Chimeric.out.junction",
-            "--caller-root {outdir}/branches/fusion/easyfuse",
-            "--caller-root {outdir}/branches/fusion",
-        ])
-        fusion_depends.append("easyfuse_discovery")
-    else:
-        ctat = str(inputs.get("ctat_genome_lib") or "")
-        if ctat:
-            star_fusion_command = (
-                f"bash {script('run_star_fusion_sample.sh')} --fastq1 {_q(pair[0])} --fastq2 {_q(pair[1])} "
-                f"--ctat-genome-lib {_q(ctat)} --sample-id {_q(sample_id)} --threads {threads} "
-                f"--outdir {{outdir}}/branches/fusion/star-fusion"
-            )
-            _stage(lines, "star_fusion_discovery", required=False, command=star_fusion_command,
-                   outputs={"fusion_tsv": "{outdir}/branches/fusion/star-fusion/star-fusion.fusion_predictions.tsv"},
-                   depends_on=["fastq_qc"])
-            fusion_inputs.append("--star-fusion {outdir}/branches/fusion/star-fusion/star-fusion.fusion_predictions.tsv")
-            fusion_union_inputs.append("--star-fusion {outdir}/branches/fusion/star-fusion/star-fusion.fusion_predictions.tsv")
-            fusion_depends.append("star_fusion_discovery")
+    easyfuse_command = (
+        f"EASYFUSE_SAMPLE_ID={_q(sample_id)} EASYFUSE_FQ1={_q(pair[0])} EASYFUSE_FQ2={_q(pair[1])} "
+        f"NEOAG_EASYFUSE_REF={_q(easyfuse_ref)} OUTDIR={{outdir}}/branches/fusion/easyfuse "
+        f"bash {script('run_easyfuse_sample.sh')}"
+    ) if easyfuse_ref else ""
+    _stage(lines, "easyfuse_discovery", required=True, command=easyfuse_command,
+           outputs={"fusion_tsv": f"{{outdir}}/branches/fusion/easyfuse/{sample_id}/fusions.pass.csv"},
+           depends_on=["fastq_qc"])
 
-        fusioncatcher_ref = str(inputs.get("fusioncatcher_ref") or "")
-        if fusioncatcher_ref:
-            fusioncatcher_command = (
-                f"bash {script('run_fusioncatcher_sample.sh')} --fastq1 {_q(pair[0])} --fastq2 {_q(pair[1])} "
-                f"--sample-id {_q(sample_id)} --fusioncatcher-ref {_q(fusioncatcher_ref)} "
-                f"--outdir {{outdir}}/branches/fusion/fusioncatcher"
-            )
-            _stage(lines, "fusioncatcher_discovery", required=False, command=fusioncatcher_command,
-                   outputs={"fusion_tsv": "{outdir}/branches/fusion/fusioncatcher/fusioncatcher.final-list.txt"},
-                   depends_on=["fastq_qc"])
-            fusion_inputs.append("--fusioncatcher {outdir}/branches/fusion/fusioncatcher/fusioncatcher.final-list.txt")
-            fusion_union_inputs.append("--fusioncatcher {outdir}/branches/fusion/fusioncatcher/fusioncatcher.final-list.txt")
-            fusion_depends.append("fusioncatcher_discovery")
+    fusion_union_command = (
+        f"PYTHONPATH={_q(root / 'src')} {_q(Path(sys.executable))} "
+        f"{script('build_easyfuse_candidate_union.py')} "
+        f"--pass-csv {{outdir}}/branches/fusion/easyfuse/{_q(sample_id)}/fusions.pass.csv "
+        f"--all-csv {{outdir}}/branches/fusion/easyfuse/{_q(sample_id)}/fusions.csv "
+        f"--output {{outdir}}/branches/fusion/easyfuse/{_q(sample_id)}/fusions.openneo_union.csv "
+        f"--summary {{outdir}}/branches/fusion/easyfuse/{_q(sample_id)}/fusions.openneo_union.summary.json"
+    )
+    _stage(lines, "fusion_candidate_union", required=True, command=fusion_union_command,
+           outputs={
+               "fusion_tsv": f"{{outdir}}/branches/fusion/easyfuse/{sample_id}/fusions.openneo_union.csv",
+               "summary": f"{{outdir}}/branches/fusion/easyfuse/{sample_id}/fusions.openneo_union.summary.json",
+           }, depends_on=["easyfuse_discovery"])
 
-        if inputs.get("reference_fasta") and inputs.get("gencode_gtf"):
-            arriba_command = (
-                f"PATIENT_ID={_q(sample_id)} INPUT_BAM={{outdir}}/rna/star/Aligned.sortedByCoord.out.bam "
-                f"REF_FASTA={_q(inputs['reference_fasta'])} GTF={_q(inputs['gencode_gtf'])} "
-                f"OUTDIR={{outdir}}/branches/fusion/arriba bash {script('run_arriba_sample.sh')}"
-            )
-            _stage(lines, "arriba_discovery", required=False, command=arriba_command,
-                   outputs={"fusion_tsv": f"{{outdir}}/branches/fusion/arriba/{sample_id}.fusions.tsv"},
-                   depends_on=["rna_alignment"])
-            fusion_inputs.append(f"--arriba {{outdir}}/branches/fusion/arriba/{_q(sample_id)}.fusions.tsv")
-            fusion_union_inputs.append(f"--arriba {{outdir}}/branches/fusion/arriba/{_q(sample_id)}.fusions.tsv")
-            fusion_depends.append("arriba_discovery")
-
-    if not fusion_union_inputs:
-        fusion_union_inputs.append("--caller-root {outdir}/branches/fusion")
-    if "--star-chimeric {outdir}/rna/star/Chimeric.out.junction" not in fusion_union_inputs:
-        fusion_union_inputs.append("--star-chimeric {outdir}/rna/star/Chimeric.out.junction")
-    fusion_union_inputs.append("--rna-bam {outdir}/rna/star/Aligned.sortedByCoord.out.bam")
-    if "rna_alignment" not in fusion_depends:
-        fusion_depends.append("rna_alignment")
-
-    fusion_args = " ".join(fusion_inputs)
     fusion_consensus_command = (
         f"{_q(Path(sys.executable))} {script('review_rna_fusions.py')} "
-        f"{fusion_args} "
+        f"--easyfuse {{outdir}}/branches/fusion/easyfuse/{_q(sample_id)}/fusions.openneo_union.csv "
         f"--normal-readthrough {_q(inputs.get('normal_readthrough') or '')} "
         f"--outdir {{outdir}}/branches/fusion/consensus"
     )
@@ -385,7 +336,7 @@ def generate_rna_fusion_splice_manifest(
                "fusion_consensus": "{outdir}/branches/fusion/consensus/fusion_consensus.tsv",
                "fusion_background_review": "{outdir}/branches/fusion/consensus/fusion_background_review.tsv",
            },
-           depends_on=fusion_depends)
+           depends_on=["fusion_candidate_union"])
 
     regtools_command = (
         f"bash {script('run_regtools_junctions.sh')} --bam {{outdir}}/rna/star/Aligned.sortedByCoord.out.bam "
@@ -451,20 +402,17 @@ def generate_rna_fusion_splice_manifest(
            outputs={"candidate_table": "{outdir}/branches/splice/splicemutr/splicemutr_candidates.tsv"},
            depends_on=["junction_extraction", "rna_expression"])
 
-    fusion_union_args = " ".join(fusion_union_inputs)
     fusion_norm = (
-        f"PYTHONPATH={_q(root / 'src')} {_q(Path(sys.executable))} {script('build_fusion_caller_union.py')} "
-        f"--sample-id {_q(sample_id)} --profile {_q(PROFILE_NAME)} --hla-file {_q(hla_file)} "
-        f"{fusion_union_args} --outdir {{outdir}}/branches/fusion/intermediates"
+        f"PYTHONPATH={_q(root / 'src')} {_q(Path(sys.executable))} -m neoag.cli build-intermediates "
+        f"--entry-mode fusion --easyfuse-tsv {{outdir}}/branches/fusion/easyfuse/{_q(sample_id)}/fusions.openneo_union.csv "
+        f"--hla-file {_q(hla_file)} --require-nonempty-peptides "
+        f"--sample-id {_q(sample_id)} --outdir {{outdir}}/branches/fusion/intermediates"
     )
-    _stage(lines, "fusion_peptide_generation", required=True, command=fusion_norm, source="fusion_caller_union",
+    _stage(lines, "fusion_peptide_generation", required=True, command=fusion_norm, source="EasyFuse",
            outputs={
                "raw_events": "{outdir}/branches/fusion/intermediates/parsed/raw_events.tsv",
                "raw_peptides": "{outdir}/branches/fusion/intermediates/parsed/raw_peptides.tsv",
-               "fusion_caller_union": "{outdir}/branches/fusion/intermediates/fusion_caller_union.tsv",
-               "fusion_consensus": "{outdir}/branches/fusion/intermediates/fusion_consensus.tsv",
-               "junction_verification": "{outdir}/branches/fusion/intermediates/junction_read_verification.tsv",
-           }, depends_on=fusion_depends)
+           }, depends_on=["fusion_candidate_union"], data_row_outputs=["raw_peptides"])
 
     splice_norm = (
         f"PYTHONPATH={_q(root / 'src')} {_q(Path(sys.executable))} "
