@@ -28,7 +28,7 @@ def read_rows(path: Path | None) -> list[dict[str, str]]:
     with path.open(encoding="utf-8", errors="replace", newline="") as handle:
         first_line = handle.readline()
         handle.seek(0)
-        delimiter = "\t" if "\t" in first_line else ","
+        delimiter = "\t" if "\t" in first_line else (";" if ";" in first_line else ",")
         return [{str(key): str(value or "") for key, value in row.items()} for row in csv.DictReader(handle, delimiter=delimiter)]
 
 
@@ -69,7 +69,11 @@ def first(row: dict[str, str], names: list[str]) -> str:
 def pair(row: dict[str, str]) -> str:
     combined = first(row, ["fusion", "fusion_name", "fusionname", "fusion_gene", "fusion genes", "fusion_genes"])
     if combined:
-        return combined.replace("--", "::")
+        normalized = combined.replace("--", "::")
+        if "::" not in normalized and "_" in normalized:
+            left, right = normalized.split("_", 1)
+            return f"{left}::{right}"
+        return normalized
     left = first(row, ["gene1", "gene5", "left_gene", "gene_1_symbol(5end_fusion_partner)", "gene_1_symbol", "5end_fusion_partner"])
     right = first(row, ["gene2", "gene3", "right_gene", "gene_2_symbol(3end_fusion_partner)", "gene_2_symbol", "3end_fusion_partner"])
     return f"{left}::{right}" if left and right else ""

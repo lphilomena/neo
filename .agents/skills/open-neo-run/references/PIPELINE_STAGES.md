@@ -70,8 +70,17 @@ Gateway-backed production DAG.
 
 The built-in profile includes multi-batch paired FASTQ merging, FASTQ QC, STAR, Salmon gene/transcript TPM,
 RSEM expression cross-check when a matching RSEM reference is available,
-EasyFuse as the primary fusion meta-workflow, plus a provenance-tagged union of EasyFuse pass/unfiltered evidence, EasyFuse/standalone STAR-Fusion, Arriba, FusionCatcher, JAFFAL and completed caller roots when present, RegTools, optional reviewed SNAF/SpliceMutr workflows, fusion/splice
-cross-validation, candidate peptide generation and downstream ranking.
+EasyFuse as the only scheduled fusion meta-workflow, RegTools, optional reviewed
+SNAF/SpliceMutr workflows, fusion/splice normalization, candidate peptide
+generation and downstream ranking. The formal fusion input is EasyFuse
+`fusions.pass.csv` union high-confidence embedded-caller rows from `fusions.csv`.
+Every rescued row retains its source, caller list/count and RNA-support reason;
+`INTERNAL_CALLER_HIGH_CONFIDENCE` triggers
+`CAP_CANDIDATE_UNION_INTERNAL_RESCUE` and cannot rank above R3 without
+independent or orthogonal confirmation. Fusion intermediate generation consumes
+the run-level HLA file and expands junction-crossing 8-11mer sequences into
+peptide-HLA rows. A header-only peptide table is a failed stage, including on
+resume, and is never accepted as a completed fusion ranking input.
 Missing optional evidence remains `UNASSESSED` or `SAFETY_PARTIAL`.
 
 ## Purity/CNV

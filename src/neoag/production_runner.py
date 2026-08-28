@@ -249,9 +249,36 @@ def _flatten_paths(outputs: dict[str, Any]) -> list[Path]:
     return paths
 
 
-def _outputs_ready(outputs: dict[str, Any]) -> bool:
+def _has_data_row(path: Path) -> bool:
+    if not path.is_file():
+        return False
+    nonblank = 0
+    with path.open("r", encoding="utf-8", errors="replace") as handle:
+        for line in handle:
+            if not line.strip():
+                continue
+            nonblank += 1
+            if nonblank >= 2:
+                return True
+    return False
+
+
+def _outputs_ready(
+    outputs: dict[str, Any],
+    data_row_outputs: list[str] | None = None,
+) -> bool:
     paths = _flatten_paths(outputs)
-    return bool(paths) and all(path.exists() for path in paths)
+    if not paths or not all(path.exists() for path in paths):
+        return False
+    for key in data_row_outputs or []:
+        value = outputs.get(key)
+        values = value if isinstance(value, list) else [value]
+        if not values or not all(
+            isinstance(item, str) and item and _has_data_row(Path(item))
+            for item in values
+        ):
+            return False
+    return True
 
 
 def _tool_group_audit(requirements, stages, results, output):
@@ -335,6 +362,7 @@ def _run_stage(
     required = bool(spec.get("required", False))
     source = str(spec.get("source") or "")
     outputs = _expand_value(spec.get("outputs") or {}, context)
+    data_row_outputs = [str(value) for value in (spec.get("data_row_outputs") or [])]
     command = _expand(str(spec.get("command") or ""), context).strip()
     log_path = logs_dir / f"{name}.log"
     started_at = _utc_now()
@@ -345,7 +373,7 @@ def _run_stage(
             resources.cpus, resources.memory_gb, started_at, _utc_now(),
         )
 
-    if _outputs_ready(outputs) and not force:
+    if _outputs_ready(outputs, data_row_outputs) and not force:
         return result("REUSED")
     if not execute:
         status = "PLANNED" if command else ("BLOCKED" if required else "LOW_CONFIDENCE")
@@ -382,9 +410,9 @@ def _run_stage(
     if proc.returncode != 0:
         status = "FAILED" if required else "LOW_CONFIDENCE"
         return result(status, f"command returned {proc.returncode}")
-    if not _outputs_ready(outputs):
+    if not _outputs_ready(outputs, data_row_outputs):
         status = "FAILED" if required else "LOW_CONFIDENCE"
-        return result(status, "command completed but declared outputs are missing")
+        return result(status, "command completed but declared outputs are missing or required tables contain no data rows")
     return result("PASS")
 
 

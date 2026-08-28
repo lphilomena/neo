@@ -920,3 +920,34 @@ def test_rna_only_fusion_r3_recommends_orthogonal_confirmation(tmp_path: Path):
     assert "CAP_RNA_ONLY_FUSION" in row["evidence_grade_cap_reasons"]
     assert "RT-PCR/Sanger" in row["recommended_next_steps"]
     assert "second fusion caller" in row["recommended_next_steps"]
+
+
+def test_easyfuse_internal_caller_union_rescue_is_capped_at_r3(tmp_path: Path):
+    candidate = complete_row("P_FUSION_RESCUE")
+    candidate.update({
+        "event_type": "Fusion",
+        "mutation_source": "SV",
+        "candidate_union_source": "INTERNAL_CALLER_HIGH_CONFIDENCE",
+        "normal_junction_assessment_status": "NOT_DETECTED_ADEQUATE_COVERAGE",
+        "rna_support_status": "RNA_CONFIRMED",
+        "rna_junction_reads": "20",
+        "ccf_status": "CLONAL",
+        "ccf_confidence": "HIGH",
+        "l3_clonality_score": "1.0",
+    })
+    row = _rank_one(tmp_path, candidate)
+    assert row["evidence_grade_uncapped"] in {"R1", "R2"}
+    assert row["evidence_grade"] == "R3"
+    assert "CAP_CANDIDATE_UNION_INTERNAL_RESCUE" in row["evidence_grade_cap_reasons"]
+    assert "independent fusion confirmation" in row["recommended_next_steps"]
+
+
+def test_easyfuse_pass_does_not_trigger_internal_rescue_cap(tmp_path: Path):
+    candidate = complete_row("P_FUSION_PASS")
+    candidate.update({
+        "event_type": "Fusion",
+        "candidate_union_source": "EASYFUSE_PASS",
+        "normal_junction_assessment_status": "NOT_DETECTED_ADEQUATE_COVERAGE",
+    })
+    row = _rank_one(tmp_path, candidate)
+    assert "CAP_CANDIDATE_UNION_INTERNAL_RESCUE" not in row["evidence_grade_cap_reasons"]

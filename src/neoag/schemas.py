@@ -2,6 +2,7 @@
 EVENT_FIELDS = [
     "event_id","splice_event_id","sample_id","disease_profile","event_type","mutation_source","source_chain_track","peptide_consequence",
     "evidence_scope","priority_cap","wes_confidence_tier",
+    "candidate_union_source","internal_tool_count","internal_tools","internal_high_confidence_reason",
     "gene","event_name","splice_event_type","junction_ids",
     "genome_build","canonical_junction_id","source_junction_id","adjacency_key",
     "chrom1","pos1","strand1","chrom2","pos2","strand2",
@@ -60,6 +61,7 @@ EVENT_FIELDS = [
 PEPTIDE_FIELDS = [
     "peptide_id","event_id","splice_event_id","transcript_hypothesis_id","orf_id","origin_peptide_id","sample_id","event_type","mutation_source","source_chain_track","peptide_consequence",
     "evidence_scope","priority_cap","wes_confidence_tier",
+    "candidate_union_source","internal_tool_count","internal_tools","internal_high_confidence_reason",
     "gene","peptide","wildtype_peptide","splice_event_type","junction_ids",
     "genome_build","canonical_junction_id","source_junction_id","adjacency_key",
     "chrom1","pos1","strand1","chrom2","pos2","strand2",
@@ -192,6 +194,8 @@ FUSION_EVIDENCE_FIELDS = [
     "exon_boundary", "neo_peptide_sequence", "fusion_protein_sequence",
     "rna_junction_reads", "rna_spanning_reads", "anchor_size",
     "caller_support_frac", "caller_prob", "caller_pass", "tools_detected",
+    "candidate_union_source", "internal_tool_count", "internal_tools",
+    "internal_high_confidence_reason",
     "filter_status", "filter_reason", "source_file",
 ]
 

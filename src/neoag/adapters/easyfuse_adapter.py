@@ -34,6 +34,9 @@ class EasyFuseFilterConfig:
     require_neo_peptide: bool = True
     exclude_cis_near: bool = True
     exclude_readthrough_types: frozenset[str] = field(default_factory=lambda: READTHROUGH_TYPES)
+    min_internal_callers: int = 1
+    single_caller_min_junction_reads: int = 5
+    single_caller_min_anchor_size: int = 20
 
 
 def _easyfuse_delimiter(header: str) -> str | None:
@@ -164,6 +167,116 @@ def _tools_detected(row: dict[str, str]) -> str:
     return ",".join(sorted(set(hits)))
 
 
+def _easyfuse_union_key(row: dict[str, str]) -> tuple[str, str, str]:
+    primary = (
+        first(row, ["BPID", "bpid"], ""),
+        first(row, ["context_sequence_id"], ""),
+        first(row, ["FTID", "ftid"], ""),
+    )
+    if any(primary):
+        return primary
+    return (
+        first(row, ["Fusion_Gene", "fusion_gene"], ""),
+        first(row, ["Breakpoint1", "breakpoint1"], ""),
+        first(row, ["Breakpoint2", "breakpoint2"], ""),
+    )
+
+
+def is_internal_caller_high_confidence(
+    row: dict[str, str],
+    cfg: EasyFuseFilterConfig | None = None,
+) -> tuple[bool, str]:
+    """Qualify non-pass EasyFuse rows using caller support and RNA evidence."""
+    cfg = cfg or EasyFuseFilterConfig()
+    tools = [tool for tool in _tools_detected(row).split(",") if tool]
+    if len(tools) < cfg.min_internal_callers:
+        return False, f"internal_callers<{cfg.min_internal_callers}"
+
+    frame = str(first(row, ["frame", "Frame"], "")).strip().lower()
+    fusion_type = str(first(row, ["type", "Type"], "")).strip().lower()
+    if frame == "no_frame":
+        return False, "frame_no_frame"
+    if not _neo_peptide_sequence(row):
+        return False, "missing_neo_peptide"
+    if cfg.exclude_cis_near and fusion_type in cfg.exclude_readthrough_types:
+        return False, f"readthrough_type:{fusion_type}"
+
+    junction_reads = _tool_junction_reads(row)
+    anchor_size = _anchor_size(row)
+    if len(tools) >= 2:
+        if junction_reads < cfg.min_junction_reads:
+            return False, f"junction_reads<{cfg.min_junction_reads}"
+        if anchor_size < cfg.min_anchor_size:
+            return False, f"anchor_size<{cfg.min_anchor_size}"
+        return True, "multi_caller_high_confidence"
+    if junction_reads < cfg.single_caller_min_junction_reads:
+        return False, f"single_caller_junction_reads<{cfg.single_caller_min_junction_reads}"
+    if anchor_size < cfg.single_caller_min_anchor_size:
+        return False, f"single_caller_anchor_size<{cfg.single_caller_min_anchor_size}"
+    return True, "single_caller_strong_rna_support"
+
+
+def build_easyfuse_candidate_union(
+    pass_path: str | Path,
+    all_path: str | Path,
+    *,
+    filter_cfg: EasyFuseFilterConfig | None = None,
+) -> tuple[list[dict[str, str]], dict[str, object]]:
+    """Return EasyFuse pass rows unioned with internal-caller high-confidence rows."""
+    cfg = filter_cfg or EasyFuseFilterConfig()
+    pass_rows = read_easyfuse_table(pass_path)
+    all_rows = read_easyfuse_table(all_path)
+    union_rows: list[dict[str, str]] = []
+    seen: set[tuple[str, str, str]] = set()
+    internal_rescue_count = 0
+
+    def annotate(row: dict[str, str], source: str, reason: str) -> dict[str, str]:
+        tools = [tool for tool in _tools_detected(row).split(",") if tool]
+        return {
+            **row,
+            "openneo_union_source": source,
+            "openneo_internal_tools": ",".join(tools),
+            "openneo_internal_tool_count": str(len(tools)),
+            "openneo_internal_high_confidence": "1" if source == "INTERNAL_CALLER_HIGH_CONFIDENCE" else "0",
+            "openneo_internal_high_confidence_reason": reason,
+        }
+
+    for row in pass_rows:
+        key = _easyfuse_union_key(row)
+        if key in seen:
+            continue
+        seen.add(key)
+        union_rows.append(annotate(row, "EASYFUSE_PASS", "easyfuse_prediction_pass"))
+
+    for row in all_rows:
+        key = _easyfuse_union_key(row)
+        if key in seen:
+            continue
+        accepted, reason = is_internal_caller_high_confidence(row, cfg)
+        if not accepted:
+            continue
+        seen.add(key)
+        internal_rescue_count += 1
+        union_rows.append(annotate(row, "INTERNAL_CALLER_HIGH_CONFIDENCE", reason))
+
+    summary: dict[str, object] = {
+        "pass_rows": len(pass_rows),
+        "all_rows": len(all_rows),
+        "internal_high_confidence_added": internal_rescue_count,
+        "union_rows": len(union_rows),
+        "criteria": {
+            "minimum_internal_callers": cfg.min_internal_callers,
+            "multi_caller_min_junction_reads": cfg.min_junction_reads,
+            "multi_caller_min_anchor_size": cfg.min_anchor_size,
+            "single_caller_min_junction_reads": cfg.single_caller_min_junction_reads,
+            "single_caller_min_anchor_size": cfg.single_caller_min_anchor_size,
+            "requires_valid_frame_and_neo_peptide": True,
+            "excludes_cis_near": cfg.exclude_cis_near,
+        },
+    }
+    return union_rows, summary
+
+
 def filter_easyfuse_row(
     row: dict[str, str],
     cfg: EasyFuseFilterConfig | None = None,
@@ -176,9 +289,10 @@ def filter_easyfuse_row(
     fusion_type = str(first(row, ["type", "Type"], "")).strip().lower()
     neo_pep = _neo_peptide_sequence(row)
 
-    if cfg.require_positive_class and pred_class and pred_class != "positive":
+    internal_rescue = first(row, ["openneo_union_source"], "") == "INTERNAL_CALLER_HIGH_CONFIDENCE"
+    if cfg.require_positive_class and not internal_rescue and pred_class and pred_class != "positive":
         return False, "prediction_class_not_positive"
-    if pred_prob < cfg.min_prediction_prob:
+    if not internal_rescue and pred_prob < cfg.min_prediction_prob:
         return False, f"prediction_prob<{cfg.min_prediction_prob}"
     if cfg.exclude_no_frame and frame == "no_frame":
         return False, "frame_no_frame"
@@ -233,6 +347,10 @@ def easyfuse_row_to_event(
         "caller_prob": f"{pred_prob:.4f}",
         "caller_pass": pred_class,
         "tools_detected": _tools_detected(row),
+        "candidate_union_source": first(row, ["openneo_union_source"], "EASYFUSE_PASS"),
+        "internal_tool_count": first(row, ["openneo_internal_tool_count"], ""),
+        "internal_tools": first(row, ["openneo_internal_tools"], _tools_detected(row)),
+        "internal_high_confidence_reason": first(row, ["openneo_internal_high_confidence_reason"], ""),
         "filter_status": "pass" if passed else "fail",
         "filter_reason": reason,
         "source_file": str(source_path),
@@ -254,6 +372,10 @@ def easyfuse_row_to_event(
         "event_type": "Fusion",
         "mutation_source": infer_mutation_source(event_type="Fusion", tool="EasyFuse"),
         "peptide_consequence": "fusion",
+        "candidate_union_source": evidence["candidate_union_source"],
+        "internal_tool_count": evidence["internal_tool_count"],
+        "internal_tools": evidence["internal_tools"],
+        "internal_high_confidence_reason": evidence["internal_high_confidence_reason"],
         "gene": gene,
         "event_name": first(row, ["Fusion_Gene", "fusion_gene"], gene.replace("::", "_")),
         "chrom": chrom,

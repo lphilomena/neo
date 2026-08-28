@@ -825,13 +825,10 @@ def cmd_build_intermediates(args):
     if args.config:
         cfg = load_run_config(args.config)
     else:
-        hla_alleles = list(getattr(args, "hla_alleles", None) or [])
         hla_file = getattr(args, "hla_file", None)
-        if hla_file and Path(hla_file).is_file():
-            hla_alleles.extend(
-                line.strip() for line in Path(hla_file).read_text(encoding="utf-8").splitlines()
-                if line.strip() and not line.lstrip().startswith("#")
-            )
+        if hla_file and not Path(hla_file).is_file():
+            raise SystemExit(f"HLA allele file not found: {hla_file}")
+        hla_alleles = read_hla_alleles(hla_file or getattr(args, "hla_alleles", None))
         cfg = {
             "sample": {"id": args.sample_id, "profile": args.profile},
             "inputs": {
@@ -848,6 +845,9 @@ def cmd_build_intermediates(args):
                 "sv_raw_peptides": args.sv_raw_peptides,
                 "hla_file": hla_file,
                 "hla_alleles": hla_alleles,
+                "require_nonempty_peptides": bool(
+                    getattr(args, "require_nonempty_peptides", False)
+                ),
             },
         }
     paths = build_raw_intermediates(cfg, args.outdir, root=ROOT)
@@ -1464,6 +1464,11 @@ def build_parser():
     bi.add_argument("--sv-raw-peptides")
     bi.add_argument("--hla-file")
     bi.add_argument("--hla-alleles", nargs="*")
+    bi.add_argument(
+        "--require-nonempty-peptides",
+        action="store_true",
+        help="Fail when candidate events exist but no peptide-HLA rows are generated",
+    )
     bi.set_defaults(func=cmd_build_intermediates)
 
     be = sub.add_parser("build-evidence-layer", help="Write expression/RNA junction/safety evidence TSVs")

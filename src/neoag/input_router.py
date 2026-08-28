@@ -257,6 +257,13 @@ def build_raw_intermediates(
     if not raw_peptides.is_file() or peptides:
         write_tsv(raw_peptides, peptides if peptides else read_tsv(raw_peptides) if raw_peptides.is_file() else [], PEPTIDE_FIELDS)
 
+    if inputs.get("require_nonempty_peptides") and events and not peptides:
+        raise ValueError(
+            f"entry_mode={mode}: {len(events)} candidate event(s) were generated but no "
+            "peptide-HLA rows were produced. Supply valid HLA alleles and confirm that "
+            "the source contains reconstructable junction-crossing peptide sequence."
+        )
+
     fusion_evidence_out = parsed / "fusion_evidence.tsv"
     if fusion_evidence_rows:
         write_fusion_evidence(fusion_evidence_rows, fusion_evidence_out)

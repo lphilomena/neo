@@ -1066,7 +1066,7 @@ def test_rna_fastq_profile_generator_emits_full_dag(tmp_path: Path):
     text = Path(result["manifest"]).read_text(encoding="utf-8")
     for stage in (
         "fastq_qc", "rna_alignment", "rna_expression", "rsem_expression_crosscheck", "easyfuse_discovery",
-        "junction_extraction", "fusion_cross_validation",
+        "fusion_candidate_union", "junction_extraction", "fusion_cross_validation",
         "snaf_discovery", "splicemutr_discovery", "fusion_peptide_generation",
         "splice_candidate_normalization",
     ):
@@ -1081,11 +1081,23 @@ def test_rna_fastq_profile_generator_emits_full_dag(tmp_path: Path):
     assert "--star-fusion" not in text
     assert "--arriba" not in text
     assert "--easyfuse" in text
+    assert "run_salmon_fastq_to_tpm.sh" not in text
+    assert "[stages.fusioncatcher_discovery]" not in text
+    assert "[stages.arriba_discovery]" not in text
+    assert "--star-fusion" not in text
+    assert "--arriba" not in text
+    assert "--easyfuse" in text
     assert "--outdir {outdir}/rna/rsem_expression" in text
     assert "normalize_rna_fusion_splice.py" in text
     assert (tmp_path / "rna_fusion_splice.hla.txt").is_file()
     parsed = load_production_manifest(result["manifest"])
     assert parsed["run"]["profile"] == "rna_fusion_splice_v1"
+    assert parsed["stages"]["fusion_cross_validation"]["depends_on"] == ["fusion_candidate_union"]
+    fusion_command = parsed["stages"]["fusion_peptide_generation"]["command"]
+    assert "fusions.openneo_union.csv" in fusion_command
+    assert "--hla-file" in fusion_command
+    assert "--require-nonempty-peptides" in fusion_command
+    assert parsed["stages"]["fusion_peptide_generation"]["data_row_outputs"] == ["raw_peptides"]
     planned = run_production(
         result["manifest"], project_root=Path.cwd(), outdir=tmp_path / "production-plan"
     )
@@ -1133,12 +1145,16 @@ def test_rna_fastq_profile_accepts_rsem_expression_reference(tmp_path: Path):
     assert "run_fusioncatcher_sample.sh" not in text
     assert "--fusioncatcher" not in text
     assert "[stages.star_fusion_discovery]" not in text
-    assert "[stages.fusioncatcher_discovery]" not in text
-    assert "[stages.arriba_discovery]" not in text
-    assert "--star-fusion" not in text
-    assert "--arriba" not in text
-    assert "--easyfuse" in text
-    assert "run_salmon_fastq_to_tpm.sh" not in text
+
+
+def test_rna_fastq_profile_does_not_require_ctat_for_easyfuse_only(tmp_path: Path):
+    inputs = _rna_profile_inputs(tmp_path)
+    inputs.pop("ctat_genome_lib")
+    result = generate_rna_fusion_splice_manifest(
+        inputs, tmp_path / "easyfuse-only.toml", project_root=Path.cwd(), outdir=tmp_path / "run",
+    )
+    assert result["ready_for_execute"] is True
+    assert "ctat_genome_lib" not in result["missing_required"]
 
 
 def test_rna_fastq_profile_uses_builtin_snaf_when_reference_is_configured(tmp_path: Path):
@@ -1414,6 +1430,23 @@ def test_rna_fusion_cross_validation_marks_normal_background(tmp_path: Path):
     assert rows[0]["n_tools"] == "2"
     assert rows[0]["normal_readthrough_status"] == "DETECTED"
     assert rows[0]["status"] == "NORMAL_BACKGROUND_REVIEW"
+
+
+def test_rna_fusion_cross_validation_reads_easyfuse_semicolon_table(tmp_path: Path):
+    easyfuse = tmp_path / "fusions.openneo_union.csv"
+    easyfuse.write_text(
+        "BPID;Fusion_Gene;ft_junc_cnt;frame\n"
+        "bp1;SFPQ_HMGN1;12;neo_frame\n",
+        encoding="utf-8",
+    )
+    outdir = tmp_path / "fusion-review"
+    subprocess.run([
+        sys.executable, str(Path.cwd() / "scripts/review_rna_fusions.py"),
+        "--easyfuse", str(easyfuse), "--outdir", str(outdir),
+    ], check=True)
+    rows = list(csv.DictReader((outdir / "fusion_consensus.tsv").open(), delimiter="\t"))
+    assert rows[0]["fusion"] == "SFPQ::HMGN1"
+    assert rows[0]["support_tools"] == "EasyFuse"
 
 
 def test_direct_execute_requires_gateway(tmp_path: Path):
