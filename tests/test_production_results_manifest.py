@@ -370,6 +370,38 @@ def test_generator_passes_explicit_star_chimeric_for_fusion_read_backlink(tmp_pa
     assert str(chimeric) in command
 
 
+def test_generator_adds_star_bam_splice_qc_before_prefilter(tmp_path):
+    hla = write(tmp_path / "hla.txt", "HLA-A*02:01\n")
+    purity = write(tmp_path / "purity.tsv", "sample_id\tpurity\tploidy\nS1\t0.60\t2.0\n")
+    cnv = write(tmp_path / "cnv.tsv", "chrom\tstart\tend\ttotal_cn\nchr1\t1\t1000\t2\n")
+    lohhla = write(tmp_path / "lohhla.tsv", "hla_allele\tloh_status\nHLA-A*02:01\tretained\n")
+    spechla_loh = write(tmp_path / "spechla_loh.tsv", "hla_allele\tloh_status\nHLA-A*02:01\tretained\n")
+    junctions = write(tmp_path / "junctions.tsv", "chrom\tstart\tend\tstrand\nchr1\t100\t200\t+\n")
+    snaf = write(tmp_path / "snaf.tsv", "uid\nchr1:100-200:+\n")
+    splicemutr = tmp_path / "splicemutr"
+    splicemutr.mkdir()
+    rna_bam = write(tmp_path / "rna.bam", "fixture\n")
+    star_sj = write(tmp_path / "SJ.out.tab", "1\t100\t200\t1\t0\t0\t5\t0\t20\n")
+    normal_sqlite = write(tmp_path / "normal.sqlite", "fixture\n")
+    output = tmp_path / "production.toml"
+
+    subprocess.run([
+        sys.executable, str(ROOT / "scripts/generate_production_from_results_manifest.py"),
+        "--project-root", str(ROOT), "--sample-id", "S1", "--outdir", str(tmp_path / "run"),
+        "--output", str(output), "--hla-file", str(hla), "--purity", str(purity), "--cnv", str(cnv),
+        "--lohhla", str(lohhla), "--spechla-loh", str(spechla_loh),
+        "--junctions", str(junctions), "--snaf", str(snaf), "--splicemutr", str(splicemutr),
+        "--splice-rna-bam", str(rna_bam), "--splice-star-sj", str(star_sj),
+        "--normal-junction-sqlite", str(normal_sqlite),
+    ], check=True)
+
+    command = tomllib.loads(output.read_text(encoding="utf-8"))["stages"]["splice_candidates"]["command"]
+    assert "build_splice_junction_qc_from_star_bam.py" in command
+    assert str(rna_bam) in command and str(star_sj) in command
+    assert str(normal_sqlite) in command
+    assert command.index("build_splice_junction_qc_from_star_bam.py") < command.index("filter_splice_production_candidates.py")
+
+
 def test_existing_upstream_results_produce_hla_purity_and_loh_consensus(tmp_path):
     optitype = write(tmp_path / "optitype/result.tsv", "A1\tA2\tB1\tB2\tC1\tC2\nA*02:01\tA*11:01\tB*15:01\tB*40:01\tC*03:04\tC*08:01\n").parent
     spechla = write(tmp_path / "spechla/hla.result.txt", "A\tA*02:01\tA*11:01\nB\tB*15:01\tB*40:01\nC\tC*03:04\tC*08:01\n").parent

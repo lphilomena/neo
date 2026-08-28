@@ -65,21 +65,59 @@ def load_star(path: Path):
     return records, donor_totals, acceptor_totals
 
 
-def load_crossvalidated_uids(path: Path) -> set[str]:
+def load_crossvalidated_keys(path: Path) -> set[str]:
     with path.open(encoding="utf-8", errors="replace", newline="") as handle:
         reader = csv.DictReader(handle, delimiter="\t")
-        return {str(row.get("uid") or "").strip() for row in reader if str(row.get("uid") or "").strip()}
+        validated: set[str] = set()
+        for row in reader:
+            tools = {
+                item.strip().lower()
+                for item in re.split(r"[;,]", str(row.get("support_tools") or row.get("source_tools") or ""))
+                if item.strip()
+            }
+            status = str(row.get("status") or row.get("evidence_status") or "").upper()
+            if tools and not {"snaf", "splicemutr"}.issubset(tools):
+                continue
+            if status and not any(token in status for token in ("CONFIRMED", "COMPLETED", "PASS", "SUPPORTED")):
+                continue
+            for field in ("uid", "event_id", "canonical_junction_id", "source_junction_id"):
+                value = str(row.get(field) or "").strip()
+                if value:
+                    validated.add(value)
+        return validated
+
+
+def bam_contigs(samtools: str, bam_path: Path) -> dict[str, str]:
+    process = subprocess.run(
+        [samtools, "view", "-H", str(bam_path)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    result: dict[str, str] = {}
+    for line in process.stdout.splitlines():
+        if not line.startswith("@SQ\t"):
+            continue
+        for field in line.split("\t"):
+            if field.startswith("SN:"):
+                contig = field[3:]
+                result[norm_chrom(contig)] = contig
+                break
+    return result
 
 
 def load_bam_metrics(samtools: str, bam_path: Path, keys: set[tuple[str, int, int, str]], workdir: Path):
+    workdir.mkdir(parents=True, exist_ok=True)
     by_coord = defaultdict(list)
     for key in keys:
         by_coord[key[:3]].append(key)
     bed = workdir / "candidate_junction_windows.bed"
+    contigs = bam_contigs(samtools, bam_path)
     with bed.open("w", encoding="utf-8") as handle:
         for chrom, start, end, _strand in sorted(keys):
-            handle.write(f"{chrom}\t{max(0, start - 12)}\t{start + 10}\n")
-            handle.write(f"{chrom}\t{max(0, end - 11)}\t{end + 10}\n")
+            bam_chrom = contigs.get(norm_chrom(chrom), chrom)
+            handle.write(f"{bam_chrom}\t{max(0, start - 12)}\t{start + 10}\n")
+            handle.write(f"{bam_chrom}\t{max(0, end - 11)}\t{end + 10}\n")
     reads_by_key: dict[tuple[str, int, int, str], dict[str, tuple[int, int, int, int]]] = defaultdict(dict)
     command = [samtools, "view", "-M", "-L", str(bed), str(bam_path)]
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -140,8 +178,11 @@ def main() -> int:
     parser.add_argument("--star-sj", required=True)
     parser.add_argument("--rna-bam", required=True)
     parser.add_argument("--samtools", default="samtools")
-    parser.add_argument("--crossvalidated-snaf-splicemutr", required=True)
-    parser.add_argument("--normal-junction-sqlite", required=True)
+    parser.add_argument("--crossvalidated-snaf-splicemutr")
+    parser.add_argument("--splice-consensus", help="Consensus TSV containing exact SNAF + SpliceMutr support")
+    parser.add_argument("--normal-junction-sqlite")
+    parser.add_argument("--matched-normal-star-sj")
+    parser.add_argument("--matched-normal-rna-bam")
     parser.add_argument("--outdir", required=True)
     parser.add_argument("--genome-build", default="GRCh38")
     parser.add_argument("--min-unique-reads", type=int, default=3)
@@ -152,11 +193,20 @@ def main() -> int:
     parser.add_argument("--min-tumor-psi", type=float, default=0.05)
     args = parser.parse_args()
 
+    validation_source = args.splice_consensus or args.crossvalidated_snaf_splicemutr
+    if not validation_source:
+        parser.error("one of --splice-consensus or --crossvalidated-snaf-splicemutr is required")
+    if bool(args.matched_normal_star_sj) != bool(args.matched_normal_rna_bam):
+        parser.error("--matched-normal-star-sj and --matched-normal-rna-bam must be supplied together")
+
     events, event_fields = read_rows(Path(args.events))
     peptides, peptide_fields = read_rows(Path(args.peptides))
     star, donor_totals, acceptor_totals = load_star(Path(args.star_sj))
-    validated = load_crossvalidated_uids(Path(args.crossvalidated_snaf_splicemutr))
-    normal_db = sqlite3.connect(args.normal_junction_sqlite)
+    validated = load_crossvalidated_keys(Path(validation_source))
+    normal_db = sqlite3.connect(args.normal_junction_sqlite) if args.normal_junction_sqlite else None
+    matched_normal_star = matched_normal_donors = matched_normal_acceptors = None
+    if args.matched_normal_star_sj:
+        matched_normal_star, matched_normal_donors, matched_normal_acceptors = load_star(Path(args.matched_normal_star_sj))
     metrics_by_event: dict[str, dict[str, str]] = {}
     qc_rows: list[dict[str, str]] = []
 
@@ -170,6 +220,16 @@ def main() -> int:
     outdir = Path(args.outdir)
     outdir.mkdir(parents=True, exist_ok=True)
     bam_by_key = load_bam_metrics(args.samtools, Path(args.rna_bam), junction_keys, outdir)
+    matched_normal_bam_by_key = (
+        load_bam_metrics(
+            args.samtools,
+            Path(args.matched_normal_rna_bam),
+            junction_keys,
+            outdir / "matched_normal",
+        )
+        if args.matched_normal_rna_bam
+        else {}
+    )
     for index, row in enumerate(splice_events, 1):
         event_id = str(row.get("event_id") or "")
         match = COORD_RE.match(str(row.get("event_name") or ""))
@@ -186,14 +246,48 @@ def main() -> int:
         uid = event_id.split("|", 1)[1] if "|" in event_id else event_id
         canonical = f"SJ|{args.genome_build}|chr{chrom}|{start}|{end}|{strand}"
         normal_id = f"chr{chrom}:{start}-{end}:{strand}"
-        normal_hit = normal_db.execute("select 1 from junction_ids where junction_id=? limit 1", (normal_id,)).fetchone() is not None
+        normal_hit = bool(
+            normal_db
+            and normal_db.execute("select 1 from junction_ids where junction_id=? limit 1", (normal_id,)).fetchone()
+        )
         metrics.update({
             "junction_chrom": f"chr{chrom}", "junction_start": str(start), "junction_end": str(end),
             "junction_strand": strand, "canonical_junction_id": canonical, "source_junction_id": normal_id,
             "junction_coordinate_system": "STAR_SJ_1BASED_INTRON_INCLUSIVE",
-            "normal_cohort_junction_status": "DETECTED" if normal_hit else "NOT_DETECTED",
-            "normal_junction_assessment_status": "DETECTED" if normal_hit else "NOT_DETECTED",
+            "normal_cohort_junction_status": (
+                "DETECTED_BROAD_NORMAL" if normal_hit
+                else "NOT_LISTED_IN_NORMAL_CATALOG" if normal_db
+                else "UNASSESSED_NO_NORMAL_COHORT"
+            ),
+            "normal_junction_assessment_status": (
+                "DETECTED" if normal_hit else "UNASSESSED_COVERAGE" if normal_db else "UNASSESSED"
+            ),
         })
+        if matched_normal_star is None:
+            metrics.update({
+                "matched_normal_junction_status": "UNASSESSED_NO_MATCHED_NORMAL_RNA",
+                "matched_normal_junction_reads": "",
+                "matched_normal_junction_coverage": "",
+            })
+        else:
+            normal_star_row = matched_normal_star.get(key)
+            normal_bam_row = matched_normal_bam_by_key.get(key, {})
+            normal_unique = int(normal_bam_row.get("bam_unique_split_reads") or (normal_star_row or {}).get("star_unique_reads") or 0)
+            normal_multi = int(normal_bam_row.get("bam_multi_split_reads") or (normal_star_row or {}).get("star_multi_reads") or 0)
+            normal_coverage = max(
+                (matched_normal_donors or {}).get((chrom, start, strand), 0),
+                (matched_normal_acceptors or {}).get((chrom, end, strand), 0),
+                normal_unique + normal_multi,
+            )
+            metrics.update({
+                "matched_normal_junction_status": (
+                    "DETECTED_MATCHED_NORMAL" if normal_unique + normal_multi > 0
+                    else "NOT_DETECTED_ADEQUATE_COVERAGE" if normal_coverage >= 10
+                    else "NOT_DETECTED_LOW_COVERAGE"
+                ),
+                "matched_normal_junction_reads": str(normal_unique + normal_multi),
+                "matched_normal_junction_coverage": str(normal_coverage),
+            })
         if star_row is None:
             metrics.update({"splice_alignment_qc_status": "FAIL", "junction_read_qc_status": "FAIL", "caller_filter_status": "FAIL", "junction_match_status": "UNRESOLVED", "junction_support_reason": "not found exactly in STAR SJ.out.tab"})
         else:
@@ -203,7 +297,7 @@ def main() -> int:
             total_reads = unique_reads + multi_reads
             denominator = max(donor_totals[(chrom, start, strand)], acceptor_totals[(chrom, end, strand)], unique_reads)
             psi = unique_reads / denominator if denominator else 0.0
-            caller_ok = uid in validated
+            caller_ok = any(value in validated for value in (uid, event_id, canonical, normal_id))
             unique_starts = int(bam_row.get("unique_fragment_starts") or 0)
             overhang = max(star_row["star_max_overhang"], int(bam_row.get("bam_max_overhang") or 0))
             median_mapq = float(bam_row.get("median_mapq") or 0)
@@ -237,6 +331,7 @@ def main() -> int:
                 "caller_filter_status": "PASS" if caller_ok else "FAIL",
                 "known_junction": "TRUE" if star_row["star_annotated"] == "1" else "FALSE",
                 "splice_annotation_status": "ANNOTATED_NORMAL" if star_row["star_annotated"] == "1" else "UNANNOTATED",
+                "annotated_normal_isoform_status": "KNOWN_NORMAL" if star_row["star_annotated"] == "1" else "NOVEL",
                 "junction_source_assay_id": "tumor_short_rna_STAR_BAM",
                 **bam_row,
             })
@@ -245,7 +340,8 @@ def main() -> int:
         if index % 100 == 0:
             print(f"processed {index}/{len(splice_events)} splice events", file=sys.stderr, flush=True)
 
-    normal_db.close()
+    if normal_db:
+        normal_db.close()
     additions = sorted({key for row in qc_rows for key in row if key != "event_id"})
     enriched_events = [{**row, **metrics_by_event.get(str(row.get("event_id") or ""), {})} for row in events]
     enriched_peptides = [{**row, **metrics_by_event.get(str(row.get("event_id") or ""), {})} for row in peptides]

@@ -51,6 +51,38 @@ def _status(rows: list[Mapping[str, Any]], fields: tuple[str, ...], *, pass_toke
     return None, value
 
 
+def _aggregate_exclusion_status(rows: list[Mapping[str, Any]], fields: tuple[str, ...], label: str) -> Decision:
+    """Conservatively combine peptide-level exclusion evidence for an event.
+
+    One exact normal match is sufficient to fail the event.  Absence is only
+    accepted when every recorded value is an assessed negative; mixed or
+    missing records remain unassessed.
+    """
+    values: list[str] = []
+    for row in rows:
+        for field in fields:
+            value = str(row.get(field, "") or "").strip()
+            if value and value.upper() not in {"NA", "N/A", "NONE", "UNKNOWN", "NOT_AVAILABLE"}:
+                values.append(value)
+    if not values:
+        return None, f"{label}_not_recorded"
+    uppers = [value.upper() for value in values]
+    if any(
+        any(token in value for token in ("DETECTED", "EXACT_MATCH", "FOUND", "PRESENT", "POSITIVE", "FAIL"))
+        and not any(token in value for token in ("NOT_DETECTED", "NOT_FOUND"))
+        for value in uppers
+    ):
+        return False, f"{label}=normal_exact_match_detected"
+    assessed_negative = [
+        value for value in uppers
+        if any(token in value for token in ("NOT_DETECTED", "NOT_FOUND", "ABSENT", "NEGATIVE", "PASS"))
+    ]
+    unassessed = [value for value in uppers if "UNASSESSED" in value or "PARTIAL" in value]
+    if assessed_negative and not unassessed and len(assessed_negative) == len(uppers):
+        return True, f"{label}=all_recorded_peptides_negative"
+    return None, f"{label}=mixed_or_incomplete_evidence"
+
+
 def _minimum(rows: list[Mapping[str, Any]], fields: tuple[str, ...], threshold: float, label: str) -> Decision:
     value = _number(rows, *fields)
     if value is None:
@@ -208,21 +240,19 @@ def _stage_definitions(profile: Mapping[str, Any]) -> list[tuple[str, str, Calla
         (
             "NORMAL_PROTEOME_EXCLUSION",
             "full peptide not detected in the configured normal proteome",
-            lambda rows: _status(
+            lambda rows: _aggregate_exclusion_status(
                 rows,
                 ("normal_proteome_exact_match_status", "reference_proteome_status", "reference_proteome_exact_match"),
-                pass_tokens={"NOT_DETECTED", "NOT_FOUND", "ABSENT", "PASS", "FALSE", "NO"},
-                fail_tokens={"DETECTED", "EXACT_MATCH", "FOUND", "FAIL", "TRUE", "YES"},
+                "normal_proteome",
             ),
         ),
         (
             "NORMAL_TRANSCRIPTOME_EXCLUSION",
             "full junction peptide/transcript not detected in the configured normal transcriptome",
-            lambda rows: _status(
+            lambda rows: _aggregate_exclusion_status(
                 rows,
                 ("normal_transcriptome_exact_match_status", "normal_transcriptome_status"),
-                pass_tokens={"NOT_DETECTED", "NOT_FOUND", "ABSENT", "PASS", "FALSE", "NO"},
-                fail_tokens={"DETECTED", "EXACT_MATCH", "FOUND", "FAIL", "TRUE", "YES"},
+                "normal_transcriptome",
             ),
         ),
     ]

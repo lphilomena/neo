@@ -113,3 +113,27 @@ def test_splice_prefilter_rejects_failed_formal_junction_read_qc(tmp_path):
     assert read_tsv(path) == []
     decision = read_tsv(tmp_path / "splice_prefilter_decisions.tsv")[0]
     assert "FORMAL_JUNCTION_READ_QC" in decision["failed_stages"]
+
+
+def test_splice_prefilter_rejects_event_when_any_peptide_matches_normal_proteome(tmp_path):
+    path = tmp_path / "raw_peptides.tsv"
+    negative = splice_row("MIXED", peptide_id="MIXED-P1", normal_proteome_exact_match_status="NOT_DETECTED")
+    positive = splice_row("MIXED", peptide_id="MIXED-P2", normal_proteome_exact_match_status="DETECTED")
+    write_tsv(path, [negative, positive], PEPTIDE_FIELDS)
+
+    prefilter_splice_peptides(path, {"gates": {}}, tmp_path)
+
+    assert read_tsv(path) == []
+    decision = read_tsv(tmp_path / "splice_prefilter_decisions.tsv")[0]
+    assert "NORMAL_PROTEOME_EXCLUSION" in decision["failed_stages"]
+
+
+def test_partial_transcript_nmd_is_explicitly_unassessed(tmp_path):
+    path = tmp_path / "raw_peptides.tsv"
+    write_tsv(path, [splice_row("PARTIAL", splice_nmd_status="UNASSESSED_PARTIAL_TRANSCRIPT_CONTEXT")], PEPTIDE_FIELDS)
+
+    prefilter_splice_peptides(path, {"gates": {}}, tmp_path)
+
+    decision = read_tsv(tmp_path / "splice_prefilter_decisions.tsv")[0]
+    assert "NMD" in decision["unassessed_stages"]
+    assert "UNASSESSED_PARTIAL_TRANSCRIPT_CONTEXT" in decision["stage_details"]

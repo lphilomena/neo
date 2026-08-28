@@ -125,6 +125,7 @@ PEPTIDE_FIELDS = [
     "normal_expression_status","normal_hspc_status","reference_proteome_status",
     "normal_ligandome_status","anchor_assessment_status","normal_junction_assessment_status",
     "safety_evidence_completeness","safety_missing_layers","safety_priority_cap",
+    "normal_proteome_exact_match_status","normal_transcript_junction_match_status",
     "mutation_positions_in_peptide","mutation_tcr_facing","mutation_position_role",
     "mutation_position_interpretation","wt_self_reactivity_risk_status",
     "wt_self_reactivity_risk_reason","mt_wt_interpretation_caution",

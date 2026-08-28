@@ -35,6 +35,10 @@ Usage:
     [--rna-fastq1 <R1.fq.gz[,lane2_R1.fq.gz]>] \
     [--rna-fastq2 <R2.fq.gz[,lane2_R2.fq.gz]>] \
     [--rna-bam <sorted_rna.bam> | --rna-vaf <rna_alt_vaf.tsv>] \
+    [--splice-rna-bam <sorted_rna.bam; independent splice read QC>] \
+    [--splice-star-sj <matching STAR/SJ.out.tab>] \
+    [--matched-normal-rna-bam <optional matched-normal RNA BAM>] \
+    [--matched-normal-star-sj <matching normal STAR/SJ.out.tab>] \
     [--star-index <GRCh38_STAR_index>] \
     [--easyfuse-star-index <EasyFuse_STAR_index>] \
     [--star-index-build-dir <new_STAR_index_dir>] \
@@ -97,6 +101,10 @@ RNA_FASTQ1=""
 RNA_FASTQ2=""
 RNA_BAM=""
 RNA_VAF=""
+SPLICE_RNA_BAM=""
+SPLICE_STAR_SJ=""
+MATCHED_NORMAL_RNA_BAM=""
+MATCHED_NORMAL_STAR_SJ=""
 STAR_INDEX=""
 EASYFUSE_STAR_INDEX="${EASYFUSE_STAR_INDEX:-}"
 STAR_INDEX_BUILD_DIR=""
@@ -140,6 +148,10 @@ while [[ $# -gt 0 ]]; do
     --rna-fastq2) RNA_FASTQ2="$2"; shift 2 ;;
     --rna-bam) RNA_BAM="$2"; shift 2 ;;
     --rna-vaf) RNA_VAF="$2"; shift 2 ;;
+    --splice-rna-bam) SPLICE_RNA_BAM="$2"; shift 2 ;;
+    --splice-star-sj) SPLICE_STAR_SJ="$2"; shift 2 ;;
+    --matched-normal-rna-bam) MATCHED_NORMAL_RNA_BAM="$2"; shift 2 ;;
+    --matched-normal-star-sj) MATCHED_NORMAL_STAR_SJ="$2"; shift 2 ;;
     --star-index) STAR_INDEX="$2"; shift 2 ;;
     --easyfuse-star-index) EASYFUSE_STAR_INDEX="$2"; shift 2 ;;
     --star-index-build-dir) STAR_INDEX_BUILD_DIR="$2"; shift 2 ;;
@@ -193,6 +205,12 @@ rna_input_modes=0
 }
 if [[ -n "$RNA_FASTQ1" ]]; then
   [[ -n "$GENCODE_GTF" ]] || { echo "RNA FASTQ mode requires --gencode-gtf" >&2; exit 2; }
+fi
+if [[ -n "$MATCHED_NORMAL_RNA_BAM" || -n "$MATCHED_NORMAL_STAR_SJ" ]]; then
+  [[ -n "$MATCHED_NORMAL_RNA_BAM" && -n "$MATCHED_NORMAL_STAR_SJ" ]] || {
+    echo "--matched-normal-rna-bam and --matched-normal-star-sj must be supplied together" >&2
+    exit 2
+  }
 fi
 
 verify_event_track_precedence() {
@@ -552,6 +570,25 @@ if [[ -z "$RNA_FASTQ1" && -z "$RNA_BAM" && -z "$RNA_VAF" ]]; then
     [[ -n "$discovered_rna_bam" ]] && RNA_BAM="$discovered_rna_bam"
   fi
 fi
+
+# Splice read QC is independent from SNV/InDel RNA allele counting.  Discover
+# the STAR pair even when an existing RNA VAF table was selected above.
+if [[ -z "$SPLICE_RNA_BAM" ]]; then
+  SPLICE_RNA_BAM="$(latest_matching_file "$CASE_ROOT" -name Aligned.sortedByCoord.out.bam -o -name '*.Aligned.sortedByCoord.out.bam' -o -name '*.rna.bam')"
+  [[ -z "$SPLICE_RNA_BAM" && -d "$OUTDIR" ]] && SPLICE_RNA_BAM="$(latest_matching_file "$OUTDIR" -name Aligned.sortedByCoord.out.bam -o -name '*.Aligned.sortedByCoord.out.bam' -o -name '*.rna.bam')"
+  [[ -z "$SPLICE_RNA_BAM" && -n "$RNA_BAM" ]] && SPLICE_RNA_BAM="$RNA_BAM"
+fi
+if [[ -z "$SPLICE_STAR_SJ" && -n "$SPLICE_RNA_BAM" ]]; then
+  for candidate in \
+    "$(dirname "$SPLICE_RNA_BAM")/SJ.out.tab" \
+    "$CASE_ROOT/short-rna/star/SJ.out.tab" \
+    "$OUTDIR/rna/star/SJ.out.tab"; do
+    if [[ -s "$candidate" ]]; then
+      SPLICE_STAR_SJ="$candidate"
+      break
+    fi
+  done
+fi
 add_if --easyfuse "$CASE_ROOT/short-rna/evidence/easyfuse.fusions.pass.csv"
 add_if --star-fusion "$CASE_ROOT/short-rna/evidence/star-fusion.fusion_predictions.tsv"
 add_if --arriba "$CASE_ROOT/short-rna/evidence/arriba.fusions.tsv"
@@ -583,6 +620,7 @@ if [[ -n "$ASSET" ]]; then
   NORMAL_JUNCTIONS="$ASSET/data/normal/junctions/normal_junctions.GRCh38.tsv.gz"
   ensure_normal_junction_index "$NORMAL_JUNCTIONS"
   add_file_if --normal-junctions "$NORMAL_JUNCTIONS"
+  [[ -s "${NORMAL_JUNCTIONS}.sqlite" ]] && GEN_ARGS+=(--normal-junction-sqlite "${NORMAL_JUNCTIONS}.sqlite")
   add_file_if --normal-expression "$ASSET/data/normal/expression/normal_expression.gtex_v11_hpa_hspc.tsv"
   add_file_if --normal-hla-ligands "$ASSET/data/normal/ligandome/normal_ms_ligands.tsv"
   discovered_reference_proteome=""
@@ -622,6 +660,16 @@ fi
 [[ -n "$RNA_FASTQ1" ]] && GEN_ARGS+=(--rna-fastq1 "$RNA_FASTQ1" --rna-fastq2 "$RNA_FASTQ2")
 [[ -n "$RNA_BAM" ]] && GEN_ARGS+=(--rna-bam "$RNA_BAM")
 [[ -n "$RNA_VAF" ]] && GEN_ARGS+=(--rna-vaf "$RNA_VAF")
+if [[ -n "$SPLICE_RNA_BAM" || -n "$SPLICE_STAR_SJ" ]]; then
+  if [[ -n "$SPLICE_RNA_BAM" && -n "$SPLICE_STAR_SJ" ]]; then
+    GEN_ARGS+=(--splice-rna-bam "$SPLICE_RNA_BAM" --splice-star-sj "$SPLICE_STAR_SJ")
+  else
+    echo "[WARN] splice read QC requires a matching RNA BAM and STAR SJ.out.tab; leaving read/coverage/PSI unassessed" >&2
+  fi
+fi
+if [[ -n "$MATCHED_NORMAL_RNA_BAM" ]]; then
+  GEN_ARGS+=(--matched-normal-rna-bam "$MATCHED_NORMAL_RNA_BAM" --matched-normal-star-sj "$MATCHED_NORMAL_STAR_SJ")
+fi
 [[ -n "$STAR_INDEX" ]] && GEN_ARGS+=(--star-index "$STAR_INDEX")
 [[ -n "$EASYFUSE_STAR_INDEX" ]] && GEN_ARGS+=(--easyfuse-star-index "$EASYFUSE_STAR_INDEX")
 [[ -n "$STAR_INDEX_BUILD_DIR" ]] && GEN_ARGS+=(--star-index-build-dir "$STAR_INDEX_BUILD_DIR")

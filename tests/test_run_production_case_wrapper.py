@@ -128,6 +128,9 @@ def test_wrapper_uses_v2_baseline_and_v3_consensus_and_passes_production_inputs(
     assert "local_cnv_status" in wrapper_text
     assert "multiplicity_best" in wrapper_text
     assert "normal_contamination_status" in wrapper_text
+    assert "--splice-rna-bam" in wrapper_text
+    assert "--splice-star-sj" in wrapper_text
+    assert "--normal-junction-sqlite" in wrapper_text
     assert "clonal_compatible" in wrapper_text
 
 

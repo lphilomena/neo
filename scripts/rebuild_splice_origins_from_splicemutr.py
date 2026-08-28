@@ -128,7 +128,7 @@ def main() -> int:
                     "cds_stop": row.get("start_stop", "").split(":")[-1],
                     "cds_phase_before_event": "", "cds_phase_after_event": "",
                     "frame_status": "TRANSLATED", "translation_start_source": "SpliceMutr",
-                    "transcript_expression_tpm": "", "full_length_status": "TRANSLATED_TRANSCRIPT_HYPOTHESIS",
+                    "transcript_expression_tpm": "", "full_length_status": "PARTIAL_JUNCTION_TRANSLATION",
                     "long_read_support": "UNASSESSED", "nucleotide_sequence_sha256": "",
                     "source_generator": "SpliceMutr", "source_generator_version": args.tool_version,
                     "source_file": source, "source_record_id": source_record,
@@ -147,7 +147,9 @@ def main() -> int:
                     "orf_start": "1", "orf_stop": str(len(protein)), "frame_status": "TRANSLATED",
                     "frameshift_status": "UNASSESSED", "novel_aa_start": "", "novel_aa_end": "",
                     "premature_stop_status": "PRESENT" if str(row.get("peptide", "")).endswith("*") else "NOT_REPORTED",
-                    "nmd_risk": "UNASSESSED", "nmd_reason": "", "orf_validity_status": "VALID_TRANSLATED_HYPOTHESIS",
+                    "nmd_risk": "UNASSESSED_PARTIAL_TRANSCRIPT_CONTEXT",
+                    "nmd_reason": "NMD requires a full transcript, stop position, and downstream exon-junction context.",
+                    "orf_validity_status": "VALID_TRANSLATED_HYPOTHESIS",
                     "source_generator": "SpliceMutr", "source_generator_version": args.tool_version,
                     "source_file": source, "source_record_id": source_record,
                     "evidence_conflict_status": "NONE",
@@ -233,6 +235,8 @@ def main() -> int:
                     "tumor_specificity_status": origin["tumor_specificity_status"],
                     "cohort_analysis_status": origin["cohort_analysis_status"],
                     "wildtype_peptide": origin["wildtype_peptide"], "orf_evidence_grade": "O1",
+                    "splice_orf_status": "VALID_TRANSLATED_HYPOTHESIS",
+                    "splice_nmd_status": "UNASSESSED_PARTIAL_TRANSCRIPT_CONTEXT",
                 })
                 if origin["contains_novel_aa"] == "true":
                     row["mutant_specificity_status"] = "UNASSESSED"

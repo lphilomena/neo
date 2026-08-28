@@ -18,13 +18,37 @@ from .evidence_provenance import ProvenanceRegistry
 from .evidence_layer import build_standard_evidence_layer
 from .peptide_safety_gate import build_peptide_safety_gate
 from .immune_escape import build_immune_escape_evidence
-from .schemas import PRESENTATION_FIELDS
+from .schemas import PEPTIDE_FIELDS, PRESENTATION_FIELDS
 from .comprehensive_evidence import build_comprehensive_peptide_evidence
 from .splice_prefilter import prefilter_splice_peptides
 from .evidence_consensus import build_evidence_consensus, load_consensus_rules
 from .tools.registry import RunContext
 from .utils import copy_if_different, read_tsv, write_tsv, write_json
 import shutil
+
+
+def _attach_prefilter_safety(raw_peptides_path: Path, peptide_safety_path: Path) -> None:
+    """Attach only directly assessed safety fields needed by the splice funnel."""
+    safety_by_id = {
+        str(row.get("peptide_id") or ""): row
+        for row in read_tsv(peptide_safety_path)
+        if str(row.get("peptide_id") or "")
+    }
+    enriched = []
+    for row in read_tsv(raw_peptides_path):
+        result = dict(row)
+        safety = safety_by_id.get(str(row.get("peptide_id") or ""), {})
+        if safety:
+            result["normal_proteome_exact_match_status"] = str(
+                safety.get("normal_proteome_exact_match_status") or ""
+            )
+            # A presence-only normal junction catalog cannot establish an
+            # adequate-coverage negative, so it is deliberately not promoted
+            # into the prefilter as normal-transcriptome exclusion evidence.
+            if str(safety.get("normal_transcript_junction_match_status") or "").upper() == "DETECTED":
+                result["normal_transcriptome_exact_match_status"] = "DETECTED"
+        enriched.append(result)
+    write_tsv(raw_peptides_path, enriched, PEPTIDE_FIELDS)
 
 
 def run(
@@ -93,6 +117,21 @@ def run(
         parse_pvactools_outputs(pvac_paths, sample_id, profile["_profile_name"], raw_events_path, raw_peptides_path)
     else:
         raise ValueError("run requires pvac_paths or pre-built raw_events + raw_peptides")
+
+    peptide_safety_path = safety_dir / "peptide_safety.tsv"
+    event_safety_path = safety_dir / "event_safety.tsv"
+    build_peptide_safety_gate(
+        raw_events=raw_events_path,
+        raw_peptides=raw_peptides_path,
+        out_peptide_safety=peptide_safety_path,
+        out_event_safety=event_safety_path,
+        profile=profile,
+        normal_expression=normal_expression,
+        normal_hla_ligands=normal_hla_ligands,
+        reference_proteome=reference_proteome,
+        normal_junctions=normal_junctions,
+    )
+    _attach_prefilter_safety(raw_peptides_path, peptide_safety_path)
 
     # Preserve the full splice pool, then reduce it before expensive HLA and
     # immunogenicity predictors. Missing evidence enters a bounded REVIEW lane
@@ -189,9 +228,6 @@ def run(
         normal_hla_ligands=normal_hla_ligands,
         sample_id=sample_id,
     )
-    peptide_safety_path = safety_dir / "peptide_safety.tsv"
-    event_safety_path = safety_dir / "event_safety.tsv"
-    build_peptide_safety_gate(raw_events=raw_events_path, raw_peptides=raw_peptides_path, out_peptide_safety=peptide_safety_path, out_event_safety=event_safety_path, profile=profile, normal_expression=normal_expression, normal_hla_ligands=normal_hla_ligands, reference_proteome=reference_proteome, normal_junctions=normal_junctions)
     immune_paths = build_immune_escape_evidence(
         sample_id=sample_id,
         raw_peptides=raw_peptides_path,

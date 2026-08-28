@@ -156,6 +156,10 @@ def main() -> int:
     ap.add_argument("--rna-fastq2", help="Tumor RNA FASTQ R2; comma-separate multiple lanes")
     ap.add_argument("--rna-bam", help="Existing coordinate-sorted tumor RNA BAM")
     ap.add_argument("--rna-vaf", help="Existing RNA ref/alt/depth/VAF table to reuse")
+    ap.add_argument("--splice-rna-bam", help="Coordinate-sorted tumor RNA BAM used independently for splice read QC")
+    ap.add_argument("--splice-star-sj", help="Matching tumor STAR SJ.out.tab used independently for splice read QC and PSI")
+    ap.add_argument("--matched-normal-rna-bam", help="Optional matched-normal RNA BAM for coverage-aware junction exclusion")
+    ap.add_argument("--matched-normal-star-sj", help="Optional matched-normal STAR SJ.out.tab matching --matched-normal-rna-bam")
     ap.add_argument("--star-index", help="GRCh38 STAR index used when RNA FASTQ is supplied")
     ap.add_argument("--easyfuse-star-index", help="Reusable EasyFuse/STAR-Fusion STAR index; used only after validation")
     ap.add_argument("--star-index-build-dir", help="Destination for a newly built STAR index when reusable indexes fail validation")
@@ -178,6 +182,7 @@ def main() -> int:
     ap.add_argument("--fusion-caller-root", action="append", default=[], help="Directory containing completed fusion caller outputs; repeatable")
     ap.add_argument("--normal-readthrough", help="Normal/read-through fusion background table for review")
     ap.add_argument("--junctions"); ap.add_argument("--star-sj"); ap.add_argument("--snaf"); ap.add_argument("--splicemutr"); ap.add_argument("--normal-junctions")
+    ap.add_argument("--normal-junction-sqlite", help="Membership index built from --normal-junctions")
     ap.add_argument("--normal-expression"); ap.add_argument("--normal-hla-ligands"); ap.add_argument("--reference-proteome")
     ap.add_argument("--prime-evidence", help="Existing normalized PRIME evidence TSV to reuse")
     ap.add_argument("--bigmhc-evidence", help="Existing normalized BigMHC_IM evidence TSV to reuse")
@@ -192,6 +197,8 @@ def main() -> int:
     args = ap.parse_args()
     if bool(args.rna_fastq1) != bool(args.rna_fastq2):
         raise SystemExit("--rna-fastq1 and --rna-fastq2 must be supplied together")
+    if bool(args.matched_normal_rna_bam) != bool(args.matched_normal_star_sj):
+        raise SystemExit("--matched-normal-rna-bam and --matched-normal-star-sj must be supplied together")
     if args.rna_threads < 1:
         raise SystemExit("--rna-threads must be a positive integer")
     if args.star_sjdb_overhang < 1:
@@ -520,13 +527,33 @@ def main() -> int:
             review += f" --normal-readthrough {q(require(args.normal_readthrough, 'normal read-through background'))}"
         review += " --outdir {outdir}/branches/fusion/consensus"
         stage(lines, "fusion_cross_validation", command=review, outputs={"fusion_consensus": "{outdir}/branches/fusion/consensus/fusion_consensus.tsv"}, required=True, depends=["fusion_candidates"])
+    generated_star_sj = "{outdir}/rna/star/SJ.out.tab" if args.rna_fastq1 and args.rna_fastq2 else ""
+    splice_rna_bam = require(args.splice_rna_bam, "splice RNA BAM") if args.splice_rna_bam else rna_bam
+    splice_star_sj = (
+        require(args.splice_star_sj, "splice STAR SJ.out.tab") if args.splice_star_sj
+        else require(args.star_sj, "STAR SJ.out.tab") if args.star_sj
+        else generated_star_sj
+    )
+    matched_normal_rna_bam = require(args.matched_normal_rna_bam, "matched-normal RNA BAM") if args.matched_normal_rna_bam else ""
+    matched_normal_star_sj = require(args.matched_normal_star_sj, "matched-normal STAR SJ.out.tab") if args.matched_normal_star_sj else ""
+    normal_junction_sqlite = ""
+    if args.normal_junction_sqlite:
+        normal_junction_sqlite = require(args.normal_junction_sqlite, "normal junction SQLite index")
+    elif args.normal_junctions:
+        adjacent_index = Path(str(args.normal_junctions) + ".sqlite")
+        if adjacent_index.is_file() and adjacent_index.stat().st_size > 0:
+            normal_junction_sqlite = str(adjacent_index.resolve())
+
     if args.junctions and args.star_sj:
         raise SystemExit("Use only one primary splice evidence input: --junctions or --star-sj")
-    if (args.junctions or args.star_sj) and (args.snaf or args.splicemutr):
+    primary_splice_source = args.junctions or args.star_sj or generated_star_sj
+    if primary_splice_source and (args.snaf or args.splicemutr):
         if args.star_sj:
             primary_arg = f"--star-sj {q(require(args.star_sj, 'STAR SJ.out.tab'))}"
-        else:
+        elif args.junctions:
             primary_arg = f"--junctions {q(require(args.junctions, 'junctions'))}"
+        else:
+            primary_arg = f"--star-sj {q(generated_star_sj)}"
         command = f"PYTHONPATH={q(root / 'src')} {q(sys.executable)} {q(root / 'scripts/normalize_rna_fusion_splice.py')} --sample-id {q(args.sample_id)} --profile {q(profile)} {primary_arg} --candidate-only"
         if args.gencode_gtf:
             command += f" --annotation-gtf {q(require(args.gencode_gtf, 'matched GENCODE GTF'))}"
@@ -547,15 +574,36 @@ def main() -> int:
                 " --outdir {outdir}/branches/splice/intermediates/formal_origins"
             )
             splice_peptides_for_filter = "{outdir}/branches/splice/intermediates/formal_origins/raw_peptides.formal_origins.tsv"
+        splice_events_for_filter = "{outdir}/branches/splice/intermediates/raw_events.tsv"
+        if splice_rna_bam and splice_star_sj:
+            qc_outdir = "{outdir}/branches/splice/intermediates/star_bam_qc"
+            qc_command = (
+                f" && PYTHONPATH={q(root / 'src')} {q(sys.executable)} "
+                f"{q(root / 'scripts/build_splice_junction_qc_from_star_bam.py')}"
+                f" --events {splice_events_for_filter} --peptides {splice_peptides_for_filter}"
+                f" --star-sj {q(splice_star_sj)} --rna-bam {q(splice_rna_bam)}"
+                " --splice-consensus {outdir}/branches/splice/intermediates/splice_consensus.tsv"
+                f" --samtools {q(args.samtools_executable)} --outdir {qc_outdir}"
+            )
+            if normal_junction_sqlite:
+                qc_command += f" --normal-junction-sqlite {q(normal_junction_sqlite)}"
+            if matched_normal_rna_bam:
+                qc_command += (
+                    f" --matched-normal-rna-bam {q(matched_normal_rna_bam)}"
+                    f" --matched-normal-star-sj {q(matched_normal_star_sj)}"
+                )
+            command += qc_command
+            splice_events_for_filter = f"{qc_outdir}/raw_events.enriched.tsv"
+            splice_peptides_for_filter = f"{qc_outdir}/raw_peptides.enriched.tsv"
         command += (
             f" && PYTHONPATH={q(root / 'src')} {q(sys.executable)} {q(root / 'scripts/filter_splice_production_candidates.py')}"
-            " --events {outdir}/branches/splice/intermediates/raw_events.tsv"
+            f" --events {splice_events_for_filter}"
             f" --peptides {splice_peptides_for_filter}"
             " --consensus {outdir}/branches/splice/intermediates/splice_consensus.tsv"
             " --outdir {outdir}/branches/splice/production_selected"
             " --min-length 8 --max-length 12 --max-source-binding-rank 2.0"
         )
-        stage(lines, "splice_candidates", source="SpliceConsensus", command=command, outputs={"raw_events": "{outdir}/branches/splice/production_selected/raw_events.tsv", "raw_peptides": "{outdir}/branches/splice/production_selected/raw_peptides.tsv", "production_filter_summary": "{outdir}/branches/splice/production_selected/production_filter_summary.json", "formal_origin_summary": "{outdir}/branches/splice/intermediates/formal_origins/rebuild_summary.json"}, depends=hla_dependency)
+        stage(lines, "splice_candidates", source="SpliceConsensus", command=command, outputs={"raw_events": "{outdir}/branches/splice/production_selected/raw_events.tsv", "raw_peptides": "{outdir}/branches/splice/production_selected/raw_peptides.tsv", "production_filter_summary": "{outdir}/branches/splice/production_selected/production_filter_summary.json", "formal_origin_summary": "{outdir}/branches/splice/intermediates/formal_origins/rebuild_summary.json", "junction_read_qc": "{outdir}/branches/splice/intermediates/star_bam_qc/splice_junction_qc.enriched.tsv"}, depends=list(dict.fromkeys(hla_dependency + rna_bam_dependency)))
         candidate_stages.append("splice_candidates")
     if not candidate_stages: raise SystemExit("At least one SNV/Fusion/Splice candidate source is required")
     lines += [
