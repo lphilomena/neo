@@ -1081,12 +1081,8 @@ def test_rna_fastq_profile_generator_emits_full_dag(tmp_path: Path):
     assert "--star-fusion" not in text
     assert "--arriba" not in text
     assert "--easyfuse" in text
-    assert "run_salmon_fastq_to_tpm.sh" not in text
-    assert "[stages.fusioncatcher_discovery]" not in text
-    assert "[stages.arriba_discovery]" not in text
-    assert "--star-fusion" not in text
-    assert "--arriba" not in text
-    assert "--easyfuse" in text
+    assert "run_salmon_fastq_to_tpm.sh" in text
+    assert "--outdir {outdir}/rna/expression" in text
     assert "--outdir {outdir}/rna/rsem_expression" in text
     assert "normalize_rna_fusion_splice.py" in text
     assert (tmp_path / "rna_fusion_splice.hla.txt").is_file()
