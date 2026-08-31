@@ -193,6 +193,13 @@ def test_bioconductor_cache_helper_is_wired_into_sequenza_and_ascat() -> None:
     ascat_installer = (ROOT / "scripts" / "install_ascat_pyclone.sh").read_text(encoding="utf-8")
     assert "genomeinfodbdata-1.2.9" in readme_installer
     assert "genomeinfodbdata-1.2.13" in ascat_installer
+    assert "--override-channels" not in ascat_installer
+    helper_text = helper.read_text(encoding="utf-8")
+    assert "--download-only" in helper_text
+    assert "repodata_record.json" in helper_text
+    assert "CONDA_OFFLINE=true" in helper_text
+    assert 'requireNamespace("GenomeInfoDbData", quietly=TRUE)' in ascat_installer
+    assert "failed the target-environment load test" in ascat_installer
 
 
 def test_shared_netmhcpan_asset_is_not_repaired_in_place() -> None:

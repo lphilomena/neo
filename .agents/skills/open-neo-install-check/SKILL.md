@@ -68,6 +68,20 @@ HTTP 429 or transient 5xx errors, the idempotent installer step is retried while
 retaining downloaded package-cache content. A non-network solver/package error
 is not retried blindly.
 
+For `conda env create/update -f ENVIRONMENT_YML`, the YAML `channels` section is
+authoritative. Skill1 must not append `--override-channels` or `-c` flags to
+these environment subcommands, because current Conda releases can reject that
+combination and it can also change the environment's declared channel order.
+Bioconductor data packages require a registered Conda package-cache entry, not
+a manually extracted look-alike directory. Before creating an environment that
+contains such a package, Skill1 prefetches the YAML transaction with
+`conda create --download-only`, verifies `info/repodata_record.json`, downloads
+and checksum-validates the data archive into the shared install cache, patches
+the registered post-link helper to use that archive, and performs the final
+link transaction with Conda offline. Readiness must load the corresponding R
+data package (for ASCAT, both `ASCAT` and `GenomeInfoDbData`) so a failed or
+network-dependent post-link cannot be reported as installed.
+
 For PRIME, MixMHCpred and BigMHC, the approved installer treats the pinned
 source tree and model files as deployment assets. It first synchronizes
 `data/predictors/{prime,mixMHCpred_install,bigmhc}` from the selected asset
@@ -129,6 +143,7 @@ or the selected asset source before installation. For NetChop this means both
 a readable `netchop/` directory, or `--netchop-archive` must point to the
 authorized archive. SNAF source snapshot downloads are network fallback only;
 Skill1 verifies the downloaded tarball and retries before failing. SpliceMutr hg38 BSgenome is treated as a synchronizable open asset; if it is absent from the selected asset source, approved runs with `--allow-download` download and stage the Bioconductor package before reference verification.
+For production SpliceMutr, readiness also checks the GTEx per-sample junction-count matrix used for public-proxy cohorts, the pinned LeafCutter/LeafViz scripts, a build-matched exon/LeafViz annotation set, and a TxDb SQLite generated from the same GENCODE GTF used by RNA alignment. The SpliceMutr R runtime and LeafCutter R runtime may be separate and must be recorded explicitly. Validate `BSgenome.Hsapiens.UCSC.hg38` as the package and `Hsapiens` as its exported genome object; never assume those two names are interchangeable. A compact aggregate normal-junction catalog alone is sufficient for safety lookup but not for constructing independent SpliceMutr control samples.
 
 For a NAS-managed Conda installation, use:
 

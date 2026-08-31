@@ -66,11 +66,9 @@ create_or_update_env() {
       --package-key genomeinfodbdata-1.2.13 -- "${CONDA_RUNNER}")
   fi
   if env_exists "${env_name}"; then
-    "${runner[@]}" env update -n "${env_name}" -f "${yml}" --prune \
-      --override-channels -c conda-forge -c bioconda
+    "${runner[@]}" env update -n "${env_name}" -f "${yml}" --prune
   else
-    "${runner[@]}" env create -n "${env_name}" -f "${yml}" -y \
-      --override-channels -c conda-forge -c bioconda
+    "${runner[@]}" env create -n "${env_name}" -f "${yml}" -y
   fi
 }
 
@@ -78,7 +76,7 @@ env_has_ascat() {
   local prefix
   prefix="$(detect_env_prefix "$1")"
   [[ -x "${prefix}/bin/Rscript" ]] && \
-    "${prefix}/bin/Rscript" -e 'quit(status=ifelse(requireNamespace("ASCAT", quietly=TRUE),0,1))' >/dev/null 2>&1
+    "${prefix}/bin/Rscript" -e 'quit(status=ifelse(requireNamespace("ASCAT", quietly=TRUE) && requireNamespace("GenomeInfoDbData", quietly=TRUE),0,1))' >/dev/null 2>&1
 }
 
 env_has_pyclone() {
@@ -148,8 +146,9 @@ EOF
 chmod +x "${ROOT}/bin/pyclone"
 
 echo "==> Smoke tests"
-if ! "${ROOT}/bin/ascat.R" --version >/dev/null 2>&1; then
-  echo "WARN: ASCAT wrapper version check failed; inspect env ${ASCAT_ENV}" >&2
+if ! "${ASCAT_PREFIX}/bin/Rscript" -e 'stopifnot(requireNamespace("ASCAT", quietly=TRUE), requireNamespace("GenomeInfoDbData", quietly=TRUE)); cat(as.character(utils::packageVersion("ASCAT")), "\n")' >/dev/null 2>&1; then
+  echo "ERROR: ASCAT or GenomeInfoDbData failed the target-environment load test: ${ASCAT_PREFIX}" >&2
+  exit 1
 fi
 if ! "${ROOT}/bin/pyclone" --version >/dev/null 2>&1; then
   echo "WARN: PyClone-VI version check failed; inspect env ${PYCLONE_ENV}" >&2
