@@ -767,7 +767,18 @@ def run_open_neo(args: dict[str, Any]) -> dict[str, Any]:
     result.steps[-1].outputs = artifacts
     result.outputs.update(artifacts)
     evidence_for_consensus = artifacts.get("consensus_peptides") or artifacts.get("comprehensive_evidence")
-    consensus_outputs = build_tool_consensus(routing.inputs, layout.pipeline / "tool_consensus", evidence_path=evidence_for_consensus)
+    consensus_inputs = dict(routing.inputs)
+    fusion_consensus_candidates = (
+        result_root / "pipeline/production/branches/fusion/consensus/fusion_consensus.tsv",
+        result_root / "production/branches/fusion/consensus/fusion_consensus.tsv",
+        result_root / "branches/fusion/consensus/fusion_consensus.tsv",
+        result_root / "branches/fusion/dna_sv_linked/fusion_consensus.tsv",
+        result_root / "branches/fusion/intermediates/fusion_consensus.tsv",
+    )
+    authoritative_fusion = next((path for path in fusion_consensus_candidates if path.is_file() and path.stat().st_size > 0), None)
+    if authoritative_fusion:
+        consensus_inputs["fusion_consensus_tsv"] = str(authoritative_fusion)
+    consensus_outputs = build_tool_consensus(consensus_inputs, layout.pipeline / "tool_consensus", evidence_path=evidence_for_consensus)
     result.outputs.update({f"consensus_{key.removesuffix('.tsv')}": value for key, value in consensus_outputs.items()})
     if artifacts.get("all_tool_results"):
         enrich_all_tool_results(artifacts["all_tool_results"], consensus_outputs["tool_consensus_summary.tsv"])

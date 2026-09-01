@@ -5,8 +5,6 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
 
-from neoag.agent_skills.fusion_rna_run import collect_results as collect_fusions
-from neoag.agent_skills.fusion_rna_run import consensus as fusion_consensus
 from neoag.agent_skills.hla_typing_compare import collect_typing, consensus as hla_consensus
 from neoag.agent_skills.hla_typing_compare import locus_of, lowres, norm_allele
 from neoag.agent_skills.purity_cnv_review import collect_tool_results as collect_purity
@@ -139,63 +137,37 @@ def _write_hla_loh(declared: dict[str, dict[str, str]], outdir: Path) -> tuple[s
 
 
 def _write_fusion(inputs: dict[str, Any], declared: dict[str, dict[str, str]], outdir: Path) -> tuple[str, list[dict[str, Any]]]:
-    paths = [Path(path) for path in declared["fusion"].values() if Path(path).exists()]
-    _, calls = collect_fusions(paths, sample_id=None)
-    if not calls:
-        for tool, path in declared["fusion"].items():
-            if not Path(path).is_file():
-                continue
-            for row in read_tsv(path):
-                fusion = str(row.get("fusion") or row.get("FusionName") or row.get("fusion_name") or "")
-                if not fusion:
-                    left = str(row.get("gene1") or row.get("gene5") or row.get("LeftGene") or "")
-                    right = str(row.get("gene2") or row.get("gene3") or row.get("RightGene") or "")
-                    fusion = f"{left}--{right}" if left and right else ""
-                if fusion:
-                    calls.append({"tool": tool, "fusion": fusion, "source_file": path})
-    rows = fusion_consensus(calls)
-    metrics: dict[str, dict[str, Any]] = defaultdict(lambda: {"junction_reads": 0, "spanning_reads": 0, "frame": "UNASSESSED", "readthrough": False})
-    for _, path in declared["fusion"].items():
-        if not Path(path).is_file():
-            continue
-        for record in read_tsv(path):
-            fusion = str(record.get("fusion") or record.get("FusionName") or record.get("fusion_name") or "")
-            if not fusion:
-                left = str(record.get("gene1") or record.get("gene5") or record.get("LeftGene") or "")
-                right = str(record.get("gene2") or record.get("gene3") or record.get("RightGene") or "")
-                fusion = f"{left}--{right}" if left and right else ""
-            if not fusion:
-                continue
-            folded = {re.sub(r"[^a-z0-9]+", "", str(key).lower()): value for key, value in record.items()}
-            for target, aliases in (("junction_reads", ("junctionreads", "junctionreadcount", "splitreads")), ("spanning_reads", ("spanningreads", "spanningpairs"))):
-                for alias in aliases:
-                    try:
-                        metrics[fusion][target] = max(int(float(folded.get(alias, 0) or 0)), int(metrics[fusion][target]))
-                    except (TypeError, ValueError):
-                        pass
-            frame = str(record.get("frame") or record.get("reading_frame") or record.get("Frame") or "")
-            if frame:
-                metrics[fusion]["frame"] = frame
-            flag_text = " ".join(str(value) for value in record.values()).lower()
-            metrics[fusion]["readthrough"] = metrics[fusion]["readthrough"] or "read-through" in flag_text or "readthrough" in flag_text
-    for row in rows:
-        evidence = metrics.get(str(row.get("fusion")), {})
-        row.update(evidence)
-        if evidence.get("readthrough"):
-            row["status"] = "READTHROUGH_CAUTION"
-        elif int(row.get("n_tools") or 0) >= 2:
-            row["status"] = "MULTI_CALLER_STRONG"
-        elif int(evidence.get("junction_reads") or 0) >= 3 or int(evidence.get("spanning_reads") or 0) >= 5:
-            row["status"] = "SINGLE_CALLER_SUPPORTED"
-        elif evidence:
-            row["status"] = "LOW_SUPPORT"
-        else:
-            row["status"] = "SINGLE_CALLER_SUPPORTED"
+    candidates: list[Path] = []
+    direct = inputs.get("fusion_consensus_tsv") or inputs.get("fusion_consensus")
+    if direct:
+        candidates.append(Path(str(direct)))
+    for key, value in declared["fusion"].items():
+        path = Path(value)
+        if key in {"authoritative_consensus", "fusion_consensus", "declared_input"} or path.name == "fusion_consensus.tsv":
+            candidates.append(path)
+        if path.is_file():
+            candidates.extend([path.parent / "fusion_consensus.tsv", path.parent.parent / "consensus/fusion_consensus.tsv"])
+    authoritative = next((path for path in candidates if path.is_file() and path.stat().st_size > 0), None)
+    rows: list[dict[str, Any]] = []
+    if authoritative:
+        candidate_rows = read_tsv(authoritative)
+        if candidate_rows and all(row.get("fixed_panel_version") and row.get("adjacency_key") for row in candidate_rows):
+            rows = candidate_rows
     if not rows:
-        rows = [{"fusion": "", "support_tools": "", "n_tools": 0, "status": "UNASSESSED"}]
+        rows = [{
+            "fusion": "", "adjacency_key": "", "fixed_panel_version": "OPEN_NEO_SHORT_READ_FUSION_V1",
+            "fixed_panel_support_callers": "", "n_fixed_panel_support": 0,
+            "dna_sv_support": "UNASSESSED", "long_read_support": "", "status": "UNASSESSED",
+            "reason": "authoritative adjacency-level fusion_consensus.tsv was not declared; gene-pair-only consensus is forbidden",
+        }]
     write_tsv(outdir / "fusion_consensus.tsv", rows)
     states = {str(row.get("status")) for row in rows}
-    overall = "MULTI_CALLER_STRONG" if "MULTI_CALLER_STRONG" in states else ("SINGLE_CALLER_SUPPORTED" if "SINGLE_CALLER_SUPPORTED" in states else ("READTHROUGH_CAUTION" if "READTHROUGH_CAUTION" in states else ("LOW_SUPPORT" if "LOW_SUPPORT" in states else "UNASSESSED")))
+    overall = (
+        "MULTI_CALLER_STRONG" if "SHORT_READ_MULTI_CALLER" in states
+        else "TARGETED_RESCUE_REVIEW" if any(value.startswith("TARGETED_RESCUE") for value in states)
+        else "SINGLE_CALLER_SUPPORTED" if "SHORT_READ_SINGLE_CALLER" in states
+        else "UNASSESSED"
+    )
     return overall, rows
 
 

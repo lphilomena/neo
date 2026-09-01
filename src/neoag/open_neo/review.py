@@ -350,34 +350,86 @@ def _fusion_report_data(result_dir: Path) -> tuple[list[dict[str, str]], list[di
     if root is None:
         return [], [], "No fusion branch directory was found in the reviewed result directory."
     rows: list[dict[str, str]] = []
+    union_path = root / "intermediates" / "fusion_caller_union.tsv"
+    availability_path = _first_existing_path([
+        root / "consensus" / "fusion_caller_availability.tsv",
+        root / "intermediates" / "fusion_caller_availability.tsv",
+    ])
+    consensus_path = _first_existing_path([
+        root / "consensus" / "fusion_consensus.tsv",
+        root / "dna_sv_linked" / "fusion_consensus.tsv",
+        root / "intermediates" / "fusion_consensus.tsv",
+    ])
+    raw_events_path = _first_existing_path([
+        root / "dna_sv_linked" / "raw_events.tsv",
+        root / "intermediates" / "raw_events.tsv",
+        root / "intermediates" / "parsed" / "raw_events.tsv",
+    ])
+    raw_peptides_path = _first_existing_path([
+        root / "dna_sv_linked" / "raw_peptides.tsv",
+        root / "intermediates" / "raw_peptides.tsv",
+        root / "intermediates" / "parsed" / "raw_peptides.tsv",
+    ])
 
-    def add(tool: str, path: Path | None, note: str = "") -> None:
-        rows.append({
-            "tool_or_layer": tool,
-            "records": str(_count_data_rows(path) if path else 0),
-            "path": str(path) if path and path.exists() else "",
-            "note": note,
-        })
+    _, union_rows = read_tsv(union_path) if union_path.is_file() else ([], [])
+    _, availability_rows = read_tsv(availability_path) if availability_path else ([], [])
+    _, consensus_rows = read_tsv(consensus_path) if consensus_path else ([], [])
 
-    easyfuse_files = sorted(root.glob("easyfuse/*/fusions.pass.csv")) + sorted(root.glob("easyfuse/fusions.pass.csv"))
-    easyfuse_count = sum(_count_data_rows(path) for path in easyfuse_files)
+    def unique_events(predicate: Any) -> int:
+        return len({row.get("event_id", "") for row in union_rows if row.get("event_id") and predicate(row)})
+
+    easyfuse_count = unique_events(lambda row: row.get("source_tool") == "EasyFuse" and row.get("admission_policy") == "CALLER_PASS")
     rows.append({
-        "tool_or_layer": "EasyFuse PASS calls",
-        "records": str(easyfuse_count),
-        "path": ";".join(str(path) for path in easyfuse_files),
-        "note": "caller-level PASS fusion calls before Open-Neo peptide-HLA generation",
+        "tool_or_layer": "EasyFuse PASS (aggregator)", "records": str(easyfuse_count),
+        "path": str(union_path) if union_path.is_file() else "",
+        "note": "EasyFuse aggregate PASS is reported separately and is not counted as an independent caller",
     })
-    add("STAR-Fusion calls", _first_existing_path([root / "star-fusion" / "star-fusion.fusion_predictions.tsv", root / "star_fusion" / "star-fusion.fusion_predictions.tsv"]), "optional caller")
-    add("Arriba calls", _first_existing_path(sorted(root.glob("arriba/*.fusions.tsv")) + [root / "arriba" / "fusions.tsv"]), "optional caller")
-    add("FusionCatcher calls", _first_existing_path([root / "fusioncatcher" / "fusioncatcher.final-list.txt", root / "fusioncatcher" / "final-list_candidate-fusion-genes.txt"]), "optional caller")
-    add("Fusion consensus", root / "consensus" / "fusion_consensus.tsv", "cross-caller consensus layer")
-    raw_events_path = root / "intermediates" / "parsed" / "raw_events.tsv"
-    raw_peptides_path = root / "intermediates" / "parsed" / "raw_peptides.tsv"
-    add("Open-Neo fusion raw events", raw_events_path, "normalized fusion events forwarded to the pipeline")
-    add("Open-Neo fusion peptides", raw_peptides_path, "fusion peptide-HLA rows entering presentation/ranking")
+    for caller in ("Arriba", "STAR-Fusion", "FusionCatcher"):
+        availability = next((row for row in availability_rows if row.get("caller") == caller), {})
+        rows.append({
+            "tool_or_layer": caller,
+            "records": str(unique_events(lambda row, caller=caller: row.get("source_tool") == caller)),
+            "path": availability.get("source_files", ""),
+            "note": f"fixed short-read panel; {availability.get('availability_status', 'UNASSESSED')}",
+        })
+    rows.append({
+        "tool_or_layer": "Fixed-panel multi-caller consensus",
+        "records": str(sum(row.get("status") == "SHORT_READ_MULTI_CALLER" for row in consensus_rows)),
+        "path": str(consensus_path) if consensus_path else "",
+        "note": "same normalized adjacency supported by at least two fixed short-read callers",
+    })
+    rows.append({
+        "tool_or_layer": "Targeted rescue",
+        "records": str(sum(str(row.get("rescue_status", "")).startswith("TARGETED_RESCUE") for row in consensus_rows)),
+        "path": str(consensus_path) if consensus_path else "",
+        "note": "diagnostic rescue is a separate review class and never silently becomes PASS consensus",
+    })
+    rows.append({
+        "tool_or_layer": "Long-read orthogonal support",
+        "records": str(sum(bool(row.get("long_read_support")) for row in consensus_rows)),
+        "path": str(consensus_path) if consensus_path else "",
+        "note": "optional JAFFAL/long-read confirmation; not part of the fixed short-read denominator",
+    })
+    rows.append({
+        "tool_or_layer": "DNA-SV orthogonal support",
+        "records": str(sum(row.get("dna_sv_support") == "SUPPORTED" for row in consensus_rows)),
+        "path": str(consensus_path) if consensus_path else "",
+        "note": "exact or unique orientation-compatible DNA rearrangement confirmation",
+    })
+    rows.append({"tool_or_layer": "Open-Neo fusion events", "records": str(_count_data_rows(raw_events_path) if raw_events_path else 0), "path": str(raw_events_path) if raw_events_path else "", "note": "normalized adjacency-level events forwarded to ranking"})
+    rows.append({"tool_or_layer": "Open-Neo fusion peptides", "records": str(_count_data_rows(raw_peptides_path) if raw_peptides_path else 0), "path": str(raw_peptides_path) if raw_peptides_path else "", "note": "junction-spanning peptide-HLA rows entering presentation/ranking"})
 
     top_events: list[dict[str, str]] = []
-    if raw_events_path.is_file():
+    if consensus_rows:
+        for event in consensus_rows[:20]:
+            top_events.append({
+                "fusion": event.get("fusion", ""),
+                "frame": event.get("peptide_status", ""),
+                "junction_reads": "",
+                "confidence": event.get("status", ""),
+                "source": f"fixed={event.get('fixed_panel_support_callers', '')}; long-read={event.get('long_read_support', '') or 'none'}; DNA-SV={event.get('dna_sv_support', 'UNASSESSED')}",
+            })
+    elif raw_events_path and raw_events_path.is_file():
         _, event_rows = read_tsv(raw_events_path)
         for event in event_rows[:20]:
             top_events.append({
@@ -387,8 +439,8 @@ def _fusion_report_data(result_dir: Path) -> tuple[list[dict[str, str]], list[di
                 "confidence": _get(event, "event_confidence", "confidence"),
                 "source": _get(event, "source", "source_tools", "source_file"),
             })
-    peptide_count = _count_data_rows(raw_peptides_path)
-    event_count = _count_data_rows(raw_events_path)
+    peptide_count = _count_data_rows(raw_peptides_path) if raw_peptides_path else 0
+    event_count = _count_data_rows(raw_events_path) if raw_events_path else 0
     if peptide_count == 0 and (easyfuse_count or event_count):
         note = "Fusion detection produced caller/event records, but no fusion peptide-HLA row entered the ranked neoantigen table for this run. Report this as no reportable fusion peptide in the current run, not as fusion not run."
     elif peptide_count:

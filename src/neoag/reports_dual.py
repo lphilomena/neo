@@ -4245,6 +4245,36 @@ def _patient_fusion_boundary_evidence(row: Mapping[str, Any], bundle: ReportBund
     return mapping + "；" + comparison + "；" + orf_layer
 
 
+def _patient_fusion_consensus_evidence(row: Mapping[str, Any]) -> str:
+    if _patient_track(row) != "Fusion":
+        return ""
+    status = str(row.get("candidate_union_source") or "UNASSESSED").strip().upper()
+    callers = [item.strip() for item in re.split(r"[;,|+]", str(row.get("internal_tools") or "")) if item.strip()]
+    try:
+        caller_count = int(float(str(row.get("internal_tool_count") or len(callers) or 0)))
+    except ValueError:
+        caller_count = len(callers)
+    details = str(row.get("internal_high_confidence_reason") or "")
+    dna_status = str(row.get("dna_sv_confirmation_status") or "UNASSESSED").strip().upper()
+    if status == "SHORT_READ_MULTI_CALLER":
+        short_read = f"固定短读面板多caller支持（{caller_count}个：{','.join(callers)}）"
+    elif status == "SHORT_READ_SINGLE_CALLER":
+        short_read = f"固定短读面板仅单caller支持（{','.join(callers) or 'caller未记录'}）"
+    elif status.startswith("TARGETED_RESCUE"):
+        short_read = f"定向rescue事件（固定caller信号：{','.join(callers) or '无可判定支持'}）；不等同于EasyFuse PASS或正式多caller共识"
+    elif status == "AGGREGATOR_ONLY":
+        short_read = "仅EasyFuse聚合层记录；内部固定caller支持未形成可判定共识"
+    else:
+        short_read = "固定短读caller共识未评估"
+    orthogonal = []
+    if "long_read=" in details:
+        long_read = details.split("long_read=", 1)[1].split(";", 1)[0].strip()
+        if long_read and long_read.lower() != "none":
+            orthogonal.append(f"长读={long_read}")
+    orthogonal.append(f"DNA-SV={dna_status}")
+    return short_read + "；正交层：" + "，".join(orthogonal)
+
+
 def _patient_event_evidence_and_next_step(
     row: Mapping[str, Any], bundle: ReportBundle, val_map: Mapping[str, Mapping[str, str]],
     *, compact_common: bool = False,
@@ -4258,6 +4288,9 @@ def _patient_event_evidence_and_next_step(
     hypothesis_count = int(str(row.get("patient_display_hypothesis_count") or "1"))
     if track == "Fusion" and hypothesis_count > 1:
         evidence.append(f"患者报告已合并展示{hypothesis_count}个断点/转录本假设；事件级结果仍分别保留")
+    fusion_consensus = _patient_fusion_consensus_evidence(row)
+    if fusion_consensus:
+        evidence.append(fusion_consensus)
     if not (compact_common and track in {"Fusion", "Splice"}):
         evidence.append(_patient_metric("MT/WT", row, "mutant_specificity_status", "mutant_specificity_state"))
     gaps = _patient_key_gaps(row, bundle)
@@ -4573,7 +4606,13 @@ def _patient_attention_reasons(row: Mapping[str, Any], bundle: ReportBundle | No
     sources = str(row.get("source_tools") or row.get("source_chain_orthogonal_sources") or "")
     source_count = len([part for part in re.split(r"[;,|+]", sources) if part.strip()])
     orthogonal = str(row.get("source_chain_orthogonal_status") or "").upper()
-    if source_count >= 2 or any(token in orthogonal for token in ("SUPPORTED", "CONCORDANT", "PASS")):
+    fusion_fixed_count = 0
+    if _patient_track(row) == "Fusion":
+        try:
+            fusion_fixed_count = int(float(str(row.get("internal_tool_count") or "0")))
+        except ValueError:
+            fusion_fixed_count = 0
+    if fusion_fixed_count >= 2 or (_patient_track(row) != "Fusion" and source_count >= 2) or any(token in orthogonal for token in ("SUPPORTED", "CONCORDANT", "PASS")):
         reasons.append("获得多工具或正交证据支持")
     cross_platform = str(row.get("cross_platform_status") or "").upper()
     if "CONSISTENT" in cross_platform or "CONCORDANT" in cross_platform:

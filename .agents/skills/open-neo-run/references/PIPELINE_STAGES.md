@@ -15,6 +15,10 @@ existing modules and fine-grained Skills.
    resume regenerates the same capability-aware manifest and reuses only
    signature-matching completed stages.
 7. Candidate normalization for VCF, fusion, splice, SV or peptide entries.
+   Fusion normalization publishes the versioned fixed-caller availability table,
+   one orientation-aware adjacency union and one authoritative consensus. EasyFuse
+   aggregator status, embedded short-read caller support, optional long-read
+   support and DNA-SV confirmation remain separate fields.
    Fusion candidates pass an explicit ORF gate: exact transcript and breakpoints,
    translation start, frame, translated ORF, peptide-in-ORF placement and NMD
    assessment. Candidates without this chain remain traceable in

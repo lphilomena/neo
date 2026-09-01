@@ -55,6 +55,16 @@ STAR_CHIMERIC_PATTERNS = (
     "**/Chimeric.out.junction",
 )
 
+FIXED_PANEL_VERSION = "OPEN_NEO_SHORT_READ_FUSION_V1"
+FIXED_SHORT_READ_CALLERS = ("Arriba", "STAR-Fusion", "FusionCatcher")
+AGGREGATOR_TOOLS = ("EasyFuse",)
+ORTHOGONAL_CALLERS = ("JAFFAL",)
+AUDIT_FIELDS = [
+    "event_id", "adjacency_key", "gene_pair", "left_breakpoint", "right_breakpoint",
+    "direction", "source_tool", "evidence_role", "caller_origin", "source_file",
+    "source_row", "peptide_status", "admission_policy", "rescue_reason",
+]
+
 TARGETED_FUSION_REGIONS = {
     "EWSR1_WT1": {
         "EWSR1": ("chr22", 29268009, 29300525),
@@ -74,7 +84,7 @@ def read_table(path: Path) -> list[dict[str, str]]:
     with path.open(encoding="utf-8", errors="replace", newline="") as handle:
         header = handle.readline()
         handle.seek(0)
-        delimiter = "\t" if "\t" in header else ","
+        delimiter = "\t" if "\t" in header else (";" if header.count(";") > header.count(",") else ",")
         return [{str(key): str(value or "") for key, value in row.items()} for row in csv.DictReader(handle, delimiter=delimiter)]
 
 
@@ -100,6 +110,82 @@ def normalize_breakpoint(value: str) -> str:
     if len(parts) >= 2 and parts[-1] in {"+", "-"}:
         parts = parts[:-1]
     return ":".join(parts[:2]) if len(parts) >= 2 else text
+
+
+def is_positive_flag(value: str) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "y", "detected", "pass", "positive"}
+
+
+def embedded_fixed_callers(row: dict[str, str]) -> list[str]:
+    detected: list[str] = []
+    mapping = {
+        "Arriba": ["arriba_detected"],
+        "STAR-Fusion": ["starfusion_detected", "star_detected"],
+        "FusionCatcher": ["fusioncatcher_detected"],
+    }
+    normalized = {str(key).lower().replace("#", ""): str(value or "") for key, value in row.items()}
+    tools_text = first(row, ["tools_detected", "support_tools", "callers"], "").lower().replace("_", "-")
+    for caller, fields in mapping.items():
+        caller_token = caller.lower().replace("_", "-")
+        if any(is_positive_flag(normalized.get(field, "")) for field in fields) or caller_token in tools_text:
+            detected.append(caller)
+    return detected
+
+
+def audit_with_embedded_callers(
+    base: dict[str, str], source_row: dict[str, str], *, caller_origin: str = "EASYFUSE_EMBEDDED"
+) -> list[dict[str, str]]:
+    rows = [{**base, "source_tool": "EasyFuse", "evidence_role": "AGGREGATOR", "caller_origin": caller_origin}]
+    for caller in embedded_fixed_callers(source_row):
+        rows.append({
+            **base,
+            "source_tool": caller,
+            "evidence_role": "FIXED_SHORT_READ_CALLER",
+            "caller_origin": caller_origin,
+        })
+    return rows
+
+
+def canonical_adjacency_key(row: dict[str, str]) -> str:
+    pair = str(row.get("gene_pair") or "").strip().upper().replace("--", "::").replace("_", "::")
+    left_raw = row.get("left_breakpoint", "")
+    right_raw = row.get("right_breakpoint", "")
+    left = normalize_breakpoint(left_raw)
+    right = normalize_breakpoint(right_raw)
+    left_strand = parse_breakpoint(left_raw)[2]
+    right_strand = parse_breakpoint(right_raw)[2]
+    direction = str(row.get("direction") or "").strip().strip("/")
+    if direction in {"", "."} and (left_strand or right_strand):
+        direction = f"{left_strand or '.'}/{right_strand or '.'}"
+    if pair and left and right:
+        return f"GRCh38|{pair}|{left}|{right}|{direction or '.'}"
+    return f"UNRESOLVED|{row.get('event_id', '')}"
+
+
+def harmonize_event_ids(
+    events: list[dict[str, str]], peptides: list[dict[str, str]], audit: list[dict[str, str]]
+) -> None:
+    event_map: dict[str, str] = {}
+    adjacency_by_event: dict[str, str] = {}
+    for row in audit:
+        old = str(row.get("event_id") or "")
+        key = canonical_adjacency_key(row)
+        row["adjacency_key"] = key
+        if old and not key.startswith("UNRESOLVED|"):
+            event_map[old] = safe_id(f"FUSION_ADJACENCY|{key}")
+            adjacency_by_event[event_map[old]] = key
+    for row in audit:
+        row["event_id"] = event_map.get(str(row.get("event_id") or ""), str(row.get("event_id") or ""))
+    for row in events + peptides:
+        old = str(row.get("event_id") or "")
+        row["event_id"] = event_map.get(old, old)
+        if row["event_id"] in adjacency_by_event:
+            row["adjacency_key"] = adjacency_by_event[row["event_id"]]
+    for row in peptides:
+        peptide = str(row.get("peptide") or "")
+        allele = str(row.get("hla_allele") or "")
+        if row.get("event_id") and peptide and allele:
+            row["peptide_id"] = safe_id(f"{row['event_id']}|{allele}|{peptide}")
 
 
 def parse_breakpoint(value: str) -> tuple[str, int | None, str]:
@@ -474,16 +560,24 @@ def targeted_rescue_rows(
                     })
                     peptides.append(enrich_peptide_layers(pbase, base))
             peptide_status = "TARGETED_RESCUE:" + rescue_status + (":GENERATED_FROM_RESCUE_ORF" if windows else ":ORF_PEPTIDE_UNAVAILABLE_REVIEW_ONLY")
-            audit.append({
+            audit_base = {
                 "event_id": event_id,
                 "gene_pair": gene_pair_display,
                 "left_breakpoint": bp1,
                 "right_breakpoint": bp2,
                 "direction": rescue_status,
-                "source_tool": "TARGETED_RESCUE",
                 "source_file": str(source),
                 "source_row": row.get("rescue_id", ""),
                 "peptide_status": peptide_status,
+                "admission_policy": "TARGETED_RESCUE",
+                "rescue_reason": rescue_status,
+            }
+            audit.extend(audit_with_embedded_callers(audit_base, row, caller_origin="EASYFUSE_TARGETED_RESCUE"))
+            audit.append({
+                **audit_base,
+                "source_tool": "TARGETED_RESCUE",
+                "evidence_role": "TARGETED_RESCUE",
+                "caller_origin": "OPEN_NEO_RESCUE_LAYER",
             })
             rescue_sidecar.append({
                 **row,
@@ -616,7 +710,15 @@ def generic_caller_rows(path: Path, tool: str, sample_id: str, profile: str, hla
                     "immunogenicity_score": "0.5", "wildtype_binding_rank": "99", "self_similarity_score": "0.0",
                 })
                 peptides.append(enrich_peptide_layers(pbase))
-        audit.append({"event_id": event_id, "gene_pair": pair, "left_breakpoint": left_bp, "right_breakpoint": right_bp, "direction": direction, "source_tool": tool, "source_file": str(path), "source_row": str(index), "peptide_status": ("JUNCTION_SPANNING_PEPTIDE" if breakpoint and window_records else "BOUNDARY_UNASSESSED_PEPTIDE" if window_records else "ORF_PEPTIDE_UNAVAILABLE_REVIEW_ONLY"), "admission_policy": "CALLER_PASS_OR_INDEPENDENT_CALLER", "rescue_reason": ""})
+        audit.append({
+            "event_id": event_id, "gene_pair": pair, "left_breakpoint": left_bp,
+            "right_breakpoint": right_bp, "direction": direction, "source_tool": tool,
+            "evidence_role": "FIXED_SHORT_READ_CALLER" if tool in FIXED_SHORT_READ_CALLERS else "LONG_READ_ORTHOGONAL" if tool in ORTHOGONAL_CALLERS else "OTHER_CALLER",
+            "caller_origin": "DIRECT_CALLER_OUTPUT", "source_file": str(path),
+            "source_row": str(index),
+            "peptide_status": ("JUNCTION_SPANNING_PEPTIDE" if breakpoint and window_records else "BOUNDARY_UNASSESSED_PEPTIDE" if window_records else "ORF_PEPTIDE_UNAVAILABLE_REVIEW_ONLY"),
+            "admission_policy": "CALLER_PASS_OR_INDEPENDENT_CALLER", "rescue_reason": "",
+        })
     return events, peptides, audit
 
 
@@ -703,19 +805,19 @@ def diagnostic_rescue_entities(
                     "self_similarity_score": "0.0",
                 })
                 peptides.append(enrich_peptide_layers(pbase))
-        audit.append({
+        audit_base = {
             "event_id": event_id,
             "gene_pair": pair,
             "left_breakpoint": bp1,
             "right_breakpoint": bp2,
             "direction": "",
-            "source_tool": "EasyFuse",
             "source_file": row.get("source_file", ""),
             "source_row": "",
             "peptide_status": "JUNCTION_WINDOWS_GENERATED" if windows else "ORF_PEPTIDE_UNAVAILABLE_REVIEW_ONLY",
             "admission_policy": "DIAGNOSTIC_WHITELIST_RESCUE",
             "rescue_reason": row.get("rescue_reason", ""),
-        })
+        }
+        audit.extend(audit_with_embedded_callers(audit_base, row, caller_origin="EASYFUSE_DIAGNOSTIC_RESCUE"))
     return events, peptides, audit
 
 
@@ -723,42 +825,170 @@ def read_hla_text(value: str) -> list[str]:
     return list(dict.fromkeys(match.upper() if match.upper().startswith("HLA-") else "HLA-" + match.upper() for match in HLA_RE.findall(value or "")))
 
 
-def write_consensus(path: Path, audit: list[dict[str, str]]) -> None:
+def build_caller_availability(
+    *, easyfuse_files: list[Path], star_fusion_files: list[Path],
+    arriba_files: list[Path], fusioncatcher_files: list[Path], jaffal_files: list[Path],
+) -> list[dict[str, str]]:
+    easyfuse_rows = [row for path in easyfuse_files for row in read_table(path)]
+    embedded_headers = {str(key).lower().replace("#", "") for row in easyfuse_rows for key in row}
+    direct = {
+        "Arriba": arriba_files,
+        "STAR-Fusion": star_fusion_files,
+        "FusionCatcher": fusioncatcher_files,
+        "JAFFAL": jaffal_files,
+    }
+    marker_fields = {
+        "Arriba": {"arriba_detected"},
+        "STAR-Fusion": {"starfusion_detected", "star_detected"},
+        "FusionCatcher": {"fusioncatcher_detected"},
+    }
+    rows: list[dict[str, str]] = []
+    for caller in (*FIXED_SHORT_READ_CALLERS, *ORTHOGONAL_CALLERS):
+        paths = existing(direct.get(caller, []))
+        embedded = caller in marker_fields and bool(marker_fields[caller] & embedded_headers)
+        if paths:
+            status = "AVAILABLE_DIRECT_OUTPUT"
+        elif embedded:
+            status = "AVAILABLE_EASYFUSE_EMBEDDED_COLUMNS"
+        else:
+            status = "MISSING"
+        rows.append({
+            "panel_version": FIXED_PANEL_VERSION,
+            "caller": caller,
+            "role": "FIXED_SHORT_READ_CALLER" if caller in FIXED_SHORT_READ_CALLERS else "LONG_READ_ORTHOGONAL",
+            "availability_status": status,
+            "source_files": ";".join(str(path) for path in paths) or (
+                ";".join(str(path) for path in easyfuse_files) if embedded else ""
+            ),
+            "parsed_records": str(sum(len(read_table(path)) for path in paths)),
+        })
+    rows.insert(0, {
+        "panel_version": FIXED_PANEL_VERSION,
+        "caller": "EasyFuse",
+        "role": "AGGREGATOR",
+        "availability_status": "AVAILABLE_PASS_OUTPUT" if easyfuse_files else "MISSING",
+        "source_files": ";".join(str(path) for path in easyfuse_files),
+        "parsed_records": str(sum(len(read_table(path)) for path in easyfuse_files)),
+    })
+    return rows
+
+
+def build_consensus(
+    audit: list[dict[str, str]], availability: list[dict[str, str]]
+) -> list[dict[str, str]]:
     grouped: dict[str, dict[str, object]] = defaultdict(lambda: {
         "gene_pair": "",
-        "tools": set(),
+        "event_ids": set(),
+        "fixed_tools": set(),
+        "aggregators": set(),
+        "orthogonal_tools": set(),
+        "other_tools": set(),
+        "admission_policies": set(),
         "left_breakpoints": set(),
         "right_breakpoints": set(),
         "peptide_statuses": set(),
     })
     for row in audit:
-        event_id = row.get("event_id", "")
-        if not event_id:
+        key = row.get("adjacency_key") or canonical_adjacency_key(row)
+        if not row.get("event_id"):
             continue
-        item = grouped[event_id]
+        item = grouped[key]
         item["gene_pair"] = item["gene_pair"] or row.get("gene_pair", "")
-        item["tools"].add(row.get("source_tool", ""))  # type: ignore[union-attr]
+        item["event_ids"].add(row.get("event_id", ""))  # type: ignore[union-attr]
+        tool = row.get("source_tool", "")
+        if tool in FIXED_SHORT_READ_CALLERS:
+            item["fixed_tools"].add(tool)  # type: ignore[union-attr]
+        elif tool in AGGREGATOR_TOOLS:
+            item["aggregators"].add(tool)  # type: ignore[union-attr]
+        elif tool in ORTHOGONAL_CALLERS:
+            item["orthogonal_tools"].add(tool)  # type: ignore[union-attr]
+        elif tool:
+            item["other_tools"].add(tool)  # type: ignore[union-attr]
+        if row.get("admission_policy"):
+            item["admission_policies"].add(row["admission_policy"])  # type: ignore[union-attr]
         if row.get("left_breakpoint"):
             item["left_breakpoints"].add(row["left_breakpoint"])  # type: ignore[union-attr]
         if row.get("right_breakpoint"):
             item["right_breakpoints"].add(row["right_breakpoint"])  # type: ignore[union-attr]
         if row.get("peptide_status"):
             item["peptide_statuses"].add(row["peptide_status"])  # type: ignore[union-attr]
+    availability_by_caller = {row["caller"]: row["availability_status"] for row in availability}
+    missing_fixed = [caller for caller in FIXED_SHORT_READ_CALLERS if availability_by_caller.get(caller) == "MISSING"]
+    panel_completeness = "COMPLETE" if not missing_fixed else "INCOMPLETE"
     rows: list[dict[str, str]] = []
-    for event_id, item in grouped.items():
-        tools = sorted(tool for tool in item["tools"] if tool)  # type: ignore[union-attr]
+    for adjacency_key, item in grouped.items():
+        fixed_tools = sorted(item["fixed_tools"])  # type: ignore[arg-type]
+        aggregators = sorted(item["aggregators"])  # type: ignore[arg-type]
+        orthogonal = sorted(item["orthogonal_tools"])  # type: ignore[arg-type]
+        other = sorted(item["other_tools"])  # type: ignore[arg-type]
+        admissions = sorted(item["admission_policies"])  # type: ignore[arg-type]
+        rescue = any("RESCUE" in value for value in admissions) or "TARGETED_RESCUE" in other
+        easyfuse_pass = "CALLER_PASS" in admissions
+        if rescue and len(fixed_tools) >= 2:
+            status = "TARGETED_RESCUE_WITH_MULTI_CALLER_SIGNAL"
+        elif rescue:
+            status = "TARGETED_RESCUE_ONLY"
+        elif len(fixed_tools) >= 2:
+            status = "SHORT_READ_MULTI_CALLER"
+        elif len(fixed_tools) == 1:
+            status = "SHORT_READ_SINGLE_CALLER"
+        elif aggregators:
+            status = "AGGREGATOR_ONLY"
+        elif orthogonal:
+            status = "ORTHOGONAL_ONLY_NOT_COMPARABLE"
+        else:
+            status = "UNASSESSED"
+        event_ids = sorted(item["event_ids"])  # type: ignore[arg-type]
         rows.append({
-            "event_id": event_id,
+            "event_id": event_ids[0] if event_ids else "",
+            "member_event_ids": ";".join(event_ids),
+            "adjacency_key": adjacency_key,
             "fusion": str(item["gene_pair"]),
-            "support_tools": ",".join(tools),
-            "n_tools": str(len(tools)),
+            "fixed_panel_version": FIXED_PANEL_VERSION,
+            "fixed_panel_callers": ",".join(FIXED_SHORT_READ_CALLERS),
+            "fixed_panel_completeness": panel_completeness,
+            "missing_fixed_callers": ",".join(missing_fixed),
+            "fixed_panel_support_callers": ",".join(fixed_tools),
+            "n_fixed_panel_support": str(len(fixed_tools)),
+            "support_tools": ",".join(fixed_tools),
+            "n_tools": str(len(fixed_tools)),
+            "easyfuse_pass": "yes" if easyfuse_pass else "no",
+            "aggregator_support": ",".join(aggregators),
+            "long_read_support": ",".join(orthogonal),
+            "orthogonal_support": ",".join(orthogonal),
+            "dna_sv_support": "UNASSESSED",
+            "rescue_status": "TARGETED_RESCUE" if rescue else "NONE",
+            "admission_policies": ";".join(admissions),
             "left_breakpoints": ";".join(sorted(item["left_breakpoints"])),  # type: ignore[arg-type]
             "right_breakpoints": ";".join(sorted(item["right_breakpoints"])),  # type: ignore[arg-type]
             "peptide_status": ";".join(sorted(item["peptide_statuses"])),  # type: ignore[arg-type]
-            "status": "CROSS_VALIDATED" if len(tools) >= 2 else "SINGLE_TOOL",
+            "status": status,
         })
-    rows.sort(key=lambda row: (-int(row["n_tools"]), row["fusion"]))
-    write_tsv(path, rows, ["event_id", "fusion", "support_tools", "n_tools", "left_breakpoints", "right_breakpoints", "peptide_status", "status"])
+    rows.sort(key=lambda row: (-int(row["n_fixed_panel_support"]), row["fusion"], row["adjacency_key"]))
+    return rows
+
+
+def annotate_entities_with_consensus(
+    events: list[dict[str, str]], peptides: list[dict[str, str]], consensus: list[dict[str, str]]
+) -> None:
+    by_event: dict[str, dict[str, str]] = {}
+    for row in consensus:
+        for event_id in str(row.get("member_event_ids") or row.get("event_id") or "").split(";"):
+            if event_id:
+                by_event[event_id] = row
+    for entity in events + peptides:
+        row = by_event.get(str(entity.get("event_id") or ""))
+        if not row:
+            continue
+        entity["adjacency_key"] = row["adjacency_key"]
+        entity["candidate_union_source"] = row["status"]
+        entity["internal_tools"] = row["fixed_panel_support_callers"]
+        entity["internal_tool_count"] = row["n_fixed_panel_support"]
+        entity["internal_high_confidence_reason"] = (
+            f"panel={row['fixed_panel_version']}; completeness={row['fixed_panel_completeness']}; "
+            f"easyfuse_pass={row['easyfuse_pass']}; rescue={row['rescue_status']}; "
+            f"long_read={row['long_read_support'] or 'none'}"
+        )
 
 
 def main() -> int:
@@ -818,19 +1048,19 @@ def main() -> int:
         for event_index, event in enumerate(easyfuse_events, 1):
             source_row_number = int(to_float(event.get("source_row_number"), event_index))
             source_row = easyfuse_source_rows[source_row_number - 1] if 0 < source_row_number <= len(easyfuse_source_rows) else {}
-            audit.append({
+            audit_base = {
                 "event_id": event.get("event_id", ""),
                 "gene_pair": event.get("gene", ""),
                 "left_breakpoint": first(source_row, ["Breakpoint1", "breakpoint1", "LeftBreakpoint", "left_breakpoint"], ""),
                 "right_breakpoint": first(source_row, ["Breakpoint2", "breakpoint2", "RightBreakpoint", "right_breakpoint"], ""),
                 "direction": "",
-                "source_tool": "EasyFuse",
                 "source_file": str(easyfuse),
                 "source_row": str(source_row_number),
                 "peptide_status": "GENERATED_FROM_EASYFUSE_ORF",
                 "admission_policy": "CALLER_PASS",
                 "rescue_reason": "",
-            })
+            }
+            audit.extend(audit_with_embedded_callers(audit_base, source_row))
     rescue_rows: list[dict[str, str]] = []
     rescue_sources: list[Path] = []
     if not args.disable_diagnostic_fusion_rescue:
@@ -878,6 +1108,16 @@ def main() -> int:
         audit.extend(rescue_audit)
     if not events:
         raise SystemExit("No fusion events were parsed from supplied caller outputs")
+    harmonize_event_ids(events, peptides, audit)
+    availability = build_caller_availability(
+        easyfuse_files=existing(easyfuse_files),
+        star_fusion_files=existing(star_fusion_files),
+        arriba_files=existing(arriba_files),
+        fusioncatcher_files=existing(fusioncatcher_files),
+        jaffal_files=existing(jaffal_files),
+    )
+    consensus = build_consensus(audit, availability)
+    annotate_entities_with_consensus(events, peptides, consensus)
     measurements, verification_rows = verify_event_junction_reads(
         audit,
         existing(star_chimeric_files),
@@ -901,13 +1141,18 @@ def main() -> int:
     write_tsv(args.outdir / "raw_peptides.tsv", merged_peptides, PEPTIDE_FIELDS)
     write_tsv(args.outdir / "parsed/raw_events.tsv", merged_events, EVENT_FIELDS)
     write_tsv(args.outdir / "parsed/raw_peptides.tsv", merged_peptides, PEPTIDE_FIELDS)
-    write_tsv(args.outdir / "fusion_caller_union.tsv", audit, ["event_id", "gene_pair", "left_breakpoint", "right_breakpoint", "direction", "source_tool", "source_file", "source_row", "peptide_status", "admission_policy", "rescue_reason"])
+    write_tsv(args.outdir / "fusion_caller_union.tsv", audit, AUDIT_FIELDS)
+    write_tsv(
+        args.outdir / "fusion_caller_availability.tsv",
+        availability,
+        ["panel_version", "caller", "role", "availability_status", "source_files", "parsed_records"],
+    )
     write_tsv(
         args.outdir / "junction_read_verification.tsv",
         verification_rows,
         ["event_id", "verified_rna_junction_reads", "caller_rna_junction_reads", "junction_match_status", "junction_match_method", "junction_verification_source", "junction_verification_note"],
     )
-    write_consensus(args.outdir / "fusion_consensus.tsv", audit)
+    write_tsv(args.outdir / "fusion_consensus.tsv", consensus)
     if rescue_sidecar:
         fields = [
             "rescue_id", "sample_id", "fusion_gene", "fusion_gene_raw", "fusion_gene_normalized",

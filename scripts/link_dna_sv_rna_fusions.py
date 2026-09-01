@@ -167,6 +167,7 @@ def main() -> int:
     parser.add_argument("--fusion-events", required=True, type=Path)
     parser.add_argument("--fusion-peptides", required=True, type=Path)
     parser.add_argument("--fusion-union", required=True, type=Path)
+    parser.add_argument("--fusion-consensus", type=Path)
     parser.add_argument("--sv-events", type=Path)
     parser.add_argument("--outdir", required=True, type=Path)
     parser.add_argument("--exact-tolerance-bp", type=int, default=3)
@@ -175,6 +176,7 @@ def main() -> int:
     events = read_table(args.fusion_events)
     peptides = read_table(args.fusion_peptides)
     union = read_table(args.fusion_union)
+    consensus = read_table(args.fusion_consensus) if args.fusion_consensus else []
     sv_rows = read_table(args.sv_events) if args.sv_events else []
     sv_candidates = dna_events(sv_rows)
     union_by_event = {row.get("event_id", ""): row for row in union if row.get("event_id")}
@@ -192,9 +194,27 @@ def main() -> int:
     for peptide in peptides:
         peptide.update(annotations.get(peptide.get("event_id", ""), annotation(None, "UNASSESSED", "fusion event not present in normalized event table")))
 
+    for row in consensus:
+        member_ids = [item for item in str(row.get("member_event_ids") or row.get("event_id") or "").split(";") if item]
+        member_annotations = [annotations[item] for item in member_ids if item in annotations]
+        statuses = {item.get("dna_sv_confirmation_status", "UNASSESSED") for item in member_annotations}
+        if "SUPPORTED" in statuses:
+            dna_status = "SUPPORTED"
+        elif statuses == {"NOT_DETECTED"}:
+            dna_status = "NOT_DETECTED"
+        elif "AMBIGUOUS" in statuses:
+            dna_status = "AMBIGUOUS"
+        else:
+            dna_status = "UNASSESSED"
+        row["dna_sv_support"] = dna_status
+        row["dna_sv_event_ids"] = ";".join(sorted({item.get("dna_sv_event_id", "") for item in member_annotations if item.get("dna_sv_event_id")}))
+        row["dna_sv_callers"] = ",".join(sorted({caller for item in member_annotations for caller in item.get("dna_sv_callers", "").split(",") if caller}))
+
     write_table(args.outdir / "raw_events.tsv", events)
     write_table(args.outdir / "raw_peptides.tsv", peptides)
     write_table(args.outdir / "dna_sv_rna_fusion_links.tsv", links, ["fusion_event_id", *DNA_FIELDS])
+    if consensus:
+        write_table(args.outdir / "fusion_consensus.tsv", consensus)
     return 0
 
 

@@ -656,12 +656,13 @@ def main() -> int:
         for caller_root in args.fusion_caller_root:
             union_args += ["--caller-root", q(require(caller_root, "fusion caller result root"))]
         command = f"PYTHONPATH={q(root / 'src')} {q(sys.executable)} {q(root / 'scripts/build_fusion_caller_union.py')} --sample-id {q(args.sample_id)} --profile {q(profile)} --hla-file {q(hla)} {' '.join(union_args)} --outdir {{outdir}}/branches/fusion/intermediates"
-        stage(lines, "fusion_candidates", command=command, outputs={"raw_events": "{outdir}/branches/fusion/intermediates/raw_events.tsv", "raw_peptides": "{outdir}/branches/fusion/intermediates/raw_peptides.tsv", "fusion_union": "{outdir}/branches/fusion/intermediates/fusion_caller_union.tsv", "fusion_consensus": "{outdir}/branches/fusion/intermediates/fusion_consensus.tsv", "junction_verification": "{outdir}/branches/fusion/intermediates/junction_read_verification.tsv", "diagnostic_fusion_rescue": "{outdir}/branches/fusion/intermediates/diagnostic_fusion_rescue.tsv"}, depends=list(dict.fromkeys(pairing_dependency + hla_dependency + rna_bam_dependency)))
+        stage(lines, "fusion_candidates", command=command, outputs={"raw_events": "{outdir}/branches/fusion/intermediates/raw_events.tsv", "raw_peptides": "{outdir}/branches/fusion/intermediates/raw_peptides.tsv", "fusion_union": "{outdir}/branches/fusion/intermediates/fusion_caller_union.tsv", "fusion_caller_availability": "{outdir}/branches/fusion/intermediates/fusion_caller_availability.tsv", "fusion_consensus": "{outdir}/branches/fusion/intermediates/fusion_consensus.tsv", "junction_verification": "{outdir}/branches/fusion/intermediates/junction_read_verification.tsv", "diagnostic_fusion_rescue": "{outdir}/branches/fusion/intermediates/diagnostic_fusion_rescue.tsv"}, depends=list(dict.fromkeys(pairing_dependency + hla_dependency + rna_bam_dependency)))
         link_command = (
             f"PYTHONPATH={q(root / 'src')} {q(sys.executable)} {q(root / 'scripts/link_dna_sv_rna_fusions.py')} "
             f"--fusion-events {{outdir}}/branches/fusion/intermediates/raw_events.tsv "
             f"--fusion-peptides {{outdir}}/branches/fusion/intermediates/raw_peptides.tsv "
             f"--fusion-union {{outdir}}/branches/fusion/intermediates/fusion_caller_union.tsv "
+            f"--fusion-consensus {{outdir}}/branches/fusion/intermediates/fusion_consensus.tsv "
             + (f"--sv-events {dna_sv_events} " if dna_sv_events else "")
             + "--outdir {outdir}/branches/fusion/dna_sv_linked"
         )
@@ -672,21 +673,18 @@ def main() -> int:
                 "raw_events": "{outdir}/branches/fusion/dna_sv_linked/raw_events.tsv",
                 "raw_peptides": "{outdir}/branches/fusion/dna_sv_linked/raw_peptides.tsv",
                 "dna_sv_rna_links": "{outdir}/branches/fusion/dna_sv_linked/dna_sv_rna_fusion_links.tsv",
+                "fusion_consensus": "{outdir}/branches/fusion/dna_sv_linked/fusion_consensus.tsv",
             }, depends=link_dependencies,
         )
         candidate_stages.append("fusion_dna_sv_link")
-        review = f"{q(sys.executable)} {q(root / 'scripts/review_rna_fusions.py')}"
-        if easyfuse: review += f" --easyfuse {q(easyfuse)}"
-        if args.star_fusion: review += f" --star-fusion {q(require(args.star_fusion, 'STAR-Fusion'))}"
-        if args.arriba: review += f" --arriba {q(require(args.arriba, 'Arriba'))}"
-        if args.fusioncatcher: review += f" --fusioncatcher {q(require(args.fusioncatcher, 'FusionCatcher'))}"
-        if args.jaffal: review += f" --jaffal {q(require(args.jaffal, 'JAFFAL'))}"
-        for caller_root in args.fusion_caller_root:
-            review += f" --caller-root {q(require(caller_root, 'fusion caller result root'))}"
-        if args.normal_readthrough:
-            review += f" --normal-readthrough {q(require(args.normal_readthrough, 'normal read-through background'))}"
-        review += " --outdir {outdir}/branches/fusion/consensus"
-        stage(lines, "fusion_cross_validation", command=review, outputs={"fusion_consensus": "{outdir}/branches/fusion/consensus/fusion_consensus.tsv"}, required=True, depends=["fusion_candidates"])
+        review = (
+            "mkdir -p {outdir}/branches/fusion/consensus && "
+            "cp {outdir}/branches/fusion/dna_sv_linked/fusion_consensus.tsv "
+            "{outdir}/branches/fusion/consensus/fusion_consensus.tsv && "
+            "cp {outdir}/branches/fusion/intermediates/fusion_caller_availability.tsv "
+            "{outdir}/branches/fusion/consensus/fusion_caller_availability.tsv"
+        )
+        stage(lines, "fusion_cross_validation", command=review, outputs={"fusion_consensus": "{outdir}/branches/fusion/consensus/fusion_consensus.tsv", "fusion_caller_availability": "{outdir}/branches/fusion/consensus/fusion_caller_availability.tsv"}, required=True, depends=["fusion_dna_sv_link"])
     generated_star_sj = "{outdir}/rna/star/SJ.out.tab" if args.rna_fastq1 and args.rna_fastq2 else ""
     splice_rna_bam = require(args.splice_rna_bam, "splice RNA BAM") if args.splice_rna_bam else rna_bam
     splice_star_sj = (
