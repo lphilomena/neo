@@ -23,6 +23,15 @@ Usage:
     [--candidate-top-n <N; default 100>] \
     [--asset-root <liup_neodata4git>] \
     [--reference-fasta <GRCh38.fasta>] \
+    [--tumor-dna-bam <tumor.bam> --normal-dna-bam <normal.bam>] \
+    [--tumor-sample-name <VCF sample> --normal-sample-name <VCF sample>] \
+    [--assay-type <WGS|WES|PANEL|UNKNOWN>] \
+    [--capture-bed <required for WES/PANEL DNA-SV>] \
+    [--sv-vcf <existing DNA-SV VCF; repeatable>] \
+    [--sv-caller <caller matching each --sv-vcf; repeatable>] \
+    [--skip-dna-sv <explicitly leave DNA-SV unassessed>] \
+    [--bam-matcher-loci <GRCh38 identity SNP VCF>] \
+    [--skip-bam-matcher] \
     [--vep-cache <VEP cache root>] \
     [--vep-plugins <directory containing Wildtype.pm and Frameshift.pm>] \
     [--vep-bin <installed VEP executable or wrapper>] \
@@ -93,6 +102,21 @@ CASE_ROOT=""
 OUTDIR=""
 SOMATIC_VCF=""
 REFERENCE_FASTA=""
+TUMOR_DNA_BAM=""
+NORMAL_DNA_BAM=""
+TUMOR_SAMPLE_NAME=""
+NORMAL_SAMPLE_NAME=""
+ASSAY_TYPE="UNKNOWN"
+CAPTURE_BED=""
+SV_VCFS=()
+SV_CALLERS=()
+SKIP_DNA_SV=0
+BAM_MATCHER_LOCI="${BAM_MATCHER_LOCI:-}"
+SKIP_BAM_MATCHER=0
+SV_THREADS="${NEOAG_SV_THREADS:-8}"
+SV_MEMORY_GB="${NEOAG_SV_MEMORY_GB:-48}"
+SV_NEXTFLOW_CONFIG="${NEOAG_SV_NEXTFLOW_CONFIG:-}"
+SV_NEXTFLOW_PROFILE="${NEOAG_SV_NEXTFLOW_PROFILE:-}"
 VEP_CACHE="${NEOAG_VEP_CACHE:-}"
 VEP_PLUGINS="${NEOAG_VEP_PLUGINS:-}"
 VEP_BIN="${NEOAG_VEP_BIN:-}"
@@ -145,6 +169,21 @@ while [[ $# -gt 0 ]]; do
     --candidate-top-n) CANDIDATE_TOP_N="$2"; shift 2 ;;
     --asset-root) ASSET="$2"; CLI_ASSET="$2"; shift 2 ;;
     --reference-fasta) REFERENCE_FASTA="$2"; shift 2 ;;
+    --tumor-dna-bam) TUMOR_DNA_BAM="$2"; shift 2 ;;
+    --normal-dna-bam) NORMAL_DNA_BAM="$2"; shift 2 ;;
+    --tumor-sample-name) TUMOR_SAMPLE_NAME="$2"; shift 2 ;;
+    --normal-sample-name) NORMAL_SAMPLE_NAME="$2"; shift 2 ;;
+    --assay-type) ASSAY_TYPE="${2^^}"; shift 2 ;;
+    --capture-bed) CAPTURE_BED="$2"; shift 2 ;;
+    --sv-vcf) IFS=',' read -r -a _sv_values <<< "$2"; SV_VCFS+=("${_sv_values[@]}"); shift 2 ;;
+    --sv-caller) SV_CALLERS+=("$2"); shift 2 ;;
+    --skip-dna-sv) SKIP_DNA_SV=1; shift ;;
+    --bam-matcher-loci) BAM_MATCHER_LOCI="$2"; shift 2 ;;
+    --skip-bam-matcher) SKIP_BAM_MATCHER=1; shift ;;
+    --sv-threads) SV_THREADS="$2"; shift 2 ;;
+    --sv-memory-gb) SV_MEMORY_GB="$2"; shift 2 ;;
+    --sv-nextflow-config) SV_NEXTFLOW_CONFIG="$2"; shift 2 ;;
+    --sv-nextflow-profile) SV_NEXTFLOW_PROFILE="$2"; shift 2 ;;
     --vep-cache) VEP_CACHE="$2"; shift 2 ;;
     --vep-plugins) VEP_PLUGINS="$2"; shift 2 ;;
     --vep-bin) VEP_BIN="$2"; shift 2 ;;
@@ -204,6 +243,30 @@ TOTAL_CPUS="${TOTAL_CPUS:-$RNA_THREADS}"
 [[ "$TOTAL_MEMORY_GB" =~ ^[0-9]+([.][0-9]+)?$ ]] || { echo "--total-memory-gb must be a non-negative number" >&2; exit 2; }
 [[ "$MAX_PARALLEL_STAGES" =~ ^[1-9][0-9]*$ ]] || { echo "--max-parallel-stages must be a positive integer" >&2; exit 2; }
 [[ "$STAR_SJDB_OVERHANG" =~ ^[1-9][0-9]*$ ]] || { echo "--star-sjdb-overhang must be a positive integer" >&2; exit 2; }
+[[ "$ASSAY_TYPE" == "CAPTURE" ]] && ASSAY_TYPE="PANEL"
+[[ "$ASSAY_TYPE" =~ ^(WGS|WES|PANEL|UNKNOWN)$ ]] || { echo "--assay-type must be WGS, WES, PANEL, CAPTURE, or UNKNOWN" >&2; exit 2; }
+[[ "$SV_THREADS" =~ ^[1-9][0-9]*$ ]] || { echo "--sv-threads must be a positive integer" >&2; exit 2; }
+[[ "$SV_MEMORY_GB" =~ ^[0-9]+([.][0-9]+)?$ ]] || { echo "--sv-memory-gb must be a positive number" >&2; exit 2; }
+if [[ ( -n "$TUMOR_DNA_BAM" && -z "$NORMAL_DNA_BAM" ) || ( -z "$TUMOR_DNA_BAM" && -n "$NORMAL_DNA_BAM" ) ]]; then
+  echo "--tumor-dna-bam and --normal-dna-bam must be supplied together" >&2
+  exit 2
+fi
+if [[ ( -n "$TUMOR_SAMPLE_NAME" && -z "$NORMAL_SAMPLE_NAME" ) || ( -z "$TUMOR_SAMPLE_NAME" && -n "$NORMAL_SAMPLE_NAME" ) ]]; then
+  echo "--tumor-sample-name and --normal-sample-name must be supplied together" >&2
+  exit 2
+fi
+if (( ${#SV_CALLERS[@]} > 0 && ${#SV_CALLERS[@]} != ${#SV_VCFS[@]} )); then
+  echo "--sv-caller must be repeated once for every --sv-vcf" >&2
+  exit 2
+fi
+if [[ "$ASSAY_TYPE" =~ ^(WES|PANEL)$ && "$SKIP_DNA_SV" != 1 && -z "$CAPTURE_BED" ]]; then
+  echo "$ASSAY_TYPE DNA-SV production requires --capture-bed" >&2
+  exit 2
+fi
+if [[ "$ASSAY_TYPE" =~ ^(WGS|WES|PANEL)$ && "$SKIP_DNA_SV" != 1 && ${#SV_VCFS[@]} -eq 0 && -z "$TUMOR_DNA_BAM" ]]; then
+  echo "$ASSAY_TYPE DNA-SV production requires --sv-vcf or an explicit tumor/normal BAM pair" >&2
+  exit 2
+fi
 [[ -z "$RNA_FASTQ1" && -z "$RNA_FASTQ2" ]] || {
   [[ -n "$RNA_FASTQ1" && -n "$RNA_FASTQ2" ]] || {
     echo "--rna-fastq1 and --rna-fastq2 must be supplied together" >&2
@@ -214,7 +277,7 @@ rna_alignment_modes=0
 [[ -n "$RNA_FASTQ1" ]] && ((rna_alignment_modes+=1))
 [[ -n "$RNA_BAM" ]] && ((rna_alignment_modes+=1))
 ((rna_alignment_modes <= 1)) || {
-  echo "Use only one RNA alignment input mode: FASTQ pair or existing BAM" >&2
+  echo "Use only one RNA allele-evidence input mode: FASTQ pair or existing BAM" >&2
   exit 2
 }
 if [[ -n "$RNA_FASTQ1" && -n "$RNA_VAF" ]]; then
@@ -497,6 +560,30 @@ add_first_existing() {
   return 1
 }
 
+if [[ -z "$BAM_MATCHER_LOCI" && -n "$ASSET" ]]; then
+  for candidate in \
+    "$ASSET/data/sample_identity/bam_matcher.common_snps.hg38.vcf" \
+    "$ASSET/data/sample_identity/bam_matcher.common_snps.hg38.vcf.gz"; do
+    if [[ -s "$candidate" ]]; then
+      BAM_MATCHER_LOCI="$candidate"
+      break
+    fi
+  done
+fi
+
+if [[ -n "$TUMOR_DNA_BAM" ]]; then
+  for bam in "$TUMOR_DNA_BAM" "$NORMAL_DNA_BAM"; do
+    [[ -s "$bam" ]] || { echo "DNA BAM missing or empty: $bam" >&2; exit 2; }
+    [[ -s "$bam.bai" || -s "${bam%.bam}.bai" ]] || {
+      echo "DNA BAM index missing for $bam" >&2
+      exit 2
+    }
+  done
+fi
+for sv_vcf in "${SV_VCFS[@]}"; do
+  [[ -s "$sv_vcf" ]] || { echo "DNA-SV VCF missing or empty: $sv_vcf" >&2; exit 2; }
+done
+
 GEN_ARGS=(
   --project-root "$PROJECT_ROOT"
   --sample-id "$SAMPLE_ID"
@@ -508,6 +595,21 @@ GEN_ARGS=(
   --output "$OUTDIR/manifest/production.results.toml"
   --somatic-vcf "$SOMATIC_VCF"
 )
+
+[[ -n "$TUMOR_DNA_BAM" ]] && GEN_ARGS+=(--tumor-dna-bam "$TUMOR_DNA_BAM" --normal-dna-bam "$NORMAL_DNA_BAM")
+[[ -n "$TUMOR_SAMPLE_NAME" ]] && GEN_ARGS+=(--tumor-sample-name "$TUMOR_SAMPLE_NAME" --normal-sample-name "$NORMAL_SAMPLE_NAME")
+GEN_ARGS+=(--assay-type "$ASSAY_TYPE" --sv-threads "$SV_THREADS" --sv-memory-gb "$SV_MEMORY_GB")
+[[ -n "$CAPTURE_BED" ]] && GEN_ARGS+=(--capture-bed "$CAPTURE_BED")
+for sv_vcf in "${SV_VCFS[@]}"; do GEN_ARGS+=(--sv-vcf "$sv_vcf"); done
+for sv_caller in "${SV_CALLERS[@]}"; do GEN_ARGS+=(--sv-caller "$sv_caller"); done
+[[ "$SKIP_DNA_SV" == 1 ]] && GEN_ARGS+=(--skip-dna-sv)
+if [[ "$SKIP_BAM_MATCHER" == 1 ]]; then
+  GEN_ARGS+=(--skip-bam-matcher)
+elif [[ -n "$BAM_MATCHER_LOCI" ]]; then
+  GEN_ARGS+=(--bam-matcher-loci "$BAM_MATCHER_LOCI")
+fi
+[[ -n "$SV_NEXTFLOW_CONFIG" ]] && GEN_ARGS+=(--sv-nextflow-config "$SV_NEXTFLOW_CONFIG")
+[[ -n "$SV_NEXTFLOW_PROFILE" ]] && GEN_ARGS+=(--sv-nextflow-profile "$SV_NEXTFLOW_PROFILE")
 
 if [[ -n "$HLA_FILE" ]]; then
   add_if --hla-file "$HLA_FILE"

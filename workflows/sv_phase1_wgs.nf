@@ -33,8 +33,30 @@ params.purity = params.purity ?: "${projectDir}/../assets/empty_purity.tsv"
 params.cnv = params.cnv ?: "${projectDir}/../assets/empty_cnv.tsv"
 params.normal_expression = params.normal_expression ?: "${projectDir}/../resources/normal_expression.example.tsv"
 params.normal_hla_ligands = params.normal_hla_ligands ?: "${projectDir}/../resources/normal_hla_ligands.example.tsv"
+params.genome_build = params.genome_build ?: 'GRCh38'
+params.wes_mode = params.wes_mode == true
+params.capture_bed = params.capture_bed ?: null
+params.tumor_sample_name = params.tumor_sample_name ?: null
+params.normal_sample_name = params.normal_sample_name ?: null
 
 workflow {
+    def required = [
+        sample_id: params.sample_id,
+        tumor_bam: params.tumor_bam,
+        normal_bam: params.normal_bam,
+        reference_fasta: params.reference_fasta,
+        gencode_gtf: params.gencode_gtf,
+        hla: params.hla,
+        tumor_sample_name: params.tumor_sample_name,
+        normal_sample_name: params.normal_sample_name,
+    ]
+    def missing = required.findAll { key, value -> !value }.keySet()
+    if (missing) {
+        error "Hardened paired DNA-SV workflow missing required parameters: ${missing.join(', ')}"
+    }
+    if (params.wes_mode && !params.capture_bed) {
+        error "WES/PANEL DNA-SV workflow requires --capture_bed"
+    }
     sample_ch = Channel.value(params.sample_id ?: 'SAMPLE001')
     tumor_bam_ch = Channel.value(file(params.tumor_bam))
     tumor_bai_ch = Channel.value(file(params.tumor_bai ?: params.tumor_bam + '.bai'))

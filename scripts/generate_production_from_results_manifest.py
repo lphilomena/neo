@@ -7,6 +7,7 @@ import argparse
 import csv
 import json
 import os
+import shutil
 import sys
 from pathlib import Path
 
@@ -142,10 +143,12 @@ def easyfuse_star_candidates(explicit: str | None) -> list[str]:
     return list(dict.fromkeys(value for value in candidates if value))
 
 
-def stage(lines, name, *, outputs, source="", command="", required=True, depends=None):
+def stage(lines, name, *, outputs, source="", command="", required=True, depends=None, cpus=None, memory_gb=None):
     lines += ["", f"[stages.{name}]", f"required = {str(required).lower()}"]
     if source: lines.append(f"source = {q(source)}")
     if depends: lines.append("depends_on = [" + ", ".join(q(value) for value in depends) + "]")
+    if cpus is not None: lines.append(f"cpus = {int(cpus)}")
+    if memory_gb is not None: lines.append(f"memory_gb = {float(memory_gb)}")
     if command: lines.append(f"command = {q(command)}")
     lines.append(f"[stages.{name}.outputs]")
     lines.extend(f"{key} = {q(value)}" for key, value in outputs.items())
@@ -164,6 +167,22 @@ def main() -> int:
         help="Independent Evidence-consensus R1-R4 rules; does not replace the weighted profile.",
     )
     ap.add_argument("--reference-fasta")
+    ap.add_argument("--tumor-dna-bam", help="Explicit tumor DNA BAM; never inferred by sample order")
+    ap.add_argument("--normal-dna-bam", help="Explicit matched-normal DNA BAM")
+    ap.add_argument("--assay-type", choices=("WGS", "WES", "PANEL", "UNKNOWN"), default="UNKNOWN")
+    ap.add_argument("--capture-bed", help="Required for formal WES/PANEL DNA-SV assessment")
+    ap.add_argument("--genome-build", default="GRCh38")
+    ap.add_argument("--sv-vcf", action="append", default=[], help="Existing DNA-SV VCF; repeatable")
+    ap.add_argument("--sv-caller", action="append", default=[], help="Caller corresponding to each --sv-vcf")
+    ap.add_argument("--skip-dna-sv", action="store_true", help="Explicitly leave DNA-SV unassessed")
+    ap.add_argument("--sv-threads", type=int, default=8)
+    ap.add_argument("--sv-memory-gb", type=float, default=48.0)
+    ap.add_argument("--nextflow-executable", default="nextflow")
+    ap.add_argument("--sv-nextflow-config", default="")
+    ap.add_argument("--sv-nextflow-profile", default="")
+    ap.add_argument("--bam-matcher-loci")
+    ap.add_argument("--bam-matcher-reference")
+    ap.add_argument("--skip-bam-matcher", action="store_true")
     ap.add_argument("--vep-cache", help="VEP cache root containing homo_sapiens/<version>_GRCh38")
     ap.add_argument("--vep-plugins", help="Directory containing Wildtype.pm and Frameshift.pm")
     ap.add_argument("--vep-bin", default=os.environ.get("NEOAG_VEP_BIN", ""), help="Installed VEP executable or wrapper")
@@ -226,6 +245,16 @@ def main() -> int:
         raise SystemExit("--matched-normal-rna-bam and --matched-normal-star-sj must be supplied together")
     if args.rna_threads < 1:
         raise SystemExit("--rna-threads must be a positive integer")
+    if args.sv_threads < 1 or args.sv_memory_gb <= 0:
+        raise SystemExit("--sv-threads and --sv-memory-gb must be positive")
+    if bool(args.tumor_dna_bam) != bool(args.normal_dna_bam):
+        raise SystemExit("--tumor-dna-bam and --normal-dna-bam must be supplied together")
+    if bool(args.tumor_sample_name) != bool(args.normal_sample_name):
+        raise SystemExit("--tumor-sample-name and --normal-sample-name must be supplied together")
+    if args.sv_caller and len(args.sv_caller) != len(args.sv_vcf):
+        raise SystemExit("--sv-caller must be repeated once for every --sv-vcf")
+    if args.assay_type in {"WES", "PANEL"} and not args.skip_dna_sv and not args.capture_bed:
+        raise SystemExit("WES/PANEL DNA-SV production requires --capture-bed; use --skip-dna-sv only for an explicit UNASSESSED result")
     if args.star_sjdb_overhang < 1:
         raise SystemExit("--star-sjdb-overhang must be a positive integer")
     if args.event_top_n < 1 or args.candidate_top_n < 1:
@@ -272,6 +301,14 @@ def main() -> int:
         consensus_rules_path = root / consensus_rules_path
     evidence_consensus_rules = require(str(consensus_rules_path), "evidence-consensus rules")
     reference_fasta = require(args.reference_fasta, "reference FASTA") if args.reference_fasta else ""
+    tumor_dna_bam = require(args.tumor_dna_bam, "tumor DNA BAM") if args.tumor_dna_bam else ""
+    normal_dna_bam = require(args.normal_dna_bam, "normal DNA BAM") if args.normal_dna_bam else ""
+    capture_bed = require(args.capture_bed, "capture BED") if args.capture_bed else ""
+    sv_vcfs = [require(value, "DNA-SV VCF") for value in args.sv_vcf]
+    if args.assay_type in {"WGS", "WES", "PANEL"} and not args.skip_dna_sv and not (sv_vcfs or tumor_dna_bam):
+        raise SystemExit("formal DNA-SV production requires existing --sv-vcf inputs or an explicit tumor/normal BAM pair")
+    if tumor_dna_bam and not (args.tumor_sample_name and args.normal_sample_name):
+        raise SystemExit("paired BAM DNA-SV calling requires explicit --tumor-sample-name and --normal-sample-name")
     generated_hla = not bool(args.hla_file)
     if generated_hla:
         optitype = require(args.optitype, "OptiType result")
@@ -310,6 +347,15 @@ def main() -> int:
     else:
         netmhcstabpan_evidence = ""
         production_limitations.append("NETMHCSTABPAN_LOCAL_UNAVAILABLE")
+    bam_pair = bool(tumor_dna_bam and normal_dna_bam)
+    matcher_reference = require(args.bam_matcher_reference, "BAM-matcher reference") if args.bam_matcher_reference else reference_fasta
+    matcher_loci = require(args.bam_matcher_loci, "BAM-matcher loci") if args.bam_matcher_loci else ""
+    matcher_executable = shutil.which("bam-matcher")
+    matcher_enabled = bam_pair and not args.skip_bam_matcher and bool(matcher_reference and matcher_loci and matcher_executable)
+    if bam_pair and not matcher_enabled:
+        production_limitations.append("BAM_MATCHER_UNASSESSED")
+    if args.skip_dna_sv or not (sv_vcfs or bam_pair):
+        production_limitations.append("DNA_SV_UNASSESSED")
     predictor_toml = "[" + ", ".join(q(tool) for tool in presentation_predictors) + "]"
     lines = ["# Generated from completed upstream tool results.", "[run]", f"sample_id = {q(args.sample_id)}", f"profile = {q(profile)}", f"outdir = {q(Path(args.outdir).resolve())}", f"hla_file = {q(hla)}", "tools_stub = false", "immunogenicity_stub = false", f"presentation_predictors = {predictor_toml}", f"required_presentation_predictors = {predictor_toml}", 'reports = "patient,technical"', f"event_top_n = {args.event_top_n}", f"candidate_top_n = {args.candidate_top_n}", f"netchop_executable = {q(args.netchop_executable)}"]
     if production_limitations:
@@ -343,6 +389,22 @@ def main() -> int:
     if generated_hla_loh:
         loh_command = f"PYTHONPATH={q(root / 'src')} {q(sys.executable)} {q(root / 'scripts/build_hla_loh_consensus.py')} --sample-id {q(args.sample_id)} --lohhla {q(lohhla)} --spechla {q(spechla_loh)} --outdir {{outdir}}/evidence/hla_loh"
         stage(lines, "hla_loh_consensus", command=loh_command, outputs={"hla_loh_consensus": hla_loh, "hla_loh_summary": "{outdir}/evidence/hla_loh/hla_loh_summary.json"}, depends=["hla_loh_lohhla", "hla_loh_spechla"])
+
+    pairing_dependency: list[str] = []
+    sample_identity = ""
+    if matcher_enabled:
+        sample_identity = "{outdir}/sample_identity/bam_matcher/sample_identity.tsv"
+        matcher_command = (
+            f"bash {q(root / 'scripts/run_bam_matcher_pair.sh')} --bam1 {q(normal_dna_bam)} "
+            f"--bam2 {q(tumor_dna_bam)} --reference {q(matcher_reference)} "
+            f"--loci {q(matcher_loci)} --outdir {{outdir}}/sample_identity/bam_matcher"
+        )
+        stage(
+            lines, "sample_identity_bam_matcher", command=matcher_command,
+            outputs={"sample_identity": sample_identity, "raw_report": "{outdir}/sample_identity/bam_matcher/bam_matcher.short.tsv"},
+            required=True, cpus=2, memory_gb=8,
+        )
+        pairing_dependency = ["sample_identity_bam_matcher"]
 
     rna_vaf = ""
     rna_bam = ""
@@ -502,6 +564,58 @@ def main() -> int:
             depends=["rna_star_alignment"],
         )
     candidate_stages = []
+    dna_sv_stage = ""
+    dna_sv_events = ""
+    if not args.skip_dna_sv and (sv_vcfs or bam_pair):
+        if not reference_fasta or not args.gencode_gtf:
+            raise SystemExit("DNA-SV production requires --reference-fasta and --gencode-gtf")
+        gencode_gtf = require(args.gencode_gtf, "GENCODE GTF")
+        dna_sv_root = "{outdir}/branches/dna_sv"
+        dna_sv_events = f"{dna_sv_root}/sv/sv_events.full.tsv"
+        if sv_vcfs:
+            callers = f" --callers {' '.join(q(value) for value in args.sv_caller)}" if args.sv_caller else ""
+            sample_names = ""
+            if args.tumor_sample_name and args.normal_sample_name:
+                sample_names = f" --tumor-sample-name {q(args.tumor_sample_name)} --normal-sample-name {q(args.normal_sample_name)}"
+            elif args.tumor_sample_name or args.normal_sample_name:
+                raise SystemExit("DNA-SV VCF parsing requires both --tumor-sample-name and --normal-sample-name")
+            mode = "sv-build-raw-wes" if args.assay_type in {"WES", "PANEL"} else "sv-build-raw"
+            capture = f" --capture-bed {q(capture_bed)}" if capture_bed else ""
+            command = (
+                f"PYTHONPATH={q(root / 'src')} {q(sys.executable)} -m neoag.cli {mode} "
+                f"--sample-id {q(args.sample_id)} --profile {q('sv_wes_phase1_5' if capture else 'sv_wgs_phase1')} "
+                f"--sv-vcf {' '.join(q(value) for value in sv_vcfs)}{callers} "
+                f"--reference-fasta {q(reference_fasta)} --gencode-gtf {q(gencode_gtf)} "
+                f"--hla {q(hla)} --outdir {dna_sv_root} --genome-build {q(args.genome_build)}"
+                f"{sample_names}{capture}"
+            )
+        else:
+            config_arg = f" -c {q(require(args.sv_nextflow_config, 'SV Nextflow config'))}" if args.sv_nextflow_config else ""
+            profile_arg = f" -profile {q(args.sv_nextflow_profile)}" if args.sv_nextflow_profile else ""
+            capture_args = f" --wes_mode true --capture_bed {q(capture_bed)}" if capture_bed else ""
+            sample_args = ""
+            if args.tumor_sample_name and args.normal_sample_name:
+                sample_args = f" --tumor_sample_name {q(args.tumor_sample_name)} --normal_sample_name {q(args.normal_sample_name)}"
+            command = (
+                f"{q(args.nextflow_executable)} run {q(root / 'workflows/sv_phase1_wgs.nf')} -resume{config_arg}{profile_arg} "
+                f"--sample_id {q(args.sample_id)} --tumor_bam {q(tumor_dna_bam)} --normal_bam {q(normal_dna_bam)} "
+                f"--reference_fasta {q(reference_fasta)} --gencode_gtf {q(gencode_gtf)} --hla {q(hla)} "
+                f"--outdir {dna_sv_root} --run_scoring false --threads {args.sv_threads} "
+                f"--genome_build {q(args.genome_build)}{sample_args}{capture_args}"
+            )
+        dna_sv_stage = "dna_sv_discovery"
+        stage(
+            lines, dna_sv_stage, source="DNA_SV", command=command,
+            outputs={
+                "raw_events": f"{dna_sv_root}/parsed/raw_events.tsv",
+                "raw_peptides": f"{dna_sv_root}/parsed/raw_peptides.tsv",
+                "sv_events_full": dna_sv_events,
+                "sv_event_to_peptide": f"{dna_sv_root}/sv/sv_event_to_peptide.tsv",
+            },
+            depends=pairing_dependency + hla_dependency,
+            cpus=args.sv_threads * (3 if not sv_vcfs else 1), memory_gb=args.sv_memory_gb,
+        )
+        candidate_stages.append(dna_sv_stage)
     if args.somatic_vcf:
         reference_env = f"NEOAG_REFERENCE_FASTA={q(reference_fasta)} " if reference_fasta else ""
         vep_cache = discover_vep_cache(reference_fasta, args.normal_junctions, args.vep_cache)
@@ -515,7 +629,7 @@ def main() -> int:
         if args.normal_sample_name:
             sample_role_args += f" --normal-sample-name {q(args.normal_sample_name)}"
         command = f"{reference_env}PYTHONPATH={q(root / 'src')} {q(sys.executable)} {q(root / 'scripts/run_candidate_upstream.py')} --mode snv --input {q(require(args.somatic_vcf, 'somatic VCF'))} --hla-file {q(hla)} --sample-id {q(args.sample_id)}{sample_role_args} --outdir {{outdir}}/branches/snv{vep_cache_arg}{vep_plugins_arg}{vep_bin_arg}"
-        stage(lines, "snv_indel_candidates", source="SNV_INDEL", command=command, outputs={"raw_events": "{outdir}/branches/snv/parsed/raw_events.tsv", "raw_peptides": "{outdir}/branches/snv/parsed/raw_peptides.tsv"}, depends=hla_dependency)
+        stage(lines, "snv_indel_candidates", source="SNV_INDEL", command=command, outputs={"raw_events": "{outdir}/branches/snv/parsed/raw_events.tsv", "raw_peptides": "{outdir}/branches/snv/parsed/raw_peptides.tsv"}, depends=list(dict.fromkeys(pairing_dependency + hla_dependency)))
         candidate_stages.append("snv_indel_candidates")
     if args.easyfuse or args.easyfuse_unfiltered or args.star_fusion or args.arriba or args.fusioncatcher or args.jaffal or args.fusion_caller_root:
         union_args = []
@@ -542,8 +656,25 @@ def main() -> int:
         for caller_root in args.fusion_caller_root:
             union_args += ["--caller-root", q(require(caller_root, "fusion caller result root"))]
         command = f"PYTHONPATH={q(root / 'src')} {q(sys.executable)} {q(root / 'scripts/build_fusion_caller_union.py')} --sample-id {q(args.sample_id)} --profile {q(profile)} --hla-file {q(hla)} {' '.join(union_args)} --outdir {{outdir}}/branches/fusion/intermediates"
-        stage(lines, "fusion_candidates", source="FusionCallerUnion", command=command, outputs={"raw_events": "{outdir}/branches/fusion/intermediates/raw_events.tsv", "raw_peptides": "{outdir}/branches/fusion/intermediates/raw_peptides.tsv", "fusion_union": "{outdir}/branches/fusion/intermediates/fusion_caller_union.tsv", "fusion_consensus": "{outdir}/branches/fusion/intermediates/fusion_consensus.tsv", "junction_verification": "{outdir}/branches/fusion/intermediates/junction_read_verification.tsv", "diagnostic_fusion_rescue": "{outdir}/branches/fusion/intermediates/diagnostic_fusion_rescue.tsv"}, depends=list(dict.fromkeys(hla_dependency + rna_bam_dependency)))
-        candidate_stages.append("fusion_candidates")
+        stage(lines, "fusion_candidates", command=command, outputs={"raw_events": "{outdir}/branches/fusion/intermediates/raw_events.tsv", "raw_peptides": "{outdir}/branches/fusion/intermediates/raw_peptides.tsv", "fusion_union": "{outdir}/branches/fusion/intermediates/fusion_caller_union.tsv", "fusion_consensus": "{outdir}/branches/fusion/intermediates/fusion_consensus.tsv", "junction_verification": "{outdir}/branches/fusion/intermediates/junction_read_verification.tsv", "diagnostic_fusion_rescue": "{outdir}/branches/fusion/intermediates/diagnostic_fusion_rescue.tsv"}, depends=list(dict.fromkeys(pairing_dependency + hla_dependency + rna_bam_dependency)))
+        link_command = (
+            f"PYTHONPATH={q(root / 'src')} {q(sys.executable)} {q(root / 'scripts/link_dna_sv_rna_fusions.py')} "
+            f"--fusion-events {{outdir}}/branches/fusion/intermediates/raw_events.tsv "
+            f"--fusion-peptides {{outdir}}/branches/fusion/intermediates/raw_peptides.tsv "
+            f"--fusion-union {{outdir}}/branches/fusion/intermediates/fusion_caller_union.tsv "
+            + (f"--sv-events {dna_sv_events} " if dna_sv_events else "")
+            + "--outdir {outdir}/branches/fusion/dna_sv_linked"
+        )
+        link_dependencies = ["fusion_candidates"] + ([dna_sv_stage] if dna_sv_stage else [])
+        stage(
+            lines, "fusion_dna_sv_link", source="FusionCallerUnion", command=link_command,
+            outputs={
+                "raw_events": "{outdir}/branches/fusion/dna_sv_linked/raw_events.tsv",
+                "raw_peptides": "{outdir}/branches/fusion/dna_sv_linked/raw_peptides.tsv",
+                "dna_sv_rna_links": "{outdir}/branches/fusion/dna_sv_linked/dna_sv_rna_fusion_links.tsv",
+            }, depends=link_dependencies,
+        )
+        candidate_stages.append("fusion_dna_sv_link")
         review = f"{q(sys.executable)} {q(root / 'scripts/review_rna_fusions.py')}"
         if easyfuse: review += f" --easyfuse {q(easyfuse)}"
         if args.star_fusion: review += f" --star-fusion {q(require(args.star_fusion, 'STAR-Fusion'))}"
@@ -640,6 +771,8 @@ def main() -> int:
         f"hla_loh = {q(hla_loh)}",
         f"evidence_consensus_rules = {q(evidence_consensus_rules)}",
     ]
+    if sample_identity:
+        lines.append(f"sample_identity = {q(sample_identity)}")
     if rna_vaf:
         lines.append(f"rna_vaf = {q(rna_vaf)}")
     if netmhcstabpan_evidence:

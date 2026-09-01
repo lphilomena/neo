@@ -39,6 +39,7 @@ Environment switches:
   SKIP_PRIME=1                           Skip PRIME / MixMHCpred / BigMHC
   SKIP_OPTITYPE=1                        Skip OptiType
   SKIP_BAM_MATCHER=1                     Skip BAM-matcher sample identity QC
+  SKIP_DNA_SV=1                          Skip Manta / SvABA / GRIDSS
 USAGE
 }
 
@@ -167,6 +168,7 @@ preflight() {
     scripts/install_immunogenicity_tools.sh
     scripts/install_optitype.sh
     scripts/install_bam_matcher.sh
+    scripts/install_dna_sv_tools.sh
     scripts/verify_external_tools.sh
     scripts/verify_reference_bundle.sh
     scripts/verify_all_tools_and_refs.sh
@@ -236,6 +238,12 @@ optitype_installed() {
 
 bam_matcher_installed() {
   command -v bam-matcher >/dev/null 2>&1 && bam-matcher --help >/dev/null 2>&1
+}
+
+dna_sv_installed() {
+  command -v configManta.py >/dev/null 2>&1 &&
+    command -v svaba >/dev/null 2>&1 &&
+    command -v gridss >/dev/null 2>&1
 }
 
 should_install() {
@@ -308,6 +316,14 @@ elif [[ "${SKIP_BAM_MATCHER:-0}" == "1" ]]; then
   info "Skip BAM-matcher (SKIP_BAM_MATCHER=1)"
 else
   skip_step "BAM-matcher"
+fi
+
+if should_install "${SKIP_DNA_SV:-0}" dna_sv_installed; then
+  run_step "Install DNA-SV group (Manta / SvABA / GRIDSS)" bash "${ROOT}/scripts/install_dna_sv_tools.sh"
+elif [[ "${SKIP_DNA_SV:-0}" == "1" ]]; then
+  info "Skip DNA-SV group (SKIP_DNA_SV=1)"
+else
+  skip_step "DNA-SV group"
 fi
 
 source_tools_env_optional

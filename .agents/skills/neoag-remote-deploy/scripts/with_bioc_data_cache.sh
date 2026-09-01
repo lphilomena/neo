@@ -62,6 +62,21 @@ find_registered_meta_dir() {
   done < <(find "$PKG_CACHE" -maxdepth 1 -type d -name 'bioconductor-data-packages-*' | sort)
 }
 
+find_meta_dir_for_key() {
+  local root="$1" candidate json
+  while IFS= read -r candidate; do
+    json="$candidate/share/bioconductor-data-packages/dataURLs.json"
+    [[ -f "$json" ]] || continue
+    if python3 - "$json" "$PACKAGE_KEY" <<'PY' >/dev/null 2>&1
+import json, sys
+raise SystemExit(0 if sys.argv[2] in json.load(open(sys.argv[1], encoding="utf-8")) else 1)
+PY
+    then
+      printf '%s\n' "$candidate"
+    fi
+  done < <(find "$root" -maxdepth 1 -type d -name 'bioconductor-data-packages-*' | sort)
+}
+
 prefetch_transaction() {
   local environment_file
   environment_file="$(find_environment_file "$@" || true)"
@@ -70,6 +85,15 @@ prefetch_transaction() {
     CONDA_PKGS_DIRS="$PKG_CACHE" "$CONDA_BASE/bin/conda" create \
       --download-only -f "$environment_file" -y
   else
+    CONDA_PKGS_DIRS="$PKG_CACHE" "$CONDA_BASE/bin/conda" create \
+      --download-only -c bioconda -c conda-forge \
+      bioconductor-data-packages -y
+  fi
+  # Most environment YAMLs depend on a concrete Bioconductor data package but
+  # do not list the URL/MD5 registry package itself. Fetch that small metadata
+  # package explicitly so the cache patch can resolve historical package keys.
+  if [[ -z "$(find_registered_meta_dir | tail -1)" ]]; then
+    echo "==> Register Bioconductor data-package URL metadata"
     CONDA_PKGS_DIRS="$PKG_CACHE" "$CONDA_BASE/bin/conda" create \
       --download-only -c bioconda -c conda-forge \
       bioconductor-data-packages -y
@@ -93,7 +117,16 @@ download_file() {
 }
 
 prefetch_transaction "$@"
-META_DIR="$(find_registered_meta_dir | tail -1)"
+META_DIR="$(find_meta_dir_for_key "$PKG_CACHE" | tail -1)"
+if [[ -z "$META_DIR" ]]; then
+  SOURCE_META="$(find_meta_dir_for_key "$CONDA_BASE/pkgs" | tail -1)"
+  if [[ -n "$SOURCE_META" ]]; then
+    echo "==> Import matching Bioconductor URL metadata: $SOURCE_META"
+    rm -rf "$PKG_CACHE/$(basename "$SOURCE_META")"
+    cp -a "$SOURCE_META" "$PKG_CACHE/"
+    META_DIR="$PKG_CACHE/$(basename "$SOURCE_META")"
+  fi
+fi
 [[ -n "$META_DIR" ]] || { echo "ERROR: bioconductor-data-packages was not registered in the Conda package cache" >&2; exit 3; }
 JSON="$META_DIR/share/bioconductor-data-packages/dataURLs.json"
 HOOK="$META_DIR/bin/installBiocDataPackage.sh"

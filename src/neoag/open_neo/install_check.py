@@ -79,6 +79,12 @@ TIER_TOOL_GROUPS = {
     },
 }
 
+TIER_REQUIRED_ALL_TOOL_GROUPS = {
+    "full": {
+        "dna_sv": ["manta", "svaba", "gridss"],
+    },
+}
+
 TIER_REQUIRED_REFERENCES = {
     "review": [],
     "core": [],
@@ -442,6 +448,18 @@ tools:
     executable: bam-matcher
     mode: conda
     recommended: true
+  manta:
+    executable: configManta.py
+    mode: conda_or_container
+    recommended: true
+  svaba:
+    executable: svaba
+    mode: conda_or_container
+    recommended: true
+  gridss:
+    executable: gridss
+    mode: conda_or_container
+    recommended: true
   vep:
     executable: vep
     mode: conda_or_container
@@ -701,6 +719,11 @@ def _assess_tier(tier: str, doctor_rows: list[CheckRow], reference_manifest: str
     for group, members in TIER_TOOL_GROUPS.get(tier, {}).items():
         available = [name for name in members if tool_status.get(name) in OK_STATUSES]
         rows.append({"kind": "tool_group", "requirement": group, "required": "true", "status": "OK" if available else "MISSING", "evidence": ",".join(available) or "any of: " + ",".join(members)})
+    for group, members in TIER_REQUIRED_ALL_TOOL_GROUPS.get(tier, {}).items():
+        available = [name for name in members if tool_status.get(name) in OK_STATUSES]
+        missing = [name for name in members if name not in available]
+        evidence = "available=" + ",".join(available) + "; missing=" + ",".join(missing)
+        rows.append({"kind": "tool_group_all", "requirement": group, "required": "true", "status": "OK" if not missing else "MISSING", "evidence": evidence})
     for group, members in ADVISORY_TOOL_GROUPS.get(tier, {}).items():
         available = [name for name in members if tool_status.get(name) in OK_STATUSES]
         missing = [name for name in members if name not in available]
@@ -1276,14 +1299,17 @@ def _production_run_readiness(args: dict[str, Any], project_root: Path, tier: st
 
     easyfuse_fc_patcher = project_root / "scripts/patch_easyfuse_fusioncatcher_compat.sh"
     easyfuse_fc_patcher_text = _read_text_if_small(easyfuse_fc_patcher)
-    star252_candidates = [
-        project_root.parent / "open-neo-deploy/env_tool/conda_pkgs/star-2.5.2b-0/bin/STAR",
-        conda_base / "pkgs/star-2.5.2b-0/bin/STAR",
+    fusioncatcher_star_candidates = [
+        *sorted((project_root.parent / "open-neo-deploy/env_tool/conda_pkgs").glob("star-*/bin/STAR")),
+        *sorted((conda_base / "pkgs").glob("star-*/bin/STAR")),
     ]
-    star252 = next((path for path in star252_candidates if _safe_path_exists(path)), None)
+    fusioncatcher_star = next(
+        (path for path in fusioncatcher_star_candidates if _safe_path_exists(path)), None
+    )
     easyfuse_fc_compat_ok = (
         "patch_easyfuse_fusioncatcher_compat.sh" in easyfuse_runner_text
-        and "STAR_2.5.2b" in easyfuse_fc_patcher_text
+        and "fusioncatcher_required_star" in easyfuse_fc_patcher_text
+        and "find_star_for_version" in easyfuse_fc_patcher_text
         and "startswith('1.33')" in easyfuse_fc_patcher_text
     )
     easyfuse_fc_ref = next((
@@ -1325,10 +1351,10 @@ def _production_run_readiness(args: dict[str, Any], project_root: Path, tier: st
     ))
     rows.append(_production_row(
         "rna_fusion", "easyfuse_fusioncatcher_compat",
-        "OK" if easyfuse_fc_compat_ok and star252 and easyfuse_fc_genome_index_ok and easyfuse_fc_linc_ok and easyfuse_fc_legacy_filters_ok else "BLOCKED",
-        "INFO" if easyfuse_fc_compat_ok and star252 and easyfuse_fc_genome_index_ok and easyfuse_fc_linc_ok and easyfuse_fc_legacy_filters_ok else "BLOCKER",
-        f"{easyfuse_fc_patcher if easyfuse_fc_patcher_text else 'patch_easyfuse_fusioncatcher_compat.sh not found'}; star_2.5.2b={star252 or 'not found'}; fusioncatcher_ref={easyfuse_fc_ref or 'not found'}; genome_index_ready_or_buildable={easyfuse_fc_genome_index_ok}; lincrnas_ready_or_aliasable={easyfuse_fc_linc_ok}; legacy_filters_ready_or_repairable={easyfuse_fc_legacy_filters_ok}",
-        "Patch EasyFuse FusionCatcher envs to use STAR 2.5.2b, tolerate the pinned FusionCatcher 1.33 reference build when only the cached 1.00 package is available, build the missing Bowtie1 genome_index from the bundled Bowtie2 genome_index2 when needed, provide the lincrnas.txt alias expected by FusionCatcher 1.00 references, and repair legacy optional filter filenames.",
+        "OK" if easyfuse_fc_compat_ok and fusioncatcher_star and easyfuse_fc_genome_index_ok and easyfuse_fc_linc_ok and easyfuse_fc_legacy_filters_ok else "BLOCKED",
+        "INFO" if easyfuse_fc_compat_ok and fusioncatcher_star and easyfuse_fc_genome_index_ok and easyfuse_fc_linc_ok and easyfuse_fc_legacy_filters_ok else "BLOCKER",
+        f"{easyfuse_fc_patcher if easyfuse_fc_patcher_text else 'patch_easyfuse_fusioncatcher_compat.sh not found'}; cached_star={fusioncatcher_star or 'not found'}; version_auto_discovery={easyfuse_fc_compat_ok}; fusioncatcher_ref={easyfuse_fc_ref or 'not found'}; genome_index_ready_or_buildable={easyfuse_fc_genome_index_ok}; lincrnas_ready_or_aliasable={easyfuse_fc_linc_ok}; legacy_filters_ready_or_repairable={easyfuse_fc_legacy_filters_ok}",
+        "Read each FusionCatcher environment's required STAR version and bind an exact-version binary from the local Conda cache; also tolerate the pinned FusionCatcher 1.33 reference build when only the cached 1.00 package is available, build the missing Bowtie1 genome_index from the bundled Bowtie2 genome_index2 when needed, provide the lincrnas.txt alias expected by FusionCatcher 1.00 references, and repair legacy optional filter filenames.",
     ))
 
     set_interval_candidates = [

@@ -230,6 +230,18 @@ def _run_production_case_wrapper(args: dict[str, Any], routing: RoutingResult, l
         "asset_root": "--asset-root",
         "reference_fasta": "--reference-fasta",
         "gencode_gtf": "--gencode-gtf",
+        "tumor_dna_bam": "--tumor-dna-bam",
+        "normal_dna_bam": "--normal-dna-bam",
+        "tumor_sample_id": "--tumor-sample-name",
+        "normal_sample_id": "--normal-sample-name",
+        "assay_type": "--assay-type",
+        "capture_bed": "--capture-bed",
+        "sv_vcf": "--sv-vcf",
+        "bam_matcher_loci": "--bam-matcher-loci",
+        "sv_threads": "--sv-threads",
+        "sv_memory_gb": "--sv-memory-gb",
+        "sv_nextflow_config": "--sv-nextflow-config",
+        "sv_nextflow_profile": "--sv-nextflow-profile",
         "sequenza": "--sequenza",
         "purple": "--purple",
         "expression_tsv": "--expression",
@@ -261,6 +273,10 @@ def _run_production_case_wrapper(args: dict[str, Any], routing: RoutingResult, l
         if key == "profile" and str(value) == "default":
             continue
         command += [flag, _path_arg(value)]
+    if bool(routing.inputs.get("skip_bam_matcher", args.get("skip_bam_matcher", False))):
+        command.append("--skip-bam-matcher")
+    if bool(routing.inputs.get("skip_dna_sv", args.get("skip_dna_sv", False))):
+        command.append("--skip-dna-sv")
     if routing.inputs.get("rna_fastq1") or routing.inputs.get("rna_fastq2"):
         command += ["--rna-fastq1", _path_arg(routing.inputs.get("rna_fastq1")), "--rna-fastq2", _path_arg(routing.inputs.get("rna_fastq2"))]
     for caller_root in routing.inputs.get("fusion_caller_root") or []:
@@ -319,6 +335,8 @@ def _register_production_tool_outputs(inputs: dict[str, Any], production_result:
     tool_results = inputs.setdefault("tool_results", {})
     stage_domains = {
         "sample_identity_bam_matcher": ("sample_identity", "bam-matcher"),
+        "dna_sv_discovery": ("dna_sv", "multi-caller"),
+        "fusion_dna_sv_link": ("fusion", "dna-sv-link"),
         "hla_optitype": ("hla_typing", "optitype"),
         "hla_hla_la": ("hla_typing", "hla-la"),
         "hla_spechla": ("hla_typing", "spechla"),

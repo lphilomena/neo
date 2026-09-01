@@ -3764,6 +3764,15 @@ def _patient_dna_vcf_measurements(row: Mapping[str, Any]) -> str:
 def _patient_dna_sv_measurements(row: Mapping[str, Any]) -> str:
     """Render DNA structural-variant support without borrowing RNA junction fields."""
     parts: list[str] = []
+    status = _patient_observed_source(row, "dna_sv_confirmation_status")
+    if status:
+        labels = {
+            "SUPPORTED": "DNA-SV支持",
+            "NOT_DETECTED": "未检出兼容DNA-SV断点",
+            "AMBIGUOUS": "DNA-SV断点关联有歧义",
+            "UNASSESSED": "DNA-SV未正式评估",
+        }
+        parts.append(labels.get(status.upper(), f"DNA-SV状态 {status}"))
     for label, fields in (
         ("断点支持reads", ("dna_sv_support_reads", "wgs_sv_support_reads", "sv_support_reads")),
         ("split reads", ("dna_sv_split_reads", "wgs_sv_split_reads", "sv_split_reads", "split_reads")),
@@ -3776,29 +3785,52 @@ def _patient_dna_sv_measurements(row: Mapping[str, Any]) -> str:
         display = _patient_numeric_display(value, 0) if value is not None else None
         if display is not None:
             parts.append(f"{label} {display}")
-    caller = _patient_observed_source(row, "dna_sv_caller", "wgs_sv_caller", "sv_caller")
+    caller = _patient_observed_source(row, "dna_sv_callers", "dna_sv_caller", "wgs_sv_caller", "sv_caller")
     if caller:
         parts.append(f"DNA-SV caller {caller}")
+    adjacency = _patient_observed_source(row, "dna_sv_adjacency_key")
+    if adjacency:
+        parts.append(f"adjacency {adjacency}")
+    method = _patient_observed_source(row, "dna_sv_match_method")
+    if method:
+        parts.append(f"RNA关联方式 {method}")
+    reason = _patient_observed_source(row, "dna_sv_match_reason")
+    if reason:
+        parts.append(f"关联说明 {reason}")
     return "，".join(parts)
+
+
+def _patient_sample_identity(row: Mapping[str, Any]) -> str:
+    status = _patient_observed_source(row, "sample_identity_status")
+    if not status:
+        return ""
+    labels = {"MATCH": "肿瘤与正常BAM身份匹配", "MISMATCH": "肿瘤与正常BAM身份不匹配", "INSUFFICIENT_DATA": "BAM身份位点不足"}
+    detail = labels.get(status.upper(), f"BAM身份状态 {status}")
+    sites = _patient_observed_source(row, "sample_identity_sites_compared")
+    confidence = _patient_observed_source(row, "sample_identity_confidence")
+    extras = [item for item in (f"比较位点 {sites}" if sites else "", f"置信度 {confidence}" if confidence else "") if item]
+    return detail + (f"（{'，'.join(extras)}）" if extras else "")
 
 
 def _patient_dna_evidence(row: Mapping[str, Any]) -> str:
     """Describe DNA evidence using an event-appropriate measurement model."""
     track = _patient_track(row)
+    identity = _patient_sample_identity(row)
+    suffix = f"；{identity}" if identity else ""
     if track in {"SNV", "InDel"}:
         measurements = _patient_dna_vcf_measurements(row)
-        return f"DNA/VCF数据：{measurements or '未接入或未评估'}"
+        return f"DNA/VCF数据：{measurements or '未接入或未评估'}{suffix}"
     if track in {"Fusion", "DNA SV"}:
         measurements = _patient_dna_sv_measurements(row)
         if measurements:
-            return f"DNA/SV数据：{measurements}"
+            return f"DNA/SV数据：{measurements}{suffix}"
         if track == "Fusion":
-            return "DNA/SV数据：未接入或未评估；当前融合仅按RNA断点证据评估"
-        return "DNA/SV数据：未接入或未评估"
+            return f"DNA/SV数据：未接入或未评估；当前融合仅按RNA断点证据评估{suffix}"
+        return f"DNA/SV数据：未接入或未评估{suffix}"
     if track == "Splice":
         return "DNA证据：点突变VCF口径不适用；当前异常剪接按RNA junction证据评估"
     measurements = _patient_dna_vcf_measurements(row)
-    return f"DNA数据：{measurements}" if measurements else "DNA数据：未接入或未评估"
+    return f"DNA数据：{measurements}{suffix}" if measurements else f"DNA数据：未接入或未评估{suffix}"
 
 
 def _patient_dna_rna_interpretation(row: Mapping[str, Any]) -> str:
