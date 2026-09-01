@@ -107,7 +107,7 @@ curl_supports_retry_all_errors() {
 
 download_file() {
   local url="$1" destination="$2"
-  local -a curl_args=(-fL --retry 5 --connect-timeout 30)
+  local -a curl_args=(-fL -C - --retry 5 --retry-delay 5 --connect-timeout 30 --speed-time 60 --speed-limit 32768)
   if curl_supports_retry_all_errors; then
     curl_args+=(--retry-all-errors)
   else
@@ -155,16 +155,29 @@ if ! echo "$MD5  $TARBALL" | md5sum -c - >/dev/null 2>&1; then
   fi
 fi
 if ! echo "$MD5  $TARBALL" | md5sum -c - >/dev/null 2>&1; then
-  for url in "${META[@]:2}"; do
-    echo "==> Download $FN from $url"
-    if command -v aria2c >/dev/null 2>&1; then
-      aria2c -x 1 -s 1 --file-allocation=none --allow-overwrite=true \
-        --dir "$DATA_CACHE" --out "$FN" "$url" || true
-    else
-      download_file "$url" "$TARBALL" || true
-    fi
-    echo "$MD5  $TARBALL" | md5sum -c - >/dev/null 2>&1 && break
-    rm -f "$TARBALL"
+  for pass in 1 2; do
+    for url in "${META[@]:2}"; do
+      echo "==> Download $FN from $url (pass $pass)"
+      if command -v aria2c >/dev/null 2>&1; then
+        aria_args=(--continue=true -x 1 -s 1 --file-allocation=none
+          --allow-overwrite=true --max-tries=5 --retry-wait=5
+          --connect-timeout=30 --timeout=60)
+        # The first pass rotates away from an unusually slow mirror. The
+        # clean second pass accepts a slow source so installations still work
+        # when it is the only reachable archive.
+        [[ "$pass" == "1" ]] && aria_args+=(--lowest-speed-limit=32K)
+        aria2c "${aria_args[@]}" --dir "$DATA_CACHE" --out "$FN" "$url" || true
+      else
+        download_file "$url" "$TARBALL" || true
+      fi
+      echo "$MD5  $TARBALL" | md5sum -c - >/dev/null 2>&1 && break 2
+      # Preserve the partial payload so the next mirror can resume it, but
+      # discard aria2's URI-specific control file before changing mirrors.
+      rm -f "$TARBALL.aria2"
+    done
+    # A mismatched partial may not be resumable across mirrors. Retry the
+    # complete mirror list once from a clean payload before declaring failure.
+    rm -f "$TARBALL" "$TARBALL.aria2"
   done
 fi
 echo "$MD5  $TARBALL" | md5sum -c - >/dev/null 2>&1 || {

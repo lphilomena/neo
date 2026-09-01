@@ -35,7 +35,8 @@ Environment switches:
   SKIP_LOHHLA=1                          Skip LOHHLA
   SKIP_FACETS=1                          Skip FACETS
   SKIP_ASCAT=1                           Skip ASCAT / PyClone-VI
-  SKIP_ARRIBA=1                          Skip Arriba / fusion env
+  SKIP_FUSION=1                          Skip the EasyFuse-native fusion stack
+  SKIP_ARRIBA=1                          Backward-compatible alias for SKIP_FUSION
   SKIP_PRIME=1                           Skip PRIME / MixMHCpred / BigMHC
   SKIP_OPTITYPE=1                        Skip OptiType
   SKIP_BAM_MATCHER=1                     Skip BAM-matcher sample identity QC
@@ -213,12 +214,15 @@ ascat_installed() {
   command -v ascat.R >/dev/null 2>&1 && ascat.R --version >/dev/null 2>&1
 }
 
-arriba_installed() {
-  local fusion_env="${NEOAG_FUSION_ENV:-neoag-fusion}"
-  if [[ -n "${NEOAG_CONDA_BASE:-}" && -x "${NEOAG_CONDA_BASE}/envs/${fusion_env}/bin/arriba" ]]; then
-    return 0
-  fi
-  command -v arriba >/dev/null 2>&1
+easyfuse_installed() {
+  local tools_root="${NEOAG_TOOLS_ROOT:-${ROOT}}"
+  local easyfuse_home="${NEOAG_EASYFUSE_HOME:-${tools_root}/tools/EasyFuse}"
+  local easyfuse_env="${NEOAG_EASYFUSE_ENV_PREFIX:-${NEOAG_CONDA_BASE}/envs/neoag-easyfuse}"
+  [[ -f "${easyfuse_home}/main.nf" ]] &&
+    [[ -x "${easyfuse_env}/bin/nextflow" ]] &&
+    [[ -f "${easyfuse_home}/modules/arriba/environment.yml" ]] &&
+    [[ -f "${easyfuse_home}/modules/starfusion/starfusion/environment.yml" ]] &&
+    [[ -f "${easyfuse_home}/modules/fusioncatcher/environment.yml" ]]
 }
 
 prime_installed() {
@@ -286,12 +290,13 @@ else
   skip_step "ASCAT"
 fi
 
-if should_install "${SKIP_ARRIBA:-0}" arriba_installed; then
-  run_step "Install Arriba / fusion env" bash "${ROOT}/scripts/install_fusion_tools.sh"
-elif [[ "${SKIP_ARRIBA:-0}" == "1" ]]; then
-  info "Skip Arriba (SKIP_ARRIBA=1)"
+FUSION_SKIP="${SKIP_FUSION:-${SKIP_ARRIBA:-0}}"
+if should_install "${FUSION_SKIP}" easyfuse_installed; then
+  run_step "Install EasyFuse-native fusion stack" bash "${ROOT}/scripts/install_fusion_tools.sh"
+elif [[ "${FUSION_SKIP}" == "1" ]]; then
+  info "Skip fusion stack (SKIP_FUSION=1)"
 else
-  skip_step "Arriba"
+  skip_step "EasyFuse-native fusion stack"
 fi
 
 if should_install "${SKIP_PRIME:-0}" prime_installed; then
