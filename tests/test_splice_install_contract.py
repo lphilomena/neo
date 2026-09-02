@@ -17,9 +17,14 @@ def test_splice_installer_enables_pinned_snaf_by_default():
     assert "https://mirrors.aliyun.com/pypi/simple" in script
     assert 'SNAF_ARCHIVE_CACHE="${SNAF_ARCHIVE_CACHE:-${NEOAG_SNAF_ARCHIVE_CACHE:-' in script
     assert 'curl -fL --retry 3 --connect-timeout 20' in script
+    assert "SNAF_ENV_PREFIX" in script
+    assert 'SNAF_PYTHON_BIN="${SNAF_ENV_PREFIX}/bin/python"' in script
+    assert '"tensorflow==2.3.0"' in script
     assert '"protobuf==3.20.3"' in script
+    assert "--no-deps" in script
+    assert "--prefer-binary" in script
+    assert "sys.version_info[:2] == (3, 8)" in script
     assert "export SNAF_PYTHON=" in script
-    assert '${SNAF_ENV_NAME}/bin/python' in script
     assert "SNAF import OK; TensorFlow" in script
 
 

@@ -147,7 +147,7 @@ when `--sync-assets` is used. Sequenza is installed as a conda env from
 `conda/env.neoag-sequenza.yml`. Sequenza and ASCAT use
 `with_bioc_data_cache.sh` to prefetch and verify GenomeInfoDbData in an isolated
 Conda package cache; temporary metadata changes are restored automatically.
-Splice helpers are installed from `conda/env.neoag-splice.yml`, with SNAF installed by default from its pinned Git revision in a Python 3.8 `neoag-snaf` compatibility environment (`--skip-snaf` opts out), and SpliceMutr installed from a pinned source snapshot in `neoag-splicemutr` (`--skip-splicemutr` opts out); SpecHLA, HLA-LA, and HMF PURPLE are registered
+Splice helpers are installed from `conda/env.neoag-splice.yml`, with SNAF installed by default from its pinned Git revision in a Python 3.8 `neoag-snaf` compatibility environment (`--skip-snaf` opts out). SNAF pip uses `${SNAF_ENV_PREFIX}/bin/python -m pip`: pre-install `tensorflow==2.3.0` and `protobuf==3.20.3`, then install remaining SNAF runtime pins with those versions constrained, then install the pinned snapshot with `--no-deps` so pip cannot backtrack onto TensorFlow 2.12+. SpliceMutr is installed from a pinned source snapshot in `neoag-splicemutr` (`--skip-splicemutr` opts out); SpecHLA, HLA-LA, and HMF PURPLE are registered
 by loading staged container images when Docker is available and by writing
 portable wrappers/environment variables into the production activation script.
 The consolidated `--splice` group intentionally excludes ASNEO, NeoSplice, and

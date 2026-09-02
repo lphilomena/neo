@@ -222,6 +222,19 @@ Fix:
   `samtools collate | samtools fastq` fallback;
 - do not report SpecHLA production-ready from a Python-version-only smoke test.
 
+### SNAF pip cannot find tensorflow==2.3.0
+
+Observed error:
+
+```text
+ERROR: Could not find a version that satisfies the requirement tensorflow==2.3.0 (from snaf) (from versions: 2.12.0rc0, ..., 2.21.0)
+ERROR: No matching distribution found for tensorflow==2.3.0
+```
+
+Cause: Skill1 launched pip against SNAF's `install_requires` as one transaction. Pip then backtracked TensorFlow 2.3's old numpy/h5py/scipy pins onto TensorFlow 2.12+ wheels, or `conda run python -m pip` inherited an outer `.venv`/`base` interpreter (Python 3.11+) instead of the Python 3.8 `neoag-snaf` prefix. Direct `tensorflow==2.3.0` plus `protobuf==3.20.3` into that prefix succeeds.
+
+Fix: invoke `${SNAF_ENV_PREFIX}/bin/python -m pip`, pre-install `tensorflow==2.3.0` and `protobuf==3.20.3`, install remaining SNAF runtime pins with those versions constrained, then `pip install --no-deps` the pinned SNAF snapshot and lock `protobuf==3.20.3` again. Recreate `neoag-snaf` when it is not Python 3.8. The splice installer now performs this sequence.
+
 ### VEP Plugin Directory Present But Plugin Files Missing
 
 Observed error:

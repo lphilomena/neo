@@ -116,6 +116,10 @@ def test_environment_installers_pin_target_interpreters():
     skill = (root / ".agents/skills/open-neo-install-check/SKILL.md").read_text(encoding="utf-8")
     assert "resolved Conda environment prefix as authoritative" in skill
     assert "perl -MDBI" in skill
+    assert "${SNAF_ENV_PREFIX}/bin/python -m pip" in skill
+    assert "tensorflow==2.3.0" in skill
+    assert "protobuf==3.20.3" in skill
+    assert "--no-deps" in skill
 
 
 def test_public_asset_plan_is_offline_and_detects_marker(tmp_path: Path):

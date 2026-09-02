@@ -66,6 +66,113 @@ env_exists() {
 }
 env_has_regtools() { env_exists "$1" && conda_safe run -n "$1" regtools junctions extract -h >/dev/null 2>&1; }
 
+# SNAF 0.7.0 (frankligy/SNAF@e23ce395) pins tensorflow==2.3.0, which only has
+# wheels for Python 3.5-3.8. Installing SNAF as one pip transaction lets the
+# resolver backtrack that stack onto TensorFlow 2.12+ wheels, or conda run can
+# inherit an outer .venv/base interpreter. Skill1 therefore uses the env prefix
+# python, pre-pins TF 2.3 / protobuf 3.20.3, then installs SNAF with --no-deps.
+SNAF_ENV_PREFIX=""
+SNAF_PYTHON_BIN=""
+
+resolve_named_env_prefix() {
+  local env_name="$1"
+  local portable_root="${PORTABLE_ENVS%%:*}"
+  if [[ -n "${portable_root}" && ( -x "${portable_root}/${env_name}/bin/python" || -f "${portable_root}/${env_name}/conda-meta/history" ) ]]; then
+    printf '%s\n' "${portable_root}/${env_name}"
+    return
+  fi
+  printf '%s\n' "${CONDA_BASE}/envs/${env_name}"
+}
+
+python_is_38() {
+  [[ -x "$1" ]] || return 1
+  "$1" -c 'import sys; raise SystemExit(0 if sys.version_info[:2] == (3, 8) else 1)'
+}
+
+ensure_snaf_env() {
+  local prefix python_bin found_version
+  prefix="$(resolve_named_env_prefix "${SNAF_ENV_NAME}")"
+  python_bin="${prefix}/bin/python"
+  if env_exists "${SNAF_ENV_NAME}" && python_is_38 "${python_bin}"; then
+    echo "==> Reusing ${SNAF_ENV_NAME} at ${prefix} (Python 3.8)"
+  else
+    if env_exists "${SNAF_ENV_NAME}"; then
+      found_version="$("${python_bin}" -c 'import sys; print(sys.version.split()[0])' 2>/dev/null || echo missing)"
+      echo "==> Recreating ${SNAF_ENV_NAME}; SNAF TensorFlow 2.3 requires Python 3.8, found ${found_version}"
+      if [[ "$(basename "${prefix}")" == "${SNAF_ENV_NAME}" && -d "${prefix}/conda-meta" ]]; then
+        rm -rf "${prefix}"
+      fi
+      "${CONDA_RUNNER}" env remove -n "${SNAF_ENV_NAME}" -y >/dev/null 2>&1 || true
+    fi
+    echo "==> Creating ${SNAF_ENV_NAME} with Python 3.8 for SNAF's pinned TensorFlow 2.3 dependency"
+    "${CONDA_RUNNER}" create -n "${SNAF_ENV_NAME}" --override-channels \
+      -c conda-forge -c bioconda python=3.8 pip -y
+    prefix="$(resolve_named_env_prefix "${SNAF_ENV_NAME}")"
+    python_bin="${prefix}/bin/python"
+  fi
+  [[ -x "${python_bin}" ]] || { echo "ERROR: SNAF environment Python is missing: ${python_bin}" >&2; exit 45; }
+  python_is_38 "${python_bin}" || { echo "ERROR: ${python_bin} is not Python 3.8" >&2; exit 45; }
+  SNAF_ENV_PREFIX="${prefix}"
+  SNAF_PYTHON_BIN="${SNAF_ENV_PREFIX}/bin/python"
+}
+
+snaf_pip() {
+  "${SNAF_PYTHON_BIN}" -m pip install --index-url "${SNAF_PIP_INDEX_URL}" "$@"
+}
+
+install_snaf_package() {
+  local package="$1"
+  local constraints
+  constraints="$(mktemp "${TMPDIR:-/tmp}/snaf-tf.XXXXXX")"
+  cat > "${constraints}" <<'EOF'
+tensorflow==2.3.0
+protobuf==3.20.3
+numpy==1.18.5
+h5py==2.10.0
+scipy==1.4.1
+EOF
+  echo "==> Pre-installing tensorflow==2.3.0 and protobuf==3.20.3 before SNAF so pip cannot backtrack onto TensorFlow 2.12+"
+  snaf_pip -c "${constraints}" --prefer-binary "tensorflow==2.3.0" "protobuf==3.20.3"
+  echo "==> Installing remaining SNAF 0.7.0 runtime pins with TensorFlow held at 2.3.0"
+  snaf_pip -c "${constraints}" \
+    "pandas==1.3.4" \
+    "numpy==1.18.5" \
+    "numba==0.53.0" \
+    "mhcflurry==2.0.5" \
+    "h5py==2.10.0" \
+    "anndata==0.7.6" \
+    "seaborn==0.11.2" \
+    "biopython==1.79" \
+    "requests==2.26.0" \
+    "xmltodict==0.12.0" \
+    "xmltramp2==3.1.1" \
+    "tqdm==4.62.3" \
+    "scipy==1.4.1" \
+    "statsmodels==0.13.1" \
+    "lifelines==0.26.4" \
+    "umap-learn==0.5.2" \
+    "plotly==5.4.0" \
+    "Werkzeug==2.0.2" \
+    "flask==2.0.2" \
+    "dash==2.0.0" \
+    "dash-dangerously-set-inner-html==0.0.2" \
+    "mygene==3.2.2" \
+    "adjustText==0.8"
+  echo "==> Installing SNAF with --no-deps to keep the TensorFlow 2.3 stack"
+  snaf_pip --no-deps "${package}"
+  snaf_pip -c "${constraints}" "protobuf==3.20.3"
+  rm -f "${constraints}"
+}
+
+write_snaf_wrapper() {
+  cat > "${BIN_DIR}/snaf-neoag" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+exec "${SNAF_PYTHON_BIN}" -m snaf "\$@"
+EOF
+  chmod +x "${BIN_DIR}/snaf-neoag"
+}
+
 if [[ "${NEOAG_FORCE_ENV_UPDATE:-0}" == "1" ]]; then
   if env_exists "${ENV_NAME}"; then
     "${CONDA_RUNNER}" env update -n "${ENV_NAME}" -f "${YML}" --prune
@@ -146,13 +253,13 @@ download_verified_tarball() {
 
 if [[ "${INSTALL_SNAF}" == "1" ]]; then
   SNAF_HOME="${TOOLS_ROOT}/tools/SNAF"
-  if ! env_exists "${SNAF_ENV_NAME}"; then
-    echo "==> Creating ${SNAF_ENV_NAME} with Python 3.8 for SNAF's pinned TensorFlow 2.3 dependency"
-    "${CONDA_RUNNER}" create -n "${SNAF_ENV_NAME}" --override-channels \
-      -c conda-forge -c bioconda python=3.8 pip -y
-  fi
+  ensure_snaf_env
   if [[ -n "${SNAF_SOURCE}" ]]; then
-    install_python_source "SNAF" "${SNAF_SOURCE}" "${SNAF_HOME}" "snaf-neoag" "snaf" "${SNAF_ENV_NAME}"
+    [[ -e "${SNAF_SOURCE}" ]] || { echo "ERROR: SNAF source missing: ${SNAF_SOURCE}" >&2; exit 42; }
+    mkdir -p "$(dirname "${SNAF_HOME}")"
+    rsync -a --delete "${SNAF_SOURCE}/" "${SNAF_HOME}/"
+    install_snaf_package "${SNAF_HOME}"
+    write_snaf_wrapper
   else
     echo "==> Installing SNAF from pinned source snapshot ${SNAF_PACKAGE_URL}"
     if [[ ! -s "${SNAF_ARCHIVE_CACHE}" ]]; then
@@ -162,18 +269,8 @@ if [[ "${INSTALL_SNAF}" == "1" ]]; then
     else
       echo "==> Reusing cached SNAF snapshot ${SNAF_ARCHIVE_CACHE}"
     fi
-    "${CONDA_BASE}/bin/conda" run -n "${SNAF_ENV_NAME}" python -m pip install \
-      --index-url "${SNAF_PIP_INDEX_URL}" "${SNAF_ARCHIVE_CACHE}"
-    # TensorFlow 2.3 generated protos are incompatible with protobuf 4/5.
-    "${CONDA_BASE}/bin/conda" run -n "${SNAF_ENV_NAME}" python -m pip install \
-      --index-url "${SNAF_PIP_INDEX_URL}" "protobuf==3.20.3"
-    cat > "${BIN_DIR}/snaf-neoag" <<EOF
-#!/usr/bin/env bash
-set -euo pipefail
-exec "${CONDA_BASE}/bin/conda" run -n "${SNAF_ENV_NAME}" python -m snaf "\$@"
-EOF
-    [[ -z "$PORTABLE_ENVS" ]] || sed -i "2a export CONDA_ENVS_PATH=\"${PORTABLE_ENVS}\"" "${BIN_DIR}/snaf-neoag"
-    chmod +x "${BIN_DIR}/snaf-neoag"
+    install_snaf_package "${SNAF_ARCHIVE_CACHE}"
+    write_snaf_wrapper
   fi
 else
   echo "==> Skipping SNAF because NEOAG_INSTALL_SNAF=${INSTALL_SNAF}"
@@ -225,10 +322,9 @@ if [[ -f "${TOOLS_ENV}" ]]; then
   else
     echo "export NEOAG_SNAF_BIN=\"${BIN_DIR}/snaf-neoag\"" >> "${TOOLS_ENV}"
   fi
-  snaf_python="${CONDA_BASE}/envs/${SNAF_ENV_NAME}/bin/python"
-  portable_root="${PORTABLE_ENVS%%:*}"
-  if [[ -n "${portable_root}" && -x "${portable_root}/${SNAF_ENV_NAME}/bin/python" ]]; then
-    snaf_python="${portable_root}/${SNAF_ENV_NAME}/bin/python"
+  snaf_python="${SNAF_PYTHON_BIN:-}"
+  if [[ -z "${snaf_python}" ]]; then
+    snaf_python="$(resolve_named_env_prefix "${SNAF_ENV_NAME}")/bin/python"
   fi
   [[ -x "${snaf_python}" ]] || {
     echo "ERROR: SNAF environment Python is missing: ${snaf_python}" >&2
@@ -251,8 +347,8 @@ if [[ -x "${BIN_DIR}/snaf-neoag" ]]; then
   mkdir -p "${snaf_smoke_dir}/assets"
   (
     cd "${snaf_smoke_dir}"
-    "${CONDA_BASE}/bin/conda" run -n "${SNAF_ENV_NAME}" python -c \
-      'import snaf, tensorflow as tf; print("SNAF import OK; TensorFlow " + tf.__version__)'
+    "${SNAF_PYTHON_BIN}" -c \
+      'import snaf, tensorflow as tf; assert tf.__version__.startswith("2.3"), tf.__version__; print("SNAF import OK; TensorFlow " + tf.__version__)'
   )
   rm -rf "${snaf_smoke_dir}"
 fi
