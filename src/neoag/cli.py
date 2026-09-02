@@ -960,6 +960,8 @@ def cmd_run_full(args):
         "report_types": args.reports,
         "event_top_n": args.event_top_n,
         "candidate_top_n": args.candidate_top_n,
+        "genome_build": inputs.get("genome_build") or inputs.get("reference_build"),
+        "reference_build": inputs.get("reference_build") or inputs.get("genome_build"),
     }
     if raw_events and raw_peptides:
         run_kwargs["raw_events"] = raw_events

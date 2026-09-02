@@ -243,3 +243,29 @@ def test_exact_pair_fallback_rejects_conflicting_predictor_values(tmp_path):
         output_tsv=output, ranked_peptides=ranked, presentation_evidence=presentation,
     )
     assert read_tsv(output)[0].get("prime_score", "") == ""
+
+
+def test_unassessed_expression_clears_stale_zero_placeholders(tmp_path):
+    ranked = tmp_path / "ranked.tsv"
+    expression = tmp_path / "expression.tsv"
+    output = tmp_path / "comprehensive.tsv"
+    write_tsv(ranked, [{
+        "peptide_id": "P1", "event_id": "E1",
+        "event_expression": "0.0000", "gene_expression_tpm": "0.0000",
+        "transcript_expression_tpm": "0.0000", "expression_tpm": "0.0000",
+        "expression_evidence_status": "NOT_DETECTED",
+    }])
+    write_tsv(expression, [{
+        "event_id": "E1",
+        "expression_evidence_status": "UNASSESSED_ID_NOT_MAPPED",
+        "expression_source": "empty_gene_expression.tsv",
+    }])
+    build_comprehensive_peptide_evidence(
+        output_tsv=output, ranked_peptides=ranked, expression_evidence=expression,
+    )
+    row = read_tsv(output)[0]
+    assert row["expression_evidence_status"] == "UNASSESSED_ID_NOT_MAPPED"
+    assert row["event_expression"] == ""
+    assert row["gene_expression_tpm"] == ""
+    assert row["transcript_expression_tpm"] == ""
+    assert row["expression_tpm"] == ""

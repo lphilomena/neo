@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from neoag.reports_dual import ReportBundle, _apply_patient_gene_expression, _augment_runtime_tool_provenance, _find_bam_input, _patient_analysis_context, _patient_conflict_summary, _patient_disease_background, _patient_dna_evidence, _patient_dna_rna_interpretation, _patient_event_grade_counts, _patient_event_representatives, _patient_evidence_audit_rows, _patient_evidence_summary, _patient_event_change, _patient_expression_tpm_map, _patient_fusion_artifact_review, _patient_fusion_boundary_evidence, _patient_hla_loh_consensus, _patient_key_gaps, _patient_limitation, _patient_manual_review_rows, _patient_metric, _patient_presentation_metric, _patient_presentation_quantitative_row, _patient_rna_measurements, _patient_rna_metric, _patient_safety_dimensions, _patient_safety_gap, _patient_tool_rows, _patient_track, _patient_validation, _replace_gene_ids, load_report_bundle, make_dual_reports, make_patient_report, make_technical_report
-from neoag.reports_dual import _patient_ccf_coverage_rows, _patient_splice_funnel_rows
+from neoag.reports_dual import _patient_ccf_coverage_rows, _patient_clonality_boundary, _patient_splice_funnel_rows
 from neoag.utils import write_tsv
 
 
@@ -85,6 +85,7 @@ def test_patient_report_is_plain_language(tmp_path):
     assert "附录B：术语说明" in text
     assert "附件与可追溯文件" in text
     assert "缺失证据统一视为未评估" in text
+    assert "异常剪接逐级筛选漏斗" not in text
     assert "DQA1/DQB1" not in text
     assert "EWSR1::WT1" not in text
 
@@ -114,6 +115,17 @@ def test_splice_funnel_and_ccf_coverage_are_event_level_and_explicit():
     ccf = {row["事件类型"]: row for row in _patient_ccf_coverage_rows(bundle)}
     assert ccf["Splice"]["RNA-only不适用"] == "1"
     assert ccf["SNV"]["缺失/未解析"] == "1"
+
+
+def test_stale_splice_funnel_is_hidden_without_splice_results():
+    bundle = _bundle()
+    bundle.provenance["splice_filter_funnel_rows"] = [{
+        "stage": "UNIQUE_JUNCTION_READS",
+        "entered_events": "10",
+        "assessed_events": "10",
+        "passed_events": "8",
+    }]
+    assert _patient_splice_funnel_rows(bundle) == []
 
 
 def test_splice_rna_measurements_do_not_substitute_tpm_for_psi_or_unique_reads():
@@ -1418,11 +1430,71 @@ def test_patient_report_uses_single_sample_level_clonality_boundary(tmp_path):
     out = tmp_path / "patient_clonality_boundary.html"
     make_patient_report(out, bundle)
     text = out.read_text(encoding="utf-8")
-    boundary = "多数候选目前尚不能可靠判断其是否存在于大部分肿瘤细胞中，因此克隆性仍是主要证据缺口之一。"
-    assert text.count(boundary) == 1
+    assert text.count("<b>克隆性证据边界：</b>") == 1
+    assert "当前缺口是事件级CCF覆盖不足，而不是缺少样本纯度估计" not in text
     assert "CCF覆盖度与缺失影响" not in text
     assert "CCF=0.82" not in text
     assert "95%区间 0.61-0.97" not in text
+
+
+def test_patient_clonality_boundary_separates_low_purity_from_missing_ccf():
+    bundle = _bundle()
+    bundle.purity_consensus = {
+        "recommended_purity": "0.12", "recommended_ploidy": "2.1",
+        "status": "LOW_PURITY_REVIEW",
+    }
+    bundle.events = [{"event_id": "E1", "event_type": "SNV", "ccf_status": "UNASSESSED"}]
+    text = _patient_clonality_boundary(bundle)
+    assert "低纯度审阅" in text
+    assert "系统性降低CCF置信度" in text
+    assert "不解释为候选不存在" in text
+
+
+def test_patient_clonality_boundary_high_purity_names_event_level_gap():
+    bundle = _bundle()
+    bundle.purity_consensus = {
+        "recommended_purity": "0.92", "recommended_ploidy": "2.0",
+        "status": "CONCORDANT",
+    }
+    bundle.purity_tools = [
+        {"tool": "FACETS", "purity": "0.91", "status": "FOUND"},
+        {"tool": "PURPLE", "purity": "0.93", "status": "FOUND"},
+        {"tool": "Sequenza", "purity": "", "status": "MISSING"},
+        {"tool": "ASCAT", "purity": "", "status": "MISSING"},
+    ]
+    bundle.events = [{"event_id": "E1", "event_type": "SNV", "ccf_status": "UNASSESSED"}]
+    text = _patient_clonality_boundary(bundle)
+    assert "多工具一致或相互支持" in text
+    assert "事件级CCF覆盖不足，而不是缺少样本纯度估计" in text
+
+
+def test_patient_clonality_boundary_preserves_outlier_context():
+    bundle = _bundle()
+    bundle.purity_consensus = {
+        "recommended_purity": "0.48", "recommended_ploidy": "2.4",
+        "status": "MULTI_TOOL_REVIEW",
+    }
+    bundle.purity_tools = [
+        {"tool": "FACETS", "purity": "0.47", "status": "FOUND"},
+        {"tool": "Sequenza", "purity": "0.49", "status": "FOUND"},
+        {"tool": "PURPLE", "purity": "0.81", "status": "OUTLIER_EXCLUDED", "note": "excluded outlier"},
+    ]
+    bundle.events = [{"event_id": "E1", "event_type": "SNV", "ccf_status": "UNASSESSED"}]
+    text = _patient_clonality_boundary(bundle)
+    assert "PURPLE" in text
+    assert "冲突、离群或被排除" in text
+    assert "并列保留全部工具结果" in text
+
+
+def test_lohhla_qc_gap_is_not_attributed_to_missing_purity_tools():
+    bundle = _bundle()
+    bundle.hla_loh_tool_results = [
+        {"hla_allele": "HLA-A*02:01", "source_tool": "SpecHLA", "status": "RETAINED", "spechla_copy": "2"},
+        {"hla_allele": "HLA-A*02:01", "source_tool": "LOHHLA", "status": "UNASSESSED", "lohhla_pval": "NA"},
+    ]
+    rows, _ = _patient_hla_loh_consensus(bundle)
+    assert "CopyNumLoc/纯度倍性参数" in rows[0]["说明"]
+    assert "不应归因于Sequenza或ASCAT未运行" in rows[0]["说明"]
 
 
 def test_patient_evidence_audit_counts_later_tool_field_after_unassessed_placeholder():
@@ -1714,6 +1786,26 @@ def test_scoring_all_tool_results_counts_as_canonical(tmp_path):
     assert bundle.evidence_integrity["status"] == "PASS"
 
 
+def test_dotted_hla_loh_sidecars_are_loaded_for_both_tools(tmp_path):
+    loh_dir = tmp_path / "hla_loh_consensus"
+    loh_dir.mkdir()
+    write_tsv(loh_dir / "lohhla.hla_loh.tsv", [
+        {"hla_allele": "HLA-A*02:01", "loh_status": "loh", "evidence_tool": "lohhla"},
+    ])
+    write_tsv(loh_dir / "spechla.hla_loh.tsv", [
+        {"hla_allele": "HLA-A*02:01", "loh_status": "no", "evidence_tool": "spechla"},
+    ])
+    base = _bundle()
+    base.peptides[0]["hla_allele"] = "HLA-A*02:01"
+    bundle = load_report_bundle(
+        profile=base.profile, events=base.events, peptides=base.peptides, outdir=tmp_path,
+    )
+    assert {row.get("_report_tool") for row in bundle.hla_loh_tool_results} == {"LOHHLA", "SpecHLA"}
+    rows, overall = _patient_hla_loh_consensus(bundle)
+    assert rows[0]["综合判断"] == "工具结果冲突，暂不判定"
+    assert "HLA-I LOH工具结果冲突" in overall
+
+
 def test_hla_loh_consensus_tsv_is_expanded_into_tool_rows(tmp_path):
     consensus_dir = tmp_path / "hla_loh_consensus"
     consensus_dir.mkdir()
@@ -1915,7 +2007,7 @@ def test_hla_loh_qc_only_record_does_not_count_as_assessed_tool():
     ]
     rows, overall = _patient_hla_loh_consensus(bundle)
     assert overall == (
-        "SpecHLA未提示相应限制性HLA-I等位基因LOH；另一工具因QC不足未形成有效判断，"
+        "SpecHLA未提示相应限制性HLA-I等位基因LOH；另一工具因QC或输入对接不足未形成有效判断，"
         "因此当前仅有单工具支持，不足以确认该等位基因在肿瘤中完整保留。"
     )
     assert "多工具一致" not in overall

@@ -121,3 +121,28 @@ def test_gencode_salmon_name_maps_gene_symbol_and_distinguishes_unmapped(tmp_pat
     assert by_id["E2"]["gene_expression_tpm"] == ""
     assert by_id["E2"]["transcript_expression_tpm"] == ""
     assert by_id["E2"]["expression_evidence_status"] == "UNASSESSED_ID_NOT_MAPPED"
+
+
+def test_empty_expression_table_does_not_turn_placeholder_zero_into_measurement(tmp_path):
+    from neoag.evidence_layer import build_expression_evidence
+
+    events = tmp_path / "raw_events.tsv"
+    write_tsv(events, [{
+        "event_id": "E1",
+        "gene": "GENE1",
+        "event_expression": "0.0000",
+        "gene_expression_tpm": "0.0000",
+    }], ["event_id", "gene", "event_expression", "gene_expression_tpm"])
+    empty_expression = tmp_path / "gene_expression.tsv"
+    write_tsv(empty_expression, [], ["gene", "TPM"])
+
+    rows = build_expression_evidence(
+        events,
+        tmp_path / "expression_evidence.tsv",
+        expression_path=empty_expression,
+    )
+
+    assert rows[0]["gene_expression_tpm"] == ""
+    assert rows[0]["event_expression"] == ""
+    assert rows[0]["expression_tpm"] == ""
+    assert rows[0]["expression_evidence_status"] == "UNASSESSED_EMPTY_INPUT"

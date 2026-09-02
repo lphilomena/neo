@@ -126,6 +126,8 @@ def test_run(tmp_path):
         cnv=ROOT/"data/fixtures/cnv_segments.tsv",
         normal_expression=ROOT/"resources/normal_expression.example.tsv",
         normal_hla_ligands=ROOT/"resources/normal_hla_ligands.example.tsv",
+        genome_build="GRCh38",
+        reference_build="GRCh38",
     )
     for v in out.values():
         assert Path(v).exists()
@@ -146,6 +148,9 @@ def test_run(tmp_path):
     assert read_tsv(out["all_tool_results"])[0]["all_tool_results_schema_version"] == "1.0"
     assert Path(out["all_tool_results_manifest"]).exists()
     assert Path(out["comprehensive_evidence_manifest"]).exists()
+    provenance = json.loads(Path(out["provenance"]).read_text())
+    assert provenance["genome_build"] == "GRCh38"
+    assert provenance["reference_build"] == "GRCh38"
     run_manifest = json.loads(Path(out["evidence_consensus_run"]).read_text())
     assert run_manifest["legacy_ranking_modified"] is False
     assert Path(out["ccf_2"]).exists()

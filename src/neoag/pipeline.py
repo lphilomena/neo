@@ -86,6 +86,8 @@ def run(
     report_types=None,
     event_top_n=20,
     candidate_top_n=100,
+    genome_build=None,
+    reference_build=None,
 ):
     outdir = Path(outdir)
     outdir.mkdir(parents=True, exist_ok=True)
@@ -158,8 +160,22 @@ def run(
             elif "lohhla" in path_l:
                 hla_loh_tool = "lohhla"
         provenance_registry.register_converted(hla_loh_tool, hla_loh)
+    purity_rows = []
+    purity_tool_name = "purity"
     if purity:
-        provenance_registry.register_converted("facets", purity)
+        try:
+            purity_rows = read_tsv(purity)
+            if purity_rows:
+                purity_tool_name = first(
+                    purity_rows[0],
+                    ["evidence_tool", "source", "tool", "method"],
+                    purity_tool_name,
+                ) or purity_tool_name
+        except Exception:
+            purity_rows = []
+        if purity_tool_name == "purity" and "facets" in str(purity).lower():
+            purity_tool_name = "facets"
+        provenance_registry.register_converted(purity_tool_name, purity)
     elif cnv:
         provenance_registry.register_converted("facets", cnv)
     if cancer_gene_list:
@@ -319,10 +335,9 @@ def run(
     }
     purity_tools = []
     if purity:
-        purity_rows = read_tsv(purity)
         if purity_rows:
             purity_tools.append({
-                "tool": str(purity_rows[0].get("evidence_tool") or "FACETS").upper(),
+                "tool": str(purity_tool_name),
                 "purity": str(purity_rows[0].get("purity") or ""),
                 "ploidy": str(purity_rows[0].get("ploidy") or ""),
                 "status": str(purity_rows[0].get("evidence_status") or "ASSESSED"),
@@ -333,6 +348,8 @@ def run(
         "sample_id": sample_id,
         "profile": profile["_profile_name"],
         "entry_mode": entry_mode,
+        "genome_build": str(genome_build or reference_build or "").strip(),
+        "reference_build": str(reference_build or genome_build or "").strip(),
         "tools": provenance_registry.to_json(),
         "warning": "Computational prototype only.",
         "input_files": input_files,

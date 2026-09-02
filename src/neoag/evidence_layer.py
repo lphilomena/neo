@@ -98,6 +98,13 @@ def build_expression_evidence(
     transcript_map, transcript_gene_map = _load_transcript_expression_maps(
         transcript_expression_path
     )
+    explicit_expression_input = bool(expression_path or transcript_expression_path)
+    explicit_expression_input_empty = (
+        explicit_expression_input
+        and not tpm_map
+        and not transcript_map
+        and not transcript_gene_map
+    )
 
     rows: list[dict[str, str]] = []
     for ev in read_tsv(raw_events):
@@ -114,6 +121,7 @@ def build_expression_evidence(
             str(raw_gene_tpm or "").strip() != ""
             and not prior_gene_source
             and not prior_expression_layer
+            and not explicit_expression_input
         )
         gene_tpm = to_float(raw_gene_tpm, 0.0)
         if gene in tpm_map:
@@ -136,6 +144,7 @@ def build_expression_evidence(
             str(raw_tx_tpm or "").strip() != ""
             and not prior_tx_source
             and not prior_expression_layer
+            and not explicit_expression_input
         )
         tx_tpm = to_float(raw_tx_tpm, 0.0)
         if transcript_id in transcript_map:
@@ -150,19 +159,22 @@ def build_expression_evidence(
             expression_status = "GENE_ONLY_PARTIAL"
         elif gene_assessed or transcript_assessed:
             expression_status = "NOT_DETECTED"
+        elif explicit_expression_input_empty:
+            expression_status = "UNASSESSED_EMPTY_INPUT"
         elif expression_path or transcript_expression_path:
             expression_status = "UNASSESSED_ID_NOT_MAPPED"
         else:
             expression_status = "UNASSESSED"
+        expression_assessed = gene_assessed or transcript_assessed
         rows.append({
             "event_id": ev.get("event_id", ""),
             "sample_id": ev.get("sample_id", sample_id),
             "gene": gene,
             "transcript_id": transcript_id,
-            "event_expression": f"{tpm:.4f}",
+            "event_expression": f"{tpm:.4f}" if expression_assessed else "",
             "gene_expression_tpm": f"{gene_tpm:.4f}" if gene_assessed else "",
             "transcript_expression_tpm": f"{tx_tpm:.4f}" if transcript_assessed else "",
-            "expression_tpm": f"{tpm:.4f}",
+            "expression_tpm": f"{tpm:.4f}" if expression_assessed else "",
             "expression_evidence_status": expression_status,
             "expression_source": _expression_source(expression_path),
             "transcript_expression_source": str(transcript_expression_path or ""),

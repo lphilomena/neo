@@ -160,12 +160,16 @@ def _read_hla_loh_tool_results(root: Path | None, provenance: Mapping[str, Any] 
         "LOHHLA": [
             "hla_loh/lohhla/hla_loh.tsv",
             "hla_loh_consensus/lohhla_hla_loh.tsv",
+            "hla_loh_consensus/lohhla.hla_loh.tsv",
+            "lohhla.hla_loh.tsv",
             "lohhla/hla_loh.tsv",
             "hla_loh.tsv",
         ],
         "SpecHLA": [
             "hla_loh/spechla/hla_loh.tsv",
             "hla_loh_consensus/spechla_sequenza012_hla_loh.tsv",
+            "hla_loh_consensus/spechla.hla_loh.tsv",
+            "spechla.hla_loh.tsv",
             "hla_loh_consensus/spechla_hla_loh.tsv",
             "spechla/hla_loh.tsv",
             "hla_loh.spechla.tsv",
@@ -2090,7 +2094,7 @@ def _make_patient_report_legacy(path: str | Path, bundle: ReportBundle) -> None:
     out.append(f"<li><b>评分方案：</b>{esc(bundle.profile.get('_profile_name', 'default'))}</li>")
     out.append("<li><b>临床样本关系：</b>精确取材日期、部位、治疗前后关系仍须以临床样本清单核实，本报告不据测序文件名推断。</li>")
     out.append("</ul><p class='small'>HLA 分型用于判断候选肽可能由哪些 HLA 分子呈递；它本身不证明肿瘤细胞已经加工并展示该肽段。</p>")
-    out.append("<div class='warn'><b>克隆性证据边界：</b>多数候选目前尚不能可靠判断其是否存在于大部分肿瘤细胞中，因此克隆性仍是主要证据缺口之一。</div></div>")
+    out.append(f"<div class='warn'><b>克隆性证据边界：</b>{esc(_patient_clonality_boundary(bundle))}</div></div>")
 
     out.append("<div class='section'><h2>3. 肿瘤是否具备抗原呈递条件</h2>")
     presentation_rows = [
@@ -2865,6 +2869,13 @@ _SPLICE_FUNNEL_LABELS = {
 
 
 def _patient_splice_funnel_rows(bundle: ReportBundle) -> list[dict[str, str]]:
+    has_splice_results = any(_patient_track(row) == "Splice" for row in bundle.events) or any(
+        _patient_track(row) == "Splice" for row in bundle.peptides
+    )
+    if not has_splice_results:
+        # Reused provenance may contain an old splice funnel; it must not make
+        # an SNV/InDel-only report claim that splice analysis was performed.
+        return []
     stored = bundle.provenance.get("splice_filter_funnel_rows")
     rows: list[dict[str, str]] = []
     if isinstance(stored, list):
@@ -3719,6 +3730,8 @@ def _patient_missing_rna_label(row: Mapping[str, Any], label: str, *, expression
             return "转录本表达无法精确匹配（融合转录本无法唯一对应定量矩阵中的标准转录本）；按融合伙伴基因表达和断点支持reads解读"
         if transcript and _patient_track(row) == "Splice":
             return "转录本表达无法精确匹配（异常剪接异构体无法唯一对应定量矩阵中的标准转录本）；按基因表达和精确junction reads解读"
+        if status == "UNASSESSED_EMPTY_INPUT":
+            return f"{label}未计算（表达输入文件为空，仅有表头）"
         if status == "UNASSESSED_ID_NOT_MAPPED":
             return f"{label}未匹配到表达矩阵ID"
         if source:
@@ -3728,6 +3741,12 @@ def _patient_missing_rna_label(row: Mapping[str, Any], label: str, *, expression
     status = _patient_observed_source(row, "rna_support_status", "rna_evidence_completeness")
     depth = _patient_observed_value(row, "rna_depth")
     alt_reads = _patient_observed_value(row, "rna_alt_reads")
+    if label == "RNA VAF" and depth is not None:
+        try:
+            if float(depth) <= 0:
+                return "RNA VAF无法计算（RNA位点深度为0）"
+        except ValueError:
+            pass
     if depth is not None or alt_reads is not None:
         return f"{label} 0.0000（RNA位点已评估但未检测到ALT或深度为0）"
     if source:
@@ -3750,14 +3769,46 @@ def _patient_dna_vcf_measurements(row: Mapping[str, Any]) -> str:
         vaf = _patient_numeric_display(_patient_observed_value(row, vaf_field), 4)
         if depth is None and alt is None and vaf is None:
             continue
+        ref_reads = None
+        if depth is not None and alt is not None:
+            try:
+                ref_reads = f"{max(float(depth) - float(alt), 0):.0f}"
+            except ValueError:
+                pass
         parts = []
         if depth is not None:
             parts.append(f"深度 {depth}")
+        if ref_reads is not None:
+            parts.append(f"REF reads {ref_reads}")
         if alt is not None:
             parts.append(f"ALT reads {alt}")
         if vaf is not None:
             parts.append(f"VAF {vaf}")
         blocks.append(f"{label}（{'，'.join(parts)}）")
+    normal_depth = _patient_numeric_display(_patient_observed_value(row, "normal_depth"), 0)
+    normal_alt = _patient_numeric_display(
+        _patient_observed_source(row, "normal_alt_count", "normal_alt_reads"), 0
+    )
+    normal_vaf = _patient_numeric_display(
+        _patient_observed_source(row, "normal_alt_vaf", "normal_vaf"), 4
+    )
+    if normal_depth is not None or normal_alt is not None or normal_vaf is not None:
+        normal_ref = None
+        if normal_depth is not None and normal_alt is not None:
+            try:
+                normal_ref = f"{max(float(normal_depth) - float(normal_alt), 0):.0f}"
+            except ValueError:
+                pass
+        parts = []
+        if normal_depth is not None:
+            parts.append(f"深度 {normal_depth}")
+        if normal_ref is not None:
+            parts.append(f"REF reads {normal_ref}")
+        if normal_alt is not None:
+            parts.append(f"ALT reads {normal_alt}")
+        if normal_vaf is not None:
+            parts.append(f"VAF {normal_vaf}")
+        blocks.append(f"配对正常DNA/VCF（{'，'.join(parts)}）")
     return "；".join(blocks)
 
 
@@ -4821,6 +4872,85 @@ def _patient_purity_consensus(bundle: ReportBundle) -> tuple[str, str]:
     return fallback, "未提供结构化多工具共识；不得静默选择单一工具"
 
 
+def _patient_clonality_boundary(bundle: ReportBundle) -> str:
+    """Explain sample purity and event-level CCF as separate evidence layers."""
+    consensus = bundle.purity_consensus if isinstance(bundle.purity_consensus, Mapping) else {}
+    status = str(consensus.get("status") or "").upper()
+    purity_text = str(consensus.get("recommended_purity") or "").strip()
+    try:
+        purity = float(purity_text)
+    except (TypeError, ValueError):
+        purity = None
+
+    tool_rows = [row for row in bundle.purity_tools if isinstance(row, Mapping)]
+    assessed_tools = [
+        str(row.get("tool") or row.get("source") or "未记录")
+        for row in tool_rows
+        if str(row.get("status") or "").upper() not in {"", "MISSING", "UNASSESSED", "NOT_RUN"}
+        and str(row.get("purity") or "").strip().upper() not in {"", "NA", "N/A", "NONE", "."}
+    ]
+    conflict_terms = ("CONFLICT", "DISCORDANT", "OUTLIER", "EXCLUDED", "REJECTED")
+    tool_conflicts = [
+        str(row.get("tool") or row.get("source") or "未记录")
+        for row in tool_rows
+        if any(term in " ".join(str(row.get(key) or "").upper() for key in ("status", "note")) for term in conflict_terms)
+    ]
+
+    coverage_rows = _patient_ccf_coverage_rows(bundle)
+    eligible = reliable = low = unresolved = 0
+    for row in coverage_rows:
+        total = int(str(row.get("独立事件") or "0"))
+        not_applicable = int(str(row.get("RNA-only不适用") or "0"))
+        eligible += max(0, total - not_applicable)
+        reliable += int(str(row.get("可靠CCF") or "0"))
+        low += int(str(row.get("低置信数值") or "0"))
+        unresolved += int(str(row.get("缺失/未解析") or "0"))
+    coverage = (100.0 * reliable / eligible) if eligible else None
+    ccf_summary = (
+        f"可进行DNA克隆性评估的{eligible}个事件中，{reliable}个形成可靠CCF"
+        + (f"（{coverage:.1f}%）" if coverage is not None else "")
+        + f"，{low}个仅有低置信数值，{unresolved}个缺失或未解析。"
+        if eligible else
+        "当前事件均不适合由RNA证据直接推导DNA CCF。"
+    )
+
+    if "LOW_PURITY" in status or (purity is not None and purity < 0.20):
+        sample = f"样本级推荐纯度为{purity_text}" if purity_text else "样本级纯度较低"
+        return (
+            f"{sample}，属于低纯度审阅情形；即使已有纯度/倍性背景，事件VAF和局部拷贝数的不确定性仍会系统性降低CCF置信度。"
+            f"{ccf_summary}低置信或缺失CCF不解释为候选不存在于肿瘤细胞中。"
+        )
+
+    if tool_conflicts or any(term in status for term in ("CONFLICT", "DISCORDANT", "OUTLIER", "REVIEW")):
+        conflict_label = "、".join(dict.fromkeys(tool_conflicts)) or "部分工具"
+        return (
+            f"样本级纯度/倍性已有{len(assessed_tools)}个工具结果，但{conflict_label}存在冲突、离群或被排除状态；"
+            "报告并列保留全部工具结果，共识值仅用于后续计算，不把单一数值写成确定结论。"
+            f"{ccf_summary}事件级克隆性需结合所采用的纯度、局部CN和VAF继续解释。"
+        )
+
+    if "CONCORDANT" in status or len(assessed_tools) >= 2:
+        if coverage is not None and coverage < 80.0:
+            return (
+                f"样本级纯度/倍性已有多工具一致或相互支持的估计，可作为CNV与LOH的计算背景。{ccf_summary}"
+                "当前缺口是事件级CCF覆盖不足，而不是缺少样本纯度估计；不能据此声称多数候选已覆盖大部分肿瘤细胞。"
+            )
+        return (
+            f"样本级纯度/倍性已有多工具一致或相互支持的估计。{ccf_summary}"
+            "可靠CCF仍是计算性克隆覆盖证据，不等同于实验确认。"
+        )
+
+    if purity_text:
+        return (
+            f"当前已有样本级纯度估计（{purity_text}），但尚未形成充分的多工具一致性结论。{ccf_summary}"
+            "需分别审阅样本级纯度可信度和事件级CCF覆盖，二者不能互相替代。"
+        )
+    return (
+        f"样本级纯度/倍性尚未形成可用共识。{ccf_summary}"
+        "在纯度、局部CN和VAF输入补齐前，事件级克隆性仅作未评估处理。"
+    )
+
+
 def _patient_disease_background(bundle: ReportBundle) -> tuple[str, str]:
     """Resolve structured clinical diagnosis without inferring it from analysis profiles."""
     provenance = bundle.provenance
@@ -4976,10 +5106,17 @@ def _patient_hla_loh_consensus(bundle: ReportBundle) -> tuple[list[dict[str, str
             other_tool = "SpecHLA" if tool == "LOHHLA" else "LOHHLA"
             consensus = f"仅{tool}报告{_patient_hla_loh_label(internal)}，证据有限"
             if evidence_present[other_tool]:
-                explanation = (
-                    f"{other_tool}有原始证据，但未形成可用逐等位基因LOH判断/QC未通过；"
-                    "单工具结果不足以确认该等位基因在肿瘤中完整保留或丢失"
-                )
+                if other_tool == "LOHHLA":
+                    explanation = (
+                        "LOHHLA有原始证据，但未形成可用逐等位基因判断；应核查HLA比对、胚系等位基因、"
+                        "CopyNumLoc/纯度倍性参数及运行QC的输入对接，不应归因于Sequenza或ASCAT未运行。"
+                        "当前单工具结果不足以确认该等位基因在肿瘤中完整保留或丢失"
+                    )
+                else:
+                    explanation = (
+                        f"{other_tool}有原始证据，但未形成可用逐等位基因LOH判断/QC未通过；"
+                        "单工具结果不足以确认该等位基因在肿瘤中完整保留或丢失"
+                    )
             else:
                 explanation = (
                     f"另一个HLA LOH工具未提供该等位基因结果；"
@@ -5010,7 +5147,7 @@ def _patient_hla_loh_consensus(bundle: ReportBundle) -> tuple[list[dict[str, str
     elif single_retained:
         tools = sorted({"SpecHLA" if str(row["综合判断"]).startswith("仅SpecHLA") else "LOHHLA" for row in single_retained})
         other_qc = any("QC不足" in str(row.get("LOHHLA") or "") or "QC不足" in str(row.get("SpecHLA") or "") for row in single_retained)
-        unavailable = "另一工具因QC不足未形成有效判断" if other_qc else "另一工具未形成有效判断"
+        unavailable = "另一工具因QC或输入对接不足未形成有效判断" if other_qc else "另一工具未形成有效判断"
         overall = (
             f"{'/'.join(tools)}未提示相应限制性HLA-I等位基因LOH；{unavailable}，"
             "因此当前仅有单工具支持，不足以确认该等位基因在肿瘤中完整保留。"
@@ -5402,8 +5539,7 @@ def make_patient_report(
     out.append("<p class='small'>以下并列展示各纯度工具的估算。共识值用于CNV和LOH解释；明显冲突时保留全部结果及低置信度说明，不静默选择FACETS。</p>")
     out.append(_table(_patient_purity_rows(bundle), ["工具/模式", "纯度", "倍性", "QC/状态", "交叉验证说明"]))
     out.append(
-        "<div class='warn'><b>克隆性证据边界：</b>"
-        "多数候选目前尚不能可靠判断其是否存在于大部分肿瘤细胞中，因此克隆性仍是主要证据缺口之一。</div>"
+        f"<div class='warn'><b>克隆性证据边界：</b>{esc(_patient_clonality_boundary(bundle))}</div>"
     )
     out.append("</div>")
 

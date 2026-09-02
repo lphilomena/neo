@@ -65,7 +65,7 @@ PRESENTATION_FIELDS = {
     "mutant_specificity_multiplier", "mutant_specificity_priority_cap",
 }
 EXPRESSION_FIELDS = {
-    "gene_expression_tpm", "transcript_expression_tpm", "expression_tpm",
+    "event_expression", "gene_expression_tpm", "transcript_expression_tpm", "expression_tpm",
     "expression_source", "expression_evidence_status", "rna_evidence_completeness",
     "rna_evidence_score",
 }
@@ -501,6 +501,14 @@ def build_comprehensive_peptide_evidence(
                     }
                 matches.append((name, evidence))
 
+        expression_match = next(
+            (evidence for source, evidence in matches if source == "expression_evidence"),
+            {},
+        )
+        expression_status = str(
+            expression_match.get("expression_evidence_status") or ""
+        ).strip().upper()
+
         evidence_sources: list[str] = []
         candidates_by_field: dict[str, list[tuple[str, str]]] = {}
         for source, evidence in matches:
@@ -553,6 +561,20 @@ def build_comprehensive_peptide_evidence(
                 }
                 conflict_rows.append(detail)
                 conflict_details.append(detail)
+
+        # An explicit UNASSESSED expression record is authoritative evidence
+        # that no quantitative value was available. Clear stale zero-valued
+        # placeholders inherited from adapters or an older ranking instead of
+        # silently presenting them as measured zero TPM.
+        if expression_status.startswith("UNASSESSED"):
+            for field in (
+                "event_expression",
+                "gene_expression_tpm",
+                "transcript_expression_tpm",
+                "expression_tpm",
+            ):
+                row[field] = ""
+                field_sources[field] = "expression_evidence"
 
         if event_id and not row.get("event_id"):
             row["event_id"] = event_id
