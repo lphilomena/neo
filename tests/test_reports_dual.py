@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from neoag.reports_dual import ReportBundle, _apply_patient_gene_expression, _augment_runtime_tool_provenance, _find_bam_input, _patient_analysis_context, _patient_conflict_summary, _patient_disease_background, _patient_dna_evidence, _patient_dna_rna_interpretation, _patient_event_grade_counts, _patient_event_representatives, _patient_evidence_audit_rows, _patient_evidence_summary, _patient_event_change, _patient_expression_tpm_map, _patient_fusion_artifact_review, _patient_fusion_boundary_evidence, _patient_hla_loh_consensus, _patient_key_gaps, _patient_limitation, _patient_manual_review_rows, _patient_metric, _patient_presentation_metric, _patient_presentation_quantitative_row, _patient_rna_measurements, _patient_rna_metric, _patient_safety_dimensions, _patient_safety_gap, _patient_tool_rows, _patient_track, _patient_validation, _replace_gene_ids, load_report_bundle, make_dual_reports, make_patient_report, make_technical_report
-from neoag.reports_dual import _patient_ccf_coverage_rows, _patient_clonality_boundary, _patient_splice_funnel_rows
+from neoag.reports_dual import _patient_ccf_coverage_rows, _patient_clonality_boundary, _patient_coding_variant_rna_rows, _patient_splice_funnel_rows
 from neoag.utils import write_tsv
 
 
@@ -1486,6 +1486,46 @@ def test_patient_clonality_boundary_preserves_outlier_context():
     assert "并列保留全部工具结果" in text
 
 
+def test_coding_variant_rna_coverage_is_event_level_and_excludes_junction_tracks():
+    bundle = _bundle()
+    bundle.events = [
+        {"event_id": "S1", "event_type": "SNV", "rna_depth": "0", "rna_alt_reads": "0"},
+        {"event_id": "S2", "event_type": "SNV", "rna_depth": "5", "rna_alt_reads": "0"},
+        {"event_id": "S3", "event_type": "SNV", "rna_depth": "120", "rna_alt_reads": "0"},
+        {"event_id": "S4", "event_type": "SNV", "rna_depth": "30", "rna_alt_reads": "4"},
+        {"event_id": "I1", "event_type": "InDel"},
+        {"event_id": "F1", "event_type": "Fusion", "rna_junction_reads": "100"},
+    ]
+    bundle.peptides = [
+        {"event_id": "S4", "event_type": "SNV", "rna_depth": "30", "rna_alt_reads": "4"},
+    ]
+    rows = _patient_coding_variant_rna_rows(bundle)
+    by_track = {row["编码变异赛道"]: row for row in rows}
+    assert by_track["SNV"]["DNA检出事件"] == "4"
+    assert by_track["SNV"]["RNA ALT≥3"] == "1"
+    assert by_track["SNV"]["RNA无覆盖"] == "1"
+    assert by_track["SNV"]["RNA低覆盖且ALT=0"] == "1"
+    assert by_track["SNV"]["RNA充分覆盖且ALT=0"] == "1"
+    assert by_track["InDel"]["位点RNA未计算"] == "1"
+    assert by_track["SNV+InDel合计"]["DNA检出事件"] == "5"
+    assert all("Fusion" not in row["编码变异赛道"] for row in rows)
+
+
+def test_patient_report_explains_coding_variant_rna_gap_without_fusion_callers(tmp_path):
+    bundle = _bundle()
+    bundle.events = [
+        {"event_id": "S1", "event_type": "SNV", "rna_depth": "100", "rna_alt_reads": "0"},
+        {"event_id": "I1", "event_type": "InDel"},
+    ]
+    out = tmp_path / "coding_rna_gap.html"
+    make_patient_report(out, bundle)
+    text = out.read_text(encoding="utf-8")
+    assert "编码变异的DNA–RNA证据覆盖" in text
+    assert "不混入Fusion/Splice" in text
+    assert "不把增加融合caller当作编码变异RNA补证" in text
+    assert "DNA有、RNA无直接支持" in text
+
+
 def test_lohhla_qc_gap_is_not_attributed_to_missing_purity_tools():
     bundle = _bundle()
     bundle.hla_loh_tool_results = [
@@ -2041,6 +2081,23 @@ def test_depth_and_rna_qc_are_summarized_by_unique_event():
     assert "n=2" in bundle.provenance["tumor_dna_depth"]
     assert "SNV/InDel位点级RNA已评估 2/2 个独立事件" in bundle.provenance["rna_qc_status"]
     assert "ALT reads≥1/3/5：1/1/0" in bundle.provenance["rna_qc_status"]
+
+
+def test_rna_qc_denominator_keeps_dna_events_without_rna_metrics():
+    base = _bundle()
+    assessed = dict(base.peptides[0])
+    missing = dict(base.peptides[0])
+    missing.update({"peptide_id": "P2", "event_id": "E2"})
+    for field in ("rna_depth", "rna_alt_reads", "rna_vaf"):
+        missing.pop(field, None)
+    bundle = load_report_bundle(
+        profile=base.profile,
+        events=[],
+        peptides=[assessed, missing],
+        provenance={"rna_qc_status": "位点级RNA pileup未评估"},
+    )
+    assert "SNV/InDel位点级RNA已评估 1/2 个独立事件" in bundle.provenance["rna_qc_status"]
+    assert "位点RNA未计算：1" in bundle.provenance["rna_qc_status"]
 
 
 def test_disease_knowledge_prioritizes_display_without_changing_r_grade(tmp_path):

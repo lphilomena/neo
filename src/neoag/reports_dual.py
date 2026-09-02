@@ -308,10 +308,8 @@ def _rna_qc_summary(rows: list[Mapping[str, Any]]) -> str:
         if event_type in {"SNV", "INDEL", "MNV"}:
             depth = _float_or_none(row.get("rna_depth"))
             alt = _float_or_none(row.get("rna_alt_reads"))
-            if depth is None and alt is None:
-                continue
             previous = variants.get(event_key)
-            if previous is None or (depth or -1) > (previous[0] or -1):
+            if previous is None or (depth if depth is not None else -1) > (previous[0] if previous[0] is not None else -1):
                 variants[event_key] = (depth, alt)
         elif event_type in {"FUSION", "SPLICE", "SPLICE_JUNCTION"}:
             reads = _float_or_none(row.get("rna_junction_reads") or row.get("junction_reads"))
@@ -330,9 +328,11 @@ def _rna_qc_summary(rows: list[Mapping[str, Any]]) -> str:
         alt3 = sum(1 for _, alt in covered if (alt or 0) >= 3)
         alt5 = sum(1 for _, alt in covered if (alt or 0) >= 5)
         zero_depth = sum(1 for depth, _ in assessed if (depth or 0) <= 0)
+        unassessed = len(variants) - len(assessed)
         parts.append(
             f"SNV/InDel位点级RNA已评估 {len(assessed)}/{len(variants)} 个独立事件；"
-            f"有覆盖 {len(covered)}，ALT reads≥1/3/5：{alt1}/{alt3}/{alt5}，深度0：{zero_depth}"
+            f"有覆盖 {len(covered)}，ALT reads≥1/3/5：{alt1}/{alt3}/{alt5}，"
+            f"深度0：{zero_depth}，位点RNA未计算：{unassessed}"
         )
     if junctions:
         assessed_junctions = [value for value in junctions.values() if value is not None]
@@ -3015,6 +3015,78 @@ def _patient_ccf_coverage_rows(bundle: ReportBundle) -> list[dict[str, str]]:
     return result
 
 
+def _patient_coding_variant_rna_rows(bundle: ReportBundle) -> list[dict[str, str]]:
+    """Summarize DNA-called SNV/InDel RNA support without mixing junction tracks."""
+    grouped: dict[str, dict[str, tuple[float | None, float | None]]] = {"SNV": {}, "InDel": {}}
+    for index, row in enumerate(bundle.events + bundle.peptides):
+        track = _patient_track(row)
+        if track not in grouped:
+            continue
+        variant_key = "|".join(str(row.get(key) or "").strip() for key in ("chrom", "pos", "ref", "alt"))
+        if not variant_key.strip("|"):
+            variant_key = ""
+        event_id = str(
+            row.get("event_group_id") or row.get("event_id") or row.get("source_event_id")
+            or variant_key or f"{track}-{index}"
+        ).strip()
+        depth = _float_or_none(_patient_observed_value(row, "rna_depth"))
+        alt = _float_or_none(_patient_observed_value(row, "rna_alt_reads"))
+        previous = grouped[track].get(event_id)
+        previous_depth = previous[0] if previous else None
+        if previous is None or (depth if depth is not None else -1) > (previous_depth if previous_depth is not None else -1):
+            grouped[track][event_id] = (depth, alt)
+
+    result: list[dict[str, str]] = []
+    totals = {key: 0 for key in ("events", "strong", "low_alt", "no_coverage", "low_coverage", "negative", "unassessed")}
+    for track in ("SNV", "InDel"):
+        observations = list(grouped[track].values())
+        if not observations:
+            continue
+        counts = {key: 0 for key in totals}
+        counts["events"] = len(observations)
+        for depth, alt in observations:
+            if depth is None and alt is None:
+                counts["unassessed"] += 1
+            elif (alt or 0) >= 3:
+                counts["strong"] += 1
+            elif (alt or 0) > 0:
+                counts["low_alt"] += 1
+            elif depth is None or depth <= 0:
+                counts["no_coverage"] += 1
+            elif depth < 10:
+                counts["low_coverage"] += 1
+            else:
+                counts["negative"] += 1
+        for key in totals:
+            totals[key] += counts[key]
+        unsupported = counts["no_coverage"] + counts["low_coverage"] + counts["negative"] + counts["unassessed"]
+        result.append({
+            "编码变异赛道": track,
+            "DNA检出事件": str(counts["events"]),
+            "RNA ALT≥3": str(counts["strong"]),
+            "RNA ALT 1–2": str(counts["low_alt"]),
+            "RNA无覆盖": str(counts["no_coverage"]),
+            "RNA低覆盖且ALT=0": str(counts["low_coverage"]),
+            "RNA充分覆盖且ALT=0": str(counts["negative"]),
+            "位点RNA未计算": str(counts["unassessed"]),
+            "DNA有、RNA无直接支持": f"{unsupported}/{counts['events']}（{100.0 * unsupported / counts['events']:.1f}%）",
+        })
+    if len(result) > 1:
+        unsupported = totals["no_coverage"] + totals["low_coverage"] + totals["negative"] + totals["unassessed"]
+        result.append({
+            "编码变异赛道": "SNV+InDel合计",
+            "DNA检出事件": str(totals["events"]),
+            "RNA ALT≥3": str(totals["strong"]),
+            "RNA ALT 1–2": str(totals["low_alt"]),
+            "RNA无覆盖": str(totals["no_coverage"]),
+            "RNA低覆盖且ALT=0": str(totals["low_coverage"]),
+            "RNA充分覆盖且ALT=0": str(totals["negative"]),
+            "位点RNA未计算": str(totals["unassessed"]),
+            "DNA有、RNA无直接支持": f"{unsupported}/{totals['events']}（{100.0 * unsupported / totals['events']:.1f}%）",
+        })
+    return result
+
+
 def _patient_candidate_integrity(row: Mapping[str, Any]) -> tuple[bool, list[str]]:
     missing: list[str] = []
     if not str(row.get("event_id") or "").strip():
@@ -5536,6 +5608,18 @@ def make_patient_report(
         out.append("<div class='warn'><b>患者数据清单未提供：</b>请通过 --patient-inputs 或 provenance.json 的 input_files 字段提供文件目录或文件名。</div>")
     out.append("<p class='small'>以下评估来自结构化运行清单和工具结果；‘未评估’表示证据缺失，不表示正常。</p>")
     out.append(_table(_patient_qc_rows(bundle), ["项目", "结果", "解释"]))
+    coding_rna_rows = _patient_coding_variant_rna_rows(bundle)
+    if coding_rna_rows:
+        out.append("<h3>编码变异的DNA–RNA证据覆盖</h3>")
+        out.append(
+            "<p class='small'>本表只统计由DNA VCF检出的SNV/InDel，并按独立事件去重；"
+            "不混入Fusion/Splice，也不把增加融合caller当作编码变异RNA补证。RNA无覆盖和低覆盖表示检出能力不足；"
+            "充分覆盖且ALT=0表示突变等位基因RNA表达未获得支持，属于更明确的负证据。RNA ALT 1–2为低水平支持，ALT≥3为直接支持。</p>"
+        )
+        out.append(_table(coding_rna_rows, [
+            "编码变异赛道", "DNA检出事件", "RNA ALT≥3", "RNA ALT 1–2", "RNA无覆盖",
+            "RNA低覆盖且ALT=0", "RNA充分覆盖且ALT=0", "位点RNA未计算", "DNA有、RNA无直接支持",
+        ]))
     out.append("<p class='small'>以下并列展示各纯度工具的估算。共识值用于CNV和LOH解释；明显冲突时保留全部结果及低置信度说明，不静默选择FACETS。</p>")
     out.append(_table(_patient_purity_rows(bundle), ["工具/模式", "纯度", "倍性", "QC/状态", "交叉验证说明"]))
     out.append(
