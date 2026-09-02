@@ -11,6 +11,11 @@ import shutil
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+
+from neoag.cohort_rules import load_cohort_rule_contract, validate_cohort_rule_pair
+from neoag.controlled_execution.io_utils import load_limited_yaml
+
 
 STAR_INDEX_REQUIRED_FILES = ("Genome", "SA", "SAindex", "genomeParameters.txt")
 
@@ -23,6 +28,28 @@ def require(path: str | None, label: str) -> str:
     if not path or not Path(path).exists():
         raise SystemExit(f"{label} missing: {path}")
     return str(Path(path).resolve())
+
+
+def load_clinical_context(path: str | None) -> tuple[dict[str, str], str]:
+    """Load explicit clinical metadata without inferring it from an analysis profile."""
+    if not path:
+        return {}, ""
+    resolved = Path(require(path, "clinical context"))
+    try:
+        payload = load_limited_yaml(resolved)
+    except Exception as exc:
+        raise SystemExit(f"clinical context could not be parsed: {resolved}: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise SystemExit(f"clinical context must contain a top-level mapping: {resolved}")
+    context = {
+        str(key): str(value).strip()
+        for key, value in payload.items()
+        if isinstance(value, (str, int, float, bool)) and str(value).strip()
+    }
+    clinical_keys = {"disease", "diagnosis", "disease_name", "cancer_type", "tumor_type"}
+    if not clinical_keys.intersection(context):
+        raise SystemExit(f"clinical context has no diagnosis field: {resolved}")
+    return context, str(resolved)
 
 
 def require_path_list(value: str | None, label: str) -> str:
@@ -159,6 +186,15 @@ def main() -> int:
     ap.add_argument("--project-root", default=Path(__file__).resolve().parents[1])
     ap.add_argument("--sample-id", required=True); ap.add_argument("--outdir", required=True); ap.add_argument("--output", required=True)
     ap.add_argument("--profile", default="profiles/sarcoma_rna_supported_v2_provisional.toml")
+    ap.add_argument(
+        "--cohort-rule-set",
+        default="configs/cohorts/dsrct_v1.toml",
+        help="Versioned cohort contract that locks the ranking profile, evidence rules and report policy.",
+    )
+    ap.add_argument(
+        "--clinical-context",
+        help="Explicit YAML/JSON clinical context; its diagnosis is recorded separately from the cohort contract.",
+    )
     ap.add_argument("--event-top-n", type=int, default=20)
     ap.add_argument("--candidate-top-n", type=int, default=100)
     ap.add_argument(
@@ -217,6 +253,10 @@ def main() -> int:
     ap.add_argument("--disable-diagnostic-fusion-rescue", action="store_true")
     ap.add_argument("--star-fusion"); ap.add_argument("--arriba")
     ap.add_argument("--fusioncatcher"); ap.add_argument("--jaffal")
+    ap.add_argument(
+        "--fusion-expressed-products",
+        help="Exact-adjacency confirmed fusion transcript/ORF table used for formal peptide source-chain closure",
+    )
     ap.add_argument(
         "--star-chimeric",
         action="append",
@@ -300,6 +340,21 @@ def main() -> int:
     if not consensus_rules_path.is_absolute():
         consensus_rules_path = root / consensus_rules_path
     evidence_consensus_rules = require(str(consensus_rules_path), "evidence-consensus rules")
+    contract_path = Path(args.cohort_rule_set)
+    if not contract_path.is_absolute():
+        contract_path = root / contract_path
+    cohort_contract = load_cohort_rule_contract(require(str(contract_path), "cohort rule contract"))
+    contract_mismatches = validate_cohort_rule_pair(
+        cohort_contract,
+        ranking_profile=profile,
+        evidence_consensus_rules=evidence_consensus_rules,
+    )
+    if contract_mismatches:
+        raise SystemExit(
+            "Cohort rule contract mismatch; this run is not cohort-comparable: "
+            + "; ".join(contract_mismatches)
+        )
+    clinical_context, clinical_context_source = load_clinical_context(args.clinical_context)
     reference_fasta = require(args.reference_fasta, "reference FASTA") if args.reference_fasta else ""
     tumor_dna_bam = require(args.tumor_dna_bam, "tumor DNA BAM") if args.tumor_dna_bam else ""
     normal_dna_bam = require(args.normal_dna_bam, "normal DNA BAM") if args.normal_dna_bam else ""
@@ -357,11 +412,40 @@ def main() -> int:
     if args.skip_dna_sv or not (sv_vcfs or bam_pair):
         production_limitations.append("DNA_SV_UNASSESSED")
     predictor_toml = "[" + ", ".join(q(tool) for tool in presentation_predictors) + "]"
-    lines = ["# Generated from completed upstream tool results.", "[run]", f"sample_id = {q(args.sample_id)}", f"profile = {q(profile)}", f"outdir = {q(Path(args.outdir).resolve())}", f"hla_file = {q(hla)}", "tools_stub = false", "immunogenicity_stub = false", f"presentation_predictors = {predictor_toml}", f"required_presentation_predictors = {predictor_toml}", 'reports = "patient,technical"', f"event_top_n = {args.event_top_n}", f"candidate_top_n = {args.candidate_top_n}", f"netchop_executable = {q(args.netchop_executable)}"]
+    lines = [
+        "# Generated from completed upstream tool results.",
+        "[run]",
+        f"sample_id = {q(args.sample_id)}",
+        f"profile = {q(profile)}",
+        f"outdir = {q(Path(args.outdir).resolve())}",
+        f"hla_file = {q(hla)}",
+        f"cohort_rule_set = {q(cohort_contract['path'])}",
+        f"cohort_rule_set_id = {q(cohort_contract['id'])}",
+        f"cohort_rule_set_version = {q(cohort_contract['version'])}",
+        f"cohort_rule_set_sha256 = {q(cohort_contract['contract_sha256'])}",
+        f"ranking_profile_sha256 = {q(cohort_contract['ranking_profile_sha256'])}",
+        f"evidence_consensus_rules_sha256 = {q(cohort_contract['evidence_consensus_rules_sha256'])}",
+        f"report_contract_version = {q(cohort_contract['report_contract_version'])}",
+        f"release_audit_policy = {q(cohort_contract['release_audit_policy'])}",
+        "cohort_comparability_required = true",
+        "tools_stub = false",
+        "immunogenicity_stub = false",
+        f"presentation_predictors = {predictor_toml}",
+        f"required_presentation_predictors = {predictor_toml}",
+        'reports = "patient,technical"',
+        f"event_top_n = {args.event_top_n}",
+        f"candidate_top_n = {args.candidate_top_n}",
+        f"netchop_executable = {q(args.netchop_executable)}",
+        *( [f"clinical_context_source = {q(clinical_context_source)}"] if clinical_context_source else [] ),
+        *( [f"clinical_context_schema = {q('open-neo-clinical-context-v1')}"] if clinical_context else [] ),
+    ]
     if production_limitations:
         limitations_toml = "[" + ", ".join(q(item) for item in production_limitations) + "]"
         lines.append(f"production_limitations = {limitations_toml}")
     if args.netchop_home: lines.append(f"netchop_home = {q(args.netchop_home)}")
+    if clinical_context:
+        lines += ["", "[run.clinical_context]"]
+        lines.extend(f"{key} = {q(value)}" for key, value in sorted(clinical_context.items()))
     if generated_hla:
         lines += ["", "[run.required_tool_groups.hla_typing]", 'tools = ["optitype", "spechla"]', "min_successful = 2", "require_all_declared = true"]
     if generated_purity:
@@ -651,12 +735,16 @@ def main() -> int:
                 union_args += ["--star-chimeric", q(str(chimeric))]
         if rna_bam:
             union_args += ["--rna-bam", q(rna_bam)]
+        union_args += ["--samtools", q(args.samtools_executable)]
         if args.fusioncatcher: union_args += ["--fusioncatcher", q(require(args.fusioncatcher, "FusionCatcher"))]
         if args.jaffal: union_args += ["--jaffal", q(require(args.jaffal, "JAFFAL"))]
+        if args.fusion_expressed_products:
+            union_args += ["--fusion-expressed-products", q(require(args.fusion_expressed_products, "confirmed fusion expressed products"))]
+        union_args += ["--genome-build", q(args.genome_build)]
         for caller_root in args.fusion_caller_root:
             union_args += ["--caller-root", q(require(caller_root, "fusion caller result root"))]
         command = f"PYTHONPATH={q(root / 'src')} {q(sys.executable)} {q(root / 'scripts/build_fusion_caller_union.py')} --sample-id {q(args.sample_id)} --profile {q(profile)} --hla-file {q(hla)} {' '.join(union_args)} --outdir {{outdir}}/branches/fusion/intermediates"
-        stage(lines, "fusion_candidates", command=command, outputs={"raw_events": "{outdir}/branches/fusion/intermediates/raw_events.tsv", "raw_peptides": "{outdir}/branches/fusion/intermediates/raw_peptides.tsv", "fusion_union": "{outdir}/branches/fusion/intermediates/fusion_caller_union.tsv", "fusion_caller_availability": "{outdir}/branches/fusion/intermediates/fusion_caller_availability.tsv", "fusion_consensus": "{outdir}/branches/fusion/intermediates/fusion_consensus.tsv", "junction_verification": "{outdir}/branches/fusion/intermediates/junction_read_verification.tsv", "diagnostic_fusion_rescue": "{outdir}/branches/fusion/intermediates/diagnostic_fusion_rescue.tsv"}, depends=list(dict.fromkeys(pairing_dependency + hla_dependency + rna_bam_dependency)))
+        stage(lines, "fusion_candidates", command=command, outputs={"raw_events": "{outdir}/branches/fusion/intermediates/raw_events.tsv", "raw_peptides": "{outdir}/branches/fusion/intermediates/raw_peptides.tsv", "fusion_union": "{outdir}/branches/fusion/intermediates/fusion_caller_union.tsv", "fusion_caller_availability": "{outdir}/branches/fusion/intermediates/fusion_caller_availability.tsv", "fusion_consensus": "{outdir}/branches/fusion/intermediates/fusion_consensus.tsv", "junction_verification": "{outdir}/branches/fusion/intermediates/junction_read_verification.tsv", "fusion_peptide_origin_chain": "{outdir}/branches/fusion/intermediates/fusion_peptide_origin_chain.tsv", "fusion_orf_completion_queue": "{outdir}/branches/fusion/intermediates/fusion_orf_completion_queue.tsv", "diagnostic_fusion_rescue": "{outdir}/branches/fusion/intermediates/diagnostic_fusion_rescue.tsv"}, depends=list(dict.fromkeys(pairing_dependency + hla_dependency + rna_bam_dependency)))
         link_command = (
             f"PYTHONPATH={q(root / 'src')} {q(sys.executable)} {q(root / 'scripts/link_dna_sv_rna_fusions.py')} "
             f"--fusion-events {{outdir}}/branches/fusion/intermediates/raw_events.tsv "

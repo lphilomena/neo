@@ -1,0 +1,5 @@
+disease: DSRCT
+diagnosis: Desmoplastic small round cell tumor
+analysis_goal: research_neoantigen_prioritization
+sample_type: tumor_normal_paired
+notes: Replace this template with case-specific structured clinical metadata.

@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import json
 import shutil
+import statistics
 from pathlib import Path
 from typing import Any, Mapping
 
 from .agent_skills.purity_cnv_review import collect_tool_results, consensus as purity_consensus
+from .cohort_rules import discover_matching_cohort_contract, load_cohort_rule_contract, validate_cohort_rule_pair
 from .config import load_profile
 from .reports_dual import load_report_bundle, make_patient_report, make_technical_report
 from .utils import read_tsv, write_json
@@ -60,17 +62,50 @@ def _purity_qc_status(tool: str, result_path: Path) -> str:
     return "ASSESSED"
 
 
+def _canonical_purity_tool(value: Any) -> str:
+    """Normalize a tool label without constraining which purity tools may exist."""
+    name = str(value or "").strip()
+    lowered = name.lower()
+    for prefix in ("purity_", "cnv_"):
+        if lowered.startswith(prefix):
+            name = name[len(prefix):]
+            lowered = name.lower()
+    for suffix in ("_result", "_results", "_output", "_outputs"):
+        if lowered.endswith(suffix):
+            name = name[:-len(suffix)]
+            lowered = name.lower()
+            break
+    aliases = {"facets": "FACETS", "purple": "PURPLE", "sequenza": "SEQUENZA", "ascat": "ASCAT"}
+    return aliases.get(lowered, name.upper())
+
+
 def _declared_purity_results(manifest: Mapping[str, Any]) -> dict[str, Path]:
+    """Discover purity/CNV result stages from manifest metadata.
+
+    Stage and output names are intentionally discovered instead of enumerated so
+    reports remain portable when a case has a different subset of tools.
+    """
     declared: dict[str, Path] = {}
-    for tool, stage, key in (
-        ("FACETS", "purity_facets", "facets_result"),
-        ("PURPLE", "purity_purple", "purple_result"),
-        ("Sequenza", "purity_sequenza", "sequenza_result"),
-        ("ASCAT", "purity_ascat", "ascat_result"),
-    ):
-        value = _stage_output(manifest, stage, key)
-        if value:
-            declared[tool] = Path(value)
+    stages = manifest.get("stages") or {}
+    if not isinstance(stages, Mapping):
+        return declared
+    for stage_name, stage in stages.items():
+        if not isinstance(stage, Mapping):
+            continue
+        stage_key = str(stage_name).lower()
+        outputs = stage.get("outputs") or {}
+        if not isinstance(outputs, Mapping):
+            continue
+        is_purity_stage = stage_key.startswith("purity_") or stage_key.startswith("cnv_")
+        for output_name, value in outputs.items():
+            output_key = str(output_name).lower()
+            is_tool_result = output_key.endswith(("_result", "_results", "_output", "_outputs"))
+            if not value or not is_purity_stage or not is_tool_result:
+                continue
+            label = output_name if is_tool_result else stage_name
+            tool = _canonical_purity_tool(label)
+            if tool and tool not in {"CONSENSUS", "PURITY", "CNV", "TOOL_SUMMARY"}:
+                declared[tool] = Path(str(value).replace("{outdir}", str((manifest.get("run") or {}).get("outdir") or "{outdir}")))
     return declared
 
 
@@ -104,72 +139,78 @@ def materialize_hla_loh_layout(final_dir: Path, *, hla_loh: str | Path | None = 
 def _purity_records(final_dir: Path, manifest: Mapping[str, Any], provenance: Mapping[str, Any]) -> tuple[list[dict[str, str]], dict[str, Any]]:
     production = final_dir.parent
     declared = _declared_purity_results(manifest)
+    evidence = dict(manifest.get("evidence") or {})
+    external_consensus_dirs: list[Path] = []
+    for key in ("purity", "cnv"):
+        value = str(evidence.get(key) or "").replace("{outdir}", str(production))
+        if value:
+            path = Path(value)
+            external_consensus_dirs.append(path if path.is_dir() else path.parent)
     consensus_dirs = [
+        *external_consensus_dirs,
         production / "evidence" / "purity_cnv",
         production / "purity" / "consensus",
         final_dir / "evidence" / "purity_cnv",
         final_dir / "purity" / "consensus",
     ]
-    consensus_dir = next(
-        (path for path in consensus_dirs if (path / "purity_cnv_tool_summary.tsv").is_file()),
-        consensus_dirs[0],
-    )
-    tool_summary = consensus_dir / "purity_cnv_tool_summary.tsv"
-    if tool_summary.is_file():
+    tool_map: dict[str, dict[str, str]] = {}
+    seen_summaries: set[Path] = set()
+    for consensus_dir in consensus_dirs:
+        tool_summary = consensus_dir / "purity_cnv_tool_summary.tsv"
+        try:
+            summary_key = tool_summary.resolve()
+        except OSError:
+            summary_key = tool_summary
+        if summary_key in seen_summaries or not tool_summary.is_file():
+            continue
+        seen_summaries.add(summary_key)
         summary_rows = read_tsv(tool_summary)
-        tools = []
         for row in summary_rows:
-            tools.append({
-                "tool": str(row.get("tool") or ""),
+            tool = _canonical_purity_tool(row.get("tool") or row.get("source_tool"))
+            if not tool or str(row.get("status") or "").upper() == "MISSING":
+                continue
+            parsed = {
+                "tool": tool,
                 "purity": str(row.get("purity") or ""),
                 "ploidy": str(row.get("ploidy") or ""),
                 "status": str(row.get("status") or "ASSESSED"),
                 "note": str(row.get("notes") or row.get("parse_method") or "from purity_cnv_tool_summary.tsv"),
-            })
-        if tools:
-            consensus_rows = read_tsv(consensus_dir / "purity_cnv_consensus.tsv") if (consensus_dir / "purity_cnv_consensus.tsv").is_file() else []
-            recommended_rows = read_tsv(consensus_dir / "recommended_purity.tsv") if (consensus_dir / "recommended_purity.tsv").is_file() else []
-            consensus_row = consensus_rows[0] if consensus_rows else {}
-            recommended_row = recommended_rows[0] if recommended_rows else {}
-            tool_names = [row["tool"] for row in tools if row.get("tool")]
-            consensus = {
-                "recommended_purity": str(consensus_row.get("recommended_purity") or recommended_row.get("purity") or ""),
-                "recommended_ploidy": str(recommended_row.get("ploidy") or next((row.get("ploidy") or "" for row in tools if row.get("ploidy")), "")),
-                "selected_tool": str(recommended_row.get("evidence_tool") or ("多工具共识" if len(tools) > 1 else tools[0].get("tool") or "")),
-                "status": str(consensus_row.get("status") or recommended_row.get("consensus_status") or ("MULTI_TOOL_REVIEW" if len(tools) > 1 else "SINGLE_TOOL_NO_CROSSCHECK")),
-                "basis": str(consensus_row.get("interpretation") or ("已并列保留 " + "、".join(tool_names) + " 结果。")),
             }
-            return tools, consensus
+            existing = tool_map.get(tool)
+            if not existing or (parsed["purity"] and not existing.get("purity")):
+                tool_map[tool] = parsed
     search: list[Path] = list(declared.values())
-    for stage, key in (("purity_facets", "facets_result"), ("purity_ascat", "ascat_result"), ("purity_sequenza", "sequenza_result"), ("purity_purple", "purple_result")):
-        value = _stage_output(manifest, stage, key)
-        if value:
-            search.append(Path(value))
-    for name in ("facets", "ascat", "sequenza", "purple"):
-        record = ((provenance.get("tools") or {}).get(name) or {}) if isinstance(provenance.get("tools"), Mapping) else {}
-        if record.get("file"):
-            search.append(Path(str(record["file"])))
+    provenance_tools = provenance.get("tools") or {}
+    if isinstance(provenance_tools, Mapping):
+        for record in provenance_tools.values():
+            if isinstance(record, Mapping) and record.get("file"):
+                search.append(Path(str(record["file"])))
     search = [path for path in search if path.exists()]
     rows = collect_tool_results(search, sample_id=None) if search else []
-    tools: list[dict[str, str]] = []
     for row in rows:
         if str(row.get("status") or "").upper() == "MISSING":
             continue
-        tool = str(row.get("tool") or "")
-        source_path = declared.get(tool) or declared.get(tool.upper()) or Path(str(row.get("source_file") or ""))
-        tools.append({
+        tool = _canonical_purity_tool(row.get("tool"))
+        source_path = declared.get(tool) or Path(str(row.get("source_file") or ""))
+        parsed = {
             "tool": tool,
             "purity": "" if row.get("purity") in {None, ""} else f"{row['purity']}",
             "ploidy": "" if row.get("ploidy") in {None, ""} else f"{row['ploidy']}",
             "status": _purity_qc_status(tool, source_path),
             "note": "已从工具原始结果解析纯度/倍性；用于多工具交叉核对。",
-        })
-    present = {str(row.get("tool") or "").upper() for row in tools}
+        }
+        existing = tool_map.get(tool)
+        if not existing or parsed["purity"] or not existing.get("purity"):
+            tool_map[tool] = parsed
+    preferred_order = ("FACETS", "PURPLE", "SEQUENZA", "ASCAT")
+    tools = [tool_map[key] for key in preferred_order if key in tool_map]
+    tools.extend(tool_map[key] for key in sorted(tool_map) if key not in preferred_order)
+    present = set(tool_map)
     for tool, path in declared.items():
-        if tool.upper() in present:
+        if tool in present:
             continue
         status = "RESULT_PATH_MISSING" if not path.exists() else "NO_VALID_ESTIMATE"
-        tools.append({
+        missing_record = {
             "tool": tool,
             "purity": "",
             "ploidy": "",
@@ -179,19 +220,37 @@ def _purity_records(final_dir: Path, manifest: Mapping[str, Any], provenance: Ma
                 if status == "RESULT_PATH_MISSING"
                 else "工具结果目录存在，但未形成可用的纯度/倍性估计。"
             ),
-        })
+        }
+        tools.append(missing_record)
     if not tools:
         return [], {}
-    assessed_rows = [row for row in rows if str(row.get("status") or "").upper() != "MISSING"]
+    assessed_rows = [
+        {
+            "tool": row["tool"],
+            "status": "FOUND",
+            "purity": float(row["purity"]),
+            "ploidy": float(row["ploidy"]) if row.get("ploidy") else None,
+        }
+        for row in tools if row.get("purity")
+    ]
     cons = purity_consensus(assessed_rows)
     selected = next((row for row in tools if row.get("purity")), tools[0])
-    ploidy = next((row.get("ploidy") or "" for row in tools if row.get("ploidy")), selected.get("ploidy") or "")
+    consensus_tool_names = set((cons.get("tool_values") or {}).keys())
+    consensus_ploidies = [
+        float(row["ploidy"])
+        for row in tools
+        if row.get("ploidy") and (not consensus_tool_names or row["tool"] in consensus_tool_names)
+    ]
+    ploidy = f"{statistics.median(consensus_ploidies):g}" if consensus_ploidies else ""
     values = [float(row["purity"]) for row in tools if row.get("purity")]
     value_text = "、".join(f"{row['tool']}={float(row['purity']):.4f}" for row in tools if row.get("purity"))
     range_text = f"{min(values):.4f}-{max(values):.4f}" if values else "未形成"
     status = str(cons.get("status") or ("MULTI_TOOL_REVIEW" if len(values) > 1 else "SINGLE_TOOL_NO_CROSSCHECK"))
     if status == "CONCORDANT":
         basis = f"{value_text}；范围 {range_text}，多工具结果基本一致，工作值采用中位数。"
+    elif status == "CONCORDANT_WITH_OUTLIER":
+        excluded = str(cons.get("excluded_outliers") or "异常工具")
+        basis = f"{value_text}；范围 {range_text}，{excluded} 与多数工具明显冲突。保留全部结果，工作值采用其余工具中位数并标记低置信度。"
     elif status in {"MODERATE_DISCORDANCE", "STRONG_DISCORDANCE"}:
         degree = "中等" if status == "MODERATE_DISCORDANCE" else "明显"
         basis = f"{value_text}；范围 {range_text}，工具间存在{degree}差异。工作值采用中位数并标记低置信度，需结合BAF、深度和CNV拟合图审阅。"
@@ -200,7 +259,7 @@ def _purity_records(final_dir: Path, manifest: Mapping[str, Any], provenance: Ma
     consensus = {
         "recommended_purity": str(cons.get("recommended_purity") or selected.get("purity") or ""),
         "recommended_ploidy": ploidy,
-        "selected_tool": "多工具中位数" if len(values) > 1 else selected.get("tool") or "",
+        "selected_tool": "多工具中位数（排除离群值）" if status == "CONCORDANT_WITH_OUTLIER" else ("多工具中位数" if len(values) > 1 else selected.get("tool") or ""),
         "status": status,
         "basis": basis,
     }
@@ -261,17 +320,100 @@ def enrich_report_provenance(
         has_normal = any("normal" in str(value).lower() or "blood" in str(value).lower() or key in {"hla_consensus", "hla_loh_consensus"} for key, value in inputs.items())
         if has_tumor and has_normal and not prov.get("pairing_status"):
             prov["pairing_status"] = "已使用肿瘤和配对正常样本进行HLA分型、HLA LOH和纯度分析；指纹未评估"
-    if not prov.get("disease"):
-        profile = str(prov.get("profile") or (generated.get("sample") or {}).get("profile") or "")
-        stem = Path(profile).stem if profile else ""
-        if stem:
-            prov["disease"] = stem
+    profile = str(
+        prov.get("profile")
+        or (generated.get("sample") or {}).get("profile")
+        or (manifest.get("run") or {}).get("profile")
+        or ""
+    )
+    stem = Path(profile).stem if profile else ""
+    if stem and not prov.get("analysis_profile"):
+        prov["analysis_profile"] = stem
     parallel = prov.get("parallel_rankings") if isinstance(prov.get("parallel_rankings"), Mapping) else {}
     if parallel.get("rules_version"):
         prov.setdefault("evidence_consensus", {})
         if isinstance(prov["evidence_consensus"], dict):
             prov["evidence_consensus"].setdefault("rules_version", parallel.get("rules_version"))
             prov["evidence_consensus"].setdefault("rules_name", parallel.get("rules_name"))
+    run_metadata = dict(manifest.get("run") or {})
+    clinical_context = run_metadata.get("clinical_context")
+    if isinstance(clinical_context, Mapping):
+        # A cohort contract selects a knowledge file, but never supplies a patient diagnosis.
+        prov["clinical_context"] = {**dict(prov.get("clinical_context") or {}), **dict(clinical_context)}
+    clinical_context_source = str(run_metadata.get("clinical_context_source") or "").strip()
+    if clinical_context_source:
+        prov["clinical_context_source"] = clinical_context_source
+    evidence_metadata = dict(manifest.get("evidence") or {})
+    ranking_profile = str(run_metadata.get("profile") or (generated.get("sample") or {}).get("profile") or "")
+    consensus_rules = str(
+        evidence_metadata.get("evidence_consensus_rules")
+        or (generated.get("inputs") or {}).get("evidence_consensus_rules")
+        or parallel.get("rules")
+        or ""
+    )
+    explicit_contract = str(run_metadata.get("cohort_rule_set") or "")
+    contract = None
+    contract_errors: list[str] = []
+    try:
+        if explicit_contract:
+            contract = load_cohort_rule_contract(explicit_contract)
+            contract_errors = validate_cohort_rule_pair(
+                contract,
+                ranking_profile=ranking_profile,
+                evidence_consensus_rules=consensus_rules,
+            )
+        elif ranking_profile and consensus_rules:
+            contract = discover_matching_cohort_contract(ranking_profile, consensus_rules)
+    except (OSError, ValueError) as exc:
+        contract_errors = [str(exc)]
+    if contract:
+        hash_fields = (
+            "cohort_rule_set_sha256", "ranking_profile_sha256",
+            "evidence_consensus_rules_sha256",
+        )
+        expected_hashes = {
+            "cohort_rule_set_sha256": contract["contract_sha256"],
+            "ranking_profile_sha256": contract["ranking_profile_sha256"],
+            "evidence_consensus_rules_sha256": contract["evidence_consensus_rules_sha256"],
+        }
+        for key in hash_fields:
+            recorded = str(run_metadata.get(key) or "")
+            if recorded and recorded != expected_hashes[key]:
+                contract_errors.append(f"{key} mismatch")
+        comparability = (
+            "MISMATCH"
+            if contract_errors
+            else ("LOCKED_COMPARABLE" if explicit_contract else "INFERRED_NOT_LOCKED")
+        )
+        prov["cohort_rule_contract"] = {
+            "id": contract["id"],
+            "version": contract["version"],
+            "status": contract["status"],
+            "disease": contract["disease"],
+            "path": contract["path"],
+            "sha256": contract["contract_sha256"],
+            "ranking_profile": contract["ranking_profile"],
+            "ranking_profile_sha256": contract["ranking_profile_sha256"],
+            "evidence_consensus_rules": contract["evidence_consensus_rules"],
+            "evidence_consensus_rules_sha256": contract["evidence_consensus_rules_sha256"],
+            "report_contract_version": contract["report_contract_version"],
+            "release_audit_policy": contract["release_audit_policy"],
+            "comparability_status": comparability,
+            "errors": contract_errors,
+            "disease_knowledge_file": contract["disease_knowledge_file"],
+        }
+        if contract["disease_knowledge_file"]:
+            prov.setdefault("disease_knowledge_file", contract["disease_knowledge_file"])
+            prov["molecular_knowledge_selection"] = {
+                "disease": contract["disease"],
+                "source": "cohort_rule_contract",
+                "knowledge_file": contract["disease_knowledge_file"],
+            }
+    else:
+        prov["cohort_rule_contract"] = {
+            "comparability_status": "UNASSESSED_NO_MATCHING_CONTRACT",
+            "errors": contract_errors,
+        }
     prov["report_role"] = "production_evidence_consensus"
     return prov
 

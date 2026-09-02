@@ -1,0 +1,17 @@
+[metadata]
+id = "DSRCT-OPENNEO-2026.09"
+version = "1.0.0"
+status = "PROVISIONAL_RESEARCH_ONLY"
+disease = "DSRCT"
+description = "Canonical DSRCT cohort contract for comparable Skill 2/3 runs."
+
+[compatibility]
+ranking_profile = "profiles/sarcoma_rna_supported_v2_provisional.toml"
+ranking_profile_version = "2.0"
+evidence_consensus_rules = "configs/ranking/sarcoma_evidence_consensus_v3_source_chain.toml"
+evidence_consensus_rules_version = "3.0-alpha1"
+report_contract_version = "open-neo-patient-v3"
+release_audit_policy = "open-neo-patient-release-v1"
+
+[knowledge]
+disease_knowledge = "configs/disease_knowledge/dsrct.json"

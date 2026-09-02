@@ -19,6 +19,7 @@ Usage:
     [--project-root <neo_repo_root>] \
     [--profile <profiles/*.toml>] \
     [--evidence-consensus-rules <configs/ranking/*.toml>] \
+    [--clinical-context <clinical.yaml|json>] \
     [--event-top-n <N; default 20>] \
     [--candidate-top-n <N; default 100>] \
     [--asset-root <liup_neodata4git>] \
@@ -62,6 +63,7 @@ Usage:
     [--max-parallel-stages <N>] \
     [--fusion-caller-root <completed_caller_results_dir>] \
     [--star-chimeric <STAR/Chimeric.out.junction; repeatable>] \
+    [--fusion-expressed-products <confirmed expressed_products.tsv>] \
     [--star-sj <STAR/SJ.out.tab for splice evidence>] \
     [--normal-readthrough <normal_readthrough.tsv>] \
     [--snaf <completed snaf_candidates.tsv>] \
@@ -85,6 +87,7 @@ PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PY="${NEOAG_PYTHON:-$(command -v python3 || command -v python || true)}"
 PROFILE="profiles/sarcoma_rna_supported_v2_provisional.toml"
 EVIDENCE_CONSENSUS_RULES="configs/ranking/sarcoma_evidence_consensus_v3_source_chain.toml"
+COHORT_RULE_SET="configs/cohorts/dsrct_v1.toml"
 EVENT_TOP_N=20
 CANDIDATE_TOP_N=100
 ASSET="${NEOAG_ASSET_ROOT:-${NEOAG_TOOLS_ROOT:-}}"
@@ -121,6 +124,7 @@ VEP_CACHE="${NEOAG_VEP_CACHE:-}"
 VEP_PLUGINS="${NEOAG_VEP_PLUGINS:-}"
 VEP_BIN="${NEOAG_VEP_BIN:-}"
 GENCODE_GTF=""
+CLINICAL_CONTEXT=""
 HLA_FILE=""
 SEQUENZA=""
 PURPLE=""
@@ -148,6 +152,7 @@ TOTAL_MEMORY_GB="${NEOAG_TOTAL_MEMORY_GB:-0}"
 MAX_PARALLEL_STAGES="${NEOAG_MAX_PARALLEL_STAGES:-3}"
 FUSION_CALLER_ROOTS=()
 STAR_CHIMERIC_FILES=()
+FUSION_EXPRESSED_PRODUCTS=""
 STAR_SJ=""
 NORMAL_READTHROUGH=""
 SNAF_RESULT=""
@@ -165,6 +170,8 @@ while [[ $# -gt 0 ]]; do
     --project-root) PROJECT_ROOT="$2"; shift 2 ;;
     --profile) PROFILE="$2"; shift 2 ;;
     --evidence-consensus-rules) EVIDENCE_CONSENSUS_RULES="$2"; shift 2 ;;
+    --cohort-rule-set) COHORT_RULE_SET="$2"; shift 2 ;;
+    --clinical-context) CLINICAL_CONTEXT="$2"; shift 2 ;;
     --event-top-n) EVENT_TOP_N="$2"; shift 2 ;;
     --candidate-top-n) CANDIDATE_TOP_N="$2"; shift 2 ;;
     --asset-root) ASSET="$2"; CLI_ASSET="$2"; shift 2 ;;
@@ -215,6 +222,7 @@ while [[ $# -gt 0 ]]; do
     --max-parallel-stages) MAX_PARALLEL_STAGES="$2"; shift 2 ;;
     --fusion-caller-root) FUSION_CALLER_ROOTS+=("$2"); shift 2 ;;
     --star-chimeric) STAR_CHIMERIC_FILES+=("$2"); shift 2 ;;
+    --fusion-expressed-products) FUSION_EXPRESSED_PRODUCTS="$2"; shift 2 ;;
     --star-sj) STAR_SJ="$2"; shift 2 ;;
     --normal-readthrough) NORMAL_READTHROUGH="$2"; shift 2 ;;
     --snaf) SNAF_RESULT="$2"; shift 2 ;;
@@ -499,6 +507,9 @@ PROFILE_PATH="$PROFILE"
 CONSENSUS_RULES_PATH="$EVIDENCE_CONSENSUS_RULES"
 [[ "$CONSENSUS_RULES_PATH" = /* ]] || CONSENSUS_RULES_PATH="$PROJECT_ROOT/$EVIDENCE_CONSENSUS_RULES"
 [[ -f "$CONSENSUS_RULES_PATH" ]] || { echo "evidence-consensus rules missing: $CONSENSUS_RULES_PATH" >&2; exit 2; }
+COHORT_RULE_SET_PATH="$COHORT_RULE_SET"
+[[ "$COHORT_RULE_SET_PATH" = /* ]] || COHORT_RULE_SET_PATH="$PROJECT_ROOT/$COHORT_RULE_SET"
+[[ -f "$COHORT_RULE_SET_PATH" ]] || { echo "cohort rule contract missing: $COHORT_RULE_SET_PATH" >&2; exit 2; }
 
 STABPAN_BIN="${NETMHCSTABPAN_HOME}/Linux_x86_64/bin/netMHCstabpan"
 [[ -x "$STABPAN_BIN" && -d "${NETMHCSTABPAN_HOME}/data" ]] || {
@@ -588,6 +599,7 @@ GEN_ARGS=(
   --project-root "$PROJECT_ROOT"
   --sample-id "$SAMPLE_ID"
   --profile "$PROFILE_PATH"
+  --cohort-rule-set "$COHORT_RULE_SET_PATH"
   --evidence-consensus-rules "$CONSENSUS_RULES_PATH"
   --event-top-n "$EVENT_TOP_N"
   --candidate-top-n "$CANDIDATE_TOP_N"
@@ -596,6 +608,7 @@ GEN_ARGS=(
   --somatic-vcf "$SOMATIC_VCF"
 )
 
+[[ -n "$CLINICAL_CONTEXT" ]] && GEN_ARGS+=(--clinical-context "$CLINICAL_CONTEXT")
 [[ -n "$TUMOR_DNA_BAM" ]] && GEN_ARGS+=(--tumor-dna-bam "$TUMOR_DNA_BAM" --normal-dna-bam "$NORMAL_DNA_BAM")
 [[ -n "$TUMOR_SAMPLE_NAME" ]] && GEN_ARGS+=(--tumor-sample-name "$TUMOR_SAMPLE_NAME" --normal-sample-name "$NORMAL_SAMPLE_NAME")
 GEN_ARGS+=(--assay-type "$ASSAY_TYPE" --sv-threads "$SV_THREADS" --sv-memory-gb "$SV_MEMORY_GB")
@@ -623,10 +636,27 @@ elif ! add_first_existing --hla-file \
   add_if --spechla-typing "$CASE_ROOT/hla/spechla/typing/normal/${SAMPLE_ID}_blood/hla.result.txt"
   add_if --hla-la "$CASE_ROOT/hla/hla_la/working/${SAMPLE_ID}_blood/hla/R1_bestguess_G.txt"
 fi
-add_if --facets "$CASE_ROOT/facets/omni2p5_snponly_downsample"
-add_if --ascat "$CASE_ROOT/ascat"
-if [[ -n "$SEQUENZA" ]]; then GEN_ARGS+=(--sequenza "$SEQUENZA"); else add_if --sequenza "$CASE_ROOT/sequenza"; fi
-if [[ -n "$PURPLE" ]]; then GEN_ARGS+=(--purple "$PURPLE"); else add_if --purple "$CASE_ROOT/purple"; fi
+add_first_existing --facets \
+  "$CASE_ROOT/purity/facets" \
+  "$CASE_ROOT/facets/omni2p5_snponly_downsample" \
+  "$CASE_ROOT/facets" || true
+add_first_existing --ascat \
+  "$CASE_ROOT/purity/ascat" \
+  "$CASE_ROOT/ascat" || true
+if [[ -n "$SEQUENZA" ]]; then
+  GEN_ARGS+=(--sequenza "$SEQUENZA")
+else
+  add_first_existing --sequenza \
+    "$CASE_ROOT/purity/sequenza" \
+    "$CASE_ROOT/sequenza" || true
+fi
+if [[ -n "$PURPLE" ]]; then
+  GEN_ARGS+=(--purple "$PURPLE")
+else
+  add_first_existing --purple \
+    "$CASE_ROOT/purity/purple" \
+    "$CASE_ROOT/purple" || true
+fi
 add_first_existing --purity \
   "$CASE_ROOT/purity/consensus/recommended_purity.tsv" \
   "$CASE_ROOT/evidence/purity.tsv" || true
@@ -715,6 +745,23 @@ if [[ -z "$SPLICE_STAR_SJ" && -n "$SPLICE_RNA_BAM" ]]; then
     fi
   done
 fi
+if [[ "$SAMTOOLS_EXECUTABLE" == "samtools" ]] && ! command -v samtools >/dev/null 2>&1; then
+  for candidate in \
+    "${NEOAG_SAMTOOLS:-}" \
+    "${CONDA_PREFIX:-}/bin/samtools" \
+    "${NEOAG_CONDA_BASE:-}/envs/neoag-splice/bin/samtools" \
+    "${NEOAG_CONDA_BASE:-}/envs/neoag-sv/bin/samtools" \
+    "${NEOAG_CONDA_BASE:-}/envs/neoag-tools/bin/samtools" \
+    "${NEOAG_ENV_TOOL_ROOT:-}/envs/neoag-splice/bin/samtools" \
+    "${NEOAG_ENV_TOOL_ROOT:-}/envs/neoag-sv/bin/samtools" \
+    "${NEOAG_ENV_TOOL_ROOT:-}/envs/neoag-tools/bin/samtools" \
+    "${NEOAG_ENV_TOOL_ROOT:-}/tools/samtools/bin/samtools"; do
+    if [[ -n "$candidate" && -x "$candidate" ]]; then
+      SAMTOOLS_EXECUTABLE="$candidate"
+      break
+    fi
+  done
+fi
 add_if --easyfuse "$CASE_ROOT/short-rna/evidence/easyfuse.fusions.pass.csv"
 add_if --star-fusion "$CASE_ROOT/short-rna/evidence/star-fusion.fusion_predictions.tsv"
 add_if --arriba "$CASE_ROOT/short-rna/evidence/arriba.fusions.tsv"
@@ -734,6 +781,15 @@ for chimeric in "${STAR_CHIMERIC_FILES[@]}" \
   "$OUTDIR/rna/star/Chimeric.out.junction"; do
   [[ -s "$chimeric" ]] && GEN_ARGS+=(--star-chimeric "$chimeric")
 done
+if [[ -n "$FUSION_EXPRESSED_PRODUCTS" ]]; then
+  [[ -s "$FUSION_EXPRESSED_PRODUCTS" ]] || { echo "Confirmed fusion expressed-products table missing or empty: $FUSION_EXPRESSED_PRODUCTS" >&2; exit 2; }
+  GEN_ARGS+=(--fusion-expressed-products "$FUSION_EXPRESSED_PRODUCTS")
+else
+  add_first_existing --fusion-expressed-products \
+    "$CASE_ROOT/fusion/expressed_products.tsv" \
+    "$CASE_ROOT/rna/fusion/expressed_products.tsv" \
+    "$CASE_ROOT/evidence/fusion_expressed_products.tsv" || true
+fi
 [[ -n "$NORMAL_READTHROUGH" ]] && GEN_ARGS+=(--normal-readthrough "$NORMAL_READTHROUGH")
 [[ -n "$PRIME_EVIDENCE" ]] && GEN_ARGS+=(--prime-evidence "$PRIME_EVIDENCE")
 [[ -n "$BIGMHC_EVIDENCE" ]] && GEN_ARGS+=(--bigmhc-evidence "$BIGMHC_EVIDENCE")
