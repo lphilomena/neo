@@ -48,10 +48,91 @@ LOG="${LOG:-${ROOT}/work/run_lohhla_${PATIENT_ID}.log}"
 SAMTOOLS_BIN="${SAMTOOLS_BIN:-${NEOAG_CONDA_BASE}/envs/${NEOAG_GATK_ENV:-neoag-gatk}/bin/samtools}"
 BAM_LINK_DIR="${BAM_LINK_DIR:-${ROOT}/work/bam_links/${PATIENT_ID}}"
 
-PSHOME="${POLYSOLVER_HOME:-${NEOAG_TOOLS_ROOT:-${ROOT}}/tools/polysolver}"
+resolve_polysolver_home() {
+  local candidate
+  for candidate in \
+    "${POLYSOLVER_HOME:-}" \
+    "${NEOAG_LICENSED_ROOT:+${NEOAG_LICENSED_ROOT}/polysolver}" \
+    "${NEOAG_ASSET_ROOT:+${NEOAG_ASSET_ROOT}/data/lohhla/polysolver}" \
+    "${NEOAG_ASSET_ROOT:+${NEOAG_ASSET_ROOT}/data/polysolver}" \
+    "${NEOAG_PUBLIC_ASSET_ROOT:+${NEOAG_PUBLIC_ASSET_ROOT}/data/lohhla/polysolver}" \
+    "${NEOAG_TOOLS_ROOT:-${ROOT}}/tools/polysolver"; do
+    if [[ -n "${candidate}" \
+      && -x "${candidate}/scripts/shell_call_hla_type" \
+      && -s "${candidate}/data/abc_complete.fasta" ]]; then
+      printf '%s\n' "${candidate}"
+      return 0
+    fi
+  done
+  return 1
+}
+
+PSHOME="$(resolve_polysolver_home || true)"
+PSHOME="${PSHOME:-${NEOAG_TOOLS_ROOT:-${ROOT}}/tools/polysolver}"
 LOHHLA_HOME="${LOHHLA_HOME:-${NEOAG_TOOLS_ROOT}/tools/lohhla}"
-FUSION_ENV="${LOHHLA_ENV_PREFIX:-${NEOAG_CONDA_BASE}/envs/${NEOAG_FUSION_ENV:-neoag-fusion}}"
 GATK_ENV="${NEOAG_CONDA_BASE}/envs/${NEOAG_GATK_ENV:-neoag-gatk}"
+
+resolve_lohhla_env() {
+  local candidate
+  local -a candidates=()
+  [[ -n "${LOHHLA_ENV_PREFIX:-}" ]] && candidates+=("${LOHHLA_ENV_PREFIX}")
+  candidates+=(
+    "${NEOAG_CONDA_BASE}/envs/neoag-lohhla"
+    "${NEOAG_CONDA_BASE}/envs/${NEOAG_FUSION_ENV:-neoag-fusion}"
+    "${NEOAG_CONDA_BASE}/envs/neoag-r"
+    "${NEOAG_CONDA_BASE}/envs/neoag-splicemutr"
+  )
+  for candidate in "${candidates[@]}"; do
+    [[ -x "${candidate}/bin/Rscript" ]] || continue
+    if "${candidate}/bin/Rscript" -e \
+      'quit(status=ifelse(requireNamespace("optparse",quietly=TRUE)&&requireNamespace("Rsamtools",quietly=TRUE)&&requireNamespace("Biostrings",quietly=TRUE)&&requireNamespace("seqinr",quietly=TRUE),0,1))' \
+      >/dev/null 2>&1; then
+      printf '%s\n' "${candidate}"
+      return 0
+    fi
+  done
+  echo "ERROR: no LOHHLA R environment provides optparse, Rsamtools, Biostrings, and seqinr" >&2
+  return 1
+}
+
+FUSION_ENV="$(resolve_lohhla_env)"
+
+# Some deployments split the Bioconductor stack and the small CRAN plotting
+# dependencies across R environments. Reuse a compatible installed library
+# instead of letting LOHHLA attempt an interactive install into a read-only env.
+if ! "${FUSION_ENV}/bin/Rscript" -e \
+  'quit(status=ifelse(requireNamespace("beeswarm", quietly=TRUE), 0, 1))' \
+  >/dev/null 2>&1; then
+  for candidate in \
+    "${NEOAG_CONDA_BASE}/envs/neoag-r/lib/R/library" \
+    "${NEOAG_CONDA_BASE}/envs/neoag-lohhla-r36/lib/R/library"; do
+    [[ -d "${candidate}/beeswarm" ]] || continue
+    export R_LIBS_USER="${candidate}${R_LIBS_USER:+:${R_LIBS_USER}}"
+    break
+  done
+fi
+
+resolve_bedtools_dir() {
+  local candidate
+  if command -v bedtools >/dev/null 2>&1; then
+    dirname "$(command -v bedtools)"
+    return 0
+  fi
+  for candidate in \
+    "${NEOAG_TOOLS_ROOT:-${ROOT}}/bin" \
+    "${NEOAG_CONDA_BASE}/envs/neoag-tools/bin" \
+    "${NEOAG_CONDA_BASE}/envs/neoag-splice/bin" \
+    "${FUSION_ENV}/bin"; do
+    if [[ -x "${candidate}/bedtools" ]]; then
+      printf '%s\n' "${candidate}"
+      return 0
+    fi
+  done
+  echo "ERROR: bedtools is required by LOHHLA but was not found" >&2
+  return 1
+}
+
+LOHHLA_BEDTOOLS_DIR="$(resolve_bedtools_dir)"
 
 POLYSOLVER_RACE="${POLYSOLVER_RACE:-Unknown}"
 POLYSOLVER_INCLUDE_FREQ="${POLYSOLVER_INCLUDE_FREQ:-1}"
@@ -71,7 +152,15 @@ WINNERS="${PS_OUT}/winners.hla.txt"
 PATIENT_HLA_FASTA="${HLA_DIR}/${PATIENT_ID}.patient.hlaFasta.fa"
 LOHHLA_SCRIPT="${LOHHLA_HOME}/LOHHLAscript.R"
 HLA_EXON_LOC="${LOHHLA_HOME}/data/hla.dat"
-LOHHLA_GATK_RUNTIME_DIR="${LOHHLA_GATK_DIR:-${LOHHLA_HOME}}"
+if [[ -n "${LOHHLA_GATK_DIR:-}" ]]; then
+  LOHHLA_GATK_RUNTIME_DIR="${LOHHLA_GATK_DIR}"
+elif [[ -f "${PSHOME}/binaries/SamToFastq.jar" \
+  && -f "${PSHOME}/binaries/SortSam.jar" \
+  && -f "${PSHOME}/binaries/FilterSamReads.jar" ]]; then
+  LOHHLA_GATK_RUNTIME_DIR="${PSHOME}/binaries"
+else
+  LOHHLA_GATK_RUNTIME_DIR="${LOHHLA_HOME}"
+fi
 NOVO_DIR="${PSHOME}/binaries"
 NOVOINDEX="${PSHOME}/scripts/novoindex"
 ABC_FASTA="${PSHOME}/data/abc_complete.fasta"
@@ -226,12 +315,24 @@ write_winners_from_hla_file() {
 }
 
 ensure_polysolver() {
+  local resolved_pshome="${PSHOME}"
   [[ -f "${PSHOME}/scripts/config.local.bash" ]] || {
     echo "ERROR: Polysolver not configured. Run: bash scripts/install_polysolver.sh" >&2
     exit 1
   }
   # shellcheck source=/dev/null
   source "${PSHOME}/scripts/config.local.bash"
+  # Licensed asset bundles are commonly copied between machines. Their
+  # generated config.local.bash may still contain the source machine's
+  # absolute PSHOME, so the explicitly resolved deployment path must win.
+  PSHOME="${resolved_pshome}"
+  SAMTOOLS_DIR="${PSHOME}/binaries"
+  NOVOALIGN_DIR="${PSHOME}/binaries"
+  GATK_DIR="${PSHOME}/binaries"
+  MUTECT_DIR="${PSHOME}/binaries"
+  STRELKA_DIR="${PSHOME}/binaries"
+  TMP_DIR="${PSHOME}/sachet"
+  export PSHOME SAMTOOLS_DIR NOVOALIGN_DIR GATK_DIR MUTECT_DIR STRELKA_DIR TMP_DIR
   export PATH="${NEOAG_CONDA_BASE}/envs/${NEOAG_TOOLS_ENV:-neoag-tools}/bin:${PSHOME}/binaries:${PSHOME}/scripts:${PATH}"
   if [[ -f "${NOVOALIGN_LICENSE_FILE:-}" ]]; then
     if [[ "$(readlink -f "${NOVOALIGN_LICENSE_FILE}")" != "$(readlink -f "${NOVO_DIR}/novoalign.lic" 2>/dev/null || true)" ]]; then
@@ -344,7 +445,7 @@ run_lohhla() {
     fi
   done
   unset _jhome
-  export PATH="${FUSION_ENV}/bin:${NOVO_DIR}:${PSHOME}/scripts:${GATK_ENV}/bin:${PATH}"
+  export PATH="${FUSION_ENV}/bin:${LOHHLA_BEDTOOLS_DIR}:${NOVO_DIR}:${PSHOME}/scripts:${GATK_ENV}/bin:${PATH}"
   if [[ -n "${JAVA_HOME:-}" ]]; then
     export PATH="${JAVA_HOME}/bin:${PATH}"
   fi
@@ -363,6 +464,15 @@ run_lohhla() {
     # character-to-logical conversion bug in some LOHHLA revisions.
     echo "    reusing flagstat from ${flagstat_dir}"
   fi
+  local bam_dir_abs normal_bam_dir_abs tumor_bam_name normal_bam_name
+  bam_dir_abs="$(cd "$(dirname "${tumor_bam}")" && pwd -P)"
+  normal_bam_dir_abs="$(cd "$(dirname "${normal_bam}")" && pwd -P)"
+  [[ "${bam_dir_abs}" == "${normal_bam_dir_abs}" ]] || {
+    echo "ERROR: LOHHLA requires tumor and normal BAM links in one directory" >&2
+    exit 1
+  }
+  tumor_bam_name="$(basename "${tumor_bam}")"
+  normal_bam_name="$(basename "${normal_bam}")"
   local lohhla_out_abs winners_abs hla_fasta_abs copynum_abs
   lohhla_out_abs="$(mkdir -p "${LOHHLA_OUT}" && cd "${LOHHLA_OUT}" && pwd -P)"
   winners_abs="$(cd "$(dirname "${WINNERS}")" && pwd -P)/$(basename "${WINNERS}")"
@@ -375,8 +485,9 @@ run_lohhla() {
   Rscript "${LOHHLA_SCRIPT}" \
     --patientId "${PATIENT_ID}" \
     --outputDir "${lohhla_out_abs}" \
-    --normalBAMfile "${normal_bam}" \
-    --tumorBAMfile "${tumor_bam}" \
+    --BAMDir "${bam_dir_abs}" \
+    --normalBAMfile "${normal_bam_name}" \
+    --tumorBAMfile "${tumor_bam_name}" \
     --hlaPath "${winners_abs}" \
     --HLAfastaLoc "${hla_fasta_abs}" \
     --CopyNumLoc "${copynum_abs}" \
@@ -388,6 +499,7 @@ run_lohhla() {
     --minCoverageFilter "${MIN_COVERAGE}" \
     --cleanUp FALSE \
     --gatkDir "${LOHHLA_GATK_RUNTIME_DIR}" \
+    --LOHHLA_loc "${LOHHLA_HOME}" \
     --novoDir "${NOVO_DIR}" \
     --HLAexonLoc "${HLA_EXON_LOC}"
 

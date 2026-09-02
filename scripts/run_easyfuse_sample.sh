@@ -116,9 +116,49 @@ fi
 exec "$real" "${args[@]}"
 MAMBA_WRAPPER
 chmod +x "${ROOT}/work/easyfuse_bin/mamba"
-export JAVA_HOME="${NEOAG_EASYFUSE_ENV_PREFIX:-${NEOAG_CONDA_BASE}/envs/${NEOAG_FUSION_ENV}}"
+resolve_easyfuse_java_home() {
+  local candidate java_bin
+  for candidate in \
+    "${NEOAG_EASYFUSE_JAVA_HOME:-}" \
+    "${JAVA_HOME:-}" \
+    "${NEOAG_EASYFUSE_ENV_PREFIX:-}" \
+    "${NEOAG_CONDA_BASE}/envs/${NEOAG_FUSION_ENV}" \
+    "${NEOAG_CONDA_BASE}/envs/${NEOAG_GATK_ENV:-neoag-gatk}" \
+    "${NEOAG_CONDA_BASE}/envs/neoag-runtime"; do
+    if [[ -n "${candidate}" && -x "${candidate}/bin/java" ]]; then
+      printf '%s\n' "${candidate}"
+      return 0
+    fi
+  done
+  java_bin="$(command -v java 2>/dev/null || true)"
+  [[ -n "${java_bin}" ]] || return 1
+  cd "$(dirname "${java_bin}")/.." && pwd -P
+}
+export JAVA_HOME="$(resolve_easyfuse_java_home)"
 export PATH="${ROOT}/work/easyfuse_bin:${NEOAG_CONDA_BASE}/bin:${JAVA_HOME}/bin:${PATH}"
-export NEOAG_NEXTFLOW="${NEOAG_NEXTFLOW:-${JAVA_HOME}/bin/nextflow}"
+# EasyFuse 2.x uses legacy Groovy config variables. Nextflow 26 defaults to
+# the strict v2 parser, so retain v1 unless a deployment explicitly overrides it.
+export NXF_SYNTAX_PARSER="${NXF_SYNTAX_PARSER:-v1}"
+resolve_nextflow() {
+  local candidate
+  for candidate in \
+    "${NEOAG_NEXTFLOW:-}" \
+    "${ROOT}/bin/nextflow" \
+    "${JAVA_HOME}/bin/nextflow" \
+    "${NEOAG_CONDA_BASE}/bin/nextflow"; do
+    if [[ -n "${candidate}" && -x "${candidate}" ]]; then
+      printf '%s\n' "${candidate}"
+      return 0
+    fi
+  done
+  if command -v nextflow >/dev/null 2>&1; then
+    command -v nextflow
+    return 0
+  fi
+  echo "ERROR: nextflow executable was not found" >&2
+  return 1
+}
+export NEOAG_NEXTFLOW="$(resolve_nextflow)"
 
 exec > >(tee -a "${LOG}") 2>&1
 echo "==> run_easyfuse_sample $(date -Is)"
@@ -341,6 +381,11 @@ else
   echo "==> EasyFuse module-native layout: internal caller environments are managed by Nextflow"
 fi
 
+# FusionCatcher validates an exact historical STAR version even in the
+# module-native EasyFuse layout. Patch every discovered Nextflow environment
+# after it exists, regardless of which EasyFuse directory layout is in use.
+bash "${ROOT}/scripts/patch_easyfuse_fusioncatcher_compat.sh"
+
 export PATH="$(echo "${PATH}" | tr ':' '\n' | grep -vE '/envs/neoag-tools/bin$|/tools/fusioncatcher/bin$' | paste -sd: -)"
 
 cd "${ROOT}/work"
@@ -386,8 +431,8 @@ run_nextflow || {
   echo "==> Nextflow failed; retrying once with -resume ..."
   if [[ "${EASYFUSE_LAYOUT}" == "legacy" ]]; then
     bash "${ROOT}/scripts/patch_easyfuse_star_avx2.sh"
-    bash "${ROOT}/scripts/patch_easyfuse_fusioncatcher_compat.sh"
   fi
+  bash "${ROOT}/scripts/patch_easyfuse_fusioncatcher_compat.sh"
   NXF_RESUME_ARGS=(-resume "${NXF_RUN_NAME}")
   run_nextflow
 }

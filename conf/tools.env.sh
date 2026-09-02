@@ -84,6 +84,10 @@ for _neoag_deepimmuno_candidate in \
   fi
 done
 unset _neoag_deepimmuno_candidate
+export DEEPIMMUNO_PYTHON="${DEEPIMMUNO_PYTHON:-${NEOAG_CONDA_BASE}/envs/neoag-tools/bin/python}"
+if [[ ! -x "${DEEPIMMUNO_PYTHON}" ]]; then
+  export DEEPIMMUNO_PYTHON="${BIGMHC_PYTHON:-${NEOAG_CONDA_BASE}/envs/neoag-tools/bin/python}"
+fi
 
 # BigMHC_IM (repo ~5GB incl. models under models/bat*/im/)
 export BIGMHC_DIR="${NEOAG_TOOLS_ROOT}/tools/bigmhc"
@@ -149,6 +153,35 @@ if [[ ! -f "${LOHHLA_HOME}/LOHHLAscript.R" && -f "${NEOAG_TOOLS_ROOT}/../neoag_e
 fi
 export POLYSOLVER_HOME="${POLYSOLVER_HOME:-}"
 export NOVOALIGN_LICENSE_FILE="${NOVOALIGN_LICENSE_FILE:-}"
+if [[ -z "${POLYSOLVER_HOME}" ]]; then
+  for _neoag_polysolver_candidate in \
+    "${NEOAG_LICENSED_ROOT:+${NEOAG_LICENSED_ROOT}/polysolver}" \
+    "${NEOAG_ASSET_ROOT:+${NEOAG_ASSET_ROOT}/data/lohhla/polysolver}" \
+    "${NEOAG_ASSET_ROOT:+${NEOAG_ASSET_ROOT}/data/polysolver}" \
+    "${NEOAG_PUBLIC_ASSET_ROOT:+${NEOAG_PUBLIC_ASSET_ROOT}/data/lohhla/polysolver}" \
+    "${NEOAG_TOOLS_ROOT}/tools/polysolver"; do
+    if [[ -n "${_neoag_polysolver_candidate}" \
+      && -x "${_neoag_polysolver_candidate}/scripts/shell_call_hla_type" \
+      && -s "${_neoag_polysolver_candidate}/data/abc_complete.fasta" ]]; then
+      export POLYSOLVER_HOME="${_neoag_polysolver_candidate}"
+      break
+    fi
+  done
+  unset _neoag_polysolver_candidate
+fi
+if [[ -z "${NOVOALIGN_LICENSE_FILE}" ]]; then
+  for _neoag_novoalign_license in \
+    "${NEOAG_LICENSED_ROOT:+${NEOAG_LICENSED_ROOT}/novoalign.lic}" \
+    "${NEOAG_ASSET_ROOT:+${NEOAG_ASSET_ROOT}/data/lohhla/novoalign.lic}" \
+    "${POLYSOLVER_HOME:+${POLYSOLVER_HOME}/license/novoalign.lic}" \
+    "${POLYSOLVER_HOME:+${POLYSOLVER_HOME}/binaries/novoalign.lic}"; do
+    if [[ -n "${_neoag_novoalign_license}" && -s "${_neoag_novoalign_license}" ]]; then
+      export NOVOALIGN_LICENSE_FILE="${_neoag_novoalign_license}"
+      break
+    fi
+  done
+  unset _neoag_novoalign_license
+fi
 export FACETS_HOME="${NEOAG_TOOLS_ROOT}/bin"
 if [[ ! -x "${FACETS_HOME}/runFACETS.R" ]]; then
   export FACETS_HOME="${NEOAG_TOOLS_ROOT}/tools/facets"
@@ -260,3 +293,9 @@ export NEOAG_SPLICEMUTR_BIN="${NEOAG_SPLICEMUTR_BIN:-${NEOAG_TOOLS_ROOT}/bin/spl
 export SPLICEMUTR_WORKFLOW="${SPLICEMUTR_WORKFLOW:-${NEOAG_SPLICEMUTR_HOME}/simulation/running_splicemutr/run_splicemutr.smk}"
 
 export NEOAG_ALTANALYZE_IMAGE="${NEOAG_ALTANALYZE_IMAGE:-neoag-altanalyze:snaf}"
+
+# SNAF must run in its dedicated legacy-compatible environment. Keep the
+# executable explicit so unrelated Python environments earlier in PATH cannot
+# shadow it during Gateway execution.
+export NEOAG_SNAF_ENV="${NEOAG_SNAF_ENV:-neoag-snaf}"
+export SNAF_PYTHON="${SNAF_PYTHON:-${NEOAG_CONDA_BASE}/envs/${NEOAG_SNAF_ENV}/bin/python}"

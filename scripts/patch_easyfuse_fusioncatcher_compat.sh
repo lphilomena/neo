@@ -3,26 +3,77 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CONDA_CACHE="${EASYFUSE_NXF_CONDA_CACHEDIR:-${NXF_CONDA_CACHEDIR:-${ROOT}/work/.nextflow_conda}}"
-STAR252="${NEOAG_FUSIONCATCHER_STAR252:-${ROOT}/../open-neo-deploy/env_tool/conda_pkgs/star-2.5.2b-0/bin/STAR}"
+STAR_OVERRIDE="${NEOAG_FUSIONCATCHER_STAR:-${NEOAG_FUSIONCATCHER_STAR252:-}}"
 FUSIONCATCHER_REF="${NEOAG_FUSIONCATCHER_REF:-${ROOT}/../open-neo-deploy/refs/data/easyfuse/easyfuse_ref_v4/fusioncatcher_index}"
 
 echo "==> patch_easyfuse_fusioncatcher_compat $(date -Is)"
 
-if [[ ! -x "${STAR252}" ]]; then
-  echo "WARN: FusionCatcher STAR 2.5.2b not found: ${STAR252}" >&2
-else
-  star_version="$("${STAR252}" --version 2>/dev/null | head -1 || true)"
-  if [[ "${star_version}" != "STAR_2.5.2b" ]]; then
-    echo "WARN: FusionCatcher STAR candidate has unexpected version: ${STAR252} -> ${star_version}" >&2
+star_version() {
+  local star="$1"
+  "${star}" --version 2>/dev/null | head -1 | sed 's/^STAR_//'
+}
+
+fusioncatcher_required_star() {
+  local cfg="$1" prefix py
+  prefix="$(cd "$(dirname "${cfg}")/.." && pwd -P)"
+  py="${prefix}/bin/fusioncatcher.py"
+  [[ -f "${py}" ]] || return 1
+  sed -nE "s/^[[:space:]]*correct_version[[:space:]]*=[[:space:]]*['\"]([^'\"]+)['\"].*/\1/p" "${py}" | head -1
+}
+
+find_star_for_version() {
+  local required="$1" candidate version
+  local -a candidates=()
+  [[ -n "${STAR_OVERRIDE}" ]] && candidates+=("${STAR_OVERRIDE}")
+  for candidate in \
+    "${NEOAG_CONDA_BASE:-${HOME}/miniforge3}"/pkgs/star-"${required}"-*/bin/STAR \
+    "${ROOT}/../open-neo-deploy/env_tool/conda_pkgs"/star-"${required}"-*/bin/STAR \
+    "${CONDA_CACHE}"/env-*/bin/STAR; do
+    [[ -x "${candidate}" ]] && candidates+=("${candidate}")
+  done
+  if command -v STAR >/dev/null 2>&1; then
+    candidates+=("$(command -v STAR)")
   fi
-fi
+  for candidate in "${candidates[@]}"; do
+    version="$(star_version "${candidate}" || true)"
+    if [[ "${version}" == "${required}" ]]; then
+      printf '%s\n' "${candidate}"
+      return 0
+    fi
+  done
+  return 1
+}
 
 patch_configuration_cfg() {
-  local cfg="$1"
+  local cfg="$1" required star prefix launcher star_dir env_star
   [[ -f "${cfg}" ]] || return 0
-  if [[ -x "${STAR252}" ]]; then
-    sed -i "s|^star *=.*|star =  $(dirname "${STAR252}")/|" "${cfg}"
+  required="$(fusioncatcher_required_star "${cfg}" || true)"
+  if [[ -z "${required}" ]]; then
+    echo "WARN: cannot determine FusionCatcher STAR requirement for ${cfg}" >&2
+    return 0
   fi
+  star="$(find_star_for_version "${required}" || true)"
+  if [[ -z "${star}" ]]; then
+    echo "WARN: FusionCatcher requires STAR ${required}, but no matching binary was found for ${cfg}" >&2
+    return 0
+  fi
+  sed -i "s|^star *=.*|star =  $(dirname "${star}")/|" "${cfg}"
+  prefix="$(cd "$(dirname "${cfg}")/.." && pwd -P)"
+  launcher="${prefix}/bin/fusioncatcher"
+  star_dir="$(dirname "${star}")"
+  if [[ -f "${launcher}" ]] && grep -q '^export PATH=\$fbin:\$PATH' "${launcher}"; then
+    sed -i "s|^export PATH=.*|export PATH=${star_dir}:\$fbin:\$PATH|" "${launcher}"
+  fi
+  env_star="${prefix}/bin/STAR"
+  if [[ "$(star_version "${env_star}" || true)" != "${required}" ]]; then
+    if [[ -e "${env_star}" && ! -e "${env_star}.openneo-original" ]]; then
+      mv "${env_star}" "${env_star}.openneo-original"
+    else
+      rm -f "${env_star}"
+    fi
+    ln -s "${star}" "${env_star}"
+  fi
+  echo "==> FusionCatcher STAR ${required}: ${star}"
 }
 
 patch_fusioncatcher_py() {

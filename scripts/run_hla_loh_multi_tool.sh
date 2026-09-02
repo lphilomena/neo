@@ -37,17 +37,53 @@ for path in "$TUMOR_BAM" "$NORMAL_BAM" "$HLA_FILE" "$PURITY_TSV"; do
 done
 
 read_recommendation() {
-  awk -F '\t' '
-    NR == 1 { for (i=1; i<=NF; i++) h[$i]=i; next }
-    NR == 2 {
-      purity_col = h["purity"] ? h["purity"] : h["recommended_purity"]
-      ploidy_col = h["ploidy"]
-      print (purity_col ? $(purity_col) : ""), (ploidy_col ? $(ploidy_col) : "")
-      exit
-    }
-  ' "$PURITY_TSV"
+  "${PYTHON:-python3}" - "$PURITY_TSV" "$SAMPLE_ID" "$TUMOR_ID" <<'PY'
+import csv
+import re
+import sys
+
+path, sample_id, tumor_id = sys.argv[1:]
+
+def canonical(value):
+    token = re.sub(r"[^a-z0-9]+", "_", str(value or "").strip().lower()).strip("_")
+    return re.sub(r"(?:_?(?:tumou?r|normal|germline|blood|case|t|n))(?:_?\d+)?$", "", token)
+
+with open(path, encoding="utf-8", newline="") as handle:
+    rows = list(csv.DictReader(handle, delimiter="\t"))
+
+valid = []
+for row in rows:
+    purity = row.get("purity") or row.get("recommended_purity") or ""
+    ploidy = row.get("ploidy") or row.get("recommended_ploidy") or ""
+    try:
+        if not (0 < float(purity) <= 1 and float(ploidy) > 0):
+            continue
+    except ValueError:
+        continue
+    source_id = next((row.get(key, "") for key in ("sample_id", "tumor_id", "sample", "patient_id") if row.get(key)), "")
+    valid.append((row, purity, ploidy, source_id))
+
+targets = {sample_id, tumor_id}
+exact = [item for item in valid if item[3] in targets]
+if len(exact) == 1:
+    chosen, method = exact[0], "EXACT_SAMPLE_ID"
+else:
+    target_keys = {canonical(value) for value in targets if canonical(value)}
+    aliases = [item for item in valid if item[3] and canonical(item[3]) in target_keys]
+    if len(aliases) == 1:
+        chosen, method = aliases[0], "CANONICAL_SAMPLE_ALIAS"
+    elif len(valid) == 1:
+        chosen, method = valid[0], "UNIQUE_VALID_ROW"
+    else:
+        raise SystemExit(
+            f"purity/ploidy row is ambiguous for sample_id={sample_id!r}, tumor_id={tumor_id!r}; "
+            f"valid source IDs={[item[3] for item in valid]!r}"
+        )
+
+print("\t".join((chosen[1], chosen[2], chosen[3] or "UNLABELED", method)))
+PY
 }
-read -r PURITY PLOIDY < <(read_recommendation)
+IFS=$'\t' read -r PURITY PLOIDY PURITY_SOURCE_ID PURITY_MATCH_METHOD < <(read_recommendation)
 if ! awk -v q="$PLOIDY" 'BEGIN { exit !(q > 0) }'; then
   PLOIDY="$(awk -F '\t' '
     NR == 1 { for (i=1; i<=NF; i++) h[$i]=i; next }
@@ -129,8 +165,10 @@ run_lohhla() {
   mkdir -p "$LOHHLA_DIR"
   COPYNUM="$LOHHLA_DIR/lohhla_copy_number_input.tsv"
   {
-    printf '\ttumorPurity\ttumorPloidy\n'
-    printf '%s\t%s\t%s\n' "$TUMOR_ID" "$PURITY" "$PLOIDY"
+    # LOHHLA read.table() relies on one extra data field to promote the first
+    # field to row names. The row name is the tumor BAM region/sample label.
+    printf 'Ploidy\ttumorPurity\ttumorPloidy\n'
+    printf '%s\t%s\t%s\t%s\n' "$TUMOR_ID" "$PLOIDY" "$PURITY" "$PLOIDY"
   } > "$COPYNUM"
   PATIENT_ID="$SAMPLE_ID" TUMOR_SAMPLE_ID="$TUMOR_ID" NORMAL_SAMPLE_ID="$NORMAL_ID" \
     TUMOR_BAM="$TUMOR_BAM" NORMAL_BAM="$NORMAL_BAM" HLA_FILE="$HLA_FILE" \
@@ -215,6 +253,8 @@ consensus_args=(--sample-id "$SAMPLE_ID" --outdir "$OUTDIR" --tool-status "$OUTD
   printf 'normal_id\t%s\n' "$NORMAL_ID"
   printf 'purity\t%s\n' "$PURITY"
   printf 'ploidy\t%s\n' "$PLOIDY"
+  printf 'purity_source_sample_id\t%s\n' "$PURITY_SOURCE_ID"
+  printf 'purity_sample_match_method\t%s\n' "$PURITY_MATCH_METHOD"
   printf 'tools\t%s\n' "$TOOLS"
   printf 'lohhla_exit_status\t%s\n' "$LOHHLA_STATUS"
   printf 'spechla_exit_status\t%s\n' "$SPECHLA_STATUS"
