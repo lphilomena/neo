@@ -225,6 +225,20 @@ if [[ -f "${TOOLS_ENV}" ]]; then
   else
     echo "export NEOAG_SNAF_BIN=\"${BIN_DIR}/snaf-neoag\"" >> "${TOOLS_ENV}"
   fi
+  snaf_python="${CONDA_BASE}/envs/${SNAF_ENV_NAME}/bin/python"
+  portable_root="${PORTABLE_ENVS%%:*}"
+  if [[ -n "${portable_root}" && -x "${portable_root}/${SNAF_ENV_NAME}/bin/python" ]]; then
+    snaf_python="${portable_root}/${SNAF_ENV_NAME}/bin/python"
+  fi
+  [[ -x "${snaf_python}" ]] || {
+    echo "ERROR: SNAF environment Python is missing: ${snaf_python}" >&2
+    exit 45
+  }
+  if grep -q '^export SNAF_PYTHON=' "${TOOLS_ENV}"; then
+    sed -i "s|^export SNAF_PYTHON=.*|export SNAF_PYTHON=\"${snaf_python}\"|" "${TOOLS_ENV}"
+  else
+    echo "export SNAF_PYTHON=\"${snaf_python}\"" >> "${TOOLS_ENV}"
+  fi
 fi
 
 echo "==> Splice tools smoke"

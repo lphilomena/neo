@@ -1127,8 +1127,8 @@ def test_patient_report_writes_machine_readable_release_audit(tmp_path):
     audit = out.with_suffix(".release_audit.json")
     assert audit.is_file()
     payload = json.loads(audit.read_text(encoding="utf-8"))
-    assert len(payload["checks"]) == 10
-    assert {row["编号"] for row in payload["checks"]} == {str(i) for i in range(1, 11)}
+    assert len(payload["checks"]) == 11
+    assert {row["编号"] for row in payload["checks"]} == {str(i) for i in range(1, 12)}
 
 
 def test_patient_limitation_keeps_hard_fail_and_missing_dimensions():

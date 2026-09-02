@@ -8,6 +8,7 @@ from typing import Any, Mapping
 from neoag.agent_skills.appm_review import main as appm_review_main
 from neoag.agent_skills.ccf_review import main as ccf_review_main
 from neoag.controlled_execution.io_utils import load_limited_yaml, markdown_table, read_tsv, write_json, write_tsv
+from neoag.report_from_final import enrich_report_provenance
 from neoag.reports_dual import load_report_bundle, make_patient_report
 from neoag.skill_taxonomy.review_skills import (
     run_concept_explainer,
@@ -271,15 +272,29 @@ def select_first_batch(rows: list[dict[str, str]], top_n: int) -> list[dict[str,
 
 def _read_context(*paths: str | Path | None) -> dict[str, Any]:
     merged: dict[str, Any] = {}
-    for value in paths:
-        if not value or not Path(value).is_file():
+    for index, value in enumerate(paths):
+        if not value:
             continue
-        try:
-            data = load_limited_yaml(value)
-        except Exception:
+        path = Path(value)
+        if path.is_file():
+            try:
+                data = load_limited_yaml(value)
+            except Exception:
+                continue
+            if isinstance(data, dict):
+                merged.update(data)
             continue
-        if isinstance(data, dict):
-            merged.update(data)
+        # The first argument is --disease-profile. Accept a literal disease ID
+        # or display name, while refusing path-like typos as clinical facts.
+        text = str(value).strip()
+        if (
+            index == 0
+            and 1 < len(text) <= 100
+            and "/" not in text
+            and "\\" not in text
+            and not text.lower().endswith((".yaml", ".yml", ".json", ".toml"))
+        ):
+            merged["disease"] = text
     return merged
 
 
@@ -588,8 +603,13 @@ def _formal_patient_report(
         merged.update(peptide)
         report_peptides.append(merged)
 
+    source_root = result_dir
+    consensus_path = Path(artifacts["consensus_peptides"])
+    if consensus_path.parent.name == "scoring":
+        source_root = consensus_path.parent.parent
     provenance = _read_json_mapping(artifacts.get("run_manifest"))
     provenance.update(_read_json_mapping(artifacts.get("provenance")))
+    provenance = enrich_report_provenance(source_root, provenance)
     provenance["report_role"] = "final_review"
     provenance = _merge_review_context(provenance, context)
     provenance.setdefault("parallel_rankings", {})
@@ -599,11 +619,6 @@ def _formal_patient_report(
             "event_consensus": artifacts.get("consensus_events", ""),
             "weighted_baseline": artifacts.get("weighted_baseline", ""),
         })
-
-    source_root = result_dir
-    consensus_path = Path(artifacts["consensus_peptides"])
-    if consensus_path.parent.name == "scoring":
-        source_root = consensus_path.parent.parent
     _, validation_rows = read_tsv(artifacts["validation_plan"])
     profile_name = str(
         provenance.get("rules_name")

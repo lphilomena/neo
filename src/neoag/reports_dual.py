@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from .candidate_identity import candidate_identity, identity_value
+from .adapters.peptide_input import normalize_hla_allele
 from .utils import read_tsv
 
 REPORT_CSS = """
@@ -3288,7 +3289,7 @@ def _patient_restricting_hla_reliability(
     """Classify whether the restricting-allele LOH call is reliable for stratification."""
     if bundle is None:
         return False, "限制性HLA未评估"
-    allele = str(row.get("hla_allele") or row.get("allele") or "").strip()
+    allele = normalize_hla_allele(str(row.get("hla_allele") or row.get("allele") or "").strip())
     if not allele:
         return False, "限制性HLA缺失"
     loh_rows, _ = _patient_hla_loh_consensus(bundle)
@@ -3309,7 +3310,7 @@ def _patient_restricting_hla_gap(
     """Return a candidate-specific HLA-LOH limitation with tool details."""
     if bundle is None:
         return "限制性HLA未评估"
-    allele = str(row.get("hla_allele") or row.get("allele") or "").strip()
+    allele = normalize_hla_allele(str(row.get("hla_allele") or row.get("allele") or "").strip())
     if not allele:
         return "限制性HLA未评估"
     loh_rows, _ = _patient_hla_loh_consensus(bundle)
@@ -5340,7 +5341,7 @@ def _patient_hla_loh_consensus(bundle: ReportBundle) -> tuple[list[dict[str, str
     by_tool: dict[str, dict[str, set[str]]] = {"LOHHLA": {}, "SpecHLA": {}}
     tool_evidence: dict[str, dict[str, bool]] = {"LOHHLA": {}, "SpecHLA": {}}
     for record in bundle.hla_loh_tool_results:
-        allele = str(record.get("hla_allele") or record.get("allele") or "").strip()
+        allele = normalize_hla_allele(str(record.get("hla_allele") or record.get("allele") or "").strip())
         if not re.match(r"^HLA-[ABC]\*", allele):
             continue
         tool = str(record.get("_report_tool") or record.get("evidence_tool") or record.get("source_tool") or record.get("tool") or "")
@@ -5353,7 +5354,7 @@ def _patient_hla_loh_consensus(bundle: ReportBundle) -> tuple[list[dict[str, str
         tool_evidence[tool][allele] = tool_evidence[tool].get(allele, False) or has_evidence or bool(record.get("_report_source"))
 
     restricting = sorted({
-        str(row.get("hla_allele") or row.get("allele") or "").strip()
+        normalize_hla_allele(str(row.get("hla_allele") or row.get("allele") or "").strip())
         for row in bundle.peptides
         if re.match(r"^HLA-[ABC]\*", str(row.get("hla_allele") or row.get("allele") or "").strip())
     })
@@ -5540,7 +5541,16 @@ def _patient_release_metadata(bundle: ReportBundle) -> dict[str, str]:
     run_id = str(bundle.provenance.get("run_id") or bundle.provenance.get("analysis_id") or "")
     if not run_id and input_hash:
         run_id = f"{bundle.sample_id or 'sample'}-{input_hash[:12]}"
-    return {"run_id": run_id or "未记录", "rules_version": rules_version, "input_sha256": input_hash or "未记录"}
+    contract = bundle.provenance.get("cohort_rule_contract") or {}
+    return {
+        "run_id": run_id or "未记录",
+        "rules_version": rules_version,
+        "input_sha256": input_hash or "未记录",
+        "cohort_rule_set": str(contract.get("id") or "未记录"),
+        "cohort_rule_version": str(contract.get("version") or "未记录"),
+        "report_contract_version": str(contract.get("report_contract_version") or "未记录"),
+        "cohort_comparability": str(contract.get("comparability_status") or "未评估"),
+    }
 
 
 def _patient_release_audit(
@@ -5599,6 +5609,12 @@ def _patient_release_audit(
         ("8", "记录run_id、规则版本和输入hash", all(metadata[key] != "未记录" for key in metadata), f"run_id={metadata['run_id']}；规则={metadata['rules_version']}；hash={metadata['input_sha256'][:16]}..."),
         ("9", "Top候选来源冲突均已解决或解释", not unexplained_conflicts, f"有冲突 {len(conflicting)} 条；未解释 {len(unexplained_conflicts)} 条"),
         ("10", "患者版不含服务器路径或工具日志", not path_or_log, "已扫描绝对路径和常见日志标记"),
+        (
+            "11",
+            "队列规则合同已锁定且可横比",
+            metadata["cohort_comparability"] == "LOCKED_COMPARABLE",
+            f"规则集={metadata['cohort_rule_set']}；版本={metadata['cohort_rule_version']}；报告合同={metadata['report_contract_version']}；状态={metadata['cohort_comparability']}",
+        ),
     ]
     rows = [{"编号": number, "审计项": label, "状态": "通过" if passed else "失败", "说明": detail} for number, label, passed, detail in checks]
     overall = "PASS" if all(passed for _, _, passed, _ in checks) else "DRAFT_NOT_FOR_RELEASE"
@@ -5723,6 +5739,8 @@ def make_patient_report(
         {"项目": "运行标识", "结果": release_metadata["run_id"], "说明": "用于报告与输入证据追溯"},
         {"项目": "规则版本", "结果": release_metadata["rules_version"], "说明": "本次事件分级和候选分流规则"},
         {"项目": "输入证据哈希", "结果": release_metadata["input_sha256"], "说明": "全部工具证据表SHA256"},
+        {"项目": "队列规则集", "结果": release_metadata["cohort_rule_set"], "说明": "同一队列必须使用相同规则集、版本和文件哈希"},
+        {"项目": "队列可比性", "结果": release_metadata["cohort_comparability"], "说明": "仅LOCKED_COMPARABLE可用于正式队列横比"},
     ])
     out.append(_table(summary, ["项目", "结果", "说明"]))
     screening_rows = [

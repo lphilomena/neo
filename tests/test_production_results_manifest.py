@@ -369,6 +369,74 @@ def test_fusion_union_rescues_only_exact_diagnostic_whitelist_from_unfiltered_ea
     assert {row["fusion_gene"] for row in rescue} == {"EWSR1::WT1"}
 
 
+def test_easyfuse_audit_joins_source_by_event_id_not_filtered_row_order(tmp_path):
+    hla = write(tmp_path / "hla.txt", "HLA-A*02:01\n")
+    header = (
+        "BPID;Fusion_Gene;Breakpoint1;Breakpoint2;FTID;prediction_class;prediction_prob;"
+        "fusioncatcher_detected;star_detected;arriba_detected;fusioncatcher_junc;"
+        "fusioncatcher_span;fusioncatcher_anch;frame;type;neo_peptide_sequence;neo_peptide_sequence_bp"
+    )
+    easyfuse = write(
+        tmp_path / "fusions.pass.csv",
+        header + "\n"
+        "noise;NOISE_EVENT;10:10:+;14:20:-;noise_tx;negative;0.1;1;0;0;20;10;30;in_frame;trans;ACDEFGHIKLMNPQRST;8\n"
+        "ews;EWSR1_WT1;22:100:+;11:200:-;ews_tx;positive;0.9;1;1;0;20;10;30;in_frame;trans;ACDEFGHIKLMNPQRST;8\n",
+    )
+    outdir = tmp_path / "union-order"
+    subprocess.run([
+        sys.executable, str(ROOT / "scripts/build_fusion_caller_union.py"),
+        "--sample-id", "S1", "--hla-file", str(hla), "--easyfuse", str(easyfuse),
+        "--disable-diagnostic-fusion-rescue", "--no-targeted-fusion-rescue",
+        "--outdir", str(outdir),
+    ], cwd=ROOT, check=True)
+    events = read_tsv(outdir / "raw_events.tsv")
+    assert len(events) == 1
+    assert events[0]["gene"] == "EWSR1::WT1"
+    assert events[0]["breakpoint1"] == "22:100:+"
+    assert events[0]["breakpoint2"] == "11:200:-"
+    assert "10:10" not in events[0]["adjacency_key"]
+
+
+def test_confirmed_expressed_product_generates_closed_fusion_origin_chain(tmp_path):
+    hla = write(tmp_path / "hla.txt", "HLA-A*02:01\n")
+    header = (
+        "BPID;Fusion_Gene;Breakpoint1;Breakpoint2;FTID;prediction_class;prediction_prob;"
+        "fusioncatcher_detected;star_detected;arriba_detected;fusioncatcher_junc;"
+        "fusioncatcher_span;fusioncatcher_anch;frame;type;neo_peptide_sequence;neo_peptide_sequence_bp"
+    )
+    easyfuse = write(
+        tmp_path / "fusions.pass.csv",
+        header + "\n"
+        "ews;EWSR1_WT1;22:100:+;11:200:-;caller_tx;positive;0.9;1;1;1;20;10;30;in_frame;trans;ACDEFGHIKLMNPQRST;8\n",
+    )
+    junctions = write(
+        tmp_path / "Chimeric.out.junction",
+        "chr22\t100\t+\tchr11\t200\t-\t1\t0\t0\tread1\n"
+        "chr22\t100\t+\tchr11\t200\t-\t1\t0\t0\tread2\n"
+        "chr22\t100\t+\tchr11\t200\t-\t1\t0\t0\tread3\n",
+    )
+    products = write(
+        tmp_path / "expressed_products.tsv",
+        "genome_build\tchrom1\tpos1\tstrand1\tchrom2\tpos2\tstrand2\tgene1\tgene2\ttranscript1\ttranscript2\tprotein_sequence\twildtype_protein_sequence\tjunction_aa_position\tin_frame\torf_status\tnmd_status\tsource_tool\tsource_record_id\n"
+        "GRCh38\t22\t100\t+\t11\t200\t-\tEWSR1\tWT1\tENST1\tENST2\tMACDEFGHIKLMNPQRSTVWY\t\t10\tyes\tCONFIRMED\tNOT_AT_RISK\tAGFusion\tAGF1\n",
+    )
+    outdir = tmp_path / "union-confirmed-product"
+    subprocess.run([
+        sys.executable, str(ROOT / "scripts/build_fusion_caller_union.py"),
+        "--sample-id", "S1", "--hla-file", str(hla), "--easyfuse", str(easyfuse),
+        "--star-chimeric", str(junctions), "--fusion-expressed-products", str(products),
+        "--disable-diagnostic-fusion-rescue", "--no-targeted-fusion-rescue",
+        "--outdir", str(outdir),
+    ], cwd=ROOT, check=True)
+    origin = read_tsv(outdir / "fusion_peptide_origin_chain.tsv")
+    closed = [row for row in origin if row["source_chain_status"] == "CLOSED_ORF_AND_EXACT_JUNCTION"]
+    assert closed
+    assert all(row["orf_id"] and "|" in row["fusion_junction_display"] for row in closed)
+    assert all(row["exact_verified_junction_reads"] == "3" for row in closed)
+    queue = read_tsv(outdir / "fusion_orf_completion_queue.tsv")
+    assert queue[0]["orf_completion_status"] == "ORF_SOURCE_CHAIN_COMPLETE"
+
+
 def test_generator_unions_existing_fusion_callers_including_jaffal(tmp_path):
     hla = write(tmp_path / "hla.txt", "HLA-A*02:01\n")
     purity = write(tmp_path / "purity.tsv", "sample_id\tpurity\tploidy\nS1\t0.60\t2.0\n")
@@ -409,7 +477,9 @@ def test_generator_unions_existing_fusion_callers_including_jaffal(tmp_path):
     events = read_tsv(union_dir / "raw_events.tsv")
     assert len(events) == 1
     assert events[0]["gene"] == "EWSR1::WT1"
-    assert events[0]["rna_junction_reads"] == "15"
+    assert events[0]["provided_rna_junction_reads"] == "15"
+    assert events[0]["rna_junction_reads"] == "0"
+    assert events[0]["junction_match_status"] == "NO_EXACT_JUNCTION_MATCH"
 
 
 def test_generator_passes_explicit_star_chimeric_for_fusion_read_backlink(tmp_path):

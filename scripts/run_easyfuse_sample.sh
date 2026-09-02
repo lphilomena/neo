@@ -42,7 +42,8 @@ STARFUSION_INDEX="${EASYFUSE_STARFUSION_INDEX:-${REF}/starfusion_index}"
 INPUT="${EASYFUSE_INPUT_TSV:-${ROOT}/work/easyfuse_${SAMPLE_ID}_input.tsv}"
 OUT="${OUTDIR:-${ROOT}/results/easyfuse}"
 LOG="${LOG:-${ROOT}/work/run_easyfuse_${SAMPLE_ID}.log}"
-PREBUILD_LOG="${ROOT}/work/easyfuse_conda_prebuild.log"
+RUNTIME_DIR="${EASYFUSE_RUNTIME_DIR:-${ROOT}/work}"
+PREBUILD_LOG="${RUNTIME_DIR}/easyfuse_conda_prebuild.log"
 NXF_RUN_NAME="${EASYFUSE_RUN_NAME:-easyfuse_${SAMPLE_ID}}"
 NXF_STEM="${NXF_RUN_NAME//[^A-Za-z0-9_.-]/_}"
 
@@ -58,7 +59,7 @@ ensure_input_tsv() {
   fi
 }
 
-STAR_TMP="${ROOT}/work/star_tmp_${NXF_STEM}"
+STAR_TMP="${EASYFUSE_TMPDIR:-${RUNTIME_DIR}/star_tmp_${NXF_STEM}}"
 export NXF_HOME="${EASYFUSE_NXF_HOME:-${ROOT}/work/.nextflow_home_${NXF_STEM}}"
 export NXF_WORK="${EASYFUSE_NXF_WORK:-${ROOT}/work/.nextflow_work_${NXF_STEM}}"
 mkdir -p "${OUT}" "$(dirname "${LOG}")" "${NXF_HOME}" "${NXF_WORK}" "${STAR_TMP}"
@@ -76,7 +77,7 @@ export CONDA_ALWAYS_YES=true
 export MAMBA_ALWAYS_YES=true
 export NEOAG_REAL_MAMBA="${NEOAG_CONDA_BASE}/bin/mamba"
 export NEOAG_BIOC_CACHE_HELPER="${ROOT}/.agents/skills/neoag-remote-deploy/scripts/with_bioc_data_cache.sh"
-export NEOAG_INSTALL_CACHE_ROOT="${NEOAG_INSTALL_CACHE_ROOT:-${ROOT}/work/install_cache}"
+export NEOAG_INSTALL_CACHE_ROOT="${NEOAG_INSTALL_CACHE_ROOT:-${RUNTIME_DIR}/install_cache}"
 export NEOAG_EASYFUSE_BIOC_PACKAGE_KEY="${NEOAG_EASYFUSE_BIOC_PACKAGE_KEY:-genomeinfodbdata-1.2.11}"
 mkdir -p "${ROOT}/work/easyfuse_bin"
 cat > "${ROOT}/work/easyfuse_bin/mamba" <<'MAMBA_WRAPPER'
@@ -197,7 +198,7 @@ echo "    nxf_work=${NXF_WORK}"
   exit 1
 }
 
-CONDA_CACHE="${ROOT}/work/.nextflow_conda"
+CONDA_CACHE="${EASYFUSE_NXF_CONDA_CACHEDIR:-${RUNTIME_DIR}/.nextflow_conda}"
 mkdir -p "${CONDA_CACHE}"
 export NXF_CONDA_CACHEDIR="${EASYFUSE_NXF_CONDA_CACHEDIR:-${CONDA_CACHE}}"
 echo "    nxf_conda_cachedir=${NXF_CONDA_CACHEDIR}"

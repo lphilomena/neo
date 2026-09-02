@@ -22,6 +22,7 @@ dist/
 .nextflow_user/
 .nextflow.root_owned_backup_*/
 .nextflow.log*
+.snakemake/
 FusionInspector.log
 0
 
@@ -58,6 +59,10 @@ conf/*.local.toml
 /bin/ascat.R
 /bin/runFACETS.R
 /bin/bam-matcher
+/bin/MixMHCpred
+/bin/configManta.py
+/bin/gridss
+/bin/svaba
 
 # Large FACETS/reference resources; document download instead of committing
 /data/facets/reference/*.vcf.gz

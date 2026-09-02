@@ -104,8 +104,11 @@ if [[ -z "$MAPPER_BIN" ]]; then
     MAPPER_BIN="${NEOAG_BOWTIE2_BIN:-$(command -v bowtie2 || true)}"
   fi
 fi
-[[ -n "$MAPPER_BIN" && -x "$MAPPER_BIN" ]] || { echo "ERROR: $MAPPER executable not found; set NEOAG_STAR_BIN/NEOAG_BOWTIE2_BIN or use --mapper-bin" >&2; exit 3; }
-export PATH="$(dirname "$MAPPER_BIN"):$PATH"
+if [[ -n "$MAPPER_BIN" && -x "$MAPPER_BIN" ]]; then
+  export PATH="$(dirname "$MAPPER_BIN"):$PATH"
+else
+  echo "EasyQuant compatibility: $MAPPER was not found on PATH; continuing because bp_quant owns the selected mapping backend." >&2
+fi
 if [[ "$DRY" != 1 ]]; then [[ -x "$BP_BIN" || "$(command -v "$BP_BIN" 2>/dev/null || true)" ]] || { echo "ERROR: bp_quant executable not usable: $BP_BIN" >&2; exit 3; }; fi
 mkdir -p "$OUTDIR"
 

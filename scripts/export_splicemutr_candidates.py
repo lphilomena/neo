@@ -5,9 +5,11 @@ from __future__ import annotations
 
 import argparse
 import csv
+import gzip
 import hashlib
 import json
 from pathlib import Path
+from typing import TextIO
 
 
 FIELDS = ["sample_id", "source_tool", "source_record_id", "source_junction_id", "chrom",
@@ -21,6 +23,27 @@ def integer(value: str) -> int | None:
         return int(float(value))
     except (TypeError, ValueError):
         return None
+
+
+def open_text(path: Path) -> TextIO:
+    if path.suffix == ".gz":
+        return gzip.open(path, "rt", encoding="utf-8")
+    return path.open(encoding="utf-8")
+
+
+def matched_normal_junctions(path: Path | None, candidates: set[str]) -> set[str]:
+    """Stream the normal catalog and retain only candidate exact matches."""
+    if not path or not path.is_file() or not candidates:
+        return set()
+    matched: set[str] = set()
+    with open_text(path) as handle:
+        for row in csv.DictReader(handle, delimiter="\t"):
+            junction = row.get("canonical_junction_id") or row.get("junction_id") or ""
+            if junction in candidates:
+                matched.add(junction)
+                if matched == candidates:
+                    break
+    return matched
 
 
 def windows(protein: str, boundary: int, lengths: list[int]):
@@ -43,13 +66,8 @@ def main() -> int:
     parser.add_argument("--normal-junctions", type=Path)
     args = parser.parse_args()
     lengths = sorted({int(value) for value in args.peptide_lengths.split(",")})
-    normal_ids: set[str] = set()
-    if args.normal_junctions and args.normal_junctions.is_file():
-        with args.normal_junctions.open(encoding="utf-8") as handle:
-            for row in csv.DictReader(handle, delimiter="\t"):
-                normal_ids.add(row.get("canonical_junction_id") or row.get("junction_id") or "")
-
     output: list[dict[str, str]] = []
+    candidate_junctions: set[str] = set()
     with args.metadata.open(newline="", encoding="utf-8") as handle:
         for row_number, row in enumerate(csv.DictReader(handle, delimiter="\t"), 1):
             chrom = row.get("chr", ""); start = row.get("start", ""); end = row.get("end", "")
@@ -59,8 +77,7 @@ def main() -> int:
             positions = [value for value in positions if value is not None and 0 < value < len(protein)]
             if not positions:
                 continue
-            normal_status = "DETECTED_BROAD_NORMAL" if junction in normal_ids else "NOT_DETECTED_COVERAGE_UNASSESSED"
-            reason = "exact junction present in configured normal reference" if junction in normal_ids else "no exact normal match; coverage was not supplied"
+            candidate_junctions.add(junction)
             for boundary in positions:
                 for peptide in windows(protein, boundary, lengths):
                     digest = hashlib.sha1(f"{junction}|{row.get('tx_id','')}|{peptide}".encode()).hexdigest()[:16]
@@ -71,8 +88,14 @@ def main() -> int:
                         "event_type": "Splice", "peptide": peptide, "hla_allele": "",
                         "provided_rna_junction_reads": "", "rna_junction_reads": "",
                         "frame_status": "IN_FRAME" if row.get("error") == "tx" else "ORF_REVIEW",
-                        "normal_junction_status": normal_status, "normal_background_reason": reason,
+                        "normal_junction_status": "NOT_DETECTED_COVERAGE_UNASSESSED",
+                        "normal_background_reason": "no exact normal match; coverage was not supplied",
                         "source_file": str(args.metadata.resolve())})
+    normal_ids = matched_normal_junctions(args.normal_junctions, candidate_junctions)
+    for row in output:
+        if row["source_junction_id"] in normal_ids:
+            row["normal_junction_status"] = "DETECTED_BROAD_NORMAL"
+            row["normal_background_reason"] = "exact junction present in configured normal reference"
     args.out.parent.mkdir(parents=True, exist_ok=True)
     with args.out.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=FIELDS, delimiter="\t")

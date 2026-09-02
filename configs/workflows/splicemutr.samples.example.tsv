@@ -1,4 +1,4 @@
-sample_id	role	star_sj
-NORMAL001	normal	/data/normal001/SJ.out.tab
-NORMAL002	normal	/data/normal002/SJ.out.tab
-TUMOR001	tumor	/data/tumor001/SJ.out.tab
+sample_id	role	star_sj	junction_file	normal_source	normal_match	tissue	dataset
+NORMAL001	normal	/data/normal001/SJ.out.tab		LOCAL_COHORT	COHORT_NORMAL	TISSUE	LOCAL
+GTEX-NORMAL002	normal		/data/gtex/GTEX-NORMAL002.junc	GTEx_V11	PUBLIC_PROXY	Adipose_Visceral_Omentum	GTEx_V11
+TUMOR001	tumor	/data/tumor001/SJ.out.tab	.	.	.	.	.

@@ -360,8 +360,11 @@ def easyfuse_row_to_event(
         return None, evidence
 
     bp1 = first(row, ["Breakpoint1", "breakpoint1"], "")
+    bp2 = first(row, ["Breakpoint2", "breakpoint2"], "")
     chrom = bp1.split(":", 1)[0] if bp1 else ""
     pos = bp1.split(":", 2)[1] if bp1.count(":") >= 1 else ""
+    bp1_parts = bp1.split(":")
+    bp2_parts = bp2.split(":")
     frame = str(first(row, ["frame", "Frame"], "")).lower()
     confidence = min(0.95, max(0.5, pred_prob))
 
@@ -378,13 +381,26 @@ def easyfuse_row_to_event(
         "internal_high_confidence_reason": evidence["internal_high_confidence_reason"],
         "gene": gene,
         "event_name": first(row, ["Fusion_Gene", "fusion_gene"], gene.replace("::", "_")),
+        "genome_build": "GRCh38",
+        "breakpoint1": bp1,
+        "breakpoint2": bp2,
+        "chrom1": bp1_parts[0] if bp1_parts else "",
+        "pos1": bp1_parts[1] if len(bp1_parts) > 1 else "",
+        "strand1": bp1_parts[2] if len(bp1_parts) > 2 else "",
+        "chrom2": bp2_parts[0] if bp2_parts else "",
+        "pos2": bp2_parts[1] if len(bp2_parts) > 1 else "",
+        "strand2": bp2_parts[2] if len(bp2_parts) > 2 else "",
         "chrom": chrom,
         "pos": pos,
         "ref": "",
         "alt": "",
         "transcript_id": first(row, ["FTID", "ftid"], ""),
+        "fusion_transcript_id": first(row, ["FTID", "ftid"], ""),
         "consequence": frame or "fusion",
-        "rna_junction_reads": str(junction),
+        "rna_frame_status": frame or "UNASSESSED",
+        "provided_rna_junction_reads": str(junction),
+        "rna_junction_reads": "",
+        "junction_match_status": "CALLER_REPORTED_UNVERIFIED",
         "event_confidence": f"{confidence:.3f}",
         "event_expression": "0.0",
         "driver_relevance": "0.0",
@@ -397,6 +413,8 @@ def easyfuse_row_to_event(
         "clonality": "0.5",
         "persistence": "0.5",
         "tumor_specificity": "0.7",
+        "source_file": str(source_path),
+        "source_record_id": first(row, ["BPID", "bpid", "FTID", "ftid"], ""),
         "source": f"easyfuse:{source_path.name}",
     }
     return enrich_event_layers(base), evidence

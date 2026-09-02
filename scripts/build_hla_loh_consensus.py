@@ -92,7 +92,10 @@ def main() -> int:
             })
     write_tsv(outdir / "recommended_hla_loh.tsv", recommended, ["hla_allele", "loh_status", "method", "confidence", "source"])
 
-    status_names = ("CONSENSUS_LOST", "CONSENSUS_RETAINED", "DISCORDANT", "UNASSESSED")
+    status_names = (
+        "CONSENSUS_LOST", "CONSENSUS_RETAINED", "DISCORDANT",
+        "SINGLE_TOOL_LOST", "SINGLE_TOOL_RETAINED", "UNASSESSED",
+    )
     counts = {status: sum(row["consensus_status"] == status for row in standardized) for status in status_names}
     single_tool_rows = [row for row in standardized if row["crosscheck_status"].startswith("SINGLE_TOOL")]
     dual_tool_rows = [row for row in standardized if row["source_tools"] == "lohhla;spechla"]
@@ -127,6 +130,8 @@ def main() -> int:
         f"- CONSENSUS_LOST: {counts['CONSENSUS_LOST']}",
         f"- CONSENSUS_RETAINED: {counts['CONSENSUS_RETAINED']}",
         f"- DISCORDANT: {counts['DISCORDANT']}",
+        f"- SINGLE_TOOL_LOST: {counts['SINGLE_TOOL_LOST']}",
+        f"- SINGLE_TOOL_RETAINED: {counts['SINGLE_TOOL_RETAINED']}",
         f"- UNASSESSED: {counts['UNASSESSED']}",
         f"- SINGLE_TOOL_RESULT_ROWS: {len(single_tool_rows)}",
         "",

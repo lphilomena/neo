@@ -16,6 +16,7 @@ Environment:
   RSEM_REFERENCE           RSEM reference prefix built from matching transcriptome/GTF
   RSEM_THREADS             thread count
   RSEM_ALIGNER             auto, bowtie, bowtie2, or star; default: auto
+  RSEM_RUNTIME_LIBDIR      optional library directory for the selected aligner
 USAGE
 }
 
@@ -38,12 +39,74 @@ done
 [[ -n "$OUTDIR" ]] || { echo "ERROR: --outdir is required" >&2; exit 3; }
 [[ -n "$RSEM_REFERENCE" ]] || { echo "ERROR: RSEM_REFERENCE/--rsem-reference is required" >&2; exit 3; }
 
-RSEM_BIN="${RSEM_BIN:-$(command -v rsem-calculate-expression || true)}"
-[[ -n "$RSEM_BIN" && -x "$RSEM_BIN" ]] || { echo "ERROR: rsem-calculate-expression not found; set RSEM_BIN or put it on PATH" >&2; exit 3; }
+select_rsem_bin() {
+  local requested="${RSEM_BIN:-}" root candidate
+  candidates=()
+  [[ -n "$requested" ]] && candidates+=("$requested")
+  candidate="$(command -v rsem-calculate-expression || true)"
+  [[ -n "$candidate" ]] && candidates+=("$candidate")
+  if [[ -n "${CONDA_EXE:-}" ]]; then
+    root="$(cd "$(dirname "$CONDA_EXE")/.." 2>/dev/null && pwd -P || true)"
+    [[ -n "$root" ]] && candidates+=("$root"/envs/*/bin/rsem-calculate-expression)
+  fi
+  [[ -n "${MAMBA_ROOT_PREFIX:-}" ]] && candidates+=("$MAMBA_ROOT_PREFIX"/envs/*/bin/rsem-calculate-expression)
+  for candidate in "${candidates[@]}"; do
+    [[ -x "$candidate" ]] || continue
+    if "$candidate" --version >/dev/null 2>&1; then
+      RSEM_BIN="$candidate"
+      export PATH="$(dirname "$candidate"):$PATH"
+      echo "==> RSEM executable: $RSEM_BIN" >&2
+      return 0
+    fi
+  done
+  echo "ERROR: no functional rsem-calculate-expression found; set RSEM_BIN to a relocated Conda environment executable" >&2
+  return 1
+}
+select_rsem_bin
 
 mkdir -p "$OUTDIR"
 LOG="$OUTDIR/rsem_quant.log"
 OUT_PREFIX="$OUTDIR/$SAMPLE_ID"
+
+probe_aligner() {
+  local executable="$1"
+  "$executable" --version >/dev/null 2>&1
+}
+
+configure_aligner_runtime() {
+  local executable="$1"
+  local prefix root candidate
+  probe_aligner "$executable" && return 0
+
+  # A cached Conda executable can otherwise load the host libstdc++ and fail
+  # with a GLIBCXX version error. Prefer an explicit override, then inspect
+  # installed Conda environments without assuming a particular environment name.
+  candidates=()
+  [[ -n "${RSEM_RUNTIME_LIBDIR:-}" ]] && candidates+=("$RSEM_RUNTIME_LIBDIR")
+  prefix="$(cd "$(dirname "$executable")/.." 2>/dev/null && pwd -P || true)"
+  [[ -n "$prefix" ]] && candidates+=("$prefix/lib")
+  prefix="$(cd "$(dirname "$RSEM_BIN")/.." 2>/dev/null && pwd -P || true)"
+  [[ -n "$prefix" ]] && candidates+=("$prefix/lib")
+  [[ -n "${CONDA_PREFIX:-}" ]] && candidates+=("$CONDA_PREFIX/lib")
+  if [[ -n "${CONDA_EXE:-}" ]]; then
+    root="$(cd "$(dirname "$CONDA_EXE")/.." 2>/dev/null && pwd -P || true)"
+    [[ -n "$root" ]] && candidates+=("$root/lib" "$root"/envs/*/lib)
+  fi
+  [[ -n "${MAMBA_ROOT_PREFIX:-}" ]] && candidates+=("$MAMBA_ROOT_PREFIX/lib" "$MAMBA_ROOT_PREFIX"/envs/*/lib)
+
+  for candidate in "${candidates[@]}"; do
+    [[ -r "$candidate/libstdc++.so.6" ]] || continue
+    if LD_LIBRARY_PATH="$candidate${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+        "$executable" --version >/dev/null 2>&1; then
+      export LD_LIBRARY_PATH="$candidate${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+      echo "==> RSEM aligner runtime: $candidate" >&2
+      return 0
+    fi
+  done
+  echo "ERROR: aligner exists but is not functional: $executable" >&2
+  "$executable" --version >&2 || true
+  return 1
+}
 
 ALIGNER_ARGS=()
 case "${RSEM_ALIGNER:-auto}" in
@@ -64,6 +127,22 @@ case "${RSEM_ALIGNER:-auto}" in
   star) command -v STAR >/dev/null 2>&1 || { echo "ERROR: STAR not found" >&2; exit 3; }; ALIGNER_ARGS+=(--star) ;;
   *) echo "ERROR: unsupported RSEM_ALIGNER=${RSEM_ALIGNER}" >&2; exit 3 ;;
 esac
+
+case "${RSEM_ALIGNER:-auto}" in
+  star) SELECTED_ALIGNER="$(command -v STAR)" ;;
+  bowtie) SELECTED_ALIGNER="$(command -v bowtie)" ;;
+  bowtie2) SELECTED_ALIGNER="$(command -v bowtie2)" ;;
+  auto)
+    if command -v bowtie >/dev/null 2>&1; then
+      SELECTED_ALIGNER="$(command -v bowtie)"
+    elif command -v bowtie2 >/dev/null 2>&1; then
+      SELECTED_ALIGNER="$(command -v bowtie2)"
+    else
+      SELECTED_ALIGNER="$(command -v STAR)"
+    fi
+    ;;
+esac
+configure_aligner_runtime "$SELECTED_ALIGNER"
 
 "$RSEM_BIN" --paired-end -p "$THREADS" --estimate-rspd --append-names "${ALIGNER_ARGS[@]}" \
   "$FASTQ1" "$FASTQ2" "$RSEM_REFERENCE" "$OUT_PREFIX" >"$LOG" 2>&1

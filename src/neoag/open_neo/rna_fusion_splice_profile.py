@@ -357,8 +357,9 @@ def generate_rna_fusion_splice_manifest(
             f"test -s {{outdir}}/branches/splice/snaf/snaf_candidates.tsv"
         )
     elif snaf_db:
+        snaf_python = str(inputs.get("snaf_python") or os.environ.get("SNAF_PYTHON") or "python")
         snaf_command = (
-            f"SNAF_PYTHON={_q(inputs.get('snaf_python') or 'python')} "
+            f"SNAF_PYTHON={_q(snaf_python)} "
             f"NEOAG_ALTANALYZE_IMAGE={_q(inputs.get('altanalyze_image') or 'neoag-altanalyze:snaf')} "
             f"bash {script('run_snaf_pipeline.sh')} "
             f"--bam {{outdir}}/rna/star/Aligned.sortedByCoord.out.bam "

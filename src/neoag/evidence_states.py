@@ -466,6 +466,17 @@ def derive_hla_appm_state(row: Mapping[str, Any], rules: Mapping[str, Any]) -> d
     del rules
     status = _text(row, "appm_integrity_status", "appm_evidence_completeness", "escape_status")
     lost = _text(row, "restricting_hla_lost")
+    allele_consensus = _text(row, "hla_loh_consensus_status")
+    if allele_consensus == "DISCORDANT":
+        return _result("CONFLICT", 0, "restricting-HLA LOH tools disagree", conflict=True)
+    if allele_consensus in {"CONSENSUS_LOST", "CONSENSUS_LOH"}:
+        return _result("RESTRICTING_HLA_LOST", 0, f"restricting HLA confirmed lost: {allele_consensus}", hard_fail=True, hard_code="HARD_RESTRICTING_HLA_LOST")
+    if allele_consensus and allele_consensus not in {"CONSENSUS_RETAINED", "CONSENSUS_NO_LOH"}:
+        return _result(
+            "HLA_LOH_UNASSESSED", 1,
+            f"restricting-HLA retention lacks dual-tool allele-level consensus: {allele_consensus}",
+            assessed=False,
+        )
     if any(token in status for token in CONFLICT_TOKENS):
         return _result("CONFLICT", 0, status, conflict=True)
     if lost in {"YES", "TRUE", "1"}:

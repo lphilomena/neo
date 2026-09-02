@@ -152,6 +152,8 @@ source_dir="$(find "${tmp_dir}" -mindepth 1 -maxdepth 1 -type d | head -1)"
 rm -rf "${HOME_DIR}.new"
 mv "${source_dir}" "${HOME_DIR}.new"
 printf '%s\n' "${REF}" > "${HOME_DIR}.new/NEOAG_PINNED_REF"
+command -v patch >/dev/null 2>&1 || { echo "ERROR: patch is required to install SpliceMutr" >&2; exit 43; }
+patch -p1 -d "${HOME_DIR}.new" < "${ROOT}/patches/splicemutr-bsgenome-package.patch"
 rm -rf "${HOME_DIR}"
 mv "${HOME_DIR}.new" "${HOME_DIR}"
 

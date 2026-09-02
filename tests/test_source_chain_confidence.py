@@ -338,6 +338,20 @@ def test_statuses_do_not_conflate_not_applicable_unassessed_and_negative():
     assert _requirements_by_name(negative)["rna_or_direct_evidence"].status == "NEGATIVE"
 
 
+def test_fusion_caller_total_cannot_substitute_for_exact_junction_reads():
+    row = _base_peptide("P_FUSION_CALLER_ONLY", "FUSION")
+    row.update({
+        "provided_rna_junction_reads": "1062",
+        "verified_rna_junction_reads": "0",
+        "rna_junction_reads": "0",
+        "junction_match_status": "NO_EXACT_JUNCTION_MATCH",
+    })
+    result = derive_source_chain_confidence(row, {})
+    requirement = _requirements_by_name(result)["split_read_support"]
+    assert requirement.status == "NEGATIVE"
+    assert requirement.reason_code == "SC_FUSION_EXACT_JUNCTION_NOT_MATCHED"
+
+
 def _legacy_complete_row(pid: str) -> dict[str, str]:
     # Existing EC-v2 complete row intentionally lacks several source-chain audit fields.
     return {

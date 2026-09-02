@@ -40,6 +40,10 @@ def highres(allele: str) -> str:
     return re.sub(r"(?<=[0-9])[NLSQGAP]+$", "", norm_allele(allele))
 
 
+def _field_count(allele: str) -> int:
+    return len(allele.split("*", 1)[1].split(":")) if "*" in allele else 0
+
+
 def infer_tool(path: Path) -> str:
     s = str(path).lower()
     if "optitype" in s:
@@ -102,6 +106,27 @@ def parse_file(path: Path) -> list[str]:
     return out
 
 
+def _result_priority(tool: str, path: Path) -> tuple[int, float, str]:
+    """Prefer one authoritative caller output over diagnostic derivatives."""
+    name = path.name.lower()
+    if tool == "SpecHLA":
+        if name == "hla.result.txt":
+            rank = 0
+        elif name == "hla.result.g.group.txt":
+            rank = 1
+        elif "result" in name and "detail" not in name:
+            rank = 2
+        else:
+            rank = 20
+    elif tool == "OptiType":
+        rank = 0 if name.endswith("_result.tsv") else 10
+    elif tool == "HLA-LA":
+        rank = 0 if "bestguess" in name else 10
+    else:
+        rank = 5
+    return rank, -path.stat().st_mtime, str(path)
+
+
 def collect_typing(paths: list[Path], sample_id: str | None = None) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for path in candidate_files(paths, sample_id=sample_id):
@@ -126,15 +151,17 @@ def collect_typing(paths: list[Path], sample_id: str | None = None) -> list[dict
                 "highres2": highres(vals[1]) if len(vals) > 1 else "",
                 "source_file": str(path),
             })
-    # Prefer known tools and recent files; keep first per tool/locus/source.
-    unique: list[dict[str, Any]] = []
-    seen_keys: set[tuple[str, str, str]] = set()
+    # One caller is one vote. Diagnostic/detail files from the same caller
+    # must not masquerade as independent tools or inflate consensus support.
+    selected: dict[tuple[str, str], dict[str, Any]] = {}
     for row in rows:
-        key = (row["tool"], row["locus"], row["source_file"])
-        if key not in seen_keys:
-            seen_keys.add(key)
-            unique.append(row)
-    return unique
+        key = (row["tool"], row["locus"])
+        previous = selected.get(key)
+        if previous is None or _result_priority(row["tool"], Path(row["source_file"])) < _result_priority(
+            previous["tool"], Path(previous["source_file"])
+        ):
+            selected[key] = row
+    return sorted(selected.values(), key=lambda row: (LOCUS_ORDER.index(row["locus"]), row["tool"]))
 
 
 def consensus(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -159,15 +186,20 @@ def consensus(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             continue
         pairs = []
         high_pairs = []
+        high_rows = []
         for row in locus_rows:
             vals = sorted([x for x in [row.get("lowres1"), row.get("lowres2")] if x])
             pairs.append(" / ".join(vals))
             high_vals = sorted([x for x in [row.get("highres1"), row.get("highres2")] if x])
-            high_pairs.append(" / ".join(high_vals))
+            # A two-field-only caller supports the low-resolution consensus,
+            # but it neither confirms nor contradicts a four-field call.
+            if high_vals and all(_field_count(value) > 2 for value in high_vals):
+                high_pairs.append(" / ".join(high_vals))
+                high_rows.append(row)
         counts = Counter(pairs)
         best, support = counts.most_common(1)[0]
         high_counts = Counter(high_pairs)
-        high_best, high_support = high_counts.most_common(1)[0]
+        high_best, high_support = high_counts.most_common(1)[0] if high_counts else ("", 0)
         n_tools = len({r["tool"] for r in locus_rows})
         if support >= 2:
             status = "CONSENSUS"
@@ -181,9 +213,14 @@ def consensus(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "consensus_2field": best,
             "consensus_high_resolution": high_best,
             "support": f"{support}/{len(pairs)}",
-            "high_resolution_support": f"{high_support}/{len(high_pairs)}",
+            "high_resolution_support": f"{high_support}/{len(high_pairs)}" if high_pairs else "0",
             "status": status,
-            "high_resolution_status": "CONSENSUS" if high_support >= 2 else "SINGLE_TOOL" if n_tools == 1 else "DISCORDANT",
+            "high_resolution_status": (
+                "CONSENSUS" if high_support >= 2
+                else "SINGLE_TOOL" if len({r["tool"] for r in high_rows}) == 1
+                else "DISCORDANT" if high_rows
+                else "MISSING"
+            ),
             "details": "; ".join(f"{r['tool']}={r.get('lowres1','')}/{r.get('lowres2','')}" for r in locus_rows),
         })
     return out
@@ -221,7 +258,8 @@ def main(argv: list[str] | None = None) -> int:
             p = root / rel
             if p.exists():
                 search_paths.append(p)
-    search_paths.append(outdir.parent)
+    if not explicit_search_paths:
+        search_paths.append(outdir.parent)
     # Explicit result paths define the sample boundary. Tool outputs often use
     # fixed filenames (for example result.tsv or hla.result.txt) and need not
     # repeat the sample ID in either path or content.

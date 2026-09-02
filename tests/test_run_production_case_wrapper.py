@@ -21,6 +21,17 @@ def test_wrapper_uses_v2_baseline_and_v3_consensus_and_passes_production_inputs(
     consensus_rules = project / "configs/ranking/sarcoma_evidence_consensus_v3_source_chain.toml"
     consensus_rules.parent.mkdir(parents=True)
     consensus_rules.write_text("[metadata]\nname='consensus-test'\n")
+    cohort_contract = project / "configs/cohorts/dsrct_v1.toml"
+    cohort_contract.parent.mkdir(parents=True)
+    cohort_contract.write_text(
+        "[metadata]\n"
+        "id='DSRCT-TEST'\n"
+        "version='1.0'\n"
+        "[compatibility]\n"
+        "ranking_profile='profiles/sarcoma_rna_supported_v2_provisional.toml'\n"
+        "evidence_consensus_rules='configs/ranking/sarcoma_evidence_consensus_v3_source_chain.toml'\n"
+        "report_contract_version='test-v1'\n"
+    )
     (project / "scripts").mkdir()
 
     case_root = tmp_path / "case"

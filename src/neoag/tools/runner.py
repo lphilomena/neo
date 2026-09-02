@@ -1510,7 +1510,17 @@ def _run_deepimmuno_external(pairs: list[tuple[str, str]], out_tsv: Path, ctx: R
 
     custom = ctx.executables.get("deepimmuno_dir") or os.environ.get("DEEPIMMUNO_DIR", "")
     deep_dir = resolve_deepimmuno_dir(custom or None)
-    rows = run_deepimmuno_batch(pairs, deep_dir, sample_id=ctx.sample_id)
+    deepimmuno_python = (
+        ctx.executables.get("deepimmuno_python")
+        or os.environ.get("DEEPIMMUNO_PYTHON")
+        or sys.executable
+    )
+    rows = run_deepimmuno_batch(
+        pairs,
+        deep_dir,
+        sample_id=ctx.sample_id,
+        python_exe=deepimmuno_python,
+    )
     write_deepimmuno_evidence(out_tsv, rows)
 
 

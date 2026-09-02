@@ -49,6 +49,7 @@ IMMUNE_ESCAPE_SUMMARY_FIELDS = [
 
 PEPTIDE_ESCAPE_FIELDS = [
     "peptide_id", "event_id", "peptide", "hla_allele", "mhc_class", "therapy_context", "restricting_hla_lost",
+    "hla_loh_consensus_status", "hla_loh_crosscheck_status", "hla_loh_source_tools",
     "lost_hla_alleles", "b2m_status", "hla_class_i_global_status", "jak_stat_status", "tap_processing_status",
     "nlrc5_status", "ciita_status", "escape_status", "escape_reason", "escape_multiplier", "priority_cap",
 ]
@@ -98,6 +99,30 @@ def _load_lost_hla_with_conf(path: str | Path | None) -> dict[str, dict[str, str
                 "method": first(r, ["method", "tool", "source"], ""),
                 "raw_status": status or "loh",
             }
+    return out
+
+
+def _load_hla_loh_states(path: str | Path | None) -> dict[str, dict[str, str]]:
+    """Load every allele state without converting incomplete evidence to retention."""
+    if not _path_exists(path):
+        return {}
+    out: dict[str, dict[str, str]] = {}
+    for row in read_tsv(path):
+        allele = normalize_hla_allele(first(row, ["hla_allele", "allele", "HLA"], ""))
+        if not allele:
+            continue
+        consensus = first(row, ["consensus_status"], "").strip().upper()
+        crosscheck = first(row, ["crosscheck_status"], "").strip().upper()
+        legacy = first(row, ["loh_status", "LOH", "status", "loss", "Loss"], "").strip().upper()
+        if not consensus:
+            consensus = "LEGACY_LOST_CALL" if legacy in {
+                "LOH", "LOSS", "LOST", "YES", "TRUE", "1",
+            } else "UNASSESSED"
+        out[allele] = {
+            "consensus_status": consensus,
+            "crosscheck_status": crosscheck or "UNASSESSED",
+            "source_tools": first(row, ["source_tools", "source", "tool"], ""),
+        }
     return out
 
 
@@ -257,6 +282,7 @@ def build_immune_escape_evidence(
 ) -> dict[str, str]:
     out = Path(outdir); out.mkdir(parents=True, exist_ok=True)
     ctx = _therapy_context(profile, therapy_context)
+    hla_loh_states = _load_hla_loh_states(hla_loh_tsv)
     lost_hla_info = _load_lost_hla_with_conf(hla_loh_tsv)
     lost_hla = set(lost_hla_info)
     lost_hla_i = {hla for hla in lost_hla if hla_allele_class(hla) == "I"}
@@ -322,7 +348,13 @@ def build_immune_escape_evidence(
         "mhc_ii_escape_status": "MEDIUM" if ciita_def or lost_hla_ii else "LOW",
         "ifng_response_status": "HIGH" if jak1 or jak2 else "LOW",
         "cytotoxic_killing_resistance_status": "LOW",
-        "hla_loh_status": "LOH_DETECTED" if lost_hla else ("NOT_ASSESSED" if not hla_loh_tsv else "NO_LOH_DETECTED"),
+        "hla_loh_status": (
+            "LOH_DETECTED" if lost_hla else
+            "NO_LOH_DETECTED_MULTI_TOOL" if hla_loh_states and all(
+                item["consensus_status"] == "CONSENSUS_RETAINED" for item in hla_loh_states.values()
+            ) else
+            "INCOMPLETE_OR_DISCORDANT" if hla_loh_states else "NOT_ASSESSED"
+        ),
         "lost_hla_alleles": ",".join(sorted(lost_hla)),
         "lost_hla_i_alleles": ",".join(sorted(lost_hla_i)),
         "lost_hla_ii_alleles": ",".join(sorted(lost_hla_ii)),
@@ -345,6 +377,8 @@ def build_immune_escape_evidence(
         peptide_id = p.get("peptide_id", "")
         event_id = p.get("event_id", "")
         hla = normalize_hla_allele(p.get("hla_allele", ""))
+        allele_loh = hla_loh_states.get(hla, {})
+        allele_loh_status = allele_loh.get("consensus_status", "UNASSESSED")
         mhc_i = _mhc_class_i(p.get("mhc_class", "I"))
         restricting_hla_lost = hla in (lost_hla_i if mhc_i else lost_hla_ii)
         reasons: list[str] = []
@@ -355,6 +389,10 @@ def build_immune_escape_evidence(
             else:
                 status = "LOST_RESTRICTING_HLA_RETAINED_FOR_REVIEW"; mult = min(mult, 0.35); cap = "C_CAUTION"
             reasons.append("restricting_hla_lost")
+        elif allele_loh_status != "CONSENSUS_RETAINED":
+            status = "HLA_LOH_INCOMPLETE" if status == "ESCAPE_PASS" else status
+            cap = cap or "C_CAUTION"
+            reasons.append(f"restricting_hla_{allele_loh_status.lower()}")
         if mhc_i and b2m:
             status = "GLOBAL_MHC_I_LOSS"; mult = 0.0; cap = "D"; reasons.append("b2m_biallelic_loss")
         elif mhc_i and tap_def:
@@ -389,6 +427,9 @@ def build_immune_escape_evidence(
             "mhc_class": p.get("mhc_class", ""),
             "therapy_context": ctx,
             "restricting_hla_lost": "yes" if restricting_hla_lost else "no",
+            "hla_loh_consensus_status": allele_loh_status,
+            "hla_loh_crosscheck_status": allele_loh.get("crosscheck_status", "UNASSESSED"),
+            "hla_loh_source_tools": allele_loh.get("source_tools", ""),
             "lost_hla_alleles": ",".join(sorted(lost_hla)),
             "b2m_status": "BIALLELIC_LOSS" if b2m else gene_map.get("B2M", {}).get("biallelic_status", "NO_EVIDENCE"),
             "hla_class_i_global_status": "GLOBAL_MHC_I_LOSS" if b2m else "NO_GLOBAL_LOSS_SIGNAL",

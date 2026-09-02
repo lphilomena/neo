@@ -188,8 +188,10 @@ def main() -> int:
     ap.add_argument("--profile", default="profiles/sarcoma_rna_supported_v2_provisional.toml")
     ap.add_argument(
         "--cohort-rule-set",
-        default="configs/cohorts/dsrct_v1.toml",
-        help="Versioned cohort contract that locks the ranking profile, evidence rules and report policy.",
+        help=(
+            "Optional versioned cohort contract that locks the ranking profile, evidence rules and report policy. "
+            "Required for cohort-comparable production; omit only for an explicitly non-comparable custom run."
+        ),
     )
     ap.add_argument(
         "--clinical-context",
@@ -340,20 +342,22 @@ def main() -> int:
     if not consensus_rules_path.is_absolute():
         consensus_rules_path = root / consensus_rules_path
     evidence_consensus_rules = require(str(consensus_rules_path), "evidence-consensus rules")
-    contract_path = Path(args.cohort_rule_set)
-    if not contract_path.is_absolute():
-        contract_path = root / contract_path
-    cohort_contract = load_cohort_rule_contract(require(str(contract_path), "cohort rule contract"))
-    contract_mismatches = validate_cohort_rule_pair(
-        cohort_contract,
-        ranking_profile=profile,
-        evidence_consensus_rules=evidence_consensus_rules,
-    )
-    if contract_mismatches:
-        raise SystemExit(
-            "Cohort rule contract mismatch; this run is not cohort-comparable: "
-            + "; ".join(contract_mismatches)
+    cohort_contract: dict[str, str] | None = None
+    if args.cohort_rule_set:
+        contract_path = Path(args.cohort_rule_set)
+        if not contract_path.is_absolute():
+            contract_path = root / contract_path
+        cohort_contract = load_cohort_rule_contract(require(str(contract_path), "cohort rule contract"))
+        contract_mismatches = validate_cohort_rule_pair(
+            cohort_contract,
+            ranking_profile=profile,
+            evidence_consensus_rules=evidence_consensus_rules,
         )
+        if contract_mismatches:
+            raise SystemExit(
+                "Cohort rule contract mismatch; this run is not cohort-comparable: "
+                + "; ".join(contract_mismatches)
+            )
     clinical_context, clinical_context_source = load_clinical_context(args.clinical_context)
     reference_fasta = require(args.reference_fasta, "reference FASTA") if args.reference_fasta else ""
     tumor_dna_bam = require(args.tumor_dna_bam, "tumor DNA BAM") if args.tumor_dna_bam else ""
@@ -419,15 +423,15 @@ def main() -> int:
         f"profile = {q(profile)}",
         f"outdir = {q(Path(args.outdir).resolve())}",
         f"hla_file = {q(hla)}",
-        f"cohort_rule_set = {q(cohort_contract['path'])}",
-        f"cohort_rule_set_id = {q(cohort_contract['id'])}",
-        f"cohort_rule_set_version = {q(cohort_contract['version'])}",
-        f"cohort_rule_set_sha256 = {q(cohort_contract['contract_sha256'])}",
-        f"ranking_profile_sha256 = {q(cohort_contract['ranking_profile_sha256'])}",
-        f"evidence_consensus_rules_sha256 = {q(cohort_contract['evidence_consensus_rules_sha256'])}",
-        f"report_contract_version = {q(cohort_contract['report_contract_version'])}",
-        f"release_audit_policy = {q(cohort_contract['release_audit_policy'])}",
-        "cohort_comparability_required = true",
+        *( [f"cohort_rule_set = {q(cohort_contract['path'])}"] if cohort_contract else [] ),
+        *( [f"cohort_rule_set_id = {q(cohort_contract['id'])}"] if cohort_contract else [] ),
+        *( [f"cohort_rule_set_version = {q(cohort_contract['version'])}"] if cohort_contract else [] ),
+        *( [f"cohort_rule_set_sha256 = {q(cohort_contract['contract_sha256'])}"] if cohort_contract else [] ),
+        *( [f"ranking_profile_sha256 = {q(cohort_contract['ranking_profile_sha256'])}"] if cohort_contract else [] ),
+        *( [f"evidence_consensus_rules_sha256 = {q(cohort_contract['evidence_consensus_rules_sha256'])}"] if cohort_contract else [] ),
+        *( [f"report_contract_version = {q(cohort_contract['report_contract_version'])}"] if cohort_contract else [] ),
+        *( [f"release_audit_policy = {q(cohort_contract['release_audit_policy'])}"] if cohort_contract else [] ),
+        f"cohort_comparability_required = {'true' if cohort_contract else 'false'}",
         "tools_stub = false",
         "immunogenicity_stub = false",
         f"presentation_predictors = {predictor_toml}",

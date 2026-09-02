@@ -35,6 +35,9 @@ def main() -> int:
     sample_id = required_env("NEOAG_SNAF_SAMPLE_ID")
     cores = int(os.environ.get("NEOAG_SNAF_CORES", "8"))
     netmhcpan = os.environ.get("NEOAG_NETMHCPAN_BIN") or None
+    discovery_only = os.environ.get("NEOAG_SNAF_DISCOVERY_ONLY", "1").lower() not in {
+        "0", "false", "no",
+    }
     binding_method = os.environ.get(
         "NEOAG_SNAF_BINDING_METHOD", "netMHCpan" if netmhcpan else "MHCflurry"
     )
@@ -60,7 +63,7 @@ def main() -> int:
     df.to_csv(outdir / "snaf_junction_count_matrix.tsv", sep="\t")
 
     hlas = read_hla(hla_file)
-    if binding_method.lower() == "netmhcpan" and not netmhcpan:
+    if not discovery_only and binding_method.lower() == "netmhcpan" and not netmhcpan:
         raise RuntimeError("NEOAG_NETMHCPAN_BIN is required for SNAF NetMHCpan mode")
     snaf.initialize(
         df=df,
@@ -75,18 +78,49 @@ def main() -> int:
         outdir=str(outdir),
         filter_mode="maxmin",
     )
-    query.run(hlas=[hlas], outdir=str(outdir))
-    snaf.JunctionCountMatrixQuery.generate_results(
-        path=str(outdir / "after_prediction.p"), outdir=str(outdir)
-    )
-
-    source = outdir / "T_candidates" / f"T_antigen_candidates_{sample_id}.txt"
-    if not source.is_file():
-        source = outdir / "T_candidates" / "T_antigen_candidates_all.txt"
-    if not source.is_file():
-        raise RuntimeError("SNAF completed without a T-antigen candidate table")
-    with source.open(encoding="utf-8", errors="replace", newline="") as handle:
-        rows = list(csv.DictReader(handle, delimiter="\t"))
+    if discovery_only:
+        # Skill 2 performs presentation in one shared stage. SNAF therefore
+        # supplies GTEx-filtered translated peptides without requiring a
+        # second, environment-specific MHCflurry/NetMHCpan installation.
+        query.parallelize_run(kind=1)
+        query.serialize(outdir=str(outdir), name="after_translation.p")
+        rows = []
+        seen = set()
+        for junction in query.translated:
+            uid = str(junction.uid)
+            coord = str(snaf.uid_to_coord(uid))
+            count = df.at[uid, sample_id] if uid in df.index else ""
+            for peptide_records in junction.peptides.values():
+                for record in peptide_records:
+                    peptide = str(record[0]) if record else ""
+                    key = (uid, peptide)
+                    if not peptide or key in seen:
+                        continue
+                    seen.add(key)
+                    rows.append({
+                        "uid": uid,
+                        "symbol": uid.split(":", 1)[0],
+                        "coord": coord,
+                        "junction_count": count,
+                        "peptide": peptide,
+                        "hla": "",
+                        "binding_affinity": "",
+                        "immunogenicity": "",
+                        "tumor_specificity_mean": "",
+                        "tumor_specificity_mle": "",
+                    })
+    else:
+        query.run(hlas=[hlas], outdir=str(outdir))
+        snaf.JunctionCountMatrixQuery.generate_results(
+            path=str(outdir / "after_prediction.p"), outdir=str(outdir)
+        )
+        source = outdir / "T_candidates" / f"T_antigen_candidates_{sample_id}.txt"
+        if not source.is_file():
+            source = outdir / "T_candidates" / "T_antigen_candidates_all.txt"
+        if not source.is_file():
+            raise RuntimeError("SNAF completed without a T-antigen candidate table")
+        with source.open(encoding="utf-8", errors="replace", newline="") as handle:
+            rows = list(csv.DictReader(handle, delimiter="\t"))
     fields = [
         "sample_id", "event_id", "gene", "chrom", "start", "end", "strand",
         "junction_reads", "peptide", "hla_allele", "binding_rank",
@@ -119,7 +153,10 @@ def main() -> int:
                 "tumor_specificity_mean": row.get("tumor_specificity_mean", ""),
                 "tumor_specificity_mle": row.get("tumor_specificity_mle", ""),
                 "source_tool": "SNAF",
-                "evidence_status": "SNAF_GTEX_SUPPORTED",
+                "evidence_status": (
+                    "SNAF_GTEX_FILTERED_DISCOVERY"
+                    if discovery_only else "SNAF_GTEX_SUPPORTED"
+                ),
             })
     return 0
 

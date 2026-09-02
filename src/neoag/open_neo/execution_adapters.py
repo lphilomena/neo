@@ -44,6 +44,8 @@ ARTIFACT_NAMES: dict[str, tuple[str, ...]] = {
     "run_manifest": ("run_manifest.json", "evidence_consensus_run.json", "production_run_summary.json"),
     "comparison_md": ("ranking_compare_weighted_vs_consensus.md",),
     "comparison_tsv": ("ranking_compare_weighted_vs_consensus.tsv", "weighted_vs_consensus_comparison.tsv"),
+    "production_manifest": ("production.results.toml",),
+    "generated_config": ("run.production.generated.toml",),
 }
 
 
@@ -133,6 +135,22 @@ def discover_result_artifacts(result_dir: str | Path) -> dict[str, str]:
         path = find_artifact(result_dir, names)
         if path:
             out[key] = str(path.resolve())
+    root = Path(result_dir).resolve()
+    parent_candidates = {
+        "production_manifest": (
+            root / "manifest" / "production.results.toml",
+            root.parent / "manifest" / "production.results.toml",
+        ),
+        "generated_config": (
+            root / "run.production.generated.toml",
+            root.parent / "run.production.generated.toml",
+        ),
+    }
+    for key, candidates in parent_candidates.items():
+        if key not in out:
+            candidate = next((path for path in candidates if path.is_file()), None)
+            if candidate:
+                out[key] = str(candidate.resolve())
     return out
 
 

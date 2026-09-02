@@ -23,6 +23,7 @@ SNAF_PY="${SNAF_PYTHON:-python}"
 SKIP_ALTANALYZE="${SKIP_ALTANALYZE:-0}"
 STAR_SJ="${STAR_SJ:-}"
 KEEP_UNVERIFIED="${SNAF_KEEP_UNVERIFIED_JUNCTIONS:-0}"
+RUN_AS_HOST_USER="${NEOAG_ALTANALYZE_RUN_AS_HOST_USER:-1}"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --bam) BAM="$2"; shift 2;;
@@ -62,6 +63,15 @@ STAR_REPORT="$OUT/star_sj_overlap.tsv"
 
 mkdir -p "$WORK/bam" "$OUT/assets"
 
+normalize_work_ownership() {
+  # Older runs may have root-owned files because Docker used its default user.
+  # Repair those files from inside the same image before the host resumes.
+  if find "$WORK" -maxdepth 4 ! -user "$(id -u)" -print -quit 2>/dev/null | grep -q .; then
+    docker run --rm -v "$WORK:/mnt" --entrypoint /bin/sh "$IMAGE" -c \
+      "chown -R $(id -u):$(id -g) /mnt 2>/dev/null || chmod -R a+rwX /mnt"
+  fi
+}
+
 provenance_symlink_bam() {
   mkdir -p "$WORK/bam"
   rm -f \
@@ -69,6 +79,9 @@ provenance_symlink_bam() {
     "$WORK/bam/${SAMPLE}.bam.bai" \
     "$WORK/bam/${SAMPLE}_replicate.bam" \
     "$WORK/bam/${SAMPLE}_replicate.bam.bai"
+  # AltAnalyze runs in a container and may recreate this file as root.
+  # Remove it through the caller-owned work directory before rewriting it.
+  rm -f "$WORK/samples.txt"
   ln -sfn "$BAM" "$WORK/bam/${SAMPLE}.bam"
   if [[ -s "${BAM}.bai" ]]; then
     ln -sfn "${BAM}.bai" "$WORK/bam/${SAMPLE}.bam.bai"
@@ -79,6 +92,7 @@ provenance_symlink_bam() {
 if [[ "$SKIP_ALTANALYZE" != "1" ]]; then
   command -v docker >/dev/null || { echo "ERROR: docker is required for AltAnalyze" >&2; exit 2; }
   docker image inspect "$IMAGE" >/dev/null 2>&1 || { echo "ERROR: missing AltAnalyze image: $IMAGE" >&2; exit 2; }
+  normalize_work_ownership
   # Drop leftover replicate / empty bind-mount files before identify bam.
   rm -f \
     "$WORK/bam/${SAMPLE}.bam" \
@@ -95,11 +109,16 @@ if [[ "$SKIP_ALTANALYZE" != "1" ]]; then
       -v "${BAM}.bai:/mnt/bam/${SAMPLE}.bam.bai:ro"
     )
   fi
+  docker_user=()
+  if [[ "$RUN_AS_HOST_USER" == "1" ]]; then
+    docker_user=(--user "$(id -u):$(id -g)" -e HOME=/tmp)
+  fi
   echo "==> AltAnalyze identify bam sample=${SAMPLE} (single BAM, no fake replicate)"
   set +e
-  docker run --rm "${mounts[@]}" "$IMAGE" identify bam "$THREADS"
+  docker run --rm "${docker_user[@]}" "${mounts[@]}" "$IMAGE" identify bam "$THREADS"
   aa_rc=$?
   set -e
+  normalize_work_ownership
   provenance_symlink_bam
   if [[ ! -s "$FULL" ]] || [[ "$(wc -l < "$FULL")" -le 2 ]]; then
     echo "ERROR: AltAnalyze docker rc=${aa_rc} and no usable counts.original.full" >&2
@@ -110,6 +129,9 @@ if [[ "$SKIP_ALTANALYZE" != "1" ]]; then
   fi
 else
   # Resume path: replace 0-byte leftovers with a real BAM symlink.
+  command -v docker >/dev/null || { echo "ERROR: docker is required to repair AltAnalyze work ownership" >&2; exit 2; }
+  docker image inspect "$IMAGE" >/dev/null 2>&1 || { echo "ERROR: missing AltAnalyze image: $IMAGE" >&2; exit 2; }
+  normalize_work_ownership
   provenance_symlink_bam
 fi
 
@@ -275,7 +297,14 @@ export NEOAG_SNAF_DB="$DB"
 export NEOAG_SNAF_HLA_FILE="$HLA"
 export NEOAG_SNAF_SAMPLE_ID="$SAMPLE"
 export NEOAG_SNAF_CORES="$THREADS"
-"$SNAF_PY" "$(dirname "$0")/snaf_sample_workflow.py"
+SNAF_WORKFLOW="$(cd "$(dirname "$0")" && pwd -P)/snaf_sample_workflow.py"
+# SNAF's dashboard cleanup expects an assets directory under the current
+# working directory. Run from the caller-owned output directory so cleanup
+# never targets the repository or fails after an otherwise successful run.
+(
+  cd "$OUT"
+  "$SNAF_PY" "$SNAF_WORKFLOW"
+)
 # Header-only candidates still count as success (stage-3 may be empty).
 [[ -f "$OUT/snaf_candidates.tsv" ]] || { echo "ERROR: missing snaf_candidates.tsv" >&2; exit 1; }
 date -Is > "$OUT/.snaf_complete"

@@ -6,22 +6,37 @@ target_sample_id: TUMOR001
 splicemutr_home: /opt/neoag/tools/SpliceMutr
 python: python
 rscript: Rscript
+# Optional separate R runtime that contains the LeafCutter R package.
+leafcutter_rscript: Rscript
 threads: 16
+
+# Use outlier for one tumor plus a public/independent normal panel. Differential
+# mode requires replicated tumor and normal groups.
+analysis_mode: differential
 
 # Official LeafCutter/LeafViz runtime.
 leafcutter_cluster_script: /opt/neoag/tools/SpliceMutr/python_scripts/splicemutr_leafcutter_cluster_regtools.py
 leafcutter_ds_script: /opt/leafcutter/scripts/leafcutter_ds.R
+leafcutter_outlier_script: /opt/leafcutter/scripts/leafcutterMD.R
 leafviz_prepare_results_script: /opt/leafcutter/leafviz/prepare_results.R
 leafcutter_exon_file: /ref/splicemutr/GRCh38/gencode.exons.txt
 leafcutter_annotation_prefix: /ref/splicemutr/GRCh38/gencode
 leafcutter_min_samples: 3
 max_intron_length: 500000
+leafcutter_outlier_min_coverage: 20
+leafcutter_outlier_pvalue: 0.05
+leafcutter_outlier_adjust_method: BH
+form_transcript_chunks: 8
 
 # Transcript reconstruction references must use the same GRCh38/GENCODE build.
 txdb: /ref/splicemutr/GRCh38/gencode.txdb.sqlite
-bsgenome_name: BSgenome.Hsapiens.GENCODE.GRCh38
+bsgenome_name: Hsapiens
+bsgenome_package: BSgenome.Hsapiens.UCSC.hg38
 
 # Cohort power and filtering policy.
+# The sample sheet may mix STAR SJ.out.tab and precomputed LeafCutter .junc files.
+# Public normals must be labelled normal_match=PUBLIC_PROXY; their non-detection is
+# not equivalent to a patient-matched normal negative result.
 min_normal_samples: 2
 min_tumor_samples: 1
 min_unique_reads: 10

@@ -317,6 +317,8 @@ def easyfuse_row_to_variant_peptide_rows(
     chrom, pos = _breakpoint_chrom_pos(first(row, ["Breakpoint1", "breakpoint1"], ""))
     frame = str(first(row, ["frame", "Frame"], "")).lower()
     fusion_gene = first(row, ["Fusion_Gene", "fusion_gene"], gene.replace("::", "_"))
+    bp1 = first(row, ["Breakpoint1", "breakpoint1"], "")
+    bp2 = first(row, ["Breakpoint2", "breakpoint2"], "")
     eid = event["event_id"]
     variant_key = eid
 
@@ -338,6 +340,10 @@ def easyfuse_row_to_variant_peptide_rows(
             "gene": gene,
             "ensembl_gene_id": "",
             "transcript_id": first(row, ["FTID", "ftid"], ""),
+            "fusion_transcript_id": first(row, ["FTID", "ftid"], ""),
+            "breakpoint1": bp1,
+            "breakpoint2": bp2,
+            "genome_build": "GRCh38",
             "hgvsc": "",
             "hgvsp": fusion_gene,
             "chrom": chrom,
@@ -373,6 +379,12 @@ def easyfuse_row_to_variant_peptide_rows(
             "fusion_left_gene": g1,
             "fusion_right_gene": g2,
             "fusion_orf_comparison_status": "TRACEABLE_TO_CALLER_TRANSCRIPT" if first(row, ["FTID", "ftid"], "") else "ORF_TRANSCRIPT_UNASSESSED",
+            "rna_frame_status": frame or "UNASSESSED",
+            "provided_rna_junction_reads": str(_tool_junction_reads(row)),
+            "rna_junction_reads": "",
+            "junction_match_status": "CALLER_REPORTED_UNVERIFIED",
+            "source_file": str(first(row, ["source_file"], "")),
+            "source_record_id": first(row, ["BPID", "bpid", "FTID", "ftid"], ""),
             **win,
         })
     return out

@@ -750,6 +750,7 @@ def _fusion_breakpoint_requirement(row: Mapping[str, Any]) -> RequirementAssessm
 def _fusion_split_requirement(row: Mapping[str, Any], rules: Mapping[str, Any]) -> RequirementAssessment:
     fields = _present(
         row, "split_reads", "rna_junction_reads", "junction_reads", "unique_split_reads",
+        "verified_rna_junction_reads", "provided_rna_junction_reads", "junction_match_status",
         "junction_support_status", "anchor_size", "duplicate_removed_status",
         "junction_sequence_uniqueness_status", "independent_start_sites", "unique_molecules",
     )
@@ -759,11 +760,21 @@ def _fusion_split_requirement(row: Mapping[str, Any], rules: Mapping[str, Any]) 
     )
     if any(token in text for token in ("ARTIFACT", "NOT_SUPPORTED", "INVALID", "NON_UNIQUE", "DUPLICATE_ONLY")):
         return _assessment("split_read_support", "Unique split-read support for the fusion breakpoint", NEGATIVE, "SC_FUSION_SPLIT_READ_REFUTED", text, fields, fatal_if_negative=True)
-    reads = _number(row, "unique_split_reads", "split_reads", "rna_junction_reads", "junction_reads")
+    match_status = _text(row, "junction_match_status", "junction_verification_status")
+    reads = _number(row, "verified_rna_junction_reads", "unique_split_reads", "split_reads", "rna_junction_reads", "junction_reads")
     minimum = _rule_threshold(rules, "junction_min_reads", _rule_threshold(rules, "fusion_min_split_reads", 3))
     strong = _rule_threshold(rules, "junction_strong_reads", _rule_threshold(rules, "fusion_strong_split_reads", 10))
     if reads is None:
         return _assessment("split_read_support", "Unique split-read support for the fusion breakpoint", UNASSESSED, "SC_FUSION_SPLIT_READ_UNASSESSED", "Split-read count unavailable", fields, fatal_if_negative=True)
+    if any(token in match_status for token in ("CALLER_REPORTED_UNVERIFIED", "NO_EXACT_JUNCTION_MATCH", "GENE_REGION_ONLY")):
+        status = NEGATIVE if "NO_EXACT_JUNCTION_MATCH" in match_status else UNASSESSED
+        code = "SC_FUSION_EXACT_JUNCTION_NOT_MATCHED" if status == NEGATIVE else "SC_FUSION_CALLER_READS_UNVERIFIED"
+        return _assessment(
+            "split_read_support", "Unique split-read support for the fusion breakpoint",
+            status, code,
+            f"{match_status}; caller-reported totals are not substituted for exact-junction reads",
+            fields, fatal_if_negative=True,
+        )
     if reads >= minimum and not any(token in text for token in _LOW_POWER_TOKENS):
         return _assessment("split_read_support", "Unique split-read support for the fusion breakpoint", SUPPORTED, "SC_FUSION_SPLIT_READ_SUPPORTED", f"split/junction reads={reads:g}; strong threshold={strong:g}", fields, fatal_if_negative=True)
     if reads > 0:

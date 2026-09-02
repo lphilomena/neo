@@ -66,6 +66,17 @@ def _consensus(lohhla_status: str, spechla_status: str) -> tuple[str, str, str]:
     return "unassessed", "UNASSESSED", "No usable HLA LOH status; raw tool evidence may be present but QC-unassessed"
 
 
+def _closed_loop_status(crosscheck_status: str) -> str:
+    """Preserve whether an allele conclusion is dual-tool, single-tool, or absent."""
+    return {
+        "CONSENSUS_LOH": "CONSENSUS_LOST",
+        "CONSENSUS_NO_LOH": "CONSENSUS_RETAINED",
+        "DISCORDANT": "DISCORDANT",
+        "SINGLE_TOOL_LOH": "SINGLE_TOOL_LOST",
+        "SINGLE_TOOL_NO_LOH": "SINGLE_TOOL_RETAINED",
+    }.get(crosscheck_status, "UNASSESSED")
+
+
 def crosscheck_hla_loh(
     *,
     lohhla_hla_loh: str | Path | None = None,
@@ -91,11 +102,7 @@ def crosscheck_hla_loh(
             "spechla_status": s["status"],
             "spechla_confidence": s["confidence"],
             "consensus_loh_status": consensus,
-            "consensus_status": {
-                "loh": "CONSENSUS_LOST" if crosscheck == "CONSENSUS_LOH" else "UNASSESSED",
-                "no": "CONSENSUS_RETAINED" if crosscheck == "CONSENSUS_NO_LOH" else "UNASSESSED",
-                "discordant": "DISCORDANT",
-            }.get(consensus, "UNASSESSED"),
+            "consensus_status": _closed_loop_status(crosscheck),
             "crosscheck_status": crosscheck,
             "source_tools": ";".join(tools),
             "reason": reason,

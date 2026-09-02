@@ -220,3 +220,26 @@ def test_fusion_tools_in_registry():
 def test_check_tools_runs():
     st = check_tool("netmhcpan")
     assert st.name == "netmhcpan"
+
+
+def test_deepimmuno_external_uses_configured_python(tmp_path, monkeypatch):
+    from neoag.adapters import deepimmuno as adapter
+    from neoag.tools.runner import _run_deepimmuno_external
+
+    configured_python = "/opt/neoag/envs/neoag-tools/bin/python"
+    captured = {}
+    monkeypatch.setenv("DEEPIMMUNO_PYTHON", configured_python)
+    monkeypatch.setattr(adapter, "resolve_deepimmuno_dir", lambda _custom=None: tmp_path)
+
+    def fake_batch(pairs, deep_dir, sample_id, python_exe=None):
+        captured["python"] = python_exe
+        return []
+
+    monkeypatch.setattr(adapter, "run_deepimmuno_batch", fake_batch)
+    monkeypatch.setattr(adapter, "write_deepimmuno_evidence", lambda path, rows: path.write_text("", encoding="utf-8"))
+    context = RunContext(sample_id="S1", outdir=tmp_path, executables={"deepimmuno_dir": str(tmp_path)})
+    output = tmp_path / "deepimmuno.tsv"
+
+    _run_deepimmuno_external([("ACDEFGHIK", "HLA-A*02:01")], output, context)
+
+    assert captured["python"] == configured_python

@@ -202,6 +202,33 @@ def test_bioconductor_cache_helper_is_wired_into_sequenza_and_ascat() -> None:
     assert "failed the target-environment load test" in ascat_installer
 
 
+def test_lohhla_rebinds_relocated_polysolver_assets() -> None:
+    runner = (ROOT / "scripts" / "run_lohhla_sample.sh").read_text(encoding="utf-8")
+    assert 'local resolved_pshome="${PSHOME}"' in runner
+    assert 'PSHOME="${resolved_pshome}"' in runner
+    assert 'SAMTOOLS_DIR="${PSHOME}/binaries"' in runner
+
+
+def test_fusioncatcher_star_version_is_discovered_per_environment() -> None:
+    patcher = (ROOT / "scripts" / "patch_easyfuse_fusioncatcher_compat.sh").read_text(
+        encoding="utf-8"
+    )
+    assert "fusioncatcher_required_star" in patcher
+    assert "find_star_for_version" in patcher
+    assert "correct_version" in patcher
+    assert 'star-"${required}"-*' in patcher
+    assert "launcher" in patcher
+    assert 'export PATH=\\$fbin:\\$PATH' in patcher
+    assert "env_star" in patcher
+    assert ".openneo-original" in patcher
+
+    runner = (ROOT / "scripts" / "run_easyfuse_sample.sh").read_text(encoding="utf-8")
+    assert "easyfuse_candidate" in runner
+    assert "neoag_event_pipeline_v03_rc/tools/EasyFuse" in runner
+    assert 'prebuild_conda_env' in runner
+    assert '"fastp"' in runner
+
+
 def test_shared_netmhcpan_asset_is_not_repaired_in_place() -> None:
     installer = (SCRIPTS / "13_install_readme_tools.sh").read_text(encoding="utf-8")
     assert '[[ -L "$LICENSED_ROOT/netMHCpan" ]]' in installer

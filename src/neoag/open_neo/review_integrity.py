@@ -2,10 +2,16 @@ from __future__ import annotations
 
 import hashlib
 import json
+import tomllib
 from pathlib import Path
 from typing import Any
 
 from neoag.controlled_execution.io_utils import read_tsv, write_json, write_tsv
+from neoag.cohort_rules import (
+    discover_matching_cohort_contract,
+    load_cohort_rule_contract,
+    validate_cohort_rule_pair,
+)
 
 
 REQUIRED_ARTIFACTS = (
@@ -114,6 +120,83 @@ def audit_review_inputs(artifacts: dict[str, str], outdir: str | Path) -> dict[s
                 auxiliary_manifests.append(payload)
         except (OSError, json.JSONDecodeError) as exc:
             _add(checks, f"manifest_parse:{key}", "WARN", "WARNING", str(exc), path)
+
+    production_manifest: dict[str, Any] = {}
+    production_manifest_path = artifacts.get("production_manifest", "")
+    if production_manifest_path and Path(production_manifest_path).is_file():
+        try:
+            production_manifest = tomllib.loads(Path(production_manifest_path).read_text(encoding="utf-8"))
+        except (OSError, tomllib.TOMLDecodeError) as exc:
+            _add(checks, "cohort_rule_contract", "FAIL", "ERROR", f"production manifest parse failed: {exc}", production_manifest_path)
+            overall = "BLOCKED"
+    if production_manifest:
+        run_metadata = dict(production_manifest.get("run") or {})
+        evidence_metadata = dict(production_manifest.get("evidence") or {})
+        ranking_profile = str(run_metadata.get("profile") or "")
+        consensus_rules = str(evidence_metadata.get("evidence_consensus_rules") or "")
+        explicit_contract = str(run_metadata.get("cohort_rule_set") or "")
+        contract = None
+        mismatches: list[str] = []
+        try:
+            if explicit_contract:
+                contract = load_cohort_rule_contract(explicit_contract)
+                mismatches = validate_cohort_rule_pair(
+                    contract,
+                    ranking_profile=ranking_profile,
+                    evidence_consensus_rules=consensus_rules,
+                )
+            elif ranking_profile and consensus_rules:
+                contract = discover_matching_cohort_contract(ranking_profile, consensus_rules)
+        except (OSError, ValueError) as exc:
+            mismatches = [str(exc)]
+        if contract and explicit_contract:
+            expected_hashes = {
+                "cohort_rule_set_sha256": contract["contract_sha256"],
+                "ranking_profile_sha256": contract["ranking_profile_sha256"],
+                "evidence_consensus_rules_sha256": contract["evidence_consensus_rules_sha256"],
+            }
+            for key, expected in expected_hashes.items():
+                recorded = str(run_metadata.get(key) or "")
+                if recorded != expected:
+                    mismatches.append(f"{key}={recorded or 'missing'}; expected={expected}")
+            if str(run_metadata.get("report_contract_version") or "") != contract["report_contract_version"]:
+                mismatches.append("report_contract_version mismatch")
+            status = "FAIL" if mismatches else "PASS"
+            detail = (
+                "; ".join(mismatches)
+                if mismatches
+                else f"LOCKED_COMPARABLE id={contract['id']}; version={contract['version']}; report={contract['report_contract_version']}"
+            )
+            _add(checks, "cohort_rule_contract", status, "ERROR", detail, explicit_contract)
+            if mismatches:
+                overall = "BLOCKED"
+        elif contract:
+            _add(
+                checks,
+                "cohort_rule_contract",
+                "WARN",
+                "WARNING",
+                f"INFERRED_NOT_LOCKED id={contract['id']}; profile/rules match, but the production manifest did not pin the contract and hashes",
+                production_manifest_path,
+            )
+        else:
+            _add(
+                checks,
+                "cohort_rule_contract",
+                "UNASSESSED",
+                "WARNING",
+                "UNASSESSED_NO_MATCHING_CONTRACT; output is not eligible for formal cohort comparison",
+                production_manifest_path,
+            )
+    else:
+        _add(
+            checks,
+            "cohort_rule_contract",
+            "UNASSESSED",
+            "WARNING",
+            "production.results.toml not found; output is not eligible for formal cohort comparison",
+            production_manifest_path,
+        )
     hash_records = _manifest_hash_records(manifest)
     for auxiliary in auxiliary_manifests:
         hash_records.extend(_manifest_hash_records(auxiliary))

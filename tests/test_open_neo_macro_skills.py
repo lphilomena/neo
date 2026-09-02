@@ -1182,7 +1182,9 @@ def test_rna_fastq_profile_does_not_require_ctat_for_easyfuse_only(tmp_path: Pat
     assert "ctat_genome_lib" not in result["missing_required"]
 
 
-def test_rna_fastq_profile_uses_builtin_snaf_when_reference_is_configured(tmp_path: Path):
+def test_rna_fastq_profile_uses_builtin_snaf_when_reference_is_configured(
+    tmp_path: Path, monkeypatch,
+):
     inputs = _rna_profile_inputs(tmp_path)
     snaf_db = tmp_path / "snaf_db"
     (snaf_db / "controls").mkdir(parents=True, exist_ok=True)
@@ -1195,13 +1197,14 @@ def test_rna_fastq_profile_uses_builtin_snaf_when_reference_is_configured(tmp_pa
     ):
         (snaf_db / relative).write_bytes(b"fixture")
     inputs["snaf_db"] = str(snaf_db)
-    inputs["snaf_python"] = "/opt/snaf/bin/python"
+    monkeypatch.setenv("SNAF_PYTHON", "/opt/snaf/bin/python")
     inputs["altanalyze_image"] = "neoag-altanalyze:snaf"
     result = generate_rna_fusion_splice_manifest(
         inputs, tmp_path / "snaf-profile.toml", project_root=Path.cwd(), outdir=tmp_path / "run",
     )
     text = Path(result["manifest"]).read_text(encoding="utf-8")
     assert "run_snaf_pipeline.sh" in text
+    assert "SNAF_PYTHON=/opt/snaf/bin/python" in text
     assert str(snaf_db) in text
     assert "neoag-altanalyze:snaf" in text
 

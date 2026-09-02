@@ -746,6 +746,7 @@ def _write_final_config(
     raw_events: Path,
     raw_peptides: Path,
     evidence: dict[str, Any],
+    cohort_rule_metadata: dict[str, Any] | None = None,
     reuse_immunogenicity_sources: list[str] | None = None,
 ) -> None:
     def toml_value(value: Any) -> str:
@@ -759,6 +760,17 @@ def _write_final_config(
         "[sample]",
         f"id = {toml_value(sample_id)}",
         f"profile = {toml_value(profile)}",
+    ]
+    for key in (
+        "cohort_rule_set", "cohort_rule_set_id", "cohort_rule_set_version",
+        "cohort_rule_set_sha256", "ranking_profile_sha256",
+        "evidence_consensus_rules_sha256", "report_contract_version",
+        "release_audit_policy", "cohort_comparability_required",
+    ):
+        value = (cohort_rule_metadata or {}).get(key)
+        if value not in {None, ""}:
+            lines.append(f"{key} = {toml_value(value)}")
+    lines += [
         "",
         "[tools]",
         f"stub = {toml_value(tools_stub)}",
@@ -961,6 +973,23 @@ def run_production(
         if events or peptides:
             detected_sources.append(stage.source)
 
+    sample_identity_path = str(expanded_evidence.get("sample_identity") or "")
+    if sample_identity_path and Path(sample_identity_path).is_file():
+        identity_rows = read_tsv(sample_identity_path)
+        if identity_rows:
+            identity = identity_rows[0]
+            identity_fields = {
+                "sample_identity_status": str(identity.get("sample_identity_status") or "UNASSESSED"),
+                "sample_identity_confidence": str(identity.get("confidence") or ""),
+                "sample_identity_sites_compared": str(identity.get("sites_compared") or ""),
+                "sample_identity_fraction_common": str(identity.get("fraction_common") or ""),
+                "sample_identity_source": sample_identity_path,
+            }
+            for row in [*all_events, *all_peptides]:
+                for key, value in identity_fields.items():
+                    if not row.get(key):
+                        row[key] = value
+
     merged_dir = run_outdir / "merged"
     merged_events = merged_dir / "raw_events.tsv"
     merged_peptides = merged_dir / "raw_peptides.tsv"
@@ -1140,6 +1169,7 @@ def run_production(
         raw_events=merged_events,
         raw_peptides=merged_peptides,
         evidence=expanded_evidence,
+        cohort_rule_metadata=expanded_run,
         reuse_immunogenicity_sources=reused_immunogenicity_sources,
     )
     if skip_ranking:

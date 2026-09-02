@@ -30,7 +30,7 @@ def test_hla_loh_crosscheck_consensus_discordant_and_single_tool(tmp_path: Path)
     assert by["HLA-B*07:02"]["crosscheck_status"] == "DISCORDANT"
     assert by["HLA-B*07:02"]["consensus_status"] == "DISCORDANT"
     assert by["HLA-C*07:02"]["crosscheck_status"] == "SINGLE_TOOL_LOH"
-    assert by["HLA-C*07:02"]["consensus_status"] == "UNASSESSED"
+    assert by["HLA-C*07:02"]["consensus_status"] == "SINGLE_TOOL_LOST"
 
     out = tmp_path / "hla_loh.crosscheck.tsv"
     consensus = tmp_path / "hla_loh.consensus.tsv"
@@ -53,3 +53,11 @@ def test_hla_loh_crosscheck_strict_consensus_only(tmp_path: Path):
         include_single_tool=False,
     )
     assert read_tsv(consensus) == []
+
+
+def test_hla_loh_crosscheck_preserves_single_tool_retained_state(tmp_path: Path):
+    spechla = tmp_path / "spechla.hla_loh.tsv"
+    spechla.write_text("hla_allele\tloh_status\nHLA-A*02:01\tno\n", encoding="utf-8")
+    rows = crosscheck_hla_loh(spechla_hla_loh=spechla)
+    assert rows[0]["crosscheck_status"] == "SINGLE_TOOL_NO_LOH"
+    assert rows[0]["consensus_status"] == "SINGLE_TOOL_RETAINED"

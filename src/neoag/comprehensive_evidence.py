@@ -24,11 +24,19 @@ IDENTITY_FIELDS = {
     "peptide_id", "event_id", "sample_id", "peptide", "mutant_peptide",
     "wildtype_peptide", "hla_allele", "mhc_class", "crosses_junction",
     "contains_novel_aa", "peptide_consequence", "mutation_positions_in_peptide",
+    "junction_position_in_peptide_1based", "fusion_left_gene", "fusion_right_gene",
+    "fusion_left_peptide", "fusion_right_peptide", "fusion_junction_display",
+    "fusion_peptide_classification", "fusion_orf_comparison_status",
+    "transcript_hypothesis_id", "orf_id", "fusion_transcript_id",
+    "fusion_protein_sequence", "translation_start_status", "orf_status", "nmd_status",
 }
 EVENT_FIELDS = {
     "event_type", "mutation_source", "gene", "gene_id", "transcript_id",
     "transcript", "chrom", "pos", "ref", "alt", "protein_change", "hgvsp",
     "consequence", "tumor_vaf", "tumor_depth", "tumor_alt_count", "phase_group_id",
+    "genome_build", "adjacency_key", "breakpoint1", "breakpoint2",
+    "fusion_transcript_id", "orf_id", "fusion_protein_sequence",
+    "translation_start_status", "orf_status", "nmd_status", "frame_status",
     "haplotype_status", "phase_support_reads", "phase_total_informative_reads",
     "phase_confidence", "component_event_ids", "combined_protein_change",
 }
@@ -72,7 +80,8 @@ EXPRESSION_FIELDS = {
 RNA_FIELDS = {
     "rna_support_status", "rna_ref_reads", "rna_alt_reads", "rna_depth", "rna_vaf",
     "rna_vaf_source",
-    "rna_junction_reads", "rna_junction_source", "rna_frame_status", "junction_reads",
+    "rna_junction_reads", "provided_rna_junction_reads", "verified_rna_junction_reads",
+    "rna_junction_source", "rna_frame_status", "junction_reads", "junction_match_status",
     "junction_source", "junction_status",
     "unique_junction_reads", "junction_total_coverage", "splice_psi",
     "splice_alignment_qc_status", "matched_normal_junction_status",
