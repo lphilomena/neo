@@ -469,7 +469,10 @@ def test_install_tier_assessment_marks_inaccessible_reference_missing(tmp_path: 
     assert by_name["reference_fasta"]["status"] == "MISSING"
 
 
-def test_auto_config_discovers_tools_references_and_templates(tmp_path: Path):
+def test_auto_config_discovers_tools_references_and_templates(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("PATH", "/usr/bin:/bin")
+    monkeypatch.setenv("NEOAG_CONDA_BASE", str(tmp_path / "missing-conda"))
+    monkeypatch.delenv("SNAF_BIN", raising=False)
     project = tmp_path / "project"
     tools_root = tmp_path / "tools"
     refs_root = tmp_path / "refs"
