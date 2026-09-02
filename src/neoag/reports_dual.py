@@ -3087,6 +3087,131 @@ def _patient_coding_variant_rna_rows(bundle: ReportBundle) -> list[dict[str, str
     return result
 
 
+def _patient_experiment_entry_gate_rows(bundle: ReportBundle) -> list[dict[str, str]]:
+    """Audit peptide-HLA gates required before first-batch experimental entry."""
+    candidates: list[Mapping[str, Any]] = []
+    seen: set[str] = set()
+    for index, row in enumerate(bundle.peptides):
+        key = "|".join(str(row.get(field) or "").strip() for field in ("event_id", "peptide", "hla_allele"))
+        if not key.strip("|"):
+            key = f"candidate-{index}"
+        if key in seen:
+            continue
+        seen.add(key)
+        candidates.append(row)
+    if not candidates:
+        return []
+
+    total = len(candidates)
+    presentation = {"pass": 0, "caution": 0, "hard": 0, "unassessed": 0}
+    safety = {"pass": 0, "caution": 0, "hard": 0, "unassessed": 0}
+    exact_match = {"pass": 0, "caution": 0, "hard": 0, "unassessed": 0}
+    appm = {"pass": 0, "caution": 0, "hard": 0, "unassessed": 0}
+
+    def explicit_true(value: Any) -> bool:
+        return str(value or "").strip().upper() in {"TRUE", "YES", "1", "DETECTED", "EXACT_MATCH", "MATCH"}
+
+    def explicit_false(value: Any) -> bool:
+        return str(value or "").strip().upper() in {"FALSE", "NO", "0", "NOT_DETECTED", "NO_MATCH", "NEGATIVE"}
+
+    for row in candidates:
+        p_state = str(row.get("presentation_consensus_state") or row.get("presentation_consensus_status") or "").upper()
+        if "CONSISTENT_STRONG" in p_state or "PRESENTATION_MODERATE" in p_state:
+            presentation["pass"] += 1
+        elif "PRESENTATION_WEAK" in p_state:
+            presentation["hard"] += 1
+        elif any(token in p_state for token in ("DISCORDANT", "SINGLE_TOOL")):
+            presentation["caution"] += 1
+        else:
+            presentation["unassessed"] += 1
+
+        hard_codes = " ".join(str(row.get(field) or "").upper() for field in ("hard_failure_codes", "source_chain_hard_failure_codes"))
+        exact_value = row.get("reference_proteome_exact_match") or row.get("event_reference_proteome_exact_match")
+        exact_status = str(row.get("normal_proteome_exact_match_status") or row.get("reference_proteome_status") or "").upper()
+        if explicit_true(exact_value) or "HARD_REFERENCE_PROTEOME_MATCH" in hard_codes or exact_status in {"DETECTED", "EXACT_MATCH", "MATCH"}:
+            exact_match["hard"] += 1
+        elif explicit_false(exact_value) or any(token in exact_status for token in ("NOT_DETECTED", "NO_MATCH", "NEGATIVE", "PASS")):
+            exact_match["pass"] += 1
+        else:
+            exact_match["unassessed"] += 1
+
+        safety_state = str(row.get("safety_state") or row.get("safety_status") or row.get("safety_tier") or "").upper()
+        missing_layers = str(row.get("safety_missing_layers") or row.get("event_safety_missing_layers") or "").strip()
+        if any(token in hard_codes for token in ("HARD_REFERENCE_PROTEOME_MATCH", "HARD_NORMAL_JUNCTION", "HARD_SAFETY_REJECT")) or any(token in safety_state for token in ("REJECT", "FAIL", "HIGH_RISK")):
+            safety["hard"] += 1
+        elif "PASS" in safety_state and not missing_layers and "PARTIAL" not in safety_state:
+            safety["pass"] += 1
+        elif safety_state and "UNASSESSED" not in safety_state:
+            safety["caution"] += 1
+        else:
+            safety["unassessed"] += 1
+
+        appm_value = str(
+            row.get("appm_evidence_completeness")
+            or bundle.appm_summary.get("appm_evidence_completeness")
+            or ""
+        ).strip()
+        appm_state = str(row.get("appm_integrity_status") or row.get("hla_appm_state") or "").upper()
+        try:
+            appm_numeric = float(appm_value)
+        except (TypeError, ValueError):
+            appm_numeric = None
+        if any(token in appm_state for token in ("MAJOR_APPM_DEFECT", "REJECT", "BLOCK")):
+            appm["hard"] += 1
+        elif (appm_numeric is not None and appm_numeric >= 0.8) or "COMPLETE" in appm_value.upper() or "RETAINED" in appm_state:
+            appm["pass"] += 1
+        elif appm_value and "UNASSESSED" not in appm_value.upper():
+            appm["caution"] += 1
+        else:
+            appm["unassessed"] += 1
+
+    def gate_row(name: str, counts: Mapping[str, int], impact: str) -> dict[str, str]:
+        return {
+            "实验入口门控": name,
+            "适用Peptide–HLA": str(total),
+            "支持进入": str(counts["pass"]),
+            "谨慎/封顶": str(counts["caution"]),
+            "明确阻断": str(counts["hard"]),
+            "未评估": str(counts["unassessed"]),
+            "对候选的影响": impact,
+        }
+
+    rows = [
+        gate_row("NetMHCpan/MHCflurry核心呈递共识", presentation, "不一致或仅单工具支持通常最高进入R3审阅；两个核心工具一致弱则进入R4"),
+        gate_row("正常蛋白组精确匹配", exact_match, "检出与正常参考蛋白完全相同的肽属于硬失败，进入R4并暂缓"),
+        gate_row("自身相似性与正常组织风险筛查", safety, "证据部分完整只能进入补证或审阅；明确同序列/正常连接排除证据进入R4"),
+        gate_row("HLA/APPM证据完整度", appm, "APPM低或未评估会限制进入首批实验；事件真实不能补偿呈递链缺口"),
+    ]
+
+    fusion_rows = [row for row in candidates if _patient_track(row) == "Fusion"]
+    if fusion_rows:
+        fusion = {"pass": 0, "caution": 0, "hard": 0, "unassessed": 0}
+        for row in fusion_rows:
+            normal = " ".join(str(row.get(field) or "").upper() for field in (
+                "normal_junction_assessment_status", "normal_transcript_junction_match_status",
+                "normal_background_status", "readthrough_status",
+            ))
+            if any(token in normal for token in ("SUPPORTED_IN_NORMAL", "DETECTED_MATCHED_NORMAL", "EXACT_MATCH")):
+                fusion["hard"] += 1
+            elif any(token in normal for token in ("NOT_DETECTED_ADEQUATE_COVERAGE", "NOT_DETECTED", "NEGATIVE", "PASS")):
+                fusion["pass"] += 1
+            elif normal.strip() and not any(token in normal for token in ("UNASSESSED", "MISSING", "NOT_AVAILABLE")):
+                fusion["caution"] += 1
+            else:
+                fusion["unassessed"] += 1
+        fusion_total = len(fusion_rows)
+        rows.append({
+            "实验入口门控": "Fusion精确断点级正常背景",
+            "适用Peptide–HLA": str(fusion_total),
+            "支持进入": str(fusion["pass"]),
+            "谨慎/封顶": str(fusion["caution"]),
+            "明确阻断": str(fusion["hard"]),
+            "未评估": str(fusion["unassessed"]),
+            "对候选的影响": "缺少精确断点/正常read-through参考时不能把真实融合直接表述为可进入注射或首批功能实验的候选",
+        })
+    return rows
+
+
 def _patient_candidate_integrity(row: Mapping[str, Any]) -> tuple[bool, list[str]]:
     missing: list[str] = []
     if not str(row.get("event_id") or "").strip():
@@ -5648,6 +5773,19 @@ def make_patient_report(
         "</ul></div>"
     )
     out.append("<p>这些结果说明候选是否具备被加工和呈递的条件，但不能单独判断免疫治疗敏感、耐药或患者获益。</p></div>")
+
+    experiment_gate_rows = _patient_experiment_entry_gate_rows(bundle)
+    if experiment_gate_rows:
+        out.append("<div class='section'><h2>首批实验入口门控</h2>")
+        out.append(
+            "<p>事件真实存在不等于相应肽段已经适合进入首批实验。候选还必须经过核心呈递共识、"
+            "HLA/APPM、自身相似性与正常组织风险筛查；融合候选还需按精确断点核对正常融合或read-through背景。"
+            "下表中的“支持进入”仅表示该证据层通过计算门控，不表示候选已被确认可注射、有效或安全。</p>"
+        )
+        out.append(_table(experiment_gate_rows, [
+            "实验入口门控", "适用Peptide–HLA", "支持进入", "谨慎/封顶", "明确阻断", "未评估", "对候选的影响",
+        ]))
+        out.append("</div>")
 
     out.append("<div class='section'><h2>4. 重点变异事件（按类型、按事件去重）</h2>")
     overall = [{"事件类型": track, "事件数": count, "主要复核重点": {"SNV": "DNA深度/VAF、RNA alt、MT/WT", "InDel": "局部重比对、阅读框、NMD和phasing", "Fusion": "精确断点、junction reads、frame和正常read-through", "Splice": "精确junction、PSI/reads、正常isoform和ORF", "DNA SV": "断点与异常转录本"}.get(track, "事件真实性和证据完整性")} for track, count in sorted(track_counts.items())]

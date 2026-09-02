@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from neoag.reports_dual import ReportBundle, _apply_patient_gene_expression, _augment_runtime_tool_provenance, _find_bam_input, _patient_analysis_context, _patient_conflict_summary, _patient_disease_background, _patient_dna_evidence, _patient_dna_rna_interpretation, _patient_event_grade_counts, _patient_event_representatives, _patient_evidence_audit_rows, _patient_evidence_summary, _patient_event_change, _patient_expression_tpm_map, _patient_fusion_artifact_review, _patient_fusion_boundary_evidence, _patient_hla_loh_consensus, _patient_key_gaps, _patient_limitation, _patient_manual_review_rows, _patient_metric, _patient_presentation_metric, _patient_presentation_quantitative_row, _patient_rna_measurements, _patient_rna_metric, _patient_safety_dimensions, _patient_safety_gap, _patient_tool_rows, _patient_track, _patient_validation, _replace_gene_ids, load_report_bundle, make_dual_reports, make_patient_report, make_technical_report
-from neoag.reports_dual import _patient_ccf_coverage_rows, _patient_clonality_boundary, _patient_coding_variant_rna_rows, _patient_splice_funnel_rows
+from neoag.reports_dual import _patient_ccf_coverage_rows, _patient_clonality_boundary, _patient_coding_variant_rna_rows, _patient_experiment_entry_gate_rows, _patient_splice_funnel_rows
 from neoag.utils import write_tsv
 
 
@@ -1524,6 +1524,46 @@ def test_patient_report_explains_coding_variant_rna_gap_without_fusion_callers(t
     assert "不混入Fusion/Splice" in text
     assert "不把增加融合caller当作编码变异RNA补证" in text
     assert "DNA有、RNA无直接支持" in text
+
+
+def test_experiment_entry_gates_separate_presentation_caps_and_safety_hard_failures():
+    bundle = _bundle()
+    bundle.appm_summary = {"appm_evidence_completeness": "LOW"}
+    bundle.peptides = [
+        {
+            "event_id": "E1", "peptide": "AAAAAAAAA", "hla_allele": "HLA-A*02:01", "event_type": "SNV",
+            "presentation_consensus_state": "PRESENTATION_DISCORDANT", "safety_state": "SAFETY_PARTIAL",
+            "normal_proteome_exact_match_status": "NOT_DETECTED",
+        },
+        {
+            "event_id": "E2", "peptide": "BBBBBBBBB", "hla_allele": "HLA-A*02:01", "event_type": "Fusion",
+            "presentation_consensus_state": "PRESENTATION_CONSISTENT_STRONG", "safety_state": "SAFETY_REJECT",
+            "reference_proteome_exact_match": "true", "hard_failure_codes": "HARD_REFERENCE_PROTEOME_MATCH",
+            "normal_junction_assessment_status": "UNASSESSED",
+        },
+    ]
+    rows = {row["实验入口门控"]: row for row in _patient_experiment_entry_gate_rows(bundle)}
+    assert rows["NetMHCpan/MHCflurry核心呈递共识"]["谨慎/封顶"] == "1"
+    assert rows["NetMHCpan/MHCflurry核心呈递共识"]["支持进入"] == "1"
+    assert rows["正常蛋白组精确匹配"]["明确阻断"] == "1"
+    assert rows["HLA/APPM证据完整度"]["谨慎/封顶"] == "2"
+    assert rows["Fusion精确断点级正常背景"]["未评估"] == "1"
+
+
+def test_patient_report_states_event_truth_does_not_equal_first_batch_candidate(tmp_path):
+    bundle = _bundle()
+    bundle.peptides[0].update({
+        "presentation_consensus_state": "PRESENTATION_DISCORDANT",
+        "normal_proteome_exact_match_status": "NOT_DETECTED",
+        "safety_state": "SAFETY_PARTIAL",
+    })
+    out = tmp_path / "experiment_entry_gate.html"
+    make_patient_report(out, bundle)
+    text = out.read_text(encoding="utf-8")
+    assert "首批实验入口门控" in text
+    assert "事件真实存在不等于相应肽段已经适合进入首批实验" in text
+    assert "不表示候选已被确认可注射、有效或安全" in text
+    assert "NetMHCpan/MHCflurry核心呈递共识" in text
 
 
 def test_lohhla_qc_gap_is_not_attributed_to_missing_purity_tools():
