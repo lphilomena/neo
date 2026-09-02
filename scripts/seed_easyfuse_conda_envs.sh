@@ -38,6 +38,19 @@ seed_env_from_prefix() {
 
 echo "==> seed_easyfuse_conda_envs $(date -Is)"
 
+# Nextflow 24.10.1 hash for qc.yml (FASTP) when createOptions='-y --yes'.
+# Prefer a real mamba create over cp -a (copied prefixes break `conda activate`).
+QC_TARGET="${CONDA_CACHE}/env-dd32f47bd0756865-3ca3e4910cc80d7677b2b976f6b1230f"
+if [[ ! -x "${QC_TARGET}/bin/fastp" ]]; then
+  echo "==> mamba create qc env ${QC_TARGET}"
+  QC_YML="${NEOAG_EASYFUSE_HOME:-${ROOT}/../envs/tools/EasyFuse}/environments/qc.yml"
+  [[ -s "${QC_YML}" ]] || { echo "ERROR: EasyFuse qc.yml not found: ${QC_YML}" >&2; exit 1; }
+  mamba env create -y --prefix "${QC_TARGET}" \
+    --file "${QC_YML}"
+else
+  echo "    ${QC_TARGET}: ready"
+fi
+
 # Nextflow 24.10.1 hash for requantification.yml (from work/.nextflow.log).
 seed_env_from_prefix \
   "32b8951a86fd0d30" \

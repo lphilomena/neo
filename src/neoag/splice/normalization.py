@@ -112,6 +112,30 @@ def _source_record_fields(record: JunctionSourceRecord) -> dict[str, str]:
     }
 
 
+def _junction_qc_fields(record: JunctionSourceRecord) -> dict[str, str]:
+    """Carry auditable candidate-level junction QC into ranking tables."""
+    aliases = {
+        "unique_split_reads": ["unique_split_reads", "star_unique_reads"],
+        "multi_split_reads": ["multi_split_reads", "star_multi_reads"],
+        "total_split_reads": ["total_split_reads", "star_total_reads"],
+        "unique_start_count": ["unique_start_count", "unique_starts"],
+        "anchor_size": ["anchor_size", "max_anchor", "max_overhang"],
+        "junction_mapq": ["junction_mapq", "mapping_quality", "mapq_median"],
+        "junction_mapq_min": ["junction_mapq_min", "mapq_min"],
+        "junction_mapq_max": ["junction_mapq_max", "mapq_max"],
+        "psi": ["psi"],
+        "psi_donor": ["psi_donor"],
+        "psi_acceptor": ["psi_acceptor"],
+        "psi_method": ["psi_method"],
+        "normal_panel_detection_status": ["normal_panel_detection_status"],
+        "normal_panel_samples": ["normal_panel_samples", "normal_samples"],
+        "normal_panel_reads": ["normal_panel_reads", "normal_reads"],
+        "normal_panel_tissues": ["normal_panel_tissues", "normal_tissues"],
+        "normal_junction_coverage_status": ["normal_junction_coverage_status", "coverage_status"],
+    }
+    return {field: first(record.row, names, "") for field, names in aliases.items()}
+
+
 def _junction_fields(item: NormalizedRecord) -> dict[str, str]:
     junction = item.resolution.junction
     if junction is None:
@@ -359,6 +383,7 @@ def _event_source_row(
         "source": f"splice_source:{record.source_tool}",
         **_junction_fields(item),
         **_support_fields(item, registry, primary_tools),
+        **_junction_qc_fields(record),
         **_source_record_fields(record),
     }
     # Do not accidentally signal an assessed negative in the evidence layer.
@@ -453,6 +478,7 @@ def _peptide_source_row(
         ),
         **_junction_fields(item),
         **support,
+        **_junction_qc_fields(item.record),
         **_source_record_fields(item.record),
     }
     # Verified evidence is zero unless an exact primary entity was resolved.

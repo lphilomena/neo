@@ -1,7 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
-
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-HMFTOOLS_ENV="${ROOT}/tools/HMFTOOLS/.conda"
-
-exec mamba run -p "${HMFTOOLS_ENV}" cobalt "$@"
+DEPS="${NEOAG_BASIC_DEPS_DIR:-}"
+for HMFTOOLS_ENV in \
+  "${HMFTOOLS_CONDA:-}" \
+  "${DEPS:+${DEPS}/tools/HMFTOOLS/.conda}" \
+  "${ROOT}/tools/HMFTOOLS/.conda"
+do
+  [[ -n "${HMFTOOLS_ENV}" && -x "${HMFTOOLS_ENV}/bin/cobalt" ]] || continue
+  exec mamba run -p "${HMFTOOLS_ENV}" cobalt "$@"
+done
+echo "ERROR: HMFTOOLS conda env not found for cobalt" >&2
+exit 1

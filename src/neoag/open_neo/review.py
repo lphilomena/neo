@@ -19,6 +19,7 @@ from neoag.skill_taxonomy.review_skills import (
 from .contracts import MacroResult, MacroStep
 from .errors import FailureCode
 from .execution_adapters import discover_result_artifacts
+from .html_render import markdown_to_html
 from .review_integrity import audit_review_inputs
 from .state import RunLayout, audit, new_run_id, safe_identifier, update_case_state
 
@@ -521,7 +522,11 @@ def _write_reports(layout: RunLayout, context: dict[str, Any], review_rows: list
         technical_md = ["# Open-Neo technical review report", ""]
         for heading, body in technical_sections: technical_md += [f"## {heading}", "", body, ""]
         technical_path = layout.reports / "technical_report.md"; technical_path.write_text("\n".join(technical_md) + "\n", encoding="utf-8")
-        technical_html = layout.reports / "technical_report.html"; technical_html.write_text("<html><body><pre>" + html.escape("\n".join(technical_md)) + "</pre></body></html>", encoding="utf-8")
+        technical_html = layout.reports / "technical_report.html"
+        technical_html.write_text(
+            markdown_to_html("\n".join(technical_md), title="Open-Neo Technical Review"),
+            encoding="utf-8",
+        )
         outputs.update({"technical_report_md": str(technical_path), "technical_report_html": str(technical_html)})
         technical_docx = layout.reports / "technical_report.docx"
         if _write_docx(technical_docx, "Open-Neo Technical Review", technical_sections, first_batch): outputs["technical_report_docx"] = str(technical_docx)

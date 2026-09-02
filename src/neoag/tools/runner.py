@@ -1400,31 +1400,22 @@ def _write_bigmhc_im_stub(pairs: list[tuple[str, str]], out_tsv: Path, sample_id
 
 def _run_bigmhc_im_external(pairs: list[tuple[str, str]], out_tsv: Path, ctx: RunContext) -> None:
     import os
+    import shutil
     import subprocess
     import sys
 
     work = out_tsv.parent / "bigmhc_im"
     work.mkdir(parents=True, exist_ok=True)
-    in_csv = work / "input.csv"
-    with in_csv.open("w", encoding="utf-8", newline="") as fh:
-        fh.write("mhc,pep\n")
-        for peptide, allele in pairs:
-            fh.write(f"{allele},{peptide}\n")
     bigmhc_dir = Path(ctx.executables.get("bigmhc_dir") or os.environ.get("BIGMHC_DIR", ""))
     predict_py = bigmhc_dir / "src" / "predict.py"
     out_prd = work / "input.csv.prd"
     bigmhc_python = ctx.executables.get("bigmhc_python") or os.environ.get("BIGMHC_PYTHON") or sys.executable
-    cmd = [
-        bigmhc_python,
-        str(predict_py),
-        f"-i={in_csv}",
-        "-m=im",
-        "-a=0",
-        "-p=1",
-        "-c=1",
-        f"-o={out_prd}",
-        "-d=cpu",
-    ]
+    env = os.environ.copy()
+    default_threads = str(min(8, os.cpu_count() or 1))
+    env.setdefault("NEOAG_BIGMHC_CPU_THREADS", default_threads)
+    env.setdefault("OMP_NUM_THREADS", env["NEOAG_BIGMHC_CPU_THREADS"])
+    env.setdefault("MKL_NUM_THREADS", env["NEOAG_BIGMHC_CPU_THREADS"])
+    chunk_size = max(1, int(env.get("NEOAG_BIGMHC_CHUNK_SIZE", "50000") or "50000"))
     bigmhc_jobs = os.environ.get("NEOAG_BIGMHC_JOBS", "").strip()
     if bigmhc_jobs:
         try:
@@ -1433,8 +1424,47 @@ def _run_bigmhc_im_external(pairs: list[tuple[str, str]], out_tsv: Path, ctx: Ru
             raise ValueError("NEOAG_BIGMHC_JOBS must be a positive integer") from exc
         if jobs < 1:
             raise ValueError("NEOAG_BIGMHC_JOBS must be a positive integer")
-        cmd.append(f"-j={jobs}")
-    subprocess.run(cmd, check=True, cwd=bigmhc_dir / "src", env=os.environ.copy())
+    chunk_dir = work / "chunks"
+    chunk_dir.mkdir(parents=True, exist_ok=True)
+    chunk_outputs: list[Path] = []
+    for chunk_idx, start_idx in enumerate(range(0, len(pairs), chunk_size), start=1):
+        chunk = pairs[start_idx : start_idx + chunk_size]
+        chunk_input = chunk_dir / f"input.chunk{chunk_idx:04d}.csv"
+        chunk_output = chunk_dir / f"input.chunk{chunk_idx:04d}.csv.prd"
+        complete = (
+            chunk_output.is_file()
+            and sum(1 for _ in chunk_output.open(encoding="utf-8")) == len(chunk) + 1
+        )
+        if not complete:
+            with chunk_input.open("w", encoding="utf-8", newline="") as fh:
+                fh.write("mhc,pep\n")
+                for peptide, allele in chunk:
+                    fh.write(f"{allele},{peptide}\n")
+            cmd = [
+                bigmhc_python,
+                "-m",
+                "neoag.tools.bigmhc_compat",
+                str(predict_py),
+                f"-i={chunk_input}",
+                "-m=im",
+                "-a=0",
+                "-p=1",
+                "-c=1",
+                f"-o={chunk_output}",
+                "-d=cpu",
+            ]
+            if bigmhc_jobs:
+                cmd.append(f"-j={jobs}")
+            subprocess.run(cmd, check=True, cwd=bigmhc_dir / "src", env=env)
+        chunk_outputs.append(chunk_output)
+        print(f"bigmhc_im local: {min(start_idx + chunk_size, len(pairs))}/{len(pairs)}", flush=True)
+
+    with out_prd.open("w", encoding="utf-8", newline="") as target:
+        for index, chunk_output in enumerate(chunk_outputs):
+            with chunk_output.open(encoding="utf-8", newline="") as source:
+                if index:
+                    next(source, None)
+                shutil.copyfileobj(source, target)
     from ..adapters.bigmhc_im import parse_bigmhc_im, write_bigmhc_im_evidence
 
     write_bigmhc_im_evidence(out_tsv, parse_bigmhc_im(out_prd, ctx.sample_id))

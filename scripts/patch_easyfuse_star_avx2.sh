@@ -71,6 +71,12 @@ patch_prefix() {
   [[ -d "${prefix}/bin" ]] || return 0
   [[ -x "${prefix}/bin/STAR" ]] || return 0
 
+  # FusionCatcher 1.33 hard-requires STAR 2.7.2b; do not replace with neoag-fusion 2.7.11b.
+  if [[ -x "${prefix}/bin/fusioncatcher" || -f "${prefix}/etc/configuration.cfg" ]]; then
+    echo "    skip fusioncatcher env ${prefix}"
+    return 0
+  fi
+
   if [[ -f "${prefix}/bin/STAR.orig-bioconda" ]]; then
     echo "    already patched ${prefix}"
     patch_star_runtime_libs "${prefix}"

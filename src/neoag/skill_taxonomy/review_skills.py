@@ -5,6 +5,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from neoag.open_neo.html_render import markdown_to_html
+
 from .io import ensure_dir, markdown_table, read_table, row_get, safe_float, write_json, write_tsv
 
 
@@ -235,7 +237,10 @@ def run_technical_report(args: dict[str, Any]) -> dict[str, Any]:
             manifest_summary = f"Manifest parse failed: {exc}"
     md = ["# NeoAg Technical Report Draft", "", "## Evidence boundary", "This report is for technical review. Candidate neoantigens are computational triage outputs and require experimental validation.", "", "## Pipeline manifest / provenance", manifest_summary, "", "## Result files and hashes", markdown_table(rows, max_rows=200)]
     (outdir / "technical_report.md").write_text("\n".join(md) + "\n", encoding="utf-8")
-    (outdir / "technical_report.html").write_text("<html><body><pre>" + "\n".join(md).replace("&", "&amp;").replace("<", "&lt;") + "</pre></body></html>", encoding="utf-8")
+    (outdir / "technical_report.html").write_text(
+        markdown_to_html("\n".join(md), title="NeoAg Technical Report Draft"),
+        encoding="utf-8",
+    )
     res = {"status": "PASS", "skill": "neoag-technical-report", "summary": f"Generated technical report over {len(rows)} files", "outputs": {"technical_report": str(outdir / "technical_report.md")}}
     write_json(outdir / "skill_result.json", res)
     return res

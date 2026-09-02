@@ -210,9 +210,14 @@ write_winners_from_hla_file() {
   {
     for locus in HLA-A HLA-B HLA-C; do
       read -r -a pair <<< "${by_locus[$locus]:-}"
-      [[ ${#pair[@]} -ge 2 ]] || continue
+      [[ ${#pair[@]} -ge 1 ]] || continue
       id1="$(hla_to_polysolver_id "${pair[0]}")"
-      id2="$(hla_to_polysolver_id "${pair[1]}")"
+      # Homozygous consensus (one allele/locus): duplicate for Polysolver/LOHHLA pair format.
+      if [[ ${#pair[@]} -ge 2 ]]; then
+        id2="$(hla_to_polysolver_id "${pair[1]}")"
+      else
+        id2="${id1}"
+      fi
       printf '%s\t%s\t%s\n' "${locus}" "${id1}" "${id2}"
     done
   } > "${WINNERS}"

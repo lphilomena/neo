@@ -165,7 +165,10 @@ cat > "${BIN_DIR}/bigmhc_predict" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
 cd "${BIGMHC_DIR}/src"
-exec "${PYTHON_BIN}" predict.py "\$@"
+export PYTHONPATH="${ROOT}/src:\${PYTHONPATH:-}"
+export NEOAG_BIGMHC_CPU_THREADS="\${NEOAG_BIGMHC_CPU_THREADS:-8}"
+export NEOAG_BIGMHC_CHUNK_SIZE="\${NEOAG_BIGMHC_CHUNK_SIZE:-50000}"
+exec "${PYTHON_BIN}" -m neoag.tools.bigmhc_compat "${BIGMHC_DIR}/src/predict.py" "\$@"
 EOF
 chmod +x "${BIN_DIR}/bigmhc_predict"
 
@@ -210,7 +213,7 @@ if [[ -f "${PRIME_DIR}/test/test.txt" && -x "${NEOAG_PRIME_BIN}" && -x "${MIXMHC
   head -3 /tmp/prime_smoke.tsv 2>/dev/null || true
 fi
 if [[ -f "${BIGMHC_DIR}/data/example1.csv" ]]; then
-  (cd "${BIGMHC_DIR}/src" && "${PYTHON_BIN}" predict.py -i=../data/example1.csv -m=im -d=cpu -a=0 -p=1 -c=1 >/tmp/bigmhc_smoke.log 2>&1) || {
+  (cd "${BIGMHC_DIR}/src" && PYTHONPATH="${ROOT}/src:\${PYTHONPATH:-}" "${PYTHON_BIN}" -m neoag.tools.bigmhc_compat "${BIGMHC_DIR}/src/predict.py" -i=../data/example1.csv -m=im -d=cpu -a=0 -p=1 -c=1 >/tmp/bigmhc_smoke.log 2>&1) || {
     cat /tmp/bigmhc_smoke.log >&2
     echo "WARN: BigMHC smoke failed; ensure torch/pandas/psutil are installed in ${PYTHON_BIN}." >&2
   }

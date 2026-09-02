@@ -49,7 +49,10 @@ if [[ -n "$HLA_FILE" ]]; then [[ -s "$HLA_FILE" ]] || { echo "ERROR: HLA file mi
 [[ -n "$HLA" ]] || { echo "ERROR: HLA alleles required" >&2; exit 2; }
 [[ -n "$BIN" ]] || { echo "ERROR: pvacsplice not found" >&2; exit 3; }
 mkdir -p "$OUTDIR"
-cmd=("$BIN" run "$JUNCTIONS" "$SAMPLE" "$HLA" "$ALGORITHMS" "$OUTDIR" "$VCF" "$REF" "$GTF" -t "$THREADS")
+# pVACsplice expects algorithm names as separate positional args (not a single CSV token).
+read -r -a ALG_ARR <<< "$(echo "$ALGORITHMS" | tr ',;' '  ')"
+[[ ${#ALG_ARR[@]} -ge 1 ]] || { echo "ERROR: empty --algorithms" >&2; exit 2; }
+cmd=("$BIN" run "$JUNCTIONS" "$SAMPLE" "$HLA" "${ALG_ARR[@]}" "$OUTDIR" "$VCF" "$REF" "$GTF" -t "$THREADS")
 [[ -n "$SCORE" ]] && cmd+=(--junction-score "$SCORE")
 [[ -n "$DIST" ]] && cmd+=(--variant-distance "$DIST")
 [[ "$PASS" == 1 ]] && cmd+=(--pass-only)

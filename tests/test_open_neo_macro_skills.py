@@ -1671,6 +1671,9 @@ def test_open_neo_review_is_event_level_and_non_mutating(tmp_path: Path):
     assert (outdir / "review/hla_loh_appm_review/appm_escape_review.md").is_file()
     assert (outdir / "review/ccf_clonality_review/ccf_clonality_review.md").is_file()
     assert (outdir / "reports/technical_report.md").is_file()
+    technical_html = (outdir / "reports/technical_report.html").read_text(encoding="utf-8")
+    assert "<table>" in technical_html
+    assert "<pre>" not in technical_html
     assert review_rows[0]["pipeline_r_grade"] == "R1"
     assert review_rows[0]["experiment_priority"] == "EXPERIMENT_PRIORITY_HIGH"
 
