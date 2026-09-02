@@ -4832,6 +4832,92 @@ def _patient_fusion_artifact_review(row: Mapping[str, Any]) -> str:
     return ""
 
 
+def _patient_fusion_narrative_tier(
+    row: Mapping[str, Any], bundle: ReportBundle | None,
+) -> tuple[str, str, str]:
+    """Separate disease anchors from ordinary and tissue-background fusions."""
+    if _patient_track(row) != "Fusion":
+        return "NOT_APPLICABLE", "不适用", "非融合事件"
+    anchor = _disease_anchor(row, bundle)
+    if anchor:
+        return (
+            "DISEASE_ANCHOR",
+            "疾病锚定融合",
+            str(anchor.get("molecular_significance") or anchor.get("label") or "疾病知识库锚定事件"),
+        )
+
+    normal_status = " ".join(str(row.get(field) or "").strip().upper() for field in (
+        "normal_junction_assessment_status", "normal_transcript_junction_match_status",
+        "normal_background_status", "readthrough_status",
+    ))
+    normal_detected = any(token in normal_status for token in (
+        "SUPPORTED_IN_NORMAL", "DETECTED_MATCHED_NORMAL", "DETECTED_BROAD_NORMAL",
+        "EXACT_MATCH", "READTHROUGH", "READ-THROUGH",
+    )) and not any(token in normal_status for token in ("NOT_DETECTED", "NEGATIVE"))
+    artifact = _patient_fusion_artifact_review(row)
+    if normal_detected or artifact:
+        reason = "正常junction/read-through背景已命中" if normal_detected else artifact
+        return "BACKGROUND_REVIEW", "组织背景/伪影复核", reason
+
+    config = {}
+    if bundle is not None:
+        configured = bundle.provenance.get("fusion_background_review")
+        config = dict(configured) if isinstance(configured, Mapping) else {}
+    try:
+        threshold = float(config.get("high_normal_tissue_tpm", 100.0))
+    except (TypeError, ValueError):
+        threshold = 100.0
+    normal_tpm = _float_or_none(_patient_observed_value(row, "normal_tissue_max_tpm"))
+    normal_tissue = str(row.get("normal_tissue_max_tissue") or row.get("critical_tissue_name") or "正常组织").strip()
+    if normal_tpm is not None and normal_tpm >= threshold:
+        return (
+            "BACKGROUND_REVIEW",
+            "组织背景/伪影复核",
+            f"融合伙伴在正常组织中高表达（{normal_tissue}最高{normal_tpm:g} TPM；审阅阈值{threshold:g} TPM）；"
+            "该信息不证明融合连接存在于正常组织，但要求优先排查组织背景和通读转录",
+        )
+    return "ORDINARY_CANDIDATE", "普通融合候选", "未命中疾病锚定或明确组织背景规则；仍需完成断点、ORF和正常背景核对"
+
+
+def _patient_fusion_narrative_sort_key(row: Mapping[str, Any], bundle: ReportBundle | None) -> int:
+    tier, _, _ = _patient_fusion_narrative_tier(row, bundle)
+    return {"DISEASE_ANCHOR": 0, "ORDINARY_CANDIDATE": 1, "BACKGROUND_REVIEW": 2}.get(tier, 3)
+
+
+def _patient_fusion_narrative_rows(bundle: ReportBundle) -> list[dict[str, str]]:
+    grouped: dict[str, tuple[str, str, str]] = {}
+    precedence = {"DISEASE_ANCHOR": 0, "BACKGROUND_REVIEW": 1, "ORDINARY_CANDIDATE": 2}
+    for row in bundle.events + bundle.peptides:
+        if _patient_track(row) != "Fusion":
+            continue
+        identity = _patient_manual_review_identity(row)
+        tier = _patient_fusion_narrative_tier(row, bundle)
+        previous = grouped.get(identity)
+        if previous is None or precedence.get(tier[0], 9) < precedence.get(previous[0], 9):
+            grouped[identity] = tier
+    if not grouped:
+        return []
+    labels = {
+        "DISEASE_ANCHOR": ("疾病锚定融合", "作为疾病机制中心单独解释；优先核实断点、方向、ORF和跨断点肽，不自动提升R等级"),
+        "ORDINARY_CANDIDATE": ("普通融合候选", "保留在常规融合证据链中，按断点、frame、多caller、正常背景和呈递结果审阅"),
+        "BACKGROUND_REVIEW": ("组织背景/伪影复核", "高正常组织表达、read-through、正常junction或复杂标注事件；不计入治疗叙事中的优先融合负担"),
+    }
+    rows: list[dict[str, str]] = []
+    for tier in ("DISEASE_ANCHOR", "ORDINARY_CANDIDATE", "BACKGROUND_REVIEW"):
+        matching = [value for value in grouped.values() if value[0] == tier]
+        if not matching:
+            continue
+        label, interpretation = labels[tier]
+        examples = list(dict.fromkeys(reason for _, _, reason in matching if reason))[:2]
+        rows.append({
+            "融合叙事分层": label,
+            "独立融合事件": str(len(matching)),
+            "报告中的解释": interpretation,
+            "代表性依据": "；".join(examples) or "按结构化融合证据分层",
+        })
+    return rows
+
+
 def _patient_attention_reasons(row: Mapping[str, Any], bundle: ReportBundle | None = None) -> list[str]:
     reasons: list[str] = []
     anchor = _disease_anchor(row, bundle)
@@ -4932,7 +5018,7 @@ def _patient_manual_review_rows(
     for peptide in peptides:
         for key in _patient_event_keys(peptide):
             peptide_by_event.setdefault(key, peptide)
-    scored: list[tuple[int, int, int, dict[str, str], list[str]]] = []
+    scored: list[tuple[int, int, int, int, dict[str, str], list[str]]] = []
     seen: set[str] = set()
     for index, event in enumerate(events):
         keys = _patient_event_keys(event)
@@ -4950,10 +5036,11 @@ def _patient_manual_review_rows(
         if not reasons:
             continue
         mechanism_priority = bool(_disease_anchor(row, bundle))
-        scored.append((0 if configured or mechanism_priority else 1, -len(reasons), index, row, list(dict.fromkeys(reasons))))
+        background_priority = 1 if _patient_fusion_narrative_sort_key(row, bundle) == 2 else 0
+        scored.append((0 if configured or mechanism_priority else 1, background_priority, -len(reasons), index, row, list(dict.fromkeys(reasons))))
     result: list[dict[str, str]] = []
     displayed: set[str] = set()
-    for _, _, _, row, reasons in sorted(scored):
+    for _, _, _, _, row, reasons in sorted(scored):
         identity = _patient_manual_review_identity(row)
         if identity in displayed:
             continue
@@ -5538,8 +5625,7 @@ def make_patient_report(
         row for _, row in sorted(
             enumerate(all_representatives),
             key=lambda item: (
-                0 if _disease_anchor(item[1], bundle) else 1,
-                1 if _patient_fusion_artifact_review(item[1]) else 0,
+                _patient_fusion_narrative_sort_key(item[1], bundle),
                 item[0],
             ),
         )
@@ -5790,6 +5876,14 @@ def make_patient_report(
     out.append("<div class='section'><h2>4. 重点变异事件（按类型、按事件去重）</h2>")
     overall = [{"事件类型": track, "事件数": count, "主要复核重点": {"SNV": "DNA深度/VAF、RNA alt、MT/WT", "InDel": "局部重比对、阅读框、NMD和phasing", "Fusion": "精确断点、junction reads、frame和正常read-through", "Splice": "精确junction、PSI/reads、正常isoform和ORF", "DNA SV": "断点与异常转录本"}.get(track, "事件真实性和证据完整性")} for track, count in sorted(track_counts.items())]
     out.append(_table(overall, ["事件类型", "事件数", "主要复核重点"]))
+    fusion_narrative_rows = _patient_fusion_narrative_rows(bundle)
+    if fusion_narrative_rows:
+        out.append("<h3>Fusion疾病机制与组织背景分层</h3>")
+        out.append(
+            "<p class='small'>融合总检出数包含疾病锚定、普通候选以及组织背景/伪影复核事件。"
+            "为避免高表达组织背景抬高治疗叙事中的“融合负担”，三层分别计数；背景复核层仍保留在技术结果中，但不与疾病驱动融合并列解释。</p>"
+        )
+        out.append(_table(fusion_narrative_rows, ["融合叙事分层", "独立融合事件", "报告中的解释", "代表性依据"]))
     splice_funnel_rows = _patient_splice_funnel_rows(bundle)
     if splice_funnel_rows:
         out.append("<h3>异常剪接逐级筛选漏斗</h3>")
@@ -5813,8 +5907,7 @@ def make_patient_report(
             row for _, row in sorted(
                 enumerate(representatives),
                 key=lambda item: (
-                    0 if _disease_anchor(item[1], bundle) else 1,
-                    1 if _patient_fusion_artifact_review(item[1]) else 0,
+                    _patient_fusion_narrative_sort_key(item[1], bundle),
                     item[0],
                 ),
             )
@@ -5825,7 +5918,7 @@ def make_patient_report(
             peptide = str(row.get("peptide") or "").strip()
             hla = str(row.get("hla_allele") or "").strip()
             peptide_hla = f"{peptide} / {hla}" if peptide and hla else "尚未形成完整Peptide-HLA组合"
-            rows.append({
+            display_row = {
                 "排名": rank,
                 "基因/事件": row.get("gene") or row.get("event_name") or row.get("event_id", ""),
                 "改变": _patient_event_change(row),
@@ -5834,13 +5927,22 @@ def make_patient_report(
                 "关键证据与下一步": _patient_event_evidence_and_next_step(
                     row, bundle, val_map, compact_common=True,
                 ),
-            })
+            }
+            if track == "Fusion":
+                _, narrative_label, narrative_reason = _patient_fusion_narrative_tier(row, bundle)
+                display_row["融合叙事分层"] = narrative_label
+                display_row["关键证据与下一步"] = narrative_reason + "；" + str(display_row["关键证据与下一步"])
+            rows.append(display_row)
         out.append(f"<h3>{esc(track)} Top {event_top_n}</h3>")
         out.append(
             f"<p class='small'><b>本赛道证据口径：</b>{esc(_patient_track_evidence_note(track))}"
             "下表仅展示候选间存在差异的实测证据和特异性缺口，不再逐行重复不适用项。</p>"
         )
-        out.append(_table(rows, ["排名", "基因/事件", "改变", "肽段-HLA", "R等级", "关键证据与下一步"]))
+        headers = ["排名", "基因/事件", "改变", "肽段-HLA", "R等级"]
+        if track == "Fusion":
+            headers.append("融合叙事分层")
+        headers.append("关键证据与下一步")
+        out.append(_table(rows, headers))
     out.append(f"<p class='small'>不同事件赛道的证据结构不同，Top {event_top_n}用于赛道内审阅，不应仅凭序号直接跨赛道比较。</p></div>")
 
     manual_review_rows = _patient_manual_review_rows(bundle.events, ranked, bundle, val_map)

@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from neoag.reports_dual import ReportBundle, _apply_patient_gene_expression, _augment_runtime_tool_provenance, _find_bam_input, _patient_analysis_context, _patient_conflict_summary, _patient_disease_background, _patient_dna_evidence, _patient_dna_rna_interpretation, _patient_event_grade_counts, _patient_event_representatives, _patient_evidence_audit_rows, _patient_evidence_summary, _patient_event_change, _patient_expression_tpm_map, _patient_fusion_artifact_review, _patient_fusion_boundary_evidence, _patient_hla_loh_consensus, _patient_key_gaps, _patient_limitation, _patient_manual_review_rows, _patient_metric, _patient_presentation_metric, _patient_presentation_quantitative_row, _patient_rna_measurements, _patient_rna_metric, _patient_safety_dimensions, _patient_safety_gap, _patient_tool_rows, _patient_track, _patient_validation, _replace_gene_ids, load_report_bundle, make_dual_reports, make_patient_report, make_technical_report
-from neoag.reports_dual import _patient_ccf_coverage_rows, _patient_clonality_boundary, _patient_coding_variant_rna_rows, _patient_experiment_entry_gate_rows, _patient_splice_funnel_rows
+from neoag.reports_dual import _patient_ccf_coverage_rows, _patient_clonality_boundary, _patient_coding_variant_rna_rows, _patient_experiment_entry_gate_rows, _patient_fusion_narrative_rows, _patient_fusion_narrative_tier, _patient_splice_funnel_rows
 from neoag.utils import write_tsv
 
 
@@ -1564,6 +1564,53 @@ def test_patient_report_states_event_truth_does_not_equal_first_batch_candidate(
     assert "事件真实存在不等于相应肽段已经适合进入首批实验" in text
     assert "不表示候选已被确认可注射、有效或安全" in text
     assert "NetMHCpan/MHCflurry核心呈递共识" in text
+
+
+def test_fusion_narrative_separates_disease_anchor_from_high_normal_tissue_background():
+    bundle = _bundle()
+    bundle.disease_knowledge = {
+        "status": "LOADED",
+        "anchors": [{"event": "EWSR1::WT1", "molecular_significance": "DSRCT关键机制事件"}],
+    }
+    anchor = {"event_id": "F1", "event_type": "Fusion", "gene": "EWSR1::WT1"}
+    background = {
+        "event_id": "F2", "event_type": "Fusion", "gene": "ALB::GENE2",
+        "normal_tissue_max_tpm": "520", "normal_tissue_max_tissue": "Liver",
+    }
+    ordinary = {"event_id": "F3", "event_type": "Fusion", "gene": "GENE3::GENE4"}
+    assert _patient_fusion_narrative_tier(anchor, bundle)[0] == "DISEASE_ANCHOR"
+    assert _patient_fusion_narrative_tier(background, bundle)[0] == "BACKGROUND_REVIEW"
+    assert _patient_fusion_narrative_tier(ordinary, bundle)[0] == "ORDINARY_CANDIDATE"
+    bundle.events = [anchor, background, ordinary]
+    bundle.peptides = []
+    rows = {row["融合叙事分层"]: row for row in _patient_fusion_narrative_rows(bundle)}
+    assert rows["疾病锚定融合"]["独立融合事件"] == "1"
+    assert rows["普通融合候选"]["独立融合事件"] == "1"
+    assert rows["组织背景/伪影复核"]["独立融合事件"] == "1"
+
+
+def test_patient_fusion_top_places_background_after_anchor_and_ordinary(tmp_path):
+    bundle = _bundle()
+    bundle.disease_knowledge = {
+        "status": "LOADED",
+        "anchors": [{"event": "EWSR1::WT1", "molecular_significance": "DSRCT关键机制事件"}],
+    }
+    bundle.events = [
+        {"event_id": "F2", "event_type": "Fusion", "gene": "ALB::GENE2", "normal_tissue_max_tpm": "520", "normal_tissue_max_tissue": "Liver", "best_evidence_grade": "R3"},
+        {"event_id": "F3", "event_type": "Fusion", "gene": "GENE3::GENE4", "best_evidence_grade": "R3"},
+        {"event_id": "F1", "event_type": "Fusion", "gene": "EWSR1::WT1", "best_evidence_grade": "R3"},
+    ]
+    bundle.peptides = [
+        {"event_id": row["event_id"], "event_type": "Fusion", "gene": row["gene"], "peptide": "AAAAAAAAA", "hla_allele": "HLA-A*02:01", "source_chain_confidence_tier": "C2"}
+        for row in bundle.events
+    ]
+    out = tmp_path / "fusion_narrative.html"
+    make_patient_report(out, bundle, event_top_n=3)
+    text = out.read_text(encoding="utf-8")
+    section = text.split("<h3>Fusion Top 3</h3>", 1)[1].split("</table>", 1)[0]
+    assert section.index("EWSR1::WT1") < section.index("GENE3::GENE4") < section.index("ALB::GENE2")
+    assert "融合叙事分层" in section
+    assert "不与疾病驱动融合并列解释" in text
 
 
 def test_lohhla_qc_gap_is_not_attributed_to_missing_purity_tools():
