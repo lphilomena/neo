@@ -6,8 +6,10 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck source=/dev/null
 source "${ROOT}/conf/tools.env.sh"
 
-CONDA_CACHE="${ROOT}/work/.nextflow_conda"
-LOG="${ROOT}/work/easyfuse_conda_prebuild.log"
+RUNTIME_DIR="${EASYFUSE_RUNTIME_DIR:-${ROOT}/work}"
+CONDA_CACHE="${EASYFUSE_NXF_CONDA_CACHEDIR:-${RUNTIME_DIR}/.nextflow_conda}"
+LOG="${EASYFUSE_PREBUILD_LOG:-${RUNTIME_DIR}/easyfuse_conda_prebuild.log}"
+mkdir -p "${CONDA_CACHE}" "$(dirname "${LOG}")"
 
 export CONDA_ALWAYS_YES=1
 

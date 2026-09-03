@@ -60,8 +60,8 @@ ensure_input_tsv() {
 }
 
 STAR_TMP="${EASYFUSE_TMPDIR:-${RUNTIME_DIR}/star_tmp_${NXF_STEM}}"
-export NXF_HOME="${EASYFUSE_NXF_HOME:-${ROOT}/work/.nextflow_home_${NXF_STEM}}"
-export NXF_WORK="${EASYFUSE_NXF_WORK:-${ROOT}/work/.nextflow_work_${NXF_STEM}}"
+export NXF_HOME="${EASYFUSE_NXF_HOME:-${RUNTIME_DIR}/.nextflow_home_${NXF_STEM}}"
+export NXF_WORK="${EASYFUSE_NXF_WORK:-${RUNTIME_DIR}/.nextflow_work_${NXF_STEM}}"
 mkdir -p "${OUT}" "$(dirname "${LOG}")" "${NXF_HOME}" "${NXF_WORK}" "${STAR_TMP}"
 export TMPDIR="${STAR_TMP}"
 ensure_input_tsv
@@ -341,7 +341,8 @@ else
 fi
 
 if ! pgrep -f 'easyfuse_prebuild_remaining_envs\.sh' >/dev/null 2>&1; then
-  nohup bash "${ROOT}/scripts/easyfuse_prebuild_remaining_envs.sh" >/dev/null 2>&1 &
+  EASYFUSE_RUNTIME_DIR="${RUNTIME_DIR}" EASYFUSE_NXF_CONDA_CACHEDIR="${CONDA_CACHE}" \
+    nohup bash "${ROOT}/scripts/easyfuse_prebuild_remaining_envs.sh" >"${PREBUILD_LOG}" 2>&1 &
   echo "==> background conda prebuild worker PID=$! (log: ${PREBUILD_LOG})"
 else
   echo "==> background conda prebuild worker already running"

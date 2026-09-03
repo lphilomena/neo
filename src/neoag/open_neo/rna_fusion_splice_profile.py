@@ -454,7 +454,6 @@ def generate_rna_fusion_splice_manifest(
         f"--star-sj {{outdir}}/rna/star/SJ.out.tab "
         f"--rna-bam {{outdir}}/rna/star/Aligned.sortedByCoord.out.bam "
         f"--samtools {_q(inputs.get('samtools_executable') or 'samtools')} "
-        f"--caller-consensus {{outdir}}/branches/splice/intermediates/splice_consensus.tsv "
         f"--outdir {{outdir}}/branches/splice/intermediates/junction_qc"
     )
     if normal_index:
