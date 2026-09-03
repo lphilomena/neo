@@ -24,30 +24,42 @@ set -euo pipefail
 HOME_DIR=$(printf '%q' "$HOME_DIR")
 ENV_PREFIX=$(printf '%q' "$ENV_PREFIX")
 LEAFCUTTER_PREFIX=$(printf '%q' "$LEAFCUTTER_PREFIX")
+run_isolated() (
+  unset VIRTUAL_ENV PYTHONHOME PYTHONPATH PYTHONSTARTUP
+  unset CONDA_PREFIX CONDA_DEFAULT_ENV CONDA_PROMPT_MODIFIER CONDA_SHLVL
+  unset CONDA_PYTHON_EXE CONDA_EXE CONDA_ROOT
+  unset R_LIBS R_LIBS_USER R_LIBS_SITE R_PROFILE R_PROFILE_USER
+  unset BASH_ENV ENV
+  export PATH="\${ENV_PREFIX}/bin:/usr/bin:/bin"
+  export LD_LIBRARY_PATH="\${ENV_PREFIX}/lib"
+  export CONDA_PREFIX="\${ENV_PREFIX}"
+  exec "\$@"
+)
 case "\${1:-doctor}" in
   doctor)
     test -d "\$HOME_DIR/Rscripts"
-    "\$ENV_PREFIX/bin/Rscript" -e 'suppressPackageStartupMessages({library(BSgenome); library(GenomicFeatures); library(optparse)}); cat("SpliceMutr R runtime OK\\n")'
-    "\$ENV_PREFIX/bin/snakemake" --version
-    "\$LEAFCUTTER_PREFIX/bin/python" -c 'import numpy, scipy; print("LeafCutter runtime OK")'
+    run_isolated "\$ENV_PREFIX/bin/python" -c 'import Bio, numpy, pandas, sklearn; print("SpliceMutr Python runtime OK")'
+    run_isolated "\$ENV_PREFIX/bin/Rscript" -e 'suppressPackageStartupMessages({library(BSgenome); library(GenomicFeatures); library(optparse)}); cat("SpliceMutr R runtime OK\\n")'
+    run_isolated "\$ENV_PREFIX/bin/snakemake" --version
+    env -u VIRTUAL_ENV -u PYTHONHOME -u PYTHONPATH PATH="\$LEAFCUTTER_PREFIX/bin:/usr/bin:/bin" LD_LIBRARY_PATH="\$LEAFCUTTER_PREFIX/lib" "\$LEAFCUTTER_PREFIX/bin/python" -c 'import numpy, scipy; print("LeafCutter runtime OK")'
     ;;
   workflow)
     shift; workflow="\${1:?workflow path required}"; shift
-    exec "\$ENV_PREFIX/bin/snakemake" -s "\$workflow" "\$@"
+    run_isolated "\$ENV_PREFIX/bin/snakemake" -s "\$workflow" "\$@"
     ;;
   r)
     shift; script="\${1:?R script required}"; shift
     [[ "\$script" = /* ]] || script="\$HOME_DIR/Rscripts/\$script"
-    exec "\$ENV_PREFIX/bin/Rscript" "\$script" "\$@"
+    run_isolated "\$ENV_PREFIX/bin/Rscript" "\$script" "\$@"
     ;;
   python)
     shift; script="\${1:?Python script required}"; shift
     [[ "\$script" = /* ]] || script="\$HOME_DIR/python_scripts/\$script"
-    exec "\$ENV_PREFIX/bin/python" "\$script" "\$@"
+    run_isolated "\$ENV_PREFIX/bin/python" "\$script" "\$@"
     ;;
   leafcutter)
     shift
-    exec "\$LEAFCUTTER_PREFIX/bin/python" "\$LEAFCUTTER_PREFIX/bin/leafcutter_cluster_regtools.py" "\$@"
+    env -u VIRTUAL_ENV -u PYTHONHOME -u PYTHONPATH PATH="\$LEAFCUTTER_PREFIX/bin:/usr/bin:/bin" LD_LIBRARY_PATH="\$LEAFCUTTER_PREFIX/lib" exec "\$LEAFCUTTER_PREFIX/bin/python" "\$LEAFCUTTER_PREFIX/bin/leafcutter_cluster_regtools.py" "\$@"
     ;;
   *) echo "ERROR: unknown command: \$1" >&2; exit 2;;
 esac

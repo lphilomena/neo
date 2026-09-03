@@ -235,6 +235,21 @@ Cause: Skill1 launched pip against SNAF's `install_requires` as one transaction.
 
 Fix: invoke `${SNAF_ENV_PREFIX}/bin/python -m pip`, pre-install `tensorflow==2.3.0` and `protobuf==3.20.3`, install remaining SNAF runtime pins with those versions constrained, then `pip install --no-deps` the pinned SNAF snapshot and lock `protobuf==3.20.3` again. Recreate `neoag-snaf` when it is not Python 3.8. The splice installer now performs this sequence.
 
+### SpliceMutr smoke imports neoag-tools sklearn / missing BSgenome
+
+Observed error:
+
+```text
+ImportError: /lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found
+ERROR conda.cli.main_run:execute(148): `conda run python -c import Bio, numpy, pandas, sklearn; print("SpliceMutr Python runtime OK")` failed.
+Error in read.dcf(file.path(p, "DESCRIPTION")): cannot open compressed file '/DESCRIPTION'
+there is no package called ‘BSgenome.Hsapiens.UCSC.hg38’
+```
+
+Cause: `conda run -n neoag-splicemutr` inherited the Skill1 install PATH (EasyFuse, `neoag-tools`, outer `.venv`) and `VIRTUAL_ENV`/`R_LIBS`. Smoke used another environment's Python, which then loaded `/lib64/libstdc++.so.6`. The BSgenome check could also pass against the reference-root r_library and skip copying the package into `neoag-splicemutr/lib/R/library`.
+
+Fix: call `${NEOAG_SPLICEMUTR_ENV_PREFIX}/bin/python` and `Rscript` directly with a cleaned `PATH`/`LD_LIBRARY_PATH`, unset `VIRTUAL_ENV`/`PYTHONPATH`/`R_LIBS*`, and rsync BSgenome into the prefix R library when `DESCRIPTION` or `extdata/single_sequences.2bit` is missing there. `splicemutr-neoag doctor` now uses this isolated wrapper.
+
 ### VEP Plugin Directory Present But Plugin Files Missing
 
 Observed error:

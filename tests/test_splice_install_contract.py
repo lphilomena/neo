@@ -47,6 +47,17 @@ def test_splicemutr_is_pinned_and_installed_by_default():
     assert "FertigLab/splicemutr/archive/${REF}.tar.gz" in installer
     assert "splicemutr-neoag" in installer
     assert "doctor" in installer
+    assert "resolve_env_prefix" in installer
+    assert "run_in_splicemutr_env" in installer
+    assert "run_isolated" in installer
+    assert 'unset VIRTUAL_ENV PYTHONHOME PYTHONPATH PYTHONSTARTUP' in installer
+    assert 'export LD_LIBRARY_PATH="${prefix}/lib"' in installer
+    assert "${ENV_PREFIX}/bin/python" in installer
+    assert 'conda run -n "${ENV_NAME}" python' not in installer
+    assert "conda run" not in installer.split("run_in_splicemutr_env", 1)[-1]
+    assert 'BSG_DEST="${R_LIBRARY}/BSgenome.Hsapiens.UCSC.hg38"' in installer
+    assert "single_sequences.2bit" in installer
+    assert "NEOAG_SPLICEMUTR_ENV_PREFIX" in installer
     assert "curl_supports_retry_all_errors" in installer
     assert "curl_args+=(--retry-all-errors)" in installer
     assert "curl lacks --retry-all-errors" in installer
@@ -62,9 +73,12 @@ def test_remote_install_skill_has_explicit_splicemutr_opt_out():
     script = (
         ROOT / ".agents/skills/neoag-remote-deploy/scripts/13_install_readme_tools.sh"
     ).read_text(encoding="utf-8")
+    skill = (ROOT / ".agents/skills/neoag-remote-deploy/SKILL.md").read_text(encoding="utf-8")
     assert "INSTALL_SPLICEMUTR=1" in script
     assert "--skip-splicemutr" in script
     assert 'NEOAG_INSTALL_SPLICEMUTR="$INSTALL_SPLICEMUTR"' in script
+    assert "${NEOAG_SPLICEMUTR_ENV_PREFIX}/bin/{python,Rscript,snakemake}" in skill
+    assert "do not use `conda run`" in skill
 
 
 def test_install_downloaders_support_curl_768():

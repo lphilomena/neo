@@ -120,6 +120,9 @@ def test_environment_installers_pin_target_interpreters():
     assert "tensorflow==2.3.0" in skill
     assert "protobuf==3.20.3" in skill
     assert "--no-deps" in skill
+    assert "${NEOAG_SPLICEMUTR_ENV_PREFIX}/bin/python" in skill
+    assert "Do not use `conda run` or `conda activate` for SpliceMutr smoke" in skill
+    assert "BSgenome.Hsapiens.UCSC.hg38" in skill
 
 
 def test_public_asset_plan_is_offline_and_detects_marker(tmp_path: Path):

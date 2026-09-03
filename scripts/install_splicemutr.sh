@@ -93,6 +93,35 @@ else
   CONDA_RUNNER=conda
 fi
 
+resolve_env_prefix() {
+  local env_name="$1"
+  local portable_root="${PORTABLE_ENVS%%:*}"
+  if [[ -n "${portable_root}" && ( -x "${portable_root}/${env_name}/bin/python" || -f "${portable_root}/${env_name}/conda-meta/history" ) ]]; then
+    printf '%s\n' "${portable_root}/${env_name}"
+    return
+  fi
+  printf '%s\n' "${CONDA_BASE}/envs/${env_name}"
+}
+
+# conda run inherits the caller PATH, VIRTUAL_ENV, PYTHONPATH and R_LIBS.
+# Skill1 install shells prepend neoag-tools/easyfuse/.venv, so `python`/`Rscript`
+# can resolve outside neoag-splicemutr and then load the host libstdc++.
+run_in_splicemutr_env() {
+  local prefix="$1"
+  shift
+  (
+    unset VIRTUAL_ENV PYTHONHOME PYTHONPATH PYTHONSTARTUP
+    unset CONDA_PREFIX CONDA_DEFAULT_ENV CONDA_PROMPT_MODIFIER CONDA_SHLVL
+    unset CONDA_PYTHON_EXE CONDA_EXE CONDA_ROOT
+    unset R_LIBS R_LIBS_USER R_LIBS_SITE R_PROFILE R_PROFILE_USER
+    unset BASH_ENV ENV
+    export PATH="${prefix}/bin:/usr/bin:/bin"
+    export LD_LIBRARY_PATH="${prefix}/lib"
+    export CONDA_PREFIX="${prefix}"
+    "$@"
+  )
+}
+
 env_exists() {
   local portable_root="${PORTABLE_ENVS%%:*}"
   if [[ -n "${portable_root}" && -f "${portable_root}/$1/conda-meta/history" ]]; then
@@ -101,9 +130,13 @@ env_exists() {
   conda_safe env list | awk '{print $1}' | grep -qx "$1"
 }
 env_is_ready() {
-  env_exists "$1" && conda_safe run -n "$1" python -c 'import Bio, numpy, pandas, sklearn' >/dev/null 2>&1 \
-    && conda_safe run -n "$1" Rscript -e 'library(BSgenome); library(GenomicFeatures); library(optparse)' >/dev/null 2>&1 \
-    && conda_safe run -n "$1" snakemake --version >/dev/null 2>&1
+  local prefix python_bin
+  prefix="$(resolve_env_prefix "$1")"
+  python_bin="${prefix}/bin/python"
+  [[ -x "${python_bin}" && -x "${prefix}/bin/Rscript" && -x "${prefix}/bin/snakemake" ]] || return 1
+  run_in_splicemutr_env "${prefix}" "${python_bin}" -c 'import Bio, numpy, pandas, sklearn' >/dev/null 2>&1 \
+    && run_in_splicemutr_env "${prefix}" "${prefix}/bin/Rscript" -e 'library(BSgenome); library(GenomicFeatures); library(optparse)' >/dev/null 2>&1 \
+    && run_in_splicemutr_env "${prefix}" "${prefix}/bin/snakemake" --version >/dev/null 2>&1
 }
 
 if [[ "${NEOAG_FORCE_ENV_UPDATE:-0}" == "1" ]]; then
@@ -120,21 +153,28 @@ else
   "${CONDA_RUNNER}" env create -n "${ENV_NAME}" -f "${YML}" -y
 fi
 
-R_LIBRARY="$(conda_safe run -n "${ENV_NAME}" Rscript -e 'cat(.libPaths()[1])')"
-if ! conda_safe run -n "${ENV_NAME}" Rscript -e 'stopifnot(nzchar(system.file(package="BSgenome.Hsapiens.UCSC.hg38")))' >/dev/null 2>&1; then
+ENV_PREFIX="$(resolve_env_prefix "${ENV_NAME}")"
+[[ -x "${ENV_PREFIX}/bin/python" && -x "${ENV_PREFIX}/bin/Rscript" ]] || {
+  echo "ERROR: SpliceMutr environment prefix is incomplete: ${ENV_PREFIX}" >&2
+  exit 45
+}
+
+R_LIBRARY="${ENV_PREFIX}/lib/R/library"
+BSG_DEST="${R_LIBRARY}/BSgenome.Hsapiens.UCSC.hg38"
+if [[ ! -f "${BSG_DEST}/DESCRIPTION" || ! -f "${BSG_DEST}/extdata/single_sequences.2bit" ]]; then
   if [[ ! -f "${BSGENOME_PACKAGE}/DESCRIPTION" && "${NEOAG_ALLOW_DOWNLOAD:-0}" == "1" ]]; then
     echo "==> BSgenome.Hsapiens.UCSC.hg38 asset missing; installing from Bioconductor because NEOAG_ALLOW_DOWNLOAD=1"
-    conda_safe run -n "${ENV_NAME}" Rscript -e 'if (!requireNamespace("BiocManager", quietly=TRUE)) install.packages("BiocManager", repos="https://cloud.r-project.org"); BiocManager::install("BSgenome.Hsapiens.UCSC.hg38", ask=FALSE, update=FALSE)'
+    run_in_splicemutr_env "${ENV_PREFIX}" "${ENV_PREFIX}/bin/Rscript" -e 'if (!requireNamespace("BiocManager", quietly=TRUE)) install.packages("BiocManager", repos="https://cloud.r-project.org"); BiocManager::install("BSgenome.Hsapiens.UCSC.hg38", ask=FALSE, update=FALSE)'
   else
     [[ -f "${BSGENOME_PACKAGE}/DESCRIPTION" ]] || {
       echo "ERROR: synchronized BSgenome.Hsapiens.UCSC.hg38 asset missing: ${BSGENOME_PACKAGE}" >&2
       exit 45
     }
-    mkdir -p "${R_LIBRARY}/BSgenome.Hsapiens.UCSC.hg38"
-    rsync -a "${BSGENOME_PACKAGE}/" "${R_LIBRARY}/BSgenome.Hsapiens.UCSC.hg38/"
+    mkdir -p "${BSG_DEST}"
+    rsync -a "${BSGENOME_PACKAGE}/" "${BSG_DEST}/"
   fi
 fi
-conda_safe run -n "${ENV_NAME}" Rscript -e 'p <- system.file(package="BSgenome.Hsapiens.UCSC.hg38"); d <- read.dcf(file.path(p, "DESCRIPTION")); stopifnot(d[1,"genome"] == "hg38", file.exists(file.path(p, "extdata", "single_sequences.2bit"))); cat("SpliceMutr hg38 BSgenome", d[1,"Version"], "OK\n")'
+run_in_splicemutr_env "${ENV_PREFIX}" "${ENV_PREFIX}/bin/Rscript" -e 'p <- system.file(package="BSgenome.Hsapiens.UCSC.hg38"); d <- read.dcf(file.path(p, "DESCRIPTION")); stopifnot(d[1,"genome"] == "hg38", file.exists(file.path(p, "extdata", "single_sequences.2bit"))); cat("SpliceMutr hg38 BSgenome", d[1,"Version"], "OK\n")'
 
 mkdir -p "$(dirname "${ARCHIVE}")" "$(dirname "${HOME_DIR}")" "${BIN_DIR}" "${ROOT}/conf"
 if [[ ! -s "${ARCHIVE}" ]]; then
@@ -160,9 +200,19 @@ mv "${HOME_DIR}.new" "${HOME_DIR}"
 cat > "${BIN_DIR}/splicemutr-neoag" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
-CONDA="${CONDA_BASE}/bin/conda"
-ENV_NAME="${ENV_NAME}"
-HOME_DIR="${HOME_DIR}"
+HOME_DIR=$(printf '%q' "${HOME_DIR}")
+ENV_PREFIX=$(printf '%q' "${ENV_PREFIX}")
+run_isolated() (
+  unset VIRTUAL_ENV PYTHONHOME PYTHONPATH PYTHONSTARTUP
+  unset CONDA_PREFIX CONDA_DEFAULT_ENV CONDA_PROMPT_MODIFIER CONDA_SHLVL
+  unset CONDA_PYTHON_EXE CONDA_EXE CONDA_ROOT
+  unset R_LIBS R_LIBS_USER R_LIBS_SITE R_PROFILE R_PROFILE_USER
+  unset BASH_ENV ENV
+  export PATH="\${ENV_PREFIX}/bin:/usr/bin:/bin"
+  export LD_LIBRARY_PATH="\${ENV_PREFIX}/lib"
+  export CONDA_PREFIX="\${ENV_PREFIX}"
+  exec "\$@"
+)
 case "\${1:-doctor}" in
   -h|--help)
     echo "Usage: splicemutr-neoag doctor | workflow WORKFLOW [snakemake args] | r SCRIPT [args] | python SCRIPT [args]"
@@ -170,9 +220,10 @@ case "\${1:-doctor}" in
     ;;
   doctor)
     test -f "\${HOME_DIR}/NEOAG_PINNED_REF"
-    "\${CONDA}" run -n "\${ENV_NAME}" python -c 'import Bio, numpy, pandas, sklearn; print("SpliceMutr Python runtime OK")'
-    "\${CONDA}" run -n "\${ENV_NAME}" Rscript -e 'suppressPackageStartupMessages({library(BSgenome); library(GenomicFeatures); library(optparse)}); p <- system.file(package="BSgenome.Hsapiens.UCSC.hg38"); d <- read.dcf(file.path(p, "DESCRIPTION")); stopifnot(d[1,"genome"] == "hg38", file.exists(file.path(p, "extdata", "single_sequences.2bit"))); cat("SpliceMutr R runtime OK\\n")'
-    "\${CONDA}" run -n "\${ENV_NAME}" snakemake --version
+    test -x "\${ENV_PREFIX}/bin/python"
+    run_isolated "\${ENV_PREFIX}/bin/python" -c 'import Bio, numpy, pandas, sklearn; print("SpliceMutr Python runtime OK")'
+    run_isolated "\${ENV_PREFIX}/bin/Rscript" -e 'suppressPackageStartupMessages({library(BSgenome); library(GenomicFeatures); library(optparse)}); p <- system.file(package="BSgenome.Hsapiens.UCSC.hg38"); d <- read.dcf(file.path(p, "DESCRIPTION")); stopifnot(d[1,"genome"] == "hg38", file.exists(file.path(p, "extdata", "single_sequences.2bit"))); cat("SpliceMutr R runtime OK\\n")'
+    run_isolated "\${ENV_PREFIX}/bin/snakemake" --version
     ;;
   workflow)
     shift
@@ -183,26 +234,26 @@ case "\${1:-doctor}" in
       run) workflow="\${HOME_DIR}/simulation/running_splicemutr/run_splicemutr.smk" ;;
       genotype) workflow="\${HOME_DIR}/simulation/genotyping_samples/genotype_samples.smk" ;;
     esac
-    exec "\${CONDA}" run -n "\${ENV_NAME}" snakemake -s "\${workflow}" "\$@"
+    run_isolated "\${ENV_PREFIX}/bin/snakemake" -s "\${workflow}" "\$@"
     ;;
   r)
     shift; script="\${1:?R script is required}"; shift
     [[ "\${script}" = /* ]] || script="\${HOME_DIR}/Rscripts/\${script}"
-    exec "\${CONDA}" run -n "\${ENV_NAME}" Rscript "\${script}" "\$@"
+    run_isolated "\${ENV_PREFIX}/bin/Rscript" "\${script}" "\$@"
     ;;
   python)
     shift; script="\${1:?Python script is required}"; shift
     [[ "\${script}" = /* ]] || script="\${HOME_DIR}/python_scripts/\${script}"
-    exec "\${CONDA}" run -n "\${ENV_NAME}" python "\${script}" "\$@"
+    run_isolated "\${ENV_PREFIX}/bin/python" "\${script}" "\$@"
     ;;
   *) echo "ERROR: unknown command: \$1" >&2; exit 2 ;;
 esac
 EOF
-[[ -z "$PORTABLE_ENVS" ]] || sed -i "2a export CONDA_ENVS_PATH=\"${PORTABLE_ENVS}\"" "${BIN_DIR}/splicemutr-neoag"
 chmod +x "${BIN_DIR}/splicemutr-neoag"
 
 for assignment in \
   "NEOAG_SPLICEMUTR_ENV=${ENV_NAME}" \
+  "NEOAG_SPLICEMUTR_ENV_PREFIX=${ENV_PREFIX}" \
   "NEOAG_SPLICEMUTR_HOME=${HOME_DIR}" \
   "NEOAG_SPLICEMUTR_BIN=${BIN_DIR}/splicemutr-neoag" \
   "SPLICEMUTR_WORKFLOW=${ROOT}/workflows/splicemutr/SpliceMutr.smk"; do
@@ -214,6 +265,7 @@ for assignment in \
   fi
 done
 
+unset BASH_ENV ENV
 echo "==> SpliceMutr smoke"
 "${BIN_DIR}/splicemutr-neoag" doctor
 echo "==> SpliceMutr installed at ${HOME_DIR}; ref=${REF}"
