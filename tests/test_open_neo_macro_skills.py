@@ -559,6 +559,33 @@ def test_auto_config_skips_inaccessible_paths_from_another_machine(tmp_path: Pat
     assert row["resolved_path"] == str(portable_fasta.resolve())
 
 
+def test_auto_config_discovers_spechla_db_from_upstream_or_legacy_layout(tmp_path: Path, monkeypatch):
+    project = tmp_path / "project"
+    project.mkdir()
+    tools_root = tmp_path / "tools"
+    tools_root.mkdir()
+    refs_root = tmp_path / "refs"
+    canonical = refs_root / "data/hla/spechla/db"
+    canonical.mkdir(parents=True)
+    (canonical / "ref").mkdir()
+    (canonical / "ref" / "hla.ref.extend.fa").write_text(">hla\nACGT\n", encoding="utf-8")
+    monkeypatch.setenv("SPECHLA_DB", str(tmp_path / "missing" / "spechla_db"))
+    tools_manifest = tmp_path / "tools.json"
+    tools_manifest.write_text(json.dumps({"tools": {"spechla": {"executable": "SpecHLA"}}}), encoding="utf-8")
+    refs_manifest = tmp_path / "references.json"
+    refs_manifest.write_text(json.dumps({"genome_build": "GRCh38", "references": {
+        "spechla_db": {"path": str(tmp_path / "other-host" / "data/hla/spechla_db")},
+    }}), encoding="utf-8")
+    result = configure_machine(
+        project_root=project, tools_manifest=tools_manifest, reference_manifest=refs_manifest,
+        outdir=tmp_path / "configured", tools_root=tools_root, reference_root=refs_root,
+        licensed_root=tmp_path / "licensed",
+    )
+    row = next(row for row in result.rows if row["component"] == "spechla_db")
+    assert row["status"] == "CONFIGURED"
+    assert row["resolved_path"] == str(canonical.resolve())
+
+
 def test_auto_config_discovers_project_wrappers_conda_envs_and_portable_assets(tmp_path: Path):
     project = tmp_path / "project"
     tools_root = tmp_path / "miniforge"

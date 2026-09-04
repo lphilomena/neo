@@ -136,6 +136,18 @@ export SNP_PILEUP_BIN="\${SNP_PILEUP_BIN:-\${NEOAG_CONDA_BASE}/envs/neoag-tools/
 export NEOAG_CONTAMINATION_SITES="\${NEOAG_CONTAMINATION_SITES:-$REFERENCE_ROOT/data/facets/reference/contamination.common.hg38.vcf.gz}"
 export SPECHLA_HOME="\${SPECHLA_HOME:-$TOOLS_ROOT/tools/SpecHLA}"
 export NEOAG_SPECHLA_HOME="\${NEOAG_SPECHLA_HOME:-\${SPECHLA_HOME}}"
+if [[ -z "\${SPECHLA_DB:-}" || ! -d "\${SPECHLA_DB:-}" ]]; then
+  for _neoag_spechla_db in \
+    "\${SPECHLA_HOME}/db" \
+    "$REFERENCE_ROOT/data/hla/spechla/db" \
+    "$REFERENCE_ROOT/data/hla/spechla_db"; do
+    if [[ -d "\$_neoag_spechla_db" ]]; then
+      export SPECHLA_DB="\$_neoag_spechla_db"
+      break
+    fi
+  done
+  unset _neoag_spechla_db
+fi
 export SPECHLA_DB="\${SPECHLA_DB:-$REFERENCE_ROOT/data/hla/spechla/db}"
 export SPECHLA_ENV="\${SPECHLA_ENV:-\${NEOAG_CONDA_BASE}/envs/neoag-tools}"
 export NEOAG_SPECHLA_IMAGE="\${NEOAG_SPECHLA_IMAGE:-neoag-spechla:ubuntu22.04}"

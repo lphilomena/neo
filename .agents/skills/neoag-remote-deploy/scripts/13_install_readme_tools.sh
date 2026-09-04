@@ -694,8 +694,18 @@ register_spechla_if_requested() {
   [[ "$INSTALL_SPECHLA" == "1" ]] || return 0
   local home="$TOOLS_ROOT/tools/SpecHLA"
   local image_tar="$TOOLS_ROOT/container_images/neoag-spechla_ubuntu22.04.tar"
-  local db="$REFERENCE_ROOT/data/hla/spechla/db"
-  [[ -d "$db" ]] || db="$REFERENCE_ROOT/data/hla/spechla_db"
+  local db="" cand
+  for cand in \
+    "${SPECHLA_DB:-}" \
+    "$REFERENCE_ROOT/data/hla/spechla/db" \
+    "$REFERENCE_ROOT/data/hla/spechla_db" \
+    "$home/db"; do
+    if [[ -n "$cand" && -d "$cand" ]]; then
+      db="$cand"
+      break
+    fi
+  done
+  [[ -n "$db" ]] || db="$REFERENCE_ROOT/data/hla/spechla/db"
   if [[ "$EXECUTE" != "1" ]]; then
     log ""
     log "==> [DRY_RUN] register SpecHLA container wrappers and DB link"
@@ -1008,7 +1018,19 @@ export DEEPIMMUNO_DIR="$TOOLS_ROOT/tools/DeepImmuno"
 export SHERPA_PRESENTATION_HOME="$TOOLS_ROOT/tools/SHERPA-Presentation"
 export SHERPA_PRESENTATION_BIN="$TOOLS_ROOT/bin/sherpa-presentation"
 export SPECHLA_HOME="$TOOLS_ROOT/tools/SpecHLA"
-export SPECHLA_DB="$REFERENCE_ROOT/data/hla/spechla/db"
+if [[ -z "${SPECHLA_DB:-}" || ! -d "${SPECHLA_DB:-}" ]]; then
+  SPECHLA_DB=""
+  for cand in \
+    "$REFERENCE_ROOT/data/hla/spechla/db" \
+    "$REFERENCE_ROOT/data/hla/spechla_db" \
+    "$TOOLS_ROOT/tools/SpecHLA/db"; do
+    if [[ -d "$cand" ]]; then
+      SPECHLA_DB="$cand"
+      break
+    fi
+  done
+fi
+export SPECHLA_DB="${SPECHLA_DB:-$REFERENCE_ROOT/data/hla/spechla/db}"
 export SPECHLA_ENV="$CONDA_BASE/envs/neoag-tools"
 export NEOAG_BAM_MATCHER_ENV_PREFIX="$TOOLS_ROOT/conda_envs/neoag-bam-matcher"
 export BAM_MATCHER_HOME="$TOOLS_ROOT/tools/bam-matcher"

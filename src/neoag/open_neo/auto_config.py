@@ -131,7 +131,7 @@ REFERENCE_CANDIDATES = {
     "gencode_gtf": ("data/ref/hg38/gencode.gtf", "GRCh38/gencode/gencode.v44.annotation.gtf.gz"),
     "vep_cache": ("data/vep/homo_sapiens/105_GRCh38", "GRCh38/vep/vep_115_GRCh38"),
     "hla_la_graph": ("data/hla/PRG_MHC_GRCh38_withIMGT", "hla/hla-la/graph/PRG_MHC_GRCh38_withIMGT"),
-    "spechla_db": ("data/hla/spechla/db", "data/hla/spechla_db", "hla/spechla/db"),
+    "spechla_db": ("data/hla/spechla/db", "data/hla/spechla_db", "hla/spechla/db", "tools/SpecHLA/db"),
     "facets_snp_vcf": ("data/facets/reference/common_snp.hg38.vcf.gz", "cnv/facets/common_snp.vcf.gz"),
     "facets_common_snp_vcf": ("data/facets/reference/common_snp.hg38.vcf.gz", "cnv/facets/common_snp.vcf.gz"),
     "sequenza_gc_wiggle": ("data/sequenza/reference/Homo_sapiens.GRCh38.dna.primary_assembly.chr.gc50.wig.gz",),

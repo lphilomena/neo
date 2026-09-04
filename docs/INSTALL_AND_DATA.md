@@ -366,6 +366,7 @@ neodata4git/
     sequenza/reference/GRCh38.primary_assembly.chr.fa
     sequenza/reference/GRCh38.primary_assembly.chr.fa.fai
     sequenza/reference/gc.wig.gz
+    hla/spechla/db/
     hla/spechla_db/
     hla/PRG_MHC_GRCh38_withIMGT/
     hla/optitype_reference/
@@ -388,6 +389,8 @@ neodata4git/
 ```
 
 `capture.bed`, Sequenza `gc.wig.gz`, and `hmf/purple_reference` are workflow-specific. The bundle verifier reports them as warnings unless that workflow is being run; stage them before WES/panel SV, Sequenza, or PURPLE production runs.
+
+The SpecHLA database may be staged as `data/hla/spechla/db` (canonical upstream layout) or `data/hla/spechla_db` (legacy alias). Installers, activation scripts, and `scripts/verify_reference_bundle.sh` accept either relative layout under the reference root. Set `SPECHLA_DB` only when the database lives outside those layouts; do not hard-code a host mount in shared code.
 
 
 ## 6. Workflow Dependency Matrix

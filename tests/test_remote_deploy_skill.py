@@ -30,6 +30,7 @@ def test_remote_deploy_skill_has_no_private_machine_defaults() -> None:
     prohibited = (
         "/home/na",
         "/mnt/zjl-bgi-zzb",
+        "/mnt/zzbnew",
         "/root/neo",
         "10.200.50.134",
         "M1ML150017383",

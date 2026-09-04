@@ -34,7 +34,18 @@ optional_dir "$BUNDLE/data/easyfuse/current"
 optional_dir "$BUNDLE/data/ascat/reference/WGS_hg38"
 optional_file "$BUNDLE/data/sequenza/reference/GRCh38.primary_assembly.chr.fa"
 optional_file "$BUNDLE/data/sequenza/reference/gc.wig.gz"
-optional_dir "$BUNDLE/data/hla/spechla_db"
+spechla_db=""
+for cand in "$BUNDLE/data/hla/spechla/db" "$BUNDLE/data/hla/spechla_db"; do
+  if [[ -d "$cand" || -L "$cand" ]]; then
+    spechla_db="$cand"
+    break
+  fi
+done
+if [[ -n "$spechla_db" ]]; then
+  echo "[OK] optional dir  $spechla_db"
+else
+  echo "[WARN] optional dir missing $BUNDLE/data/hla/spechla/db (legacy alias: $BUNDLE/data/hla/spechla_db)"
+fi
 optional_dir "$BUNDLE/data/hla/PRG_MHC_GRCh38_withIMGT"
 optional_dir "$BUNDLE/data/hla/optitype_reference"
 optional_dir "$BUNDLE/data/lohhla/polysolver"

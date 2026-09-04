@@ -6,11 +6,17 @@ REPO_ROOT=$(cd -- "$SCRIPT_DIR/.." && pwd)
 IMAGE=${NEOAG_SPECHLA_IMAGE:-neoag-spechla:ubuntu22.04}
 docker image inspect "$IMAGE" >/dev/null 2>&1 || { echo "WARN: SpecHLA image missing; build with scripts/build_priority_tool_containers.sh spechla"; exit 0; }
 docker run --rm "$IMAGE" "python3 --version && samtools --version >/dev/null && bowtie2 --version >/dev/null && echo PASS: SpecHLA container base runtime starts"
+# shellcheck source=lib/resolve_spechla_db.sh
+source "$REPO_ROOT/scripts/lib/resolve_spechla_db.sh"
 SPECHLA_HOME=${SPECHLA_HOME:-${NEOAG_SPECHLA_HOME:-${NEOAG_TOOLS_ROOT:-$REPO_ROOT}/tools/SpecHLA}}
-SPECHLA_DB=${SPECHLA_DB:-$SPECHLA_HOME/db}
+SPECHLA_DB="$(neoag_resolve_spechla_db "$REPO_ROOT" || true)"
 [[ -d "$SPECHLA_HOME/script" ]] && echo "PASS: SpecHLA scripts exist: $SPECHLA_HOME/script" || echo "WARN: SpecHLA scripts missing: $SPECHLA_HOME/script"
 [[ -d "$SPECHLA_HOME/db" ]] && echo "PASS: SpecHLA db exists: $SPECHLA_HOME/db" || echo "WARN: SpecHLA db missing: $SPECHLA_HOME/db"
-[[ -s "$SPECHLA_DB/ref/hla.ref.extend.fa" ]] || { echo "ERROR: SpecHLA database marker missing: $SPECHLA_DB/ref/hla.ref.extend.fa" >&2; exit 1; }
+if [[ -z "$SPECHLA_DB" ]] || ! neoag_spechla_db_is_valid "$SPECHLA_DB"; then
+  echo "ERROR: SpecHLA database marker missing. Set SPECHLA_DB or stage data/hla/spechla/db (legacy: data/hla/spechla_db)." >&2
+  exit 1
+fi
+echo "PASS: SpecHLA database resolved: $SPECHLA_DB"
 [[ -f "$SPECHLA_HOME/script/cal.hla.copy.pl" ]] && echo "PASS: SpecHLA LOH module exists" || { echo "ERROR: SpecHLA LOH module missing: $SPECHLA_HOME/script/cal.hla.copy.pl" >&2; exit 1; }
 SPECHLA_CMD=python3 "$REPO_ROOT/scripts/run_spechla_container.sh" -c \
   'import Bio, networkx, numpy, pandas, pulp, pyfaidx, pysam, scipy, vcf' || {

@@ -3,8 +3,10 @@ set -euo pipefail
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 REPO_ROOT=$(cd -- "$SCRIPT_DIR/.." && pwd)
 [[ -f "$REPO_ROOT/conf/tools.env.sh" ]] && source "$REPO_ROOT/conf/tools.env.sh"
+# shellcheck source=lib/resolve_spechla_db.sh
+source "$REPO_ROOT/scripts/lib/resolve_spechla_db.sh"
 SPECHLA_HOME=${SPECHLA_HOME:-${NEOAG_SPECHLA_HOME:-${NEOAG_TOOLS_ROOT:-$REPO_ROOT}/tools/SpecHLA}}
-SPECHLA_DB=${SPECHLA_DB:-$SPECHLA_HOME/db}
+SPECHLA_DB="$(neoag_resolve_spechla_db "$REPO_ROOT" || true)"
 SPECHLA_ENV=${SPECHLA_ENV:-}
 if [[ -z "$SPECHLA_ENV" ]]; then
   for candidate in \
@@ -28,8 +30,10 @@ Set SPECHLA_CMD=/path/to/custom_command to override.
 USAGE
 exit 0; }
 [[ -d "$SPECHLA_HOME" ]] || { echo "ERROR: SpecHLA home missing: $SPECHLA_HOME" >&2; exit 2; }
-[[ -d "$SPECHLA_DB" ]] || { echo "ERROR: SpecHLA database missing: $SPECHLA_DB" >&2; exit 2; }
-SPECHLA_DB=$(cd "$SPECHLA_DB" && pwd -P)
+[[ -n "$SPECHLA_DB" && -d "$SPECHLA_DB" ]] || {
+  echo "ERROR: SpecHLA database missing. Set SPECHLA_DB or stage data/hla/spechla/db (legacy: data/hla/spechla_db) under the reference bundle." >&2
+  exit 2
+}
 docker image inspect "$IMAGE" >/dev/null 2>&1 || { echo "ERROR: build image first: $REPO_ROOT/scripts/build_priority_tool_containers.sh spechla" >&2; exit 127; }
 mounts=(-v "$SPECHLA_HOME:$SPECHLA_HOME:rw" -v "$PWD:$PWD:rw" -v "$REPO_ROOT:$REPO_ROOT:rw")
 [[ "$SPECHLA_DB" == "$SPECHLA_HOME"/* ]] || mounts+=( -v "$SPECHLA_DB:$SPECHLA_DB:rw" )
