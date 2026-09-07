@@ -8,6 +8,7 @@ REFERENCE_ROOT="${NEOAG_REFERENCE_ROOT:-$DEPLOY_ROOT/refs}"
 LICENSED_ROOT="${NEOAG_LICENSED_ROOT:-$DEPLOY_ROOT/licensed_tools}"
 CONDA_BASE=""
 CONDA_PKGS_SOURCE="${NEOAG_CONDA_PKGS_SOURCE:-}"
+SPECHLA_SOURCE="${NEOAG_SPECHLA_SOURCE:-}"
 OUTDIR="work/agent_deploy/new_machine_install"
 ASSET_MANIFEST="configs/assets/production_assets.tsv"
 REFERENCE_MANIFEST="configs/references/reference_manifest.yaml"
@@ -57,6 +58,7 @@ Common options:
   --licensed-root DIR         Licensed tool root (default: NEOAG_LICENSED_ROOT or /opt/neoag/licensed_tools)
   --conda-base DIR            Miniforge/conda base (default: tools-root/miniforge3)
   --conda-pkgs-source DIR     Pre-populated Conda package cache for offline-first installation
+  --spechla-source DIR        Complete official SpecHLA checkout for the SpecHLA capability
   --outdir DIR                Work/report directory
   --asset-manifest FILE       Large asset manifest (default: configs/assets/production_assets.tsv)
   --reference-manifest FILE   YAML reference manifest verified after asset sync
@@ -128,6 +130,7 @@ while [[ $# -gt 0 ]]; do
     --licensed-root) LICENSED_ROOT="$2"; shift 2 ;;
     --conda-base) CONDA_BASE="$2"; shift 2 ;;
     --conda-pkgs-source) CONDA_PKGS_SOURCE="$2"; shift 2 ;;
+    --spechla-source) SPECHLA_SOURCE="$2"; shift 2 ;;
     --outdir) OUTDIR="$2"; shift 2 ;;
     --asset-manifest) ASSET_MANIFEST="$2"; shift 2 ;;
     --reference-manifest) REFERENCE_MANIFEST="$2"; shift 2 ;;
@@ -201,6 +204,7 @@ install_args=(
 )
 [[ "$ALLOW_DOWNLOAD" == "1" ]] && install_args+=(--allow-download)
 [[ -n "$CONDA_PKGS_SOURCE" ]] && install_args+=(--conda-pkgs-source "$CONDA_PKGS_SOURCE")
+[[ -n "$SPECHLA_SOURCE" ]] && install_args+=(--spechla-source "$SPECHLA_SOURCE")
 [[ "$EXECUTE" == "1" ]] && install_args+=(--execute)
 if [[ "$INSTALL_CLAUDE_CODE" == "1" ]]; then
   install_args+=(--claude-code --claude-code-channel "$CLAUDE_CODE_CHANNEL" --claude-code-installer-url "$CLAUDE_CODE_INSTALLER_URL")
@@ -264,6 +268,7 @@ fi
   echo "Reference manifest: \`$REFERENCE_MANIFEST\`"
   echo "Asset source host: \`${ASSET_SOURCE_HOST:-none}\`"
   echo "Shared asset root: \`${SHARED_ASSET_ROOT:-none}\`"
+  echo "SpecHLA source: \`${SPECHLA_SOURCE:-none}\`"
   echo "Claude Code: \`$INSTALL_CLAUDE_CODE\`"
   [[ "$INSTALL_CLAUDE_CODE" == "1" ]] && echo "Claude Code channel/version: \`$CLAUDE_CODE_CHANNEL\`"
   echo "Log: \`$LOG\`"

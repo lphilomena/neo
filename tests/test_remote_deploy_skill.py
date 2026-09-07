@@ -68,6 +68,28 @@ def test_new_machine_entrypoint_dry_run_needs_no_download_approval(tmp_path: Pat
     assert "DOWNLOAD_NOT_APPROVED" not in proc.stdout + proc.stderr
 
 
+def test_new_machine_entrypoint_forwards_spechla_source(tmp_path: Path) -> None:
+    source = tmp_path / "SpecHLA"
+    proc = _run(
+        "bash",
+        SCRIPTS / "16_install_new_machine.sh",
+        "--project-root",
+        ROOT,
+        "--tools-root",
+        tmp_path / "tools",
+        "--reference-root",
+        tmp_path / "refs",
+        "--licensed-root",
+        tmp_path / "licensed",
+        "--outdir",
+        tmp_path / "run",
+        "--spechla-source",
+        source,
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert f"--spechla-source {source}" in proc.stdout
+
+
 def test_real_vcf_smoke_requires_explicit_inputs(tmp_path: Path) -> None:
     proc = _run(
         "bash",
