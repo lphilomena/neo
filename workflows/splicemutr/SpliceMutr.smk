@@ -122,7 +122,8 @@ rule form_transcripts:
     params:
         bsgenome=config["bsgenome_name"],
         bsgenome_package=config.get("bsgenome_package", "BSgenome.Hsapiens.UCSC.hg38"),
-        chunks=config.get("form_transcript_chunks", min(config.get("threads", 8), 8))
+        chunks=config.get("form_transcript_chunks", min(config.get("threads", 8), 8)),
+        max_parallel=config.get("form_transcript_max_parallel", min(config.get("threads", 8), 4))
     shell:
         """
         {ROOT}/scripts/run_splicemutr_form_parallel.sh \
@@ -130,7 +131,8 @@ rule form_transcripts:
           --split-script {ROOT}/scripts/split_splicemutr_introns.R \
           --introns {input.introns:q} --txdb {input.txdb:q} \
           --bsgenome-object {params.bsgenome:q} --bsgenome-package {params.bsgenome_package:q} \
-          --functions {HOME}/Rfunctions/functions.R --outdir {FORMED:q} --chunks {params.chunks}
+          --functions {HOME}/Rfunctions/functions.R --outdir {FORMED:q} --chunks {params.chunks} \
+          --max-parallel {params.max_parallel}
         """
 
 

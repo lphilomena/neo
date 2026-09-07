@@ -12,6 +12,7 @@ from typing import TextIO
 
 
 REQUIRED = {"sample_id", "role"}
+MISSING_VALUES = {"", ".", "na", "n/a", "null", "none"}
 
 
 def open_text(path: Path) -> TextIO:
@@ -26,7 +27,13 @@ def read_samples(path: Path) -> list[dict[str, str]]:
         missing = REQUIRED - set(reader.fieldnames or [])
         if missing:
             raise ValueError(f"sample sheet missing columns: {', '.join(sorted(missing))}")
-        rows = [{key: (value or "").strip() for key, value in row.items()} for row in reader]
+        rows = [
+            {
+                key: "" if (value or "").strip().lower() in MISSING_VALUES else (value or "").strip()
+                for key, value in row.items()
+            }
+            for row in reader
+        ]
     if not rows:
         raise ValueError("sample sheet is empty")
     if not ({"star_sj", "junction_file"} & set(reader.fieldnames or [])):

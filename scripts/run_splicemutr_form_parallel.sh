@@ -2,11 +2,12 @@
 set -euo pipefail
 
 usage() {
-  echo "Usage: $0 --rscript R --form-script SCRIPT --split-script SCRIPT --introns FILE --txdb FILE --bsgenome-package PKG --bsgenome-object OBJ --functions FILE --outdir DIR --chunks N" >&2
+  echo "Usage: $0 --rscript R --form-script SCRIPT --split-script SCRIPT --introns FILE --txdb FILE --bsgenome-package PKG --bsgenome-object OBJ --functions FILE --outdir DIR --chunks N [--max-parallel N]" >&2
 }
 
 RSCRIPT=""; FORM_SCRIPT=""; SPLIT_SCRIPT=""; INTRONS=""; TXDB=""
 BSGENOME_PACKAGE=""; BSGENOME_OBJECT=""; FUNCTIONS=""; OUTDIR=""; CHUNKS=1
+MAX_PARALLEL="${SPLICEMUTR_MAX_PARALLEL:-1}"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --rscript) RSCRIPT="$2"; shift 2 ;;
@@ -19,9 +20,11 @@ while [[ $# -gt 0 ]]; do
     --functions) FUNCTIONS="$2"; shift 2 ;;
     --outdir) OUTDIR="$2"; shift 2 ;;
     --chunks) CHUNKS="$2"; shift 2 ;;
+    --max-parallel) MAX_PARALLEL="$2"; shift 2 ;;
     *) usage; exit 2 ;;
   esac
 done
+[[ "$CHUNKS" =~ ^[1-9][0-9]*$ && "$MAX_PARALLEL" =~ ^[1-9][0-9]*$ ]] || { echo "ERROR: --chunks and --max-parallel must be positive integers" >&2; exit 2; }
 for value in "$RSCRIPT" "$FORM_SCRIPT" "$SPLIT_SCRIPT" "$INTRONS" "$TXDB" \
              "$BSGENOME_PACKAGE" "$BSGENOME_OBJECT" "$FUNCTIONS" "$OUTDIR"; do
   [[ -n "$value" ]] || { usage; exit 2; }
@@ -39,7 +42,23 @@ cleanup_children() {
 }
 trap cleanup_children INT TERM EXIT
 
+wait_for_slot() {
+  while [[ ${#pids[@]} -ge $MAX_PARALLEL ]]; do
+    local remaining=()
+    for pid in "${pids[@]}"; do
+      if kill -0 "$pid" 2>/dev/null; then
+        remaining+=("$pid")
+      else
+        wait "$pid" || return 1
+      fi
+    done
+    pids=("${remaining[@]}")
+    [[ ${#pids[@]} -lt $MAX_PARALLEL ]] || sleep 1
+  done
+}
+
 for chunk in "$OUTDIR"/chunks/introns.chunk_*.rds; do
+  wait_for_slot
   name="$(basename "$chunk" .rds)"
   prefix="$OUTDIR/$name"
   "$RSCRIPT" "$FORM_SCRIPT" -o "$prefix" -t "$TXDB" -j "$chunk" \
