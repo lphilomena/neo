@@ -45,7 +45,7 @@ cnv = "{outdir}/evidence/cnv_segments.tsv"
 [stages.hla_loh]
 required = false
 depends_on = ["hla_typing", "purity_cnv"]
-command = "PATIENT_ID={sample_id} TUMOR_BAM=/path/tumor.bam NORMAL_BAM=/path/normal.bam HLA_FILE={outdir}/hla/hla_consensus.txt OUTDIR={outdir}/lohhla bash scripts/run_lohhla_sample.sh"
+command = "PATIENT_ID={sample_id} TUMOR_BAM=/path/tumor.bam NORMAL_BAM=/path/normal.bam HLA_FILE={outdir}/hla/hla_consensus.txt COPYNUM_LOC={outdir}/purity/consensus/lohhla_copy_number.tsv OUTDIR={outdir}/hla_loh LOHHLA_NAS_ROOT={outdir}/work/lohhla LOHHLA_OUT={outdir}/work/lohhla/lohhla LOHHLA_MAPPING_STEP=TRUE LOHHLA_FISHING_STEP=FALSE bash scripts/run_lohhla_sample.sh"
 [stages.hla_loh.outputs]
 hla_loh = "{outdir}/evidence/hla_loh.tsv"
 

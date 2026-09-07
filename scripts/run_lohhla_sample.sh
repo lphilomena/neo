@@ -143,7 +143,10 @@ POLYSOLVER_THREADS="${POLYSOLVER_THREADS:-8}"
 COPYNUM_LOC="${COPYNUM_LOC:-FALSE}"
 MIN_COVERAGE="${MIN_COVERAGE_FILTER:-10}"
 LOHHLA_MAPPING_STEP="${LOHHLA_MAPPING_STEP:-TRUE}"
-LOHHLA_FISHING_STEP="${LOHHLA_FISHING_STEP:-TRUE}"
+# Re-mapping the chromosome 6 reads is required for an allele-specific LOH
+# call.  The optional fishing pass is expensive and can yield no usable reads
+# on WGS/WES inputs, so keep it opt-in for portable production runs.
+LOHHLA_FISHING_STEP="${LOHHLA_FISHING_STEP:-FALSE}"
 LOHHLA_GENOME_ASSEMBLY="${LOHHLA_GENOME_ASSEMBLY:-grch38}"
 
 PS_OUT="${OUT}/polysolver"
@@ -408,6 +411,69 @@ run_build_hla_fasta() {
   echo "==> HLAfastaLoc ready: ${PATIENT_HLA_FASTA}"
 }
 
+prepare_copynum_for_lohhla() {
+  local source="$1"
+  [[ "${source}" != "FALSE" ]] || {
+    printf '%s\n' "FALSE"
+    return 0
+  }
+  [[ -s "${source}" ]] || {
+    echo "ERROR: COPYNUM_LOC is not a non-empty table: ${source}" >&2
+    return 1
+  }
+
+  local out_dir="${LOHHLA_NAS_ROOT}/copy_number"
+  local staged="${out_dir}/$(basename "${source}").lohhla.tsv"
+  mkdir -p "${out_dir}"
+
+  # LOHHLA resolves copy-number rows using an internal sample label.  Preserve
+  # all supplied rows, then add only unambiguous aliases for the current case.
+  # This prevents a harmless tumor-BAM suffix from silently disabling integer
+  # copy-number inference, without borrowing values from another sample.
+  awk -F '\t' -v OFS='\t' \
+    -v patient_id="${PATIENT_ID}" \
+    -v tumor_sample="${TUMOR_SAMPLE}" \
+    -v tumor_bam="$(basename "${TUMOR_BAM}" .bam)" '
+    NR == 1 { header = $0; next }
+    {
+      order[++count] = $1
+      row[$1] = $0
+    }
+    END {
+      if (count == 0) {
+        print "ERROR: copy-number table has no data rows" > "/dev/stderr"
+        exit 2
+      }
+      print header
+      for (i = 1; i <= count; i++) print row[order[i]]
+
+      n = split(patient_id SUBSEP tumor_sample SUBSEP tumor_bam, aliases, SUBSEP)
+      selected = ""
+      for (i = 1; i <= n; i++) {
+        if (aliases[i] in row) {
+          selected = aliases[i]
+          break
+        }
+      }
+      if (selected == "") {
+        if (count != 1) {
+          print "ERROR: copy-number table has multiple rows but none match patient/tumor identifiers" > "/dev/stderr"
+          exit 3
+        }
+        selected = order[1]
+      }
+      for (i = 1; i <= n; i++) {
+        alias = aliases[i]
+        if (alias == "" || alias in row) continue
+        line = row[selected]
+        sub(/^[^\t]*/, alias, line)
+        print line
+      }
+    }
+  ' "${source}" > "${staged}"
+  printf '%s\n' "${staged}"
+}
+
 run_lohhla() {
   resolve_lohhla_home
   ensure_bam_index "${TUMOR_BAM}"
@@ -473,16 +539,21 @@ run_lohhla() {
   }
   tumor_bam_name="$(basename "${tumor_bam}")"
   normal_bam_name="$(basename "${normal_bam}")"
-  local lohhla_out_abs winners_abs hla_fasta_abs copynum_abs
+  local lohhla_out_abs winners_abs hla_fasta_abs copynum_abs copynum_input
   lohhla_out_abs="$(mkdir -p "${LOHHLA_OUT}" && cd "${LOHHLA_OUT}" && pwd -P)"
   winners_abs="$(cd "$(dirname "${WINNERS}")" && pwd -P)/$(basename "${WINNERS}")"
   hla_fasta_abs="$(cd "$(dirname "${PATIENT_HLA_FASTA}")" && pwd -P)/$(basename "${PATIENT_HLA_FASTA}")"
-  if [[ "${COPYNUM_LOC}" == "FALSE" ]]; then
+  copynum_input="$(prepare_copynum_for_lohhla "${COPYNUM_LOC}")"
+  if [[ "${copynum_input}" == "FALSE" ]]; then
     copynum_abs="FALSE"
   else
-    copynum_abs="$(cd "$(dirname "${COPYNUM_LOC}")" && pwd -P)/$(basename "${COPYNUM_LOC}")"
+    copynum_abs="$(cd "$(dirname "${copynum_input}")" && pwd -P)/$(basename "${copynum_input}")"
   fi
-  Rscript "${LOHHLA_SCRIPT}" \
+  # LOHHLA later invokes samtools with BAM basenames. Run inside the resolved
+  # common BAM directory so this upstream relative-path behavior remains valid.
+  (
+  cd "${bam_dir_abs}"
+  "${FUSION_ENV}/bin/Rscript" "${LOHHLA_SCRIPT}" \
     --patientId "${PATIENT_ID}" \
     --outputDir "${lohhla_out_abs}" \
     --BAMDir "${bam_dir_abs}" \
@@ -502,6 +573,7 @@ run_lohhla() {
     --LOHHLA_loc "${LOHHLA_HOME}" \
     --novoDir "${NOVO_DIR}" \
     --HLAexonLoc "${HLA_EXON_LOC}"
+  )
 
   echo ""
   echo "==> Done. Key outputs:"

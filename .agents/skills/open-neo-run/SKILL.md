@@ -64,6 +64,18 @@ canonical tumor/normal suffix alias; reject ambiguous matches. Rebuild HLA
 typing consensus after every declared typing tool has completed, rather than
 reusing a consensus generated before a late SpecHLA/HLA-LA result.
 
+Raw Skill2 LOHHLA stages must call the repository-owned
+`scripts/run_lohhla_sample.sh`, rather than embedding an ad-hoc LOHHLA R
+command. Pass a case-local `LOHHLA_NAS_ROOT` and `LOHHLA_OUT`, absolute
+tumor/normal BAM paths, the HLA consensus file, and the generated
+`CopyNumLoc`. The runner stages same-directory BAM links for LOHHLA's
+basename-based helper calls, normalizes unambiguous copy-number sample aliases,
+uses a validated LOHHLA R environment and resolves Polysolver assets from the
+deployment configuration. Default to `LOHHLA_MAPPING_STEP=TRUE` and
+`LOHHLA_FISHING_STEP=FALSE`; fishing is an explicit optional retry for inputs
+where it adds usable evidence. Preserve the generated normalized copy-number
+file and raw LOHHLA log with the stage outputs.
+
 Project the exact normalized restricting allele onto every peptide-HLA row.
 Only `CONSENSUS_RETAINED` is sufficient HLA-retention evidence for R1/R2 and
 formal patient release. `SINGLE_TOOL_*`, `DISCORDANT`, or `UNASSESSED` may
