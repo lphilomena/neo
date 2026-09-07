@@ -39,11 +39,12 @@ FQ2="${EASYFUSE_FQ2:?ERROR: set EASYFUSE_FQ2=/path/sample_R2.fq.gz}"
 REF="${NEOAG_EASYFUSE_REF:?ERROR: set NEOAG_EASYFUSE_REF=/path/to/easyfuse_ref_v4}"
 STAR_INDEX="${EASYFUSE_STAR_INDEX:-${REF}/starfusion_index/ref_genome.fa.star.idx}"
 STARFUSION_INDEX="${EASYFUSE_STARFUSION_INDEX:-${REF}/starfusion_index}"
-INPUT="${EASYFUSE_INPUT_TSV:-${ROOT}/work/easyfuse_${SAMPLE_ID}_input.tsv}"
 OUT="${OUTDIR:-${ROOT}/results/easyfuse}"
 LOG="${LOG:-${ROOT}/work/run_easyfuse_${SAMPLE_ID}.log}"
 RUNTIME_DIR="${EASYFUSE_RUNTIME_DIR:-${ROOT}/work}"
+INPUT="${EASYFUSE_INPUT_TSV:-${RUNTIME_DIR}/easyfuse_${SAMPLE_ID}_input.tsv}"
 PREBUILD_LOG="${RUNTIME_DIR}/easyfuse_conda_prebuild.log"
+PREBUILD_PID_FILE="${RUNTIME_DIR}/easyfuse_conda_prebuild.pid"
 NXF_RUN_NAME="${EASYFUSE_RUN_NAME:-easyfuse_${SAMPLE_ID}}"
 NXF_STEM="${NXF_RUN_NAME//[^A-Za-z0-9_.-]/_}"
 
@@ -66,11 +67,9 @@ mkdir -p "${OUT}" "$(dirname "${LOG}")" "${NXF_HOME}" "${NXF_WORK}" "${STAR_TMP}
 export TMPDIR="${STAR_TMP}"
 ensure_input_tsv
 
-# Avoid Nextflow session lock / STAR temp collisions with other EasyFuse runs.
-for stale_pid in $(pgrep -f 'run_easyfuse_cfrna_test\.sh' 2>/dev/null || true); do
-  echo "==> stopping stale easyfuse_cfrna_test PID=${stale_pid}"
-  kill "${stale_pid}" 2>/dev/null || true
-done
+# Each run receives its own Nextflow and STAR directories below. Do not kill
+# processes by a global EasyFuse command pattern: those may belong to another
+# approved case running on the same machine.
 
 export NXF_DISABLE_CHECK_TTY=true
 export CONDA_ALWAYS_YES=true
@@ -340,19 +339,40 @@ else
   echo "==> EasyFuse easyfuse_src.yml not present; using v2 environment layout"
 fi
 
-if ! pgrep -f 'easyfuse_prebuild_remaining_envs\.sh' >/dev/null 2>&1; then
-  EASYFUSE_RUNTIME_DIR="${RUNTIME_DIR}" EASYFUSE_NXF_CONDA_CACHEDIR="${CONDA_CACHE}" \
-    nohup bash "${ROOT}/scripts/easyfuse_prebuild_remaining_envs.sh" >"${PREBUILD_LOG}" 2>&1 &
-  echo "==> background conda prebuild worker PID=$! (log: ${PREBUILD_LOG})"
-else
-  echo "==> background conda prebuild worker already running"
-fi
+prebuild_worker_running() {
+  [[ -s "${PREBUILD_PID_FILE}" ]] || return 1
+  local pid
+  pid="$(cat "${PREBUILD_PID_FILE}")"
+  [[ "${pid}" =~ ^[0-9]+$ ]] && kill -0 "${pid}" 2>/dev/null
+}
+
+start_prebuild_worker() {
+  if prebuild_worker_running; then
+    echo "==> background conda prebuild worker already running (PID=$(cat "${PREBUILD_PID_FILE}"))"
+    return 0
+  fi
+  rm -f "${PREBUILD_PID_FILE}"
+  (
+    set +e
+    EASYFUSE_RUNTIME_DIR="${RUNTIME_DIR}" \
+    EASYFUSE_NXF_CONDA_CACHEDIR="${CONDA_CACHE}" \
+    EASYFUSE_PREBUILD_LOG="${PREBUILD_LOG}" \
+      bash "${ROOT}/scripts/easyfuse_prebuild_remaining_envs.sh"
+    rc=$?
+    rm -f "${PREBUILD_PID_FILE}"
+    exit "${rc}"
+  ) >>"${PREBUILD_LOG}" 2>&1 &
+  local pid=$!
+  printf '%s\n' "${pid}" > "${PREBUILD_PID_FILE}"
+  echo "==> background conda prebuild worker PID=${pid} (log: ${PREBUILD_LOG})"
+}
+
+start_prebuild_worker
 
 ALIGN_ENV="${CONDA_CACHE}/env-6f2b394c864eeaa5-8f88fe4572f59d9bb818f7644ca8f1fa"
 echo "==> waiting for alignment env (STAR) before Nextflow ..."
 while [[ ! -x "${ALIGN_ENV}/bin/STAR" ]]; do
-  if ! pgrep -f 'easyfuse_prebuild_remaining_envs\.sh' >/dev/null 2>&1 \
-    && ! pgrep -f 'mamba env create.*6f2b394c864eeaa5' >/dev/null 2>&1; then
+  if ! prebuild_worker_running; then
     echo "ERROR: alignment env build failed; see ${PREBUILD_LOG}" >&2
     exit 1
   fi

@@ -304,7 +304,9 @@ def generate_rna_fusion_splice_manifest(
     easyfuse_ref = str(inputs.get("easyfuse_ref") or "")
     easyfuse_command = (
         f"EASYFUSE_SAMPLE_ID={_q(sample_id)} EASYFUSE_FQ1={_q(pair[0])} EASYFUSE_FQ2={_q(pair[1])} "
-        f"NEOAG_EASYFUSE_REF={_q(easyfuse_ref)} OUTDIR={{outdir}}/branches/fusion/easyfuse "
+        f"NEOAG_EASYFUSE_REF={_q(easyfuse_ref)} "
+        f"EASYFUSE_RUNTIME_DIR={{outdir}}/branches/fusion/easyfuse_runtime "
+        f"OUTDIR={{outdir}}/branches/fusion/easyfuse "
         f"bash {script('run_easyfuse_sample.sh')}"
     ) if easyfuse_ref else ""
     _stage(lines, "easyfuse_discovery", required=True, command=easyfuse_command,
