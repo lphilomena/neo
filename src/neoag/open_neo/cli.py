@@ -88,6 +88,10 @@ def build_parser() -> argparse.ArgumentParser:
     install.add_argument("--reference-root")
     install.add_argument("--licensed-root")
     install.add_argument(
+        "--spechla-source",
+        help="Complete official SpecHLA source checkout; required when the staged image contains only runtime dependencies",
+    )
+    install.add_argument(
         "--gateway-url",
         help="Optional NeoAg Gateway URL to validate before full execute runs",
     )

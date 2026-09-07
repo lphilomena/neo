@@ -1603,6 +1603,8 @@ def _deployment_command(args: dict[str, Any], project_root: Path, layout: RunLay
         command += ["--asset-ssh-key", str(args["asset_ssh_key"])]
     if bool(args.get("allow_download", False)):
         command.append("--allow-download")
+    if args.get("spechla_source"):
+        command += ["--spechla-source", str(args["spechla_source"])]
     if bool(args.get("install_claude_code", False)):
         command += ["--claude-code", "--claude-code-channel", str(args.get("claude_code_channel") or "stable")]
     if bool(args.get("no_sync_assets", False)):
