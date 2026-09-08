@@ -74,6 +74,7 @@ experiment set only.
 - one formal patient report (`reports/patient_report.html`), rendered by `neoag.reports_dual.make_patient_report`, including per-candidate transcript expression, RNA depth/alt/VAF and event-type-aware self-similarity/normal-tissue risk evidence when available
 - technical report (`md/html/docx` when available)
 - `onepage_summary.pptx` when `python-pptx` is available
+- `deliverables/`: the same non-destructive standardized view used by Skill2, grouping raw tools, evidence, consensus, ranking, reports, logs and manifests. `deliverables/output_index.tsv` records the original location of every linked output.
 
 ## Clinical boundary
 

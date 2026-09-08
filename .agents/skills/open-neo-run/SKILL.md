@@ -230,6 +230,7 @@ For Fusion and Splice candidates, keep direct peptide/junction safety evidence s
 - `reports/evidence_report.technical.html` as the default Pipeline report; an explicitly requested patient report is a non-final Pipeline snapshot
 - `manifests/rna_fusion_splice.production.toml` and
   `manifests/rna_fusion_splice.requirements.tsv` for automatic RNA FASTQ runs
+- `deliverables/`: a non-destructive, standardized navigation view of the completed production result. It contains `01_tools`, `02_evidence`, `03_consensus`, `04_ranking`, `05_reports`, `06_logs`, and `07_manifests`; entries are links to native outputs and are listed in `deliverables/output_index.tsv`.
 
 ## Safety boundary
 

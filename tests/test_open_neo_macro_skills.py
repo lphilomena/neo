@@ -46,6 +46,7 @@ from neoag.open_neo.rna_fusion_splice_profile import (
     is_rna_fastq_profile_candidate,
 )
 from neoag.open_neo.tool_consensus import build_tool_consensus
+from neoag.open_neo.output_layout import materialize_output_view
 from neoag.production_runner import load_production_manifest, run_production
 from neoag.sample_identity.bam_matcher import parse_bam_matcher_short
 from neoag.skill_taxonomy.registry import SKILLS_BY_NAME
@@ -212,6 +213,33 @@ def test_run_state_requires_matching_output_signature_for_reuse(tmp_path: Path):
     decision = resume_step_decision(state, "ranking")
     assert decision["decision"] == "RUN"
     assert decision["reason"].startswith("OUTPUT_HASH_CHANGED:")
+
+
+def test_output_view_preserves_native_results_and_groups_deliverables(tmp_path: Path):
+    result_root = tmp_path / "result"
+    (result_root / "tools/easyfuse").mkdir(parents=True)
+    (result_root / "scoring").mkdir()
+    (result_root / "reports").mkdir()
+    (result_root / "tools/easyfuse/calls.tsv").write_text("call\n", encoding="utf-8")
+    ranked = result_root / "scoring/ranked_peptides.evidence_consensus.tsv"
+    ranked.write_text("peptide\n", encoding="utf-8")
+    report = result_root / "reports/patient_report.html"
+    report.write_text("<html></html>\n", encoding="utf-8")
+
+    outputs = materialize_output_view(
+        result_root,
+        artifacts={"consensus_peptides": str(ranked), "patient_report": str(report)},
+        producer="test",
+    )
+
+    view = Path(outputs["deliverables_dir"])
+    assert (view / "01_tools/tools").is_symlink()
+    assert (view / "04_ranking/scoring").is_symlink()
+    assert (view / "05_reports/reports").is_symlink()
+    assert (view / "04_ranking/consensus_peptides").is_symlink()
+    assert (view / "05_reports/patient_report").is_symlink()
+    assert ranked.read_text(encoding="utf-8") == "peptide\n"
+    assert "consensus_peptides" in Path(outputs["deliverables_index"]).read_text(encoding="utf-8")
 
 
 def test_failure_codes_have_stable_cli_exit_mapping():

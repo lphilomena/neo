@@ -41,6 +41,7 @@ from .routing import (
     write_routing_outputs,
 )
 from .tool_consensus import build_tool_consensus, enrich_all_tool_results
+from .output_layout import materialize_output_view
 from .state import (
     RunLayout,
     audit,
@@ -782,9 +783,6 @@ def run_open_neo(args: dict[str, Any]) -> dict[str, Any]:
     result.outputs.update({f"consensus_{key.removesuffix('.tsv')}": value for key, value in consensus_outputs.items()})
     if artifacts.get("all_tool_results"):
         enrich_all_tool_results(artifacts["all_tool_results"], consensus_outputs["tool_consensus_summary.tsv"])
-    output_manifest = write_named_output_manifest(result.outputs, layout.root / "output_manifest.json")
-    result.outputs["output_manifest"] = str(output_manifest)
-
     macro_run_manifest = {
         "schema_version": "open-neo-run-manifest-v1",
         "run_id": result.run_id,
@@ -801,6 +799,23 @@ def run_open_neo(args: dict[str, Any]) -> dict[str, Any]:
     }
     write_json(layout.run_manifest, macro_run_manifest)
     result.outputs["run_manifest"] = str(layout.run_manifest)
+    output_manifest = write_named_output_manifest(result.outputs, layout.root / "output_manifest.json")
+    result.outputs["output_manifest"] = str(output_manifest)
+    result.outputs.update(materialize_output_view(
+        result_root,
+        source_root=result_root,
+        artifacts=result.outputs,
+        layout_paths={
+            "macro_manifests": layout.manifests,
+            "macro_input_qc": layout.input_qc,
+            "macro_logs": layout.logs,
+            "macro_run_manifest": layout.run_manifest,
+            "macro_output_manifest": output_manifest,
+            "macro_audit_log": layout.audit_log,
+        },
+        producer="open-neo-run",
+    ))
+    write_named_output_manifest(result.outputs, layout.root / "output_manifest.json")
     final_status = "PASS_WITH_WARNINGS" if result.warnings or routing.missing or (production_result and production_result.status == "LOW_CONFIDENCE") else "PASS"
     result.provenance = {"python": platform.python_version(), "project_root": str(Path(args.get("project_root") or ".").resolve()), "result_root": str(result_root.resolve())}
     update_case_state(layout, case_id=case_id, current_intent="run", status=final_status, result_root=str(result_root.resolve()), artifacts=artifacts)

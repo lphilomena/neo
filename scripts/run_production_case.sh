@@ -994,6 +994,15 @@ if [[ -d "$OUTDIR/final" ]]; then
   verify_splice_prefilter_outputs \
     "$OUTDIR/final/parsed/splice_prefilter_funnel.tsv" \
     "$OUTDIR/final/parsed/splice_prefilter_decisions.tsv"
+  OPEN_NEO_OUTPUT_ROOT="$OUTDIR/final" PYTHONPATH="$PROJECT_ROOT/src" "$PY" -c '
+import os
+from neoag.open_neo.output_layout import materialize_output_view
+
+print(materialize_output_view(
+    os.environ["OPEN_NEO_OUTPUT_ROOT"],
+    producer="scripts/run_production_case.sh",
+))
+'
 fi
 
 echo "[OK] done: $OUTDIR/final/reports/"

@@ -22,6 +22,7 @@ from .errors import FailureCode
 from .execution_adapters import discover_result_artifacts
 from .html_render import markdown_to_html
 from .review_integrity import audit_review_inputs
+from .output_layout import materialize_output_view
 from .state import RunLayout, audit, new_run_id, safe_identifier, update_case_state
 
 
@@ -792,6 +793,20 @@ def run_review(args: dict[str, Any]) -> dict[str, Any]:
     result.warnings.append("first_batch_experiment_set is a deterministic research heuristic, not an optimized vaccine or treatment set")
     write_json(layout.run_manifest, {"schema_version": "open-neo-review-manifest-v2", "run_id": result.run_id, "case_id": case_id, "source_result_dir": str(result_dir), "source_run_manifest": artifacts["run_manifest"], "source_artifacts": artifacts, "integrity": integrity, "review_outputs": result.outputs, "top_n": top_n, "event_top_n": event_top_n, "candidate_top_n": candidate_top_n, "reports": sorted(selected_reports), "status": final_status})
     result.outputs["review_manifest"] = str(layout.run_manifest)
+    result.outputs.update(materialize_output_view(
+        layout.root,
+        source_root=result_dir,
+        artifacts=result.outputs,
+        layout_paths={
+            "review_workspace": layout.review,
+            "review_reports": layout.reports,
+            "review_logs": layout.logs,
+            "review_manifests": layout.manifests,
+            "review_manifest": layout.run_manifest,
+            "review_audit_log": layout.audit_log,
+        },
+        producer="open-neo-review",
+    ))
     update_case_state(layout, case_id=case_id, current_intent="review", status=final_status, source_result_dir=str(result_dir), outputs=result.outputs)
     audit(layout, "open_neo_review.finish", final_status, candidates=len(review_rows), first_batch=len(first_batch), reports=sorted(selected_reports))
     result.finish(final_status).write(layout.skill_result)
