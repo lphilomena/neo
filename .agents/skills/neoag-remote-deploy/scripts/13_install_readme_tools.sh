@@ -814,12 +814,10 @@ install_sequenza_if_requested() {
     [[ -x "$helper" ]] || { echo "BIOC_CACHE_HELPER_MISSING: $helper" >&2; exit 47; }
     if [[ -d "$env_path" ]]; then
       run "repair Sequenza conda env" "${conda_cmd[@]}" env update -n neoag-sequenza \
-        -f "$PROJECT_ROOT/conda/env.neoag-sequenza.yml" --prune \
-        --override-channels -c conda-forge -c bioconda
+        -f "$PROJECT_ROOT/conda/env.neoag-sequenza.yml" --prune
     else
       run "install Sequenza conda env" "${conda_cmd[@]}" env create -n neoag-sequenza \
-        -f "$PROJECT_ROOT/conda/env.neoag-sequenza.yml" -y \
-        --override-channels -c conda-forge -c bioconda
+        -f "$PROJECT_ROOT/conda/env.neoag-sequenza.yml" -y
     fi
   else
     log "Sequenza env already present: $env_path"

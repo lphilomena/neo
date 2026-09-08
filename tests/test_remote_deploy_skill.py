@@ -225,6 +225,15 @@ def test_bioconductor_cache_helper_is_wired_into_sequenza_and_ascat() -> None:
     assert "failed the target-environment load test" in ascat_installer
 
 
+def test_sequenza_environment_yaml_does_not_override_declared_channels() -> None:
+    installer = (SCRIPTS / "13_install_readme_tools.sh").read_text(encoding="utf-8")
+    sequenza_block = installer.split("install_sequenza_if_requested()", 1)[1].split(
+        "register_hmf_purple_if_requested()", 1
+    )[0]
+    assert "env.neoag-sequenza.yml" in sequenza_block
+    assert "--override-channels" not in sequenza_block
+
+
 def test_lohhla_rebinds_relocated_polysolver_assets() -> None:
     runner = (ROOT / "scripts" / "run_lohhla_sample.sh").read_text(encoding="utf-8")
     assert 'local resolved_pshome="${PSHOME}"' in runner
