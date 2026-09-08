@@ -82,8 +82,7 @@ Tool group shortcuts:
                               EasyFuse family), BAM-matcher, and CPU torch (BigMHC +
                               runtime validate). ASCAT/PyClone remains optional
                               (--add-tool-group --ascat-pyclone).
-  --all-open                  Pass --all-open to 13_install_readme_tools.sh; includes required NetMHCstabpan and NetChop installers
-  --add-tool-group FLAG       Add any 13_install_readme_tools.sh group flag, e.g. --vep
+  --all-open                  Install the complete supported open production tool set
 
 Asset / validation toggles:
   --no-sync-assets            Do not sync asset manifest
@@ -100,9 +99,6 @@ Real VCF smoke:
   --real-vcf-hla-file FILE    File containing HLA alleles
   --real-vcf-smoke-top-n N    Unique peptides for smoke test (default: 1)
   --skip-real-vcf-mhcflurry   Temporary fallback if MHCflurry is broken
-
-Pass-through:
-  --                          Remaining args are passed to 13_install_readme_tools.sh.
 
 Examples:
   bash .agents/skills/neoag-remote-deploy/scripts/16_install_new_machine.sh \
@@ -151,6 +147,8 @@ while [[ $# -gt 0 ]]; do
     --standard) INSTALL_TOOL_GROUPS=(--core-env --vep --gatk --immunogenicity --netmhcstabpan --optitype --facets --splice --lohhla --fusion --bam-matcher --install-torch); shift ;;
     --all-open) INSTALL_TOOL_GROUPS=(--all-open); shift ;;
     --all) echo "ERROR: --all has been retired for Skill1; use --all-open" >&2; exit 2 ;;
+    # Backward-compatible internal forwarding only. New user-facing commands
+    # should use open-neo install-check or the named 16 options above.
     --add-tool-group) EXTRA_INSTALL_ARGS+=("$2"); shift 2 ;;
     --no-sync-assets) SYNC_ASSETS=0; shift ;;
     --no-verify) RUN_VERIFY=0; shift ;;

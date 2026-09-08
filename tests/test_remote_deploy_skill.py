@@ -68,6 +68,12 @@ def test_new_machine_entrypoint_dry_run_needs_no_download_approval(tmp_path: Pat
     assert "DOWNLOAD_NOT_APPROVED" not in proc.stdout + proc.stderr
 
 
+def test_new_machine_help_hides_internal_tool_installer() -> None:
+    proc = _run("bash", SCRIPTS / "16_install_new_machine.sh", "--help")
+    assert proc.returncode == 0
+    assert "13_install_readme_tools.sh" not in proc.stdout
+
+
 def test_new_machine_entrypoint_forwards_spechla_source(tmp_path: Path) -> None:
     source = tmp_path / "SpecHLA"
     proc = _run(

@@ -95,6 +95,10 @@ open-neo install-check \
   --outdir work/install-check-full
 ```
 
+If the staged SpecHLA container is runtime-only, add
+`--spechla-source /path/to/official/SpecHLA`. The source directory must contain
+`script/whole/SpecHLA.sh` and `script/cal.hla.copy.pl`.
+
 Use `--installer-profile minimal` for review/core use and `--installer-profile standard` for the lighter production main path. Re-running Skill1 is safe: installed tools, synchronized assets and PASS checkpoints are reused when signatures still match. If installation was interrupted, resume it instead of starting from scratch:
 
 ```bash
@@ -108,6 +112,12 @@ open-neo install-check \
 ```
 
 Full installs default to no wall-clock timeout. If an operator supplies `--install-timeout SECONDS`, interruption or timeout terminates the whole installer process group before writing a controlled checkpoint.
+
+`open-neo install-check` is the supported installation interface. For diagnosis
+outside the macro, use `16_install_new_machine.sh`; it is the sole supported
+shell entrypoint and internally coordinates asset synchronization, tool setup,
+activation rewrite and validation. Do not invoke its internal component scripts
+directly.
 
 ### Skill2: Run A Case Through Gateway
 
