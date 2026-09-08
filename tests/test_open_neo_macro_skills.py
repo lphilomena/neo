@@ -242,6 +242,12 @@ def test_output_view_preserves_native_results_and_groups_deliverables(tmp_path: 
     assert "consensus_peptides" in Path(outputs["deliverables_index"]).read_text(encoding="utf-8")
 
 
+def test_production_wrapper_materializes_standard_deliverables_view():
+    wrapper = (Path.cwd() / "scripts/run_production_case.sh").read_text(encoding="utf-8")
+    assert "materialize_output_view" in wrapper
+    assert "OPEN_NEO_OUTPUT_ROOT=\"$OUTDIR/final\"" in wrapper
+
+
 def test_failure_codes_have_stable_cli_exit_mapping():
     assert exit_code_for_result({"status": "PASS"}) == 0
     assert exit_code_for_result({"status": "BLOCKED", "blocking_issues": [FailureCode.APPROVAL_REQUIRED.value]}) == 3

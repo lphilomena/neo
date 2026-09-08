@@ -30,10 +30,14 @@ def _section_for_artifact(name: str, path: Path) -> str:
         return "06_logs"
     if any(token in text for token in ("manifest", "route", "inventory", "config", "plan")):
         return "07_manifests"
-    if any(token in text for token in ("consensus", "conflict", "hla_loh")):
-        return "03_consensus"
     if any(token in text for token in ("rank", "score", "weighted_baseline", "all_tool_results")):
         return "04_ranking"
+    # The final consensus peptide/event tables are the published rankings;
+    # reserve the consensus section for tool-level reconciliation outputs.
+    if "consensus_peptide" in text or "consensus_event" in text:
+        return "04_ranking"
+    if any(token in text for token in ("consensus", "conflict", "hla_loh")):
+        return "03_consensus"
     if any(token in text for token in ("tool", "caller", "branch")):
         return "01_tools"
     return "02_evidence"
