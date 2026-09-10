@@ -54,15 +54,9 @@ else
   export NEOAG_VEP_BIN="${NEOAG_TOOLS_ROOT}/bin/vep-neoag"
 fi
 # VEP cache root (must contain homo_sapiens/<version>_GRCh38/, not the release dir itself).
-export NEOAG_VEP_CACHE="${NEOAG_TOOLS_ROOT}/data/vep"
-if [[ ! -d "${NEOAG_VEP_CACHE}/homo_sapiens" && -d "${NEOAG_TOOLS_ROOT}/../neoag_event_pipeline_artifact_quarantine_20260622_091158/data/vep/homo_sapiens" ]]; then
-  export NEOAG_VEP_CACHE="${NEOAG_TOOLS_ROOT}/../neoag_event_pipeline_artifact_quarantine_20260622_091158/data/vep"
-fi
+export NEOAG_VEP_CACHE="${NEOAG_VEP_CACHE:-${NEOAG_TOOLS_ROOT}/data/vep}"
 export NEOAG_VEP_CACHE_VERSION="105"
-export NEOAG_VEP_PLUGINS="${NEOAG_TOOLS_ROOT}/work/vep_plugins"
-if [[ ! -f "${NEOAG_VEP_PLUGINS}/Wildtype.pm" && -f "${NEOAG_TOOLS_ROOT}/../neoag_event_pipeline_artifact_quarantine_20260622_091158/work/vep_plugins/Wildtype.pm" ]]; then
-  export NEOAG_VEP_PLUGINS="${NEOAG_TOOLS_ROOT}/../neoag_event_pipeline_artifact_quarantine_20260622_091158/work/vep_plugins"
-fi
+export NEOAG_VEP_PLUGINS="${NEOAG_VEP_PLUGINS:-${NEOAG_TOOLS_ROOT}/work/vep_plugins}"
 export NEOAG_REFERENCE_FASTA="${NEOAG_TOOLS_ROOT}/data/ref/hg38/Homo_sapiens_assembly38.fasta"
 export SEQUENZA_FASTA="${SEQUENZA_FASTA:-${NEOAG_TOOLS_ROOT}/data/sequenza/reference/GRCh38.primary_assembly.chr.fa}"
 export SEQUENZA_GC_WIG="${SEQUENZA_GC_WIG:-${NEOAG_TOOLS_ROOT}/data/sequenza/reference/Homo_sapiens.GRCh38.dna.primary_assembly.chr.gc50.wig.gz}"
@@ -148,9 +142,6 @@ fi
 
 # LOHHLA / FACETS / Nextflow
 export LOHHLA_HOME="${LOHHLA_HOME:-${NEOAG_TOOLS_ROOT}/tools/lohhla}"
-if [[ ! -f "${LOHHLA_HOME}/LOHHLAscript.R" && -f "${NEOAG_TOOLS_ROOT}/../neoag_event_pipeline_artifact_quarantine_20260622_091158/tools/lohhla/LOHHLAscript.R" ]]; then
-  export LOHHLA_HOME="${NEOAG_TOOLS_ROOT}/../neoag_event_pipeline_artifact_quarantine_20260622_091158/tools/lohhla"
-fi
 export POLYSOLVER_HOME="${POLYSOLVER_HOME:-}"
 export NOVOALIGN_LICENSE_FILE="${NOVOALIGN_LICENSE_FILE:-}"
 if [[ -z "${POLYSOLVER_HOME}" ]]; then
@@ -273,7 +264,8 @@ fi
 if [[ -n "${OPTITYPE_ENV:-}" && -x "${OPTITYPE_ENV}/bin/optitype" ]]; then
   export OPTITYPE_BIN="${OPTITYPE_ENV}/bin/optitype"
   export OPTITYPE_REFERENCE="${OPTITYPE_ENV}/share/optitype/data"
-  export PATH="${OPTITYPE_ENV}/bin:${PATH}"
+  # Do NOT prepend OPTITYPE_ENV/bin to PATH: its `perl` shadows neoag-vep's
+  # `#!/usr/bin/env perl` and breaks VEP (Can't locate DBI.pm). Call via OPTITYPE_BIN.
 fi
 
 # NetChop 3.1d

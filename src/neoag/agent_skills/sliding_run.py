@@ -5,6 +5,7 @@ import gzip
 import json
 import os
 import re
+import shlex
 import subprocess
 from pathlib import Path
 from typing import Iterable
@@ -146,7 +147,24 @@ def main(argv: list[str] | None = None) -> int:
 
     run_outdir = outdir / "run-full"
     log_path = outdir / "run-full.log"
-    cmd = f"set -euo pipefail; cd {root}; source conf/tools.env.sh; bin/neoag run-full --config {config_path} --outdir {run_outdir}"
+    vep_bin = os.environ.get("NEOAG_VEP_BIN") or str(root / "bin" / "vep-neoag")
+    conda_base = os.environ.get("NEOAG_CONDA_BASE", "")
+    export_bits = [
+        "set -euo pipefail",
+        f"cd {shlex.quote(str(root))}",
+        f"export NEOAG_VEP_BIN={shlex.quote(vep_bin)}",
+    ]
+    if conda_base:
+        export_bits.append(f"export NEOAG_CONDA_BASE={shlex.quote(conda_base)}")
+    export_bits.append("source conf/tools.env.sh")
+    # Re-assert after tools.env in case a site overlay points at raw vep
+    export_bits.append(f"export NEOAG_VEP_BIN={shlex.quote(vep_bin)}")
+    export_bits.append(
+        "bin/neoag run-full "
+        f"--config {shlex.quote(str(config_path))} "
+        f"--outdir {shlex.quote(str(run_outdir))}"
+    )
+    cmd = "; ".join(export_bits)
     proc = subprocess.run(["bash", "-lc", cmd], text=True, capture_output=True)
     log_path.write_text(proc.stdout + ("\n--- STDERR ---\n" if proc.stderr else "") + proc.stderr, encoding="utf-8")
 

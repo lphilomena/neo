@@ -1,25 +1,60 @@
 #!/usr/bin/env bash
-# Run VEP in isolated neoag-vep env (avoids Perl path clash with neoag-tools).
+# Run VEP with neoag-vep perl only (never neoag-tools / optitype perl via #!/usr/bin/env).
 set -euo pipefail
 
-CONDA_BASE="${NEOAG_CONDA_BASE:-$(conda info --base 2>/dev/null || echo)}"
 VEP_ENV_NAME="${NEOAG_VEP_ENV:-neoag-vep}"
+
+# Resolve conda base without requiring `conda` on PATH (bash -lc / minimal PATH).
+CONDA_BASE="${NEOAG_CONDA_BASE:-}"
+if [[ -z "${CONDA_BASE}" && -n "${CONDA_EXE:-}" ]]; then
+  CONDA_BASE="${CONDA_EXE%/bin/conda}"
+fi
+if [[ -z "${CONDA_BASE}" || ! -d "${CONDA_BASE}" ]]; then
+  for cand in \
+    "${HOME}/miniforge3" \
+    "${HOME}/miniconda3" \
+    "${HOME}/mambaforge" \
+    "${HOME}/.local/share/mamba"
+  do
+    if [[ -x "${cand}/envs/${VEP_ENV_NAME}/bin/perl" ]]; then
+      CONDA_BASE="${cand}"
+      break
+    fi
+  done
+fi
+if [[ -z "${CONDA_BASE}" || ! -d "${CONDA_BASE}" ]]; then
+  CONDA_BASE="$(conda info --base 2>/dev/null || true)"
+fi
+
 if [[ -x "${VEP_ENV_NAME}/bin/perl" ]]; then
   VEP_ENV="${VEP_ENV_NAME}"
 else
   VEP_ENV="${CONDA_BASE}/envs/${VEP_ENV_NAME}"
 fi
+
 PERL_BIN="${VEP_ENV}/bin/perl"
-VEP_SCRIPT="$(readlink -f "${VEP_ENV}/bin/vep" 2>/dev/null || echo "${VEP_ENV}/share/ensembl-vep-105.0-0/vep")"
+if [[ -L "${VEP_ENV}/bin/vep" ]]; then
+  VEP_SCRIPT="$(readlink -f "${VEP_ENV}/bin/vep")"
+elif [[ -f "${VEP_ENV}/bin/vep" ]]; then
+  VEP_SCRIPT="${VEP_ENV}/bin/vep"
+else
+  # ensembl-vep share layout (version may vary)
+  VEP_SCRIPT="$(ls -1 "${VEP_ENV}"/share/ensembl-vep-*/vep 2>/dev/null | head -1 || true)"
+fi
 
 if [[ ! -x "${PERL_BIN}" ]]; then
   echo "ERROR: neoag-vep perl not found at ${PERL_BIN}" >&2
-  echo "Run: bash scripts/install_vep.sh" >&2
+  echo "  NEOAG_CONDA_BASE=${NEOAG_CONDA_BASE:-<unset>} CONDA_BASE=${CONDA_BASE:-<unset>}" >&2
+  exit 1
+fi
+if [[ -z "${VEP_SCRIPT}" || ! -f "${VEP_SCRIPT}" ]]; then
+  echo "ERROR: vep script not found under ${VEP_ENV}" >&2
   exit 1
 fi
 
-# VEP uses #!/usr/bin/env perl; neoag-tools perl 5.32 breaks module resolution.
-unset PERL5LIB PERLLIB
+# Critical: strip foreign Perl @INC / PATH so #!/usr/bin/env is irrelevant.
+unset PERL5LIB PERLLIB PERL_LOCAL_LIB_ROOT PERL_MB_OPT PERL_MM_OPT
 export PATH="${VEP_ENV}/bin:/usr/bin:/bin"
+export NEOAG_CONDA_BASE="${CONDA_BASE}"
 
 exec "${PERL_BIN}" "${VEP_SCRIPT}" "$@"

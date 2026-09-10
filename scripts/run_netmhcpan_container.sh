@@ -7,10 +7,25 @@ IMAGE=${NEOAG_NETMHCPAN_IMAGE:-neoag-netmhcpan:4.2c-ubuntu22.04}
 SIF=${NEOAG_NETMHCPAN_SIF:-$REPO_ROOT/containers/netmhcpan/netmhcpan-4.2c-ubuntu22.04.sif}
 TMPDIR_HOST=${NEOAG_NETMHCPAN_TMPDIR:-$REPO_ROOT/work/netmhcpan_tmp}
 ENGINE=${NEOAG_NETMHCPAN_ENGINE:-auto}
-CONTAINER_BIN=${NEOAG_NETMHCPAN_CONTAINER_BIN:-$NETMHCPAN_HOME/netMHCpan}
-PLATFORM_HOME=${NEOAG_NETMHCPAN_PLATFORM_HOME:-$NETMHCPAN_HOME/Linux_$(uname -m)}
+if [[ -n ${NEOAG_NETMHCPAN_CONTAINER_BIN:-} ]]; then
+  CONTAINER_BIN=$NEOAG_NETMHCPAN_CONTAINER_BIN
+elif [[ -x $NETMHCPAN_HOME/netMHCpan ]]; then
+  CONTAINER_BIN=$NETMHCPAN_HOME/netMHCpan
+elif [[ -x $NETMHCPAN_HOME/bin/netMHCpan ]]; then
+  CONTAINER_BIN=$NETMHCPAN_HOME/bin/netMHCpan
+else
+  CONTAINER_BIN=$NETMHCPAN_HOME/bin/netMHCpan-4.2
+fi
+# Portable frontend (100T/netMHCpan) expects $NETMHCpan = install root (has bin/ wrappers).
+# Legacy DTU layout used Linux_$arch as NETMHCpan; only fall back when no root frontend.
+if [[ -n ${NEOAG_NETMHCPAN_PLATFORM_HOME:-} ]]; then
+  PLATFORM_HOME=$NEOAG_NETMHCPAN_PLATFORM_HOME
+elif [[ -x $NETMHCPAN_HOME/bin/netMHCpan-4.2 || -x $NETMHCPAN_HOME/netMHCpan ]]; then
+  PLATFORM_HOME=$NETMHCPAN_HOME
+else
+  PLATFORM_HOME=$NETMHCPAN_HOME/Linux_$(uname -m)
+fi
 [[ ${1:-} == -h || ${1:-} == --help ]] && { echo "Usage: $0 [netMHCpan args]"; exit 0; }
-[[ -x "$NETMHCPAN_HOME/netMHCpan" ]] || { echo "ERROR: missing $NETMHCPAN_HOME/netMHCpan" >&2; exit 2; }
 [[ -x "$CONTAINER_BIN" ]] || { echo "ERROR: missing $CONTAINER_BIN" >&2; exit 2; }
 mkdir -p "$TMPDIR_HOST"
 NETMHCPAN_ARGS=("$@")
