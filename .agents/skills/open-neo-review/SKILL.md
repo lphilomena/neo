@@ -62,12 +62,15 @@ experiment set only.
 - `run_issue_log.json`, copied forward from Skill2 and appended with report/evidence defects, their source layer, generic renderer or ranking fix, whether Skill2 must be resumed, and post-regeneration validation status
 - `candidate_review.tsv`
 - `first_batch_experiment_set.tsv`
+- `vaccine_event_candidates.tsv`, one row per mutation/fusion/splice/SV event as the primary mRNA-vaccine selection unit
+- `vaccine_event_neoepitopes.tsv`, all unique peptide-HLA predictions nested under their source event; peptide rows remain supporting presentation/safety evidence and do not independently occupy event ranks
 - `evidence_completion_queue.tsv`
 - `manual_review_candidates.tsv`
 - `experiment_candidates.tsv`
 - `short_peptide_pool.tsv`
 - `long_peptide_design.tsv`
 - `minigene_design.tsv`
+- `vaccine_construct_plan.tsv`, one construct-planning row per selected biological event with its linked neoepitope and HLA coverage summary
 - `targeted_rna_validation_plan.tsv`
 - APPM/HLA-LOH and CCF review files
 - weighted-vs-consensus comparison files

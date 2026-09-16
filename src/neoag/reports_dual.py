@@ -2504,6 +2504,29 @@ def _patient_event_keys(row: Mapping[str, Any]) -> list[str]:
     return keys
 
 
+def _patient_event_neoepitopes(
+    row: Mapping[str, Any], peptides: list[dict[str, str]], limit: int = 10,
+) -> tuple[int, str]:
+    event_keys = set(_patient_event_keys(row))
+    pairs: list[str] = []
+    seen: set[tuple[str, str]] = set()
+    for peptide_row in peptides:
+        if event_keys and not event_keys.intersection(_patient_event_keys(peptide_row)):
+            continue
+        peptide = str(peptide_row.get("peptide") or peptide_row.get("mutant_peptide") or "").strip()
+        hla = str(peptide_row.get("hla_allele") or peptide_row.get("hla") or "").strip()
+        key = (peptide, hla)
+        if not peptide or key in seen:
+            continue
+        seen.add(key)
+        pairs.append(f"{peptide} / {hla}" if hla else peptide)
+    shown = pairs[:limit]
+    display = "；".join(shown)
+    if len(pairs) > limit:
+        display += f"；另有{len(pairs) - limit}个组合见明细表"
+    return len(pairs), display or "尚未形成可追溯的neoepitope-HLA组合"
+
+
 def _patient_display_candidate_key(row: Mapping[str, Any], track: str) -> str:
     """Identify a patient-facing candidate without collapsing technical events."""
     keys = _patient_event_keys(row)
@@ -5975,27 +5998,29 @@ def make_patient_report(
 
     displayed_candidate_count = len(top)
     out.append(
-        "<div class='section'><h2>5. 当前进入人工复核的候选Peptide–HLA组合"
-        f"（去重后{displayed_candidate_count}个）</h2>"
+        "<div class='section'><h2>5. 当前进入人工复核的疫苗候选事件"
+        f"（按突变/生物学事件去重后{displayed_candidate_count}个）</h2>"
     )
 
     def patient_candidate_rows(rows: list[dict[str, str]]) -> list[dict[str, Any]]:
         result = []
         for rank, row in enumerate(rows, 1):
+            epitope_count, epitope_pairs = _patient_event_neoepitopes(row, ranked)
             result.append({
                 "排名": rank,
-                "基因": row.get("gene", ""),
+                "突变/事件": row.get("gene", "") or row.get("event_name", "") or row.get("event_id", ""),
                 "类型": _patient_track(row),
-                "肽段-HLA": f"{row.get('peptide', '')} / {row.get('hla_allele', '')}",
+                "候选neoepitope-HLA": f"共{epitope_count}个：{epitope_pairs}",
                 "等级": _patient_event_row_grade(row, event_grade_map),
                 "关键证据与下一步": _patient_event_evidence_and_next_step(row, bundle, val_map),
             })
         return result
 
-    candidate_headers = ["排名", "基因", "类型", "肽段-HLA", "等级", "关键证据与下一步"]
+    candidate_headers = ["排名", "突变/事件", "类型", "候选neoepitope-HLA", "等级", "关键证据与下一步"]
     out.append(
-        f"<h3>当前展示{displayed_candidate_count}个去重候选组合</h3>"
-        "<p class='small'>本表按事件级证据等级展示候选：R1、R2及R3的三个细分等级"
+        f"<h3>当前展示{displayed_candidate_count}个去重候选事件</h3>"
+        "<p class='small'>疫苗靶点以突变/融合/剪接等生物学事件为选择单位；同一事件产生的不同肽长、加工位置和HLA组合归在该事件下展示，不重复占据事件排名。"
+        "肽段-HLA预测仍作为呈递、MT/WT与安全性证据保留在完整明细表中。本表按事件级证据等级展示候选：R1、R2及R3的三个细分等级"
         "（R3-READY、R3-GAP、R3-REVIEW）。表内不再使用未细分的R3；其中R3-READY表示候选基本合理、"
         "仍需完成指定确认步骤，R3-GAP表示关键资料缺失，R3-REVIEW表示证据冲突或伪影风险需人工复核。"
         "仅纳入身份可追溯的非R4候选；R4、硬失败或明确不推进的候选保留在技术审阅池，不进入本表。"
@@ -6021,7 +6046,7 @@ def make_patient_report(
 
     interpretation_top = top[:20]
     interpretation_count = len(interpretation_top)
-    out.append(f"<div class='section'><h2>6. 人工复核候选的综合证据与实验建议（{interpretation_count}个）</h2>")
+    out.append(f"<div class='section'><h2>6. 人工复核候选事件的综合证据与实验建议（{interpretation_count}个）</h2>")
     out.append(
         f"<p>本节解读当前进入人工复核的{interpretation_count}个去重候选组合；建议顺序：先确认事件和异常转录本真实性，"
         "再补RNA alt/VAF或精确junction证据，完成MT/WT、正常背景和限制性HLA复核，最后开展短肽、长肽、"

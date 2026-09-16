@@ -5,8 +5,6 @@ import json
 from pathlib import Path
 from typing import Any
 
-from neoag.open_neo.html_render import markdown_to_html
-
 from .io import ensure_dir, markdown_table, read_table, row_get, safe_float, write_json, write_tsv
 
 
@@ -116,6 +114,14 @@ def run_experiment_design(args: dict[str, Any]) -> dict[str, Any]:
     first_batch = Path(args.get("first_batch") or "")
     ranked_peptides = Path(args.get("ranked_peptides") or args.get("input") or "")
     ranked_events_value = args.get("ranked_events")
+    vaccine_event_candidates = Path(args.get("vaccine_event_candidates") or "")
+    vaccine_event_neoepitopes = Path(args.get("vaccine_event_neoepitopes") or "")
+    vaccine_by_group: dict[str, dict[str, str]] = {}
+    vaccine_by_event: dict[str, dict[str, str]] = {}
+    if vaccine_event_candidates.is_file():
+        _, vaccine_rows = read_table(vaccine_event_candidates)
+        vaccine_by_group = {row_get(row, ["event_group_id"]): row for row in vaccine_rows if row_get(row, ["event_group_id"])}
+        vaccine_by_event = {row_get(row, ["event_id"]): row for row in vaccine_rows if row_get(row, ["event_id"])}
     if not ranked_events_value and ranked_peptides.is_file():
         for name in ("ranked_events.evidence_consensus.tsv", "ranked_events.tsv"):
             candidate = ranked_peptides.with_name(name)
@@ -144,8 +150,10 @@ def run_experiment_design(args: dict[str, Any]) -> dict[str, Any]:
     mini = []
     targeted = []
     manual = []
+    constructs = []
     for i, row in enumerate(rows, 1):
         route = _validation_route(row)
+        vaccine = vaccine_by_group.get(row_get(row, ["event_group_id"], "")) or vaccine_by_event.get(row_get(row, ["event_id"], ""), {})
         rec = {
             "rank": i,
             "pipeline_event_rank": row_get(row, ["pipeline_event_rank", "event_evidence_rank"], ""),
@@ -165,9 +173,22 @@ def run_experiment_design(args: dict[str, Any]) -> dict[str, Any]:
             "experiment_priority": row_get(row, ["experiment_priority"], ""),
             "review_reason": row_get(row, ["review_reason"], ""),
             "recommended_validation": route,
+            "vaccine_design_unit": "MUTATION_OR_BIOLOGICAL_EVENT",
+            "unique_neoepitope_hla_count": row_get(vaccine, ["unique_neoepitope_hla_count"], ""),
+            "unique_peptide_count": row_get(vaccine, ["unique_peptide_count"], ""),
+            "hla_coverage_count": row_get(vaccine, ["hla_coverage_count"], ""),
+            "hla_alleles": row_get(vaccine, ["hla_alleles"], ""),
+            "neoepitope_hla_pairs": row_get(vaccine, ["neoepitope_hla_pairs"], ""),
+            "construct_strategy": row_get(vaccine, ["construct_strategy"], "EVENT_CONTEXT_SEQUENCE_REVIEW_REQUIRED"),
             "reason": "event-level review triage; requires wet-lab validation",
         }
         candidates.append(rec)
+        constructs.append({
+            **rec,
+            "construct_sequence_status": row_get(vaccine, ["construct_sequence_status"], "DESIGN_REQUIRED_FROM_CONFIRMED_TRANSCRIPT_OR_ORF"),
+            "neoepitope_detail_source": str(vaccine_event_neoepitopes) if vaccine_event_neoepitopes.is_file() else "",
+            "construct_note": "One construct is planned per selected mutation/event; all linked peptide-HLA predictions remain supporting evidence.",
+        })
         if rec["experiment_priority"] == "MANUAL_REVIEW_ONLY":
             manual.append({**rec, "manual_review_action": "mechanism review only; do not auto-promote"})
         if route.startswith("short"):
@@ -184,6 +205,7 @@ def run_experiment_design(args: dict[str, Any]) -> dict[str, Any]:
     write_tsv(outdir / "minigene_design.tsv", mini)
     write_tsv(outdir / "targeted_rna_validation_plan.tsv", targeted)
     write_tsv(outdir / "manual_review_candidates.tsv", manual)
+    write_tsv(outdir / "vaccine_construct_plan.tsv", constructs)
     (outdir / "targeted_rna_validation_plan.md").write_text("# Targeted RNA validation plan\n\n" + markdown_table(targeted, max_rows=top_n) + "\nBoundary: this is an experimental validation plan, not a treatment recommendation.\n", encoding="utf-8")
     outputs = {
         "experiment_candidates": str(outdir / "experiment_candidates.tsv"),
@@ -193,6 +215,7 @@ def run_experiment_design(args: dict[str, Any]) -> dict[str, Any]:
         "targeted_rna_validation_plan": str(outdir / "targeted_rna_validation_plan.tsv"),
         "targeted_rna_validation_plan_md": str(outdir / "targeted_rna_validation_plan.md"),
         "manual_review_candidates": str(outdir / "manual_review_candidates.tsv"),
+        "vaccine_construct_plan": str(outdir / "vaccine_construct_plan.tsv"),
     }
     res = {"status": "PASS", "skill": "neoag-experiment-design", "summary": f"Designed validation routes for top {len(candidates)} event-prioritized representatives", "input_source": input_source, "outputs": outputs}
     write_json(outdir / "skill_result.json", res)
@@ -219,6 +242,10 @@ def run_patient_report(args: dict[str, Any]) -> dict[str, Any]:
 
 
 def run_technical_report(args: dict[str, Any]) -> dict[str, Any]:
+    # Lazy import avoids a package initialization cycle when the standalone
+    # skill taxonomy is imported before neoag.open_neo.review.
+    from neoag.open_neo.html_render import markdown_to_html
+
     outdir = ensure_dir(args["outdir"])
     result_dir = Path(args.get("result_dir_or_summary") or args.get("input") or ".")
     files = sorted([p for p in result_dir.rglob("*") if p.is_file()])[:200] if result_dir.exists() and result_dir.is_dir() else []

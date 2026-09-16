@@ -33,6 +33,8 @@ ARTIFACT_NAMES: dict[str, tuple[str, ...]] = {
     "weighted_baseline": ("ranked_peptides.weighted_baseline.tsv", "ranked_peptides.tsv", "ranked_peptides.v03.tsv"),
     "consensus_peptides": ("ranked_peptides.evidence_consensus.tsv",),
     "consensus_events": ("ranked_events.evidence_consensus.tsv",),
+    "vaccine_event_candidates": ("vaccine_event_candidates.tsv",),
+    "vaccine_event_neoepitopes": ("vaccine_event_neoepitopes.tsv",),
     "comprehensive_evidence": ("comprehensive_peptide_evidence.tsv", "all_tool_results.tsv"),
     "all_tool_results": ("all_tool_results.tsv",),
     "all_tool_results_manifest": ("all_tool_results.manifest.json",),

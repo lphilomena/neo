@@ -116,6 +116,8 @@ def test_experiment_design_prefers_event_representatives(tmp_path: Path):
     assert [row["peptide_id"] for row in rows] == ["P1", "P3", "P2"]
     assert all(row["peptide_id"] != "WRONG" for row in rows)
     assert rows[0]["event_group_id"] == "EVENT:E1"
+    assert rows[0]["vaccine_design_unit"] == "MUTATION_OR_BIOLOGICAL_EVENT"
+    assert (outdir / "vaccine_construct_plan.tsv").is_file()
 
 
 

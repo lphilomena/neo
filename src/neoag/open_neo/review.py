@@ -10,6 +10,7 @@ from neoag.agent_skills.ccf_review import main as ccf_review_main
 from neoag.controlled_execution.io_utils import load_limited_yaml, markdown_table, read_tsv, write_json, write_tsv
 from neoag.report_from_final import enrich_report_provenance
 from neoag.reports_dual import load_report_bundle, make_patient_report
+from neoag.vaccine_events import build_vaccine_event_tables
 from neoag.skill_taxonomy.review_skills import (
     run_concept_explainer,
     run_experiment_design,
@@ -740,12 +741,15 @@ def run_review(args: dict[str, Any]) -> dict[str, Any]:
         result.blocking_issues.append(FailureCode.EVENT_MAPPING_FAILED.value); result.finish("BLOCKED").write(layout.skill_result); return result.to_dict()
     candidate_review = layout.review / "candidate_review.tsv"; write_tsv(candidate_review, review_rows)
     first_batch = select_first_batch(review_rows, top_n); first_batch_path = layout.review / "first_batch_experiment_set.tsv"; write_tsv(first_batch_path, first_batch)
+    vaccine_events, vaccine_epitopes = build_vaccine_event_tables(events, peptides, review_rows)
+    vaccine_events_path = layout.review / "vaccine_event_candidates.tsv"; write_tsv(vaccine_events_path, vaccine_events)
+    vaccine_epitopes_path = layout.review / "vaccine_event_neoepitopes.tsv"; write_tsv(vaccine_epitopes_path, vaccine_epitopes)
     completion = [row for row in review_rows if row["review_status"] == "COMPLETE_EVIDENCE"]
     manual = [row for row in review_rows if row["experiment_priority"] == "MANUAL_REVIEW_ONLY"]
     write_tsv(layout.review / "evidence_completion_queue.tsv", completion); write_tsv(layout.review / "manual_review_candidates.tsv", manual)
     result.steps.append(MacroStep("02", "event-level-review", "PASS", detail=f"events={len(review_rows)}; first_batch={len(first_batch)}", outputs={"candidate_review": str(candidate_review), "first_batch": str(first_batch_path)}))
 
-    exp = run_experiment_design({"outdir": str(layout.review / "experiment_design"), "candidate_review": str(candidate_review), "first_batch": str(first_batch_path), "ranked_events": artifacts["consensus_events"], "ranked_peptides": artifacts["consensus_peptides"], "top_n": top_n, "therapy_context": args.get("therapy_context") or "research"})
+    exp = run_experiment_design({"outdir": str(layout.review / "experiment_design"), "candidate_review": str(candidate_review), "first_batch": str(first_batch_path), "ranked_events": artifacts["consensus_events"], "ranked_peptides": artifacts["consensus_peptides"], "vaccine_event_candidates": str(vaccine_events_path), "vaccine_event_neoepitopes": str(vaccine_epitopes_path), "top_n": top_n, "therapy_context": args.get("therapy_context") or "research"})
     result.steps.append(MacroStep("03", "experiment-design", exp.get("status", "PARTIAL"), outputs=exp.get("outputs", {})))
     cmp = run_ranking_compare({"outdir": str(layout.review / "ranking_compare"), "left": artifacts["weighted_baseline"], "left_name": "weighted_baseline", "right": artifacts["consensus_peptides"], "right_name": "evidence_consensus"})
     result.steps.append(MacroStep("04", "weighted-vs-consensus-review", cmp.get("status", "PARTIAL"), outputs=cmp.get("outputs", {})))
@@ -782,7 +786,7 @@ def run_review(args: dict[str, Any]) -> dict[str, Any]:
     result.steps.append(MacroStep("06", "reports-and-concept-explanations", report_status, outputs={**report_outputs, **concept_outputs, **production_reports}))
 
     result.outputs.update({
-        "candidate_review": str(candidate_review), "first_batch_experiment_set": str(first_batch_path), "fusion_summary": str(layout.review / "fusion_summary.tsv"),
+        "candidate_review": str(candidate_review), "first_batch_experiment_set": str(first_batch_path), "vaccine_event_candidates": str(vaccine_events_path), "vaccine_event_neoepitopes": str(vaccine_epitopes_path), "fusion_summary": str(layout.review / "fusion_summary.tsv"),
         "evidence_completion_queue": str(layout.review / "evidence_completion_queue.tsv"), "manual_review_candidates": str(layout.review / "manual_review_candidates.tsv"),
         **{f"experiment_{key}": value for key, value in exp.get("outputs", {}).items()}, **{f"comparison_{key}": value for key, value in cmp.get("outputs", {}).items()},
         **mechanism_outputs, **{f"concept_{key}": value for key, value in concept_outputs.items()}, **report_outputs, **production_reports,

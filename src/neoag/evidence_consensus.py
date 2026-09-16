@@ -15,6 +15,7 @@ from .candidate_identity import IDENTITY_FIELDS, candidate_identity
 from .source_chain import derive_source_chain_confidence
 from .pareto import nondominated_fronts
 from .utils import read_tsv, write_tsv
+from .vaccine_events import build_vaccine_event_tables
 
 
 DEFAULT_RULES: dict[str, Any] = {
@@ -1597,6 +1598,11 @@ def rank_evidence_consensus(
     event_rows = _event_output(rows, bool(rules.get("output", {}).get("event_deduplicate", True)))
     write_tsv(output_events_tsv, event_rows)
     output_dir = Path(output_peptides_tsv).parent
+    vaccine_event_rows, vaccine_epitope_rows = build_vaccine_event_tables(event_rows, rows)
+    vaccine_events_path = output_dir / "vaccine_event_candidates.tsv"
+    vaccine_epitopes_path = output_dir / "vaccine_event_neoepitopes.tsv"
+    write_tsv(vaccine_events_path, vaccine_event_rows)
+    write_tsv(vaccine_epitopes_path, vaccine_epitope_rows)
     source_chain_path, source_chain_requirements_path = _write_source_chain_outputs(output_dir, rows)
     comparison_rows = _comparison_rows(rows)
     comparison_path = output_dir / "ranking_compare_weighted_vs_consensus.tsv"
@@ -1624,6 +1630,8 @@ def rank_evidence_consensus(
         "conflicts": len(conflicts),
         "output_peptides": str(output_peptides_tsv),
         "output_events": str(output_events_tsv),
+        "output_vaccine_events": str(vaccine_events_path),
+        "output_vaccine_event_neoepitopes": str(vaccine_epitopes_path),
         "output_states": str(output_states_tsv),
         "output_conflicts": str(output_conflicts_tsv),
         "output_comparison": str(comparison_path),
@@ -1688,6 +1696,8 @@ def build_evidence_consensus(
         "rows": result["rows"],
         "ranked_peptides": result["output_peptides"],
         "ranked_events": result["output_events"],
+        "vaccine_event_candidates": result["output_vaccine_events"],
+        "vaccine_event_neoepitopes": result["output_vaccine_event_neoepitopes"],
         "evidence_states": result["output_states"],
         "evidence_conflicts": result["output_conflicts"],
         "comparison": result["output_comparison"],

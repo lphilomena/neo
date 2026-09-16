@@ -423,6 +423,8 @@ def test_first_phase_output_contract_and_aliases(tmp_path: Path):
         "ranked_peptides.evidence_consensus.tsv",
         "ranked_peptides.tsv",
         "ranked_events.evidence_consensus.tsv",
+        "vaccine_event_candidates.tsv",
+        "vaccine_event_neoepitopes.tsv",
         "evidence_states.tsv",
         "evidence_conflicts.tsv",
         "evidence_consensus_summary.tsv",

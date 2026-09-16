@@ -222,6 +222,8 @@ For Fusion and Splice candidates, keep direct peptide/junction safety evidence s
 - `evidence_conflicts.tsv`, `evidence_source_conflicts.tsv`
 - `ranked_peptides.evidence_consensus.tsv` as the final report/Excel ranking table with concrete `evidence_grade`/R grade fields
 - `ranked_events.evidence_consensus.tsv` as the final event ranking table
+- `vaccine_event_candidates.tsv` as the mRNA-vaccine selection view with one row per mutation/fusion/splice/SV event
+- `vaccine_event_neoepitopes.tsv` containing all unique peptide-HLA predictions nested under each event; these remain supporting evidence and do not independently occupy event ranks
 - `ranked_peptides.weighted_baseline.tsv` as the preserved legacy weighted baseline for audit/comparison only
 - `ranking_compare_weighted_vs_consensus.md`
 - `run_manifest.json`, `audit_log.jsonl`
